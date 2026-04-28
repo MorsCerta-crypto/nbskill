@@ -1,11 +1,23 @@
 ---
 name: jupyter-notebooks
-description: Read, edit, diff, and execute Jupyter notebooks through the nbskill CLI, with compact output intended for coding agents.
+description: Read, edit, diff, execute, test, and style-check Jupyter/nbdev notebooks through the nbskill CLI. Prefer these tools over raw JSON or generated Python files in nbdev projects.
 ---
 
 # Jupyter Notebook CLI Skill
 
 Use this skill when you need to inspect, modify, diff, or execute `.ipynb` files without reading raw notebook JSON.
+
+## Agent Operating Rules
+
+When working in an nbdev project, treat notebooks as the editable source of truth:
+
+- Prefer `read_nb`, `write_nb`, `exec_nb`, `diff_nb`, and `chstyle` over raw `.ipynb` JSON reads, ad hoc Python scripts, or edits to generated Python files.
+- Use generated `.py` files only to inspect export results or understand import surfaces. Do not make feature edits there unless the user explicitly asks.
+- Add new functions, classes, examples, and documentation to notebooks. Let `write_nb` run `nbdev-export` by default.
+- For small behavior changes, add or update a small example/test cell after the symbol, then run `exec_nb --up2id ...` or `write_nb --run_test`.
+- Prefer `read_nb --overview`, `read_nb --filter`, and targeted `--cell_range` reads before full-cell reads.
+- Keep outputs visible: execution output, tracebacks, nbdev-test failures, diff output, and chstyle hints should be read and used before making the next edit.
+- Prefer expressive CLI output over silent automation. If a command changes, tests, executes, or style-checks a notebook, its command-line output should explain what happened.
 
 ## Commands
 
@@ -69,6 +81,12 @@ def f(x):
     return x + 1"
 ```
 
+For code containing backslash escapes such as `"\n"`, prefer `--cells_file` so the shell cannot rewrite the text before `write_nb` sees it:
+
+```bash
+write_nb notebook.ipynb --cells_file /tmp/cells.txt
+```
+
 Write modes:
 
 - Default `--insert_at -1` appends cells.
@@ -79,6 +97,8 @@ Write modes:
 - `--rm_idx 2:5` deletes a range before inserting.
 
 Use `%%markdown`, `%%md`, `%%code`, or `%%raw` as the first line of a block to choose the cell type. Blocks without a marker use `--cell_type`, which defaults to code.
+Use `--cells_file PATH` or pass `-` as the `cells` argument to read cell text without shell quote expansion.
+New Python code cells are syntax-checked before writing by default; use `--no-validate_code` only for intentionally incomplete Python snippets.
 By default, `write_nb` runs `nbdev-export` after writing. Use `--no-export` for scratch notebooks or notebooks outside an nbdev project.
 Use `--run_test` to run `nbdev-test` after writing; notebook execution output and failures are printed in the command line.
 Use `--run_style` to print optional fast.ai style hints via `chstyle` after writing. Add `--style_strict` if hints should make the command fail.
@@ -202,3 +222,85 @@ install-nbskill --target both
 ```
 
 The installer copies this `SKILL.md` into a `jupyter-notebooks` skill folder.
+
+## Agent Memory And Hooks
+
+For Codex, install this skill and add a short project `AGENTS.md` reminder. Codex discovers `AGENTS.md` globally under `~/.codex` and per project from the repository root down to the current directory. A good project reminder is:
+
+```markdown
+## Notebook workflow
+- This is an nbdev/notebook-first project.
+- Use `read_nb`, `write_nb`, `exec_nb`, `diff_nb`, and `chstyle` for notebook work.
+- Do not edit generated Python files for feature work; edit `nbs/*.ipynb` and let `write_nb`/`nbdev-export` update Python.
+- Add small examples or tests in notebooks after changed symbols and run them with `exec_nb` or `write_nb --run_test`.
+```
+
+Codex hooks can reinforce this when enabled in `.codex/config.toml`:
+
+```toml
+[features]
+codex_hooks = true
+```
+
+Use project-local `.codex/hooks.json` for deterministic reminders or checks. A practical pattern is:
+
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "printf '%s\n' 'Notebook workflow: use read_nb/write_nb/exec_nb/diff_nb/chstyle; edit nbs/*.ipynb, not generated .py files.'"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "printf '%s\n' 'Before stopping: if notebook code changed, run exec_nb or write_nb --run_test and inspect diff_nb/chstyle output.'"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+For Claude Code, install this skill and put the same rules in `CLAUDE.md` or a path-scoped `.claude/rules/*.md` file. Claude Code also supports project hooks in `.claude/settings.json`; text printed by a `SessionStart` hook is added to Claude's context, which makes it useful for compact notebook workflow reminders:
+
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "printf '%s\n' 'Notebook workflow: use read_nb/write_nb/exec_nb/diff_nb/chstyle; edit nbs/*.ipynb, not generated .py files. Add examples/tests in notebooks and run them.'"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "printf '%s\n' 'If that edit touched a notebook or generated Python from nbdev, inspect with read_nb/diff_nb and run exec_nb or write_nb --run_test.'"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Keep hook commands short and deterministic. Put nuanced workflow guidance in `SKILL.md`, `AGENTS.md`, `CLAUDE.md`, or `.claude/rules/*.md`; use hooks to remind, validate, or block clear anti-patterns.

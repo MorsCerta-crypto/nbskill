@@ -185,6 +185,50 @@ def _split_symbol_cells(cells):
     for cell in cells: split.extend(_split_code_cell(cell))
     return split
 
+# %% ../nbs/core.ipynb #f8af4270
+def _cell_source(cell):
+    source = cell.get("source", "") if isinstance(cell, dict) else getattr(cell, "source", "")
+    if isinstance(source, list): return "".join(source)
+    return str(source)
+
+# %% ../nbs/core.ipynb #da743abe
+def _load_cells_text(cells="", cells_file=None):
+    if cells_file:
+        if cells: raise ValueError("Use either cells or cells_file, not both")
+        return Path(cells_file).expanduser().read_text(encoding="utf-8")
+    if cells == "-": return sys.stdin.read()
+    return cells
+
+# %% ../nbs/core.ipynb #079cbcac
+def _should_validate_python(source):
+    for line in source.splitlines():
+        stripped = line.lstrip()
+        if stripped.startswith(("%", "!")): return False
+    return bool(source.strip())
+
+# %% ../nbs/core.ipynb #135ce617
+def _format_syntax_error(source, err, cell_idx):
+    lines = source.splitlines()
+    line = lines[err.lineno - 1] if err.lineno and 0 < err.lineno <= len(lines) else ""
+    pointer = " " * max((err.offset or 1) - 1, 0) + "^" if line else ""
+    msg = [f"Invalid Python in new code cell {cell_idx}: {err.msg} at line {err.lineno}, column {err.offset}"]
+    if line: msg += [line, pointer]
+    msg.append("Tip: shell quoting can turn backslash-n escapes into real newlines inside Python strings. Use --cells_file PATH or cells=- for complex code.")
+    return chr(10).join(msg)
+
+# %% ../nbs/core.ipynb #576fa9e6
+def _validate_code_cells(cells):
+    for idx, cell in enumerate(cells):
+        cell_type = cell.get("cell_type") if isinstance(cell, dict) else getattr(cell, "cell_type", None)
+        if cell_type != "code": continue
+        source = _cell_source(cell)
+        if not _should_validate_python(source): continue
+        try: ast.parse(source)
+        except SyntaxError as err:
+            msg = _format_syntax_error(source, err, idx)
+            if _in_call_parse.get(): raise SystemExit(msg)
+            raise ValueError(msg) from err
+
 # %% ../nbs/core.ipynb #c60b2541
 def _parse_cells(cells, default_type="code"):
     if isinstance(cells, (list, tuple)): return _split_symbol_cells([_coerce_cell(o, default_type) for o in cells])
@@ -358,11 +402,12 @@ def chstyle(
     status = _run_chstyle(path, skip_folder_re, skip_path, strict)
     return _cli_return(status)
 
-# %% ../nbs/core.ipynb #e072052e
+# %% ../nbs/core.ipynb #92bee534
 @call_parse
 def write_nb(
     path: str,  # Notebook path
-    cells: Param("Cell block text", str, opt=False, nargs="?") = "",  # Cells to write
+    cells: Param("Cell block text", str, opt=False, nargs="?") = "",  # Cells to write; use - to read stdin
+    cells_file: str | None = None,  # Read cell block text from a UTF-8 file to avoid shell escaping
     insert_at: int | str | tuple | list | None = -1,  # None replaces notebook; -1 appends; int inserts; tuple/list replaces range
     rm_idx: int | str | tuple | list | None = None,  # Optional cell/range to delete before inserting
     cell_type: str = "code",  # Default type for cells without %% marker
@@ -370,10 +415,13 @@ def write_nb(
     run_test: bool = False,  # Run nbdev-test after writing
     run_style: bool = False,  # Run chstyle after writing
     style_strict: bool = False,  # Fail when chstyle finds hints
+    validate_code: bool = True,  # Validate new Python code cells before writing
 ):
     "Write cells to a notebook, optionally inserting, replacing, deleting, testing, or style-checking."
     path = Path(path)
+    cells = _load_cells_text(cells, cells_file)
     new_cells = _parse_cells(cells, cell_type)
+    if validate_code: _validate_code_cells(new_cells)
     target = _parse_write_target(insert_at)
 
     if target is None:

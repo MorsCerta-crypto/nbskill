@@ -1,0 +1,9 @@
+project:
+  output-dir: _docs
+
+website:
+  title: "nbskill"
+  site-url: "https://MorsCerta-crypto.github.io/nbskill"
+  description: "LLM-skill for working with nb"
+  repo-branch: main
+  repo-url: "https://github.com/MorsCerta-crypto/nbskill"

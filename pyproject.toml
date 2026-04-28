@@ -1,0 +1,53 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nbskill"
+dynamic = ["version"]
+description = "LLM-skill for working with nb"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "Apache-2.0"}
+authors = [{name = "Konrad", email = "62557233+MorsCerta-crypto@users.noreply.github.com"}]
+keywords = ['nbdev']
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+]
+dependencies = [
+    "execnb>=0.2.2",
+    "fastaistyle>=0.0.15",
+    "fastcore>=1.12.43",
+    "nbdev>=3.0.15",
+]
+
+[project.urls]
+Repository = "https://github.com/MorsCerta-crypto/nbskill"
+Documentation = "https://MorsCerta-crypto.github.io/nbskill/"
+
+[project.scripts]
+read_nb = "nbskill.core:read_nb"
+write_nb = "nbskill.core:write_nb"
+exec_nb = "nbskill.core:exec_nb"
+diff_nb = "nbskill.core:diff_nb"
+py2nb = "nbskill.core:py2nb"
+py2nbs = "nbskill.core:py2nbs"
+doc4symbol = "nbskill.core:doc4symbol"
+example4symbol = "nbskill.core:example4symbol"
+chstyle = "nbskill.core:chstyle"
+install-nbskill = "nbskill.core:install_nbskill"
+
+[project.entry-points.nbdev]
+nbskill = "nbskill._modidx:d"
+
+[tool.setuptools.dynamic]
+version = {attr = "nbskill.__version__"}
+
+[tool.setuptools.packages.find]
+include = ["nbskill"]
+
+[tool.setuptools.package-data]
+nbskill = ["SKILL.md"]
+
+[tool.nbdev]

@@ -4,11 +4,7 @@
 __all__ = ['read_nb', 'chstyle', 'write_nb', 'exec_nb', 'code_source', 'diff_nb', 'py2nb', 'py2nbs', 'doc4symbol',
            'example4symbol', 'install_nbskill']
 
-# %% ../nbs/core.ipynb #7efb199a
-__all__ = ["read_nb", "write_nb", "exec_nb", "code_source", "diff_nb", "py2nb", "py2nbs", "doc4symbol", "example4symbol",
-           "chstyle", "install_nbskill"]
-
-# %% ../nbs/core.ipynb #17985f0a
+# %% ../nbs/core.ipynb #6bc0c4fd
 import ast
 import copy
 import re
@@ -126,9 +122,9 @@ def _is_definition_node(node):
 def _node_start_line(node):
     return min([node.lineno, *[d.lineno for d in getattr(node, "decorator_list", [])]]) - 1
 
-# %% ../nbs/core.ipynb #7b904e4d
+# %% ../nbs/core.ipynb #10e7b8d0
 def _is_export_directive(line):
-    return line.lstrip().startswith("#| export")
+    return re.match(r"^\s*#\|\s*(export|exports|exporti)(\s|$)", line) is not None
 
 # %% ../nbs/core.ipynb #32ec5258
 def _is_export_gap(lines):
@@ -255,17 +251,16 @@ def _first_line(source):
     return ""
 
 # %% ../nbs/core.ipynb #0012a2ec
-def _cell_prefix(idx, cell, show_ids=True):
-    prefix = f"[{idx}]"
-    if show_ids: prefix += f" id={cell.id}"
-    return f"{prefix} {cell.cell_type}"
+def _cell_prefix(idx, cell, show_ids=False):
+    suffix = f" id={cell.id}" if show_ids else ""
+    return f"Cell [{idx}]: {cell.cell_type}{suffix}"
 
 # %% ../nbs/core.ipynb #3876f40e
-def _format_overview(items, show_ids=True):
+def _format_overview(items, show_ids=False):
     lines = []
     for idx, cell in items:
         summary = _first_line(cell.source)
-        lines.append(f"{_cell_prefix(idx, cell, show_ids)}: {summary}")
+        lines.append(f"{_cell_prefix(idx, cell, show_ids)} | {summary}")
     return "\n".join(lines)
 
 # %% ../nbs/core.ipynb #975e37c5
@@ -319,7 +314,7 @@ def _code_overview(cell):
     return lines
 
 
-def _format_headers(items, show_ids=True):
+def _format_headers(items, show_ids=False):
     chunks = []
     for idx, cell in items:
         if cell.cell_type == "markdown": lines = _markdown_overview(cell)
@@ -329,11 +324,10 @@ def _format_headers(items, show_ids=True):
     return "\n\n".join(chunks)
 
 # %% ../nbs/core.ipynb #f204f489
-def _format_full(items, show_ids=True):
+def _format_full(items, show_ids=False):
     chunks = []
     for idx, cell in items:
-        ident = f" id={cell.id}" if show_ids else ""
-        chunks.append(f"--- cell {idx}{ident} {cell.cell_type} ---\n{cell.source}")
+        chunks.append(f"{_cell_prefix(idx, cell, show_ids)}\n{cell.source}")
     return "\n\n".join(chunks)
 
 # %% ../nbs/core.ipynb #3960d466
@@ -346,32 +340,158 @@ def _matches_filter(source, pattern):
 def _format_filter(items):
     return "\n\n".join(f"[{idx}]\n{cell.source}" for idx, cell in items)
 
-# %% ../nbs/core.ipynb #3b0124c3
+# %% ../nbs/core.ipynb #01f6c74e
+def _is_exported_code_cell(cell):
+    if getattr(cell, "cell_type", None) != "code": return False
+    return any(_is_export_directive(line) for line in _cell_source(cell).splitlines())
+
+# %% ../nbs/core.ipynb #917c7bb6
+def _with_context(cells, items, context=0):
+    context = int(context or 0)
+    if context < 0: raise ValueError("context must be >= 0")
+    if context == 0: return items
+
+    idxs = {idx for idx, _ in items}
+    for idx in list(idxs):
+        for offset in range(1, context + 1):
+            prev = idx - offset
+            if prev < 0: break
+            if cells[prev].cell_type == "markdown": idxs.add(prev)
+        for offset in range(1, context + 1):
+            nxt = idx + offset
+            if nxt >= len(cells): break
+            if cells[nxt].cell_type == "code" and not _is_exported_code_cell(cells[nxt]): idxs.add(nxt)
+    return [(idx, cells[idx]) for idx in sorted(idxs)]
+
+# %% ../nbs/core.ipynb #dd511845
+def _chapter_title(cell):
+    if getattr(cell, "cell_type", None) != "markdown": return None
+    for line in _cell_source(cell).splitlines():
+        match = re.match(r"^##\s+(.+?)\s*$", line.strip())
+        if match: return match.group(1).strip()
+    return None
+
+# %% ../nbs/core.ipynb #af4ae045
+def _chapter_spans(cells):
+    starts = [(idx, title) for idx, cell in enumerate(cells) if (title := _chapter_title(cell))]
+    spans = []
+    for pos, (start, title) in enumerate(starts):
+        end = starts[pos + 1][0] if pos + 1 < len(starts) else len(cells)
+        spans.append(dict(title=title, start=start, end=end))
+    return spans
+
+# %% ../nbs/core.ipynb #3ea4e21f
+def _matching_chapters(cells, chapter=None):
+    spans = _chapter_spans(cells)
+    if chapter is None: return spans
+    return [span for span in spans if _matches_filter(span["title"], chapter)]
+
+# %% ../nbs/core.ipynb #c6c81d59
+def _format_chapter_spans(spans, cells, show_ids=False):
+    lines = []
+    for span in spans:
+        cell = cells[span["start"]]
+        suffix = f" id={cell.id}" if show_ids else ""
+        lines.append(f"Chapter [{span['start']}:{span['end']}]: ## {span['title']}{suffix}")
+    return "\n".join(lines)
+
+# %% ../nbs/core.ipynb #60b63eec
+def _chapter_index_set(cells, chapter):
+    idxs = set()
+    for span in _matching_chapters(cells, chapter):
+        idxs.update(range(span["start"], span["end"]))
+    return idxs
+
+# %% ../nbs/core.ipynb #d6532c15
+def _one_chapter(cells, chapter, create=False):
+    matches = _matching_chapters(cells, chapter)
+    if len(matches) == 1: return matches[0]
+    if not matches and create:
+        cells.append(mk_cell(f"## {chapter}", cell_type="markdown"))
+        return dict(title=str(chapter), start=len(cells) - 1, end=len(cells))
+    if not matches: raise ValueError(f"No chapter matches {chapter!r}")
+    titles = ", ".join(f"{span['title']} ({span['start']}:{span['end']})" for span in matches)
+    raise ValueError(f"Chapter {chapter!r} matches multiple chapters: {titles}")
+
+# %% ../nbs/core.ipynb #abc2fa85
+def _chapter_body_len(span):
+    return max(span["end"] - span["start"] - 1, 0)
+
+# %% ../nbs/core.ipynb #83080c58
+def _chapter_body_slice(span, target):
+    body_start = span["start"] + 1
+    body_len = _chapter_body_len(span)
+    start, stop, step = target.indices(body_len)
+    if step != 1: raise ValueError("chapter ranges do not support steps")
+    return slice(body_start + start, body_start + stop)
+
+# %% ../nbs/core.ipynb #69e65d1e
+def _chapter_delete(cells, span, selector):
+    if selector is None: return
+    target = _parse_write_target(selector)
+    body_start = span["start"] + 1
+    body_len = _chapter_body_len(span)
+    if isinstance(target, slice):
+        del cells[_chapter_body_slice(span, target)]
+        return
+    idx = int(target)
+    if idx < 0: idx += body_len
+    if idx < 0 or idx >= body_len: raise IndexError(target)
+    del cells[body_start + idx]
+
+# %% ../nbs/core.ipynb #601577d2
+def _chapter_insert_target(span, target):
+    body_start = span["start"] + 1
+    body_len = _chapter_body_len(span)
+    if target is None: return slice(body_start, body_start + body_len)
+    if isinstance(target, slice): return _chapter_body_slice(span, target)
+    idx = int(target)
+    if idx == -1: return body_start + body_len
+    if idx < 0: idx += body_len
+    if idx < 0 or idx > body_len: raise IndexError(target)
+    return body_start + idx
+
+# %% ../nbs/core.ipynb #e09b2650
 @call_parse
 def read_nb(
     path: str,  # Notebook path
     cell_range: int | str | tuple | list | None = None,  # Index, slice, or index list
+    chapter: str | None = None,  # Chapter title string or regex to select
     only_code: bool = False,  # Include only code cells
     only_markdown: bool = False,  # Include only markdown cells
     contains: str | None = None,  # Include only cells whose source contains this text
     filter: str | None = None,  # Regex or string; print only matching cell numbers and sources
-    show_ids: bool = True,  # Include notebook cell ids in output
+    context: int = 0,  # Add up to N previous markdown and following non-export code cells
+    show_ids: bool = False,  # Include notebook cell ids in output
     overview: bool = False,  # Show one compact line per selected cell
-    full: bool = True,  # Use outline mode if false
+    scope: Param("chapter, outline, or full", str, choices=("chapter", "outline", "full")) = "full",
 ):
     "Print a compact, non-JSON view of a notebook."
     if only_code and only_markdown: raise ValueError("only_code and only_markdown cannot both be true")
+    if context < 0: raise ValueError("context must be >= 0")
+    if scope not in {"chapter", "outline", "full"}: raise ValueError("scope must be chapter, outline, or full")
 
     nb = _read_nb(path)
+    selected_idxs = {idx for idx, _ in _select_cells(nb.cells, cell_range)}
+    if scope == "chapter":
+        spans = [span for span in _matching_chapters(nb.cells, chapter) if cell_range is None or set(range(span["start"], span["end"])) & selected_idxs]
+        text = _format_chapter_spans(spans, nb.cells, show_ids=show_ids)
+        if text: print(text)
+        return _cli_return(text)
+
     items = _select_cells(nb.cells, cell_range)
+    if chapter is not None:
+        chapter_idxs = _chapter_index_set(nb.cells, chapter)
+        items = [(i, c) for i, c in items if i in chapter_idxs]
     if only_code: items = [(i, c) for i, c in items if c.cell_type == "code"]
     if only_markdown: items = [(i, c) for i, c in items if c.cell_type == "markdown"]
     if contains is not None: items = [(i, c) for i, c in items if contains in c.source]
-    if filter is not None:
-        items = [(i, c) for i, c in items if _matches_filter(c.source, filter)]
-        text = _format_filter(items)
+    if filter is not None: items = [(i, c) for i, c in items if _matches_filter(c.source, filter)]
+    items = _with_context(nb.cells, items, context)
+
+    if filter is not None: text = _format_filter(items)
     elif overview: text = _format_overview(items, show_ids=show_ids)
-    elif not full: text = _format_headers(items, show_ids=show_ids)
+    elif scope == "outline": text = _format_headers(items, show_ids=show_ids)
     else: text = _format_full(items, show_ids=show_ids)
     if text: print(text)
     return _cli_return(text)
@@ -402,14 +522,15 @@ def chstyle(
     status = _run_chstyle(path, skip_folder_re, skip_path, strict)
     return _cli_return(status)
 
-# %% ../nbs/core.ipynb #92bee534
+# %% ../nbs/core.ipynb #e14e4a46
 @call_parse
 def write_nb(
     path: str,  # Notebook path
     cells: Param("Cell block text", str, opt=False, nargs="?") = "",  # Cells to write; use - to read stdin
     cells_file: str | None = None,  # Read cell block text from a UTF-8 file to avoid shell escaping
-    insert_at: int | str | tuple | list | None = -1,  # None replaces notebook; -1 appends; int inserts; tuple/list replaces range
+    insert_at: int | str | tuple | list | None = -1,  # None replaces notebook/body; -1 appends; int inserts; tuple/list replaces range
     rm_idx: int | str | tuple | list | None = None,  # Optional cell/range to delete before inserting
+    chapter: str | None = None,  # Chapter title string or regex; missing chapters are created
     cell_type: str = "code",  # Default type for cells without %% marker
     export: bool = True,  # Run nbdev-export after writing
     run_test: bool = False,  # Run nbdev-test after writing
@@ -424,11 +545,17 @@ def write_nb(
     if validate_code: _validate_code_cells(new_cells)
     target = _parse_write_target(insert_at)
 
-    if target is None:
+    if target is None and chapter is None:
         nb = new_nb(new_cells)
     else:
         nb = _read_nb(path) if path.exists() else new_nb([])
-        _delete_cells(nb.cells, rm_idx)
+        if chapter is not None:
+            span = _one_chapter(nb.cells, chapter, create=True)
+            _chapter_delete(nb.cells, span, rm_idx)
+            span = _one_chapter(nb.cells, chapter)
+            target = _chapter_insert_target(span, target)
+        else:
+            _delete_cells(nb.cells, rm_idx)
         if new_cells:
             if isinstance(target, slice): nb.cells[target] = new_cells
             elif int(target) == -1: nb.cells.extend(new_cells)
@@ -440,6 +567,7 @@ def write_nb(
     _write_nb(nb, path)
     if export: nbdev_export(path=str(path))
     msg = f"Wrote {len(nb.cells)} cells to {path}"
+    if chapter is not None: msg += f" in chapter {chapter!r}"
     if export: msg += " and exported with nbdev"
     print(msg)
     if run_test:
@@ -521,22 +649,30 @@ def _print_nb_outputs(path, up2id=None):
             print(f"--- output cell {idx} id={cell.id} ---")
             print(text, end="" if text.endswith("\n") else "\n")
 
-# %% ../nbs/core.ipynb #df49972e
+# %% ../nbs/core.ipynb #434c13b3
 @call_parse
 def exec_nb(
     path: str,  # Notebook path
     dest: str | None = None,  # Destination path; defaults to overwriting path
     exc_stop: bool = False,  # Stop on exceptions
     up2id: int | str | None = None,  # Execute first N cells, or through this cell id
+    chapter: str | None = None,  # Execute through this chapter, inclusive
     show_output: bool = True,  # Print saved cell outputs and errors after execution
     verbose: bool = False,  # Show stdout/stderr live while executing
 ):
     "Execute a notebook with execnb and save outputs."
     dest = dest or path
+    chapter_title = None
+    if chapter is not None:
+        if up2id is not None: raise ValueError("Use either chapter or up2id, not both")
+        nb = _read_nb(path)
+        span = _one_chapter(nb.cells, chapter)
+        up2id, chapter_title = span["end"], span["title"]
     preproc, postproc = _exec_limiters(up2id)
     CaptureShell().execute(path, dest=dest, exc_stop=exc_stop, preproc=preproc, postproc=postproc, verbose=verbose)
     msg = f"Executed {path} -> {dest}"
-    if up2id is not None: msg += f" (up2id={up2id})"
+    if chapter_title is not None: msg += f" (chapter={chapter_title!r}, up2id={up2id})"
+    elif up2id is not None: msg += f" (up2id={up2id})"
     print(msg)
     if show_output: _print_nb_outputs(dest, up2id=up2id)
     return _cli_return(Path(dest))
@@ -617,7 +753,7 @@ def _class_without_methods(lines, cls, methods):
 def _export_cell(source):
     return mk_cell(f"#| export\n{source.strip()}")
 
-# %% ../nbs/core.ipynb #2f02c3aa
+# %% ../nbs/core.ipynb #f6472ba5
 def _py2nb_cells(source, default_exp, class_lines=100, method_lines=10):
     tree = ast.parse(source)
     lines = source.splitlines()
@@ -633,6 +769,12 @@ def _py2nb_cells(source, default_exp, class_lines=100, method_lines=10):
     for node in tree.body:
         if isinstance(node, (ast.Import, ast.ImportFrom)):
             pending_imports.append(_node_source(lines, node))
+            continue
+        if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id == "__all__" for target in node.targets):
+            continue
+        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.target.id == "__all__":
+            continue
+        if isinstance(node, ast.AugAssign) and isinstance(node.target, ast.Name) and node.target.id == "__all__":
             continue
         flush_imports()
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)): cells.append(_export_cell(_node_source(lines, node)))

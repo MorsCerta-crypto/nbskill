@@ -52,8 +52,11 @@ read_nb notebook.ipynb --cell_range 3
 read_nb notebook.ipynb --cell_range 2:6 --only_code
 read_nb notebook.ipynb --contains "def train"
 read_nb notebook.ipynb --filter "def train|class Model"
+read_nb notebook.ipynb --filter "def train" --context 1
 read_nb notebook.ipynb --only_markdown
-read_nb notebook.ipynb --no-full
+read_nb notebook.ipynb --scope chapter
+read_nb notebook.ipynb --chapter "Data loading" --scope full
+read_nb notebook.ipynb --chapter "Data loading" --scope outline
 ```
 
 `read_nb` supports:
@@ -63,10 +66,18 @@ read_nb notebook.ipynb --no-full
 - `--only_code` and `--only_markdown`.
 - `--contains TEXT` to find cells by source text.
 - `--filter TEXT_OR_REGEX` to print only matching cells as `[cell_number]` plus cell source.
-- Cell ids are shown by default; use `--no-show_ids` to hide them.
-- `--no-full` for the compact outline instead of full selected cell sources.
+- `--context N` to add up to `N` previous markdown cells and up to `N` following code cells that are not exported.
+- `--scope chapter` to print only `##` chapter titles as `Chapter [start:end]: ## Title`.
+- `--scope outline` for the compact outline.
+- `--scope full` for full selected cell sources.
+- `--chapter TITLE_OR_REGEX` to filter output to matching `##` chapters.
+- Cell ids are hidden by default; use `--show_ids` when a notebook cell id matters.
 
-`--no-full` gives a compact notebook overview: markdown cells with `#` or `##` headings including their prose, plus function/class definitions and `__init__` signatures with docstrings. Function bodies and unrelated cells are omitted.
+`--scope outline` gives a compact notebook overview: markdown cells with `#` or `##` headings including their prose, plus function/class definitions and `__init__` signatures with docstrings. Function bodies and unrelated cells are omitted.
+
+Notebook chapters are markdown cells whose title line starts with `## `. Keep one notebook-level import/setup cell near the top before the first chapter; chapter execution includes that prelude.
+
+For context reads, exported code cells are recognized by nbdev directives `#| export`, `#| exports`, and `#| exporti`; those cells are not added as trailing context.
 
 ## Writing Notebooks
 
@@ -95,6 +106,9 @@ Write modes:
 - `--insert_at None` replaces the full notebook.
 - `--rm_idx 3` deletes one cell before inserting.
 - `--rm_idx 2:5` deletes a range before inserting.
+- `--chapter TITLE` appends into the matching `##` chapter by default, creating the chapter if needed.
+- With `--chapter`, `--insert_at` and `--rm_idx` are relative to the chapter body, not the chapter title cell.
+- With `--chapter TITLE --insert_at None`, only that chapter body is replaced; the `## TITLE` cell remains.
 
 Use `%%markdown`, `%%md`, `%%code`, or `%%raw` as the first line of a block to choose the cell type. Blocks without a marker use `--cell_type`, which defaults to code.
 Use `--cells_file PATH` or pass `-` as the `cells` argument to read cell text without shell quote expansion.
@@ -123,6 +137,7 @@ Execute and save outputs back into the same notebook:
 ```bash
 exec_nb notebook.ipynb
 exec_nb notebook.ipynb --up2id 5
+exec_nb notebook.ipynb --chapter "Data loading"
 ```
 
 Write executed output to a different file:
@@ -133,6 +148,7 @@ exec_nb notebook.ipynb --dest executed.ipynb
 
 Use `--exc_stop` when execution should stop on the first exception.
 Use `--up2id N` to execute only the first `N` notebook cells, or pass a cell id to execute through that cell.
+Use `--chapter TITLE_OR_REGEX` to execute from the notebook start through the end of that `##` chapter, including the notebook-level import/setup cells and earlier chapters.
 Saved cell outputs and errors are printed to the command line by default; use `--no-show_output` to suppress them.
 
 ## Diffing Notebooks
@@ -161,6 +177,7 @@ py2nb module.py --nbs_path nbs
 - a `#| default_exp <module-name>` cell.
 - one `#| export` cell for imports and top-level functions/classes.
 - separate `#| export` cells for long methods split out of large classes.
+- no `__all__` cell; nbdev generates exports automatically.
 
 For classes longer than 100 lines, regular methods longer than 10 lines are moved into `@patch` cells:
 

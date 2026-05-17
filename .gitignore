@@ -62,7 +62,7 @@ nosetests.xml
 coverage.xml
 *.cover
 .hypothesis/
-
+examples/
 # Translations
 *.mo
 *.pot

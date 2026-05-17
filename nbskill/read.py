@@ -87,15 +87,24 @@ def _format_headers(items, show_ids=False):
     return "\n\n".join(chunks)
 
 # %% ../nbs/01_read.ipynb #f204f489
-def _format_full(items, show_ids=False):
+def _format_source(source, line_numbers=False):
+    if not line_numbers: return source
+    lines = source.splitlines() or [""]
+    return "\n".join(f"{idx} | {line}" for idx, line in enumerate(lines, start=1))
+
+
+def _format_full(items, show_ids=False, line_numbers=False):
     chunks = []
     for idx, cell in items:
-        chunks.append(f"{_cell_prefix(idx, cell, show_ids)}\n{cell.source}")
+        chunks.append(f"{_cell_prefix(idx, cell, show_ids)}\n{_format_source(cell.source, line_numbers=line_numbers)}")
     return "\n\n".join(chunks)
 
 # %% ../nbs/01_read.ipynb #98fc4d1a
-def _format_filter(items, show_ids=False):
-    return "\n\n".join(f"{_cell_prefix(idx, cell, show_ids)}\n{cell.source}" for idx, cell in items)
+def _format_filter(items, show_ids=False, line_numbers=False):
+    return "\n\n".join(
+        f"{_cell_prefix(idx, cell, show_ids)}\n{_format_source(cell.source, line_numbers=line_numbers)}"
+        for idx, cell in items
+    )
 
 # %% ../nbs/01_read.ipynb #e09b2650
 @call_parse
@@ -115,6 +124,7 @@ def read_nb(
     if context < 0: raise ValueError("context must be >= 0")
 
     nb = _read_nb(path)
+    selected = any(value is not None for value in (cell_id, contains, filter))
     items = [_find_cell_by_id(nb.cells, cell_id)] if cell_id is not None else list(enumerate(nb.cells))
     if chapter is not None:
         chapter_idxs = _chapter_index_set(nb.cells, chapter)
@@ -124,10 +134,10 @@ def read_nb(
     if filter is not None: items = [(i, c) for i, c in items if _matches_filter(c.source, filter)]
     items = _with_context(nb.cells, items, context)
 
-    if filter is not None: text = _format_filter(items, show_ids=show_ids)
+    if filter is not None: text = _format_filter(items, show_ids=show_ids, line_numbers=True)
     elif scope == "overview": text = _format_overview(items, show_ids=show_ids)
     elif scope == "outline": text = _format_headers(items, show_ids=show_ids)
-    else: text = _format_full(items, show_ids=show_ids)
+    else: text = _format_full(items, show_ids=show_ids, line_numbers=selected)
     if text: print(text)
     return _cli_return(text)
 

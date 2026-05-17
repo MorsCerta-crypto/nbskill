@@ -17,14 +17,6 @@ rationale/docs -> exported code -> show-off example
 
 For each exported function/class worth understanding, add a small non-exported code cell below it that calls the symbol and shows what it does. These show-off cells are part example, part executable documentation, and part lightweight test.
 
-The package itself is organized as a notebook story:
-
-```text
-foundation -> reading/inspection -> writing/changing -> execution -> review -> conversion -> skill installation -> MCP integration
-```
-
-The matching public modules are `nbskill.foundation`, `nbskill.read`, `nbskill.write`, `nbskill.execute`, `nbskill.review`, `nbskill.convert`, `nbskill.skill`, and `nbskill.mcp`. Treat `nbskill.core` as obsolete.
-
 ## MCP Setup
 
 Install the package as an editable tool, then register the local MCP server:
@@ -107,6 +99,13 @@ Cell ids are shown by default. Add `--show_ids` when you need source hashes for 
 
 Use `--context 1` or higher when you want the full local story around a cell: markdown rationale/docs before it and non-exported code/show-off cells below it. This is the replacement for separate doc/example insertion helpers; write normal markdown/code cells with `write_nb`, then read the story with context.
 
+When a cell is selected with `--cell_id`, `--contains`, or `--filter`, full cell output includes 1-based line numbers:
+
+```text
+1 | def foo():
+2 |     return x + 1
+```
+
 ## Inspecting Symbols
 
 Use `show_doc` when a human or agent needs shared context for a function, class, or method:
@@ -168,7 +167,11 @@ Use `update_cell` for precise replacements:
 ```bash
 update_cell notebook.ipynb "replacement source" --cell_id abc123 --source_hash 7f3a91c0d422
 update_cell notebook.ipynb "new text" --cell_id abc123 --old_str "old text" --source_hash 7f3a91c0d422
+update_cell notebook.ipynb "replacement line" --cell_id abc123 --line_range 3 --source_hash 7f3a91c0d422
+update_cell notebook.ipynb "" --cell_id abc123 --line_range 3:5 --source_hash 7f3a91c0d422
 ```
+
+`--line_range` is 1-based and inclusive. Use a single number to replace one line, `START:END` to replace or delete multiple lines, and an empty replacement to delete the selected lines.
 
 ## Running
 

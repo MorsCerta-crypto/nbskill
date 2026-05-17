@@ -88,14 +88,37 @@ def _save_nb(nb, path, export=True):
     if export: nbdev_export(path=str(path))
 
 # %% ../nbs/02_write.ipynb #8637ca42
+def _parse_line_range(line_range, n_lines):
+    if line_range is None: return None
+    value = str(line_range).strip()
+    if not value: return None
+    if ":" in value:
+        start_s, end_s = value.split(":", 1)
+        start = int(start_s) if start_s else 1
+        end = int(end_s) if end_s else n_lines
+    else:
+        start = end = int(value)
+    if start < 1 or end < start or end > n_lines:
+        _cli_error(f"line_range must be 1-based and within 1:{n_lines}; got {line_range!r}")
+    return start - 1, end
+
+
+def _replace_line_range(source, line_range, new):
+    lines = source.splitlines()
+    start, end = _parse_line_range(line_range, len(lines) or 1)
+    replacement = [] if new == "" else new.splitlines()
+    return "\n".join([*lines[:start], *replacement, *lines[end:]])
+
+
 @call_parse
 @_tracked_call
 def update_cell(
     path: str,  # Notebook path
-    new: Param("Replacement cell source, or replacement text when old_str is set", str, opt=False, nargs="?") = "",
+    new: Param("Replacement cell source, replacement text, or line-range replacement", str, opt=False, nargs="?") = "",
     new_file: str | None = None,  # Read replacement text from a UTF-8 file
     cell_id: str | None = None,  # Stable notebook cell id to update
     old_str: str | None = None,  # Text to replace, or text used to find the target cell
+    line_range: str | None = None,  # 1-based inclusive lines to replace, e.g. 3 or 3:5
     source_hash: str | None = None,  # Expected current source SHA256 prefix
     cell_type: str = "code",  # Default type for whole-cell replacements without %% marker
     export: bool = True,  # Run nbdev-export after writing
@@ -103,8 +126,9 @@ def update_cell(
     validate_code: bool = True,  # Validate changed Python code before writing
     dry_run: bool = False,  # Show the update plan without writing
 ):
-    "Update one notebook cell by id, or replace old_str inside one uniquely matching cell."
+    "Update one notebook cell by id, replace old_str, or replace a 1-based line range."
     if cell_id is None and old_str is None: _cli_error("Pass --cell_id, --old_str, or both")
+    if line_range is not None and cell_id is None: _cli_error("Pass --cell_id with --line_range")
     path = Path(path)
     nb = _read_nb(path)
     new = _load_cells_text(new, new_file)
@@ -117,7 +141,15 @@ def update_cell(
         _cli_error(f"Hash mismatch for id={cell.id}: expected {source_hash}, actual {actual[:12]}")
 
     before_hash = _cell_hash(cell)
-    if old_str is None:
+    if line_range is not None:
+        replacement = _replace_line_range(_cell_source(cell), line_range, new)
+        if validate_code and getattr(cell, "cell_type", None) == "code": _validate_code_cells([mk_cell(replacement)])
+        after_hash = _cell_hash(replacement)
+        mode = f"lines {line_range}"
+        if not dry_run:
+            cell.source = replacement
+            _clear_outputs(cell)
+    elif old_str is None:
         new_cell = _parse_one_cell(new, cell_type)
         if validate_code: _validate_code_cells([new_cell])
         _clear_outputs(new_cell)

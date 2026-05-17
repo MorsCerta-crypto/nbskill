@@ -99,6 +99,7 @@ def create_mcp():
         new: str = "",
         cell_id: str | None = None,
         old_str: str | None = None,
+        line_range: str | None = None,
         source_hash: str | None = None,
         cell_type: str = "code",
         export: bool = True,
@@ -106,11 +107,11 @@ def create_mcp():
         validate_code: bool = True,
         dry_run: bool = False,
     ) -> str:
-        "Update one notebook cell by id, or replace old_str inside one matching cell."
+        "Update a cell, replace old_str, or replace 1-based inclusive line_range."
         return capture_call(
             _update_cell, path=path, new=new, new_file=None, cell_id=cell_id, old_str=old_str,
-            source_hash=source_hash, cell_type=cell_type, export=export, run_test=run_test,
-            validate_code=validate_code, dry_run=dry_run,
+            line_range=line_range, source_hash=source_hash, cell_type=cell_type, export=export,
+            run_test=run_test, validate_code=validate_code, dry_run=dry_run,
         )
 
     @mcp.tool(name="exec_nb")

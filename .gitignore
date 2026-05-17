@@ -51,7 +51,7 @@ wheels/
 # Installer logs
 pip-log.txt
 pip-delete-this-directory.txt
-
+.nbskill-errors.json
 # Unit test / coverage reports
 htmlcov/
 .tox/

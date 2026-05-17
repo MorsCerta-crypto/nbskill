@@ -4,7 +4,7 @@
 __all__ = ['py2nb', 'py2nbs']
 
 # %% ../nbs/05_convert.ipynb #76053167
-import ast
+import ast,copy
 from pathlib import Path
 
 from fastcore.nbio import mk_cell, new_nb

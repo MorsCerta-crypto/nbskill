@@ -29,6 +29,7 @@ Documentation = "https://MorsCerta-crypto.github.io/nbskill/"
 [project.scripts]
 read_nb = "nbskill.read:read_nb"
 write_nb = "nbskill.write:write_nb"
+apply_nb = "nbskill.write:apply_nb"
 update_cell = "nbskill.write:update_cell"
 update-cell = "nbskill.write:update_cell"
 show_doc = "nbskill.read:show_doc"

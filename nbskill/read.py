@@ -12,9 +12,10 @@ from fastcore.nbio import read_nb as _read_nb
 from fastcore.script import Param, call_parse
 
 from nbskill.foundation import (
-    _cell_hash, _cell_prefix, _cell_source, _chapter_index_set, _cli_return,
-    _find_cell_by_id, _first_line, _is_definition_node, _is_export_directive,
-    _is_exported_code_cell, _matches_filter, _tracked_call, _with_context,
+    _cell_hash, _cell_matches_type, _cell_prefix, _cell_source, _chapter_index_set,
+    _cli_return, _find_cell_by_id, _first_line, _is_definition_node,
+    _is_export_directive, _is_exported_code_cell, _matches_filter, _tracked_call,
+    _with_context,
 )
 
 # %% ../nbs/01_read.ipynb #3876f40e

@@ -38,6 +38,7 @@ show_doc nbs/02_write.ipynb write_nb --source
 ```bash
 update_cell nbs/02_write.ipynb "new source" --cell_id abc123 --source_hash 7f3a91c0d422
 write_nb nbs/02_write.ipynb --after_id abc123 --cells_file /tmp/new_cells.txt
+apply_nb dev/nbskill-op.toml
 write_nb nbs/02_write.ipynb --chapter "Experiments" --cells_file /tmp/check.txt
 ```
 
@@ -98,6 +99,7 @@ Prefer stable IDs and chapter names over positions:
 
 ```bash
 write_nb notebook.ipynb --cells_file /tmp/cells.txt
+apply_nb dev/nbskill-op.toml
 write_nb notebook.ipynb --before_id abc123 --cells_file /tmp/doc.txt
 write_nb notebook.ipynb --after_id abc123 --cells_file /tmp/example.txt
 write_nb notebook.ipynb --chapter "Data loading" --cells_file /tmp/experiment.txt
@@ -105,6 +107,29 @@ write_nb notebook.ipynb --replace --cells_file /tmp/full_notebook.txt
 ```
 
 Cell blocks are separated by a line containing only `---`. Start a block with `%%markdown`, `%%md`, `%%code`, or `%%raw` to choose its type. Use `--cells_file` for anything non-trivial so shell quoting cannot corrupt strings like `"\n"`.
+
+When an agent needs to write a larger change, prefer `apply_nb`: create `dev/nbskill-op.toml` with native file tools, then run `apply_nb`. The manifest is TOML and is removed automatically after a successful operation, along with `cells_file` or `new_file` sidecars inside the same `dev/` folder. Name scratch sidecars like `dev/nbskill-cells.txt` or `dev/nbskill-new.py` so they are clearly disposable.
+
+```toml
+tool = "write_nb"
+path = "nbs/02_write.ipynb"
+after_id = "abc123"
+export = true
+cells = """
+%%markdown
+Why this change exists.
+---
+%%code
+#| export
+def f(x):
+    return x + 1
+---
+%%code
+assert f(1) == 2
+"""
+```
+
+Use `write_nb notebook.ipynb -` only when the agent runtime can stream stdin reliably. Otherwise, `apply_nb` keeps multiline code out of shell arguments and avoids lingering `/tmp` files.
 
 When adding exported code, also add a non-exported show-off cell below it. Good show-off cells call the exported function with tiny concrete inputs, print or assert the result, and make the behavior obvious to a human reading the notebook.
 
@@ -140,9 +165,10 @@ diff_nb notebook.ipynb
 chstyle notebook.ipynb
 py2nb module.py
 py2nbs src
+apply_nb dev/nbskill-op.toml
 doc4symbol notebook.ipynb symbol "Markdown docs"
 example4symbol notebook.ipynb symbol "assert symbol(...) == expected"
 install-nbskill --target both
 ```
 
-Keep these secondary. The core co-creation workflow is `read_nb`, `show_doc`, `write_nb`, `update_cell`, and `exec_nb`.
+Keep these secondary. The core co-creation workflow is `read_nb`, `show_doc`, `write_nb`/`apply_nb`, `update_cell`, and `exec_nb`.

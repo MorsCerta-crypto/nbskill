@@ -35,9 +35,19 @@ codex mcp add nbskill -- nbskill-mcp
 claude mcp add nbskill -- nbskill-mcp
 ```
 
-The MCP server is implemented in `nbs/07_mcp.ipynb` and exported to `nbskill.mcp`. It exposes `read_nb`, `show_doc`, `write_nb`, `update_cell`, `exec_nb`, `diff_nb`, `doc4symbol`, `example4symbol`, `chstyle`, `py2nb`, `py2nbs`, and the archived `apply_nb` fallback.
+The MCP server is implemented in `nbs/07_mcp.ipynb` and exported to `nbskill.mcp`. It exposes `read_nb`, `show_doc`, `write_nb`, `update_cell`, `exec_nb`, `diff_nb`, `chstyle`, `py2nb`, `py2nbs`, and the archived `apply_nb` fallback.
 
 When MCP is available, call those MCP tools directly instead of writing scratch `.py` files or shell-quoting notebook cells. Use the CLI examples below only when MCP is not available.
+
+## MCP Best Practices
+
+- Keep MCP tools small, explicit, and boring: one notebook action per tool call, typed parameters, readable docstrings, and plain-text return values that include the command output a human would need.
+- Prefer structured MCP arguments for multiline notebook cells. Do not route multiline code through shell arguments unless MCP is unavailable.
+- Return notebook output, tracebacks, export/test messages, and useful IDs/hashes directly from the tool result. Do not hide failures in side files.
+- Keep tool names stable and aligned with the CLI names: `read_nb`, `show_doc`, `write_nb`, `update_cell`, and `exec_nb` are the primary loop.
+- Avoid long-running hidden background processes. `nbskill-mcp` should run as a stdio MCP server started by Codex or Claude Code.
+- Treat `apply_nb` as an archived fallback for clients without MCP support, not as the preferred interface.
+- In nbdev notebooks, any function used from a different exported Python module must be public: do not start its name with `_`. Nbdev only adds non-underscore symbols to `__all__`, so cross-module helpers need names like `capture_call`, not `_capture_call`.
 
 ## Daily Loop
 
@@ -95,7 +105,7 @@ Cell type filters:
 
 Cell ids are shown by default. Add `--show_ids` when you need source hashes for safe edits.
 
-Use `--context 1` or higher when you want the full local story around a cell: markdown rationale/docs before it and non-exported code/show-off cells below it.
+Use `--context 1` or higher when you want the full local story around a cell: markdown rationale/docs before it and non-exported code/show-off cells below it. This is the replacement for separate doc/example insertion helpers; write normal markdown/code cells with `write_nb`, then read the story with context.
 
 ## Inspecting Symbols
 
@@ -149,7 +159,7 @@ assert f(1) == 2
 
 Use MCP first. Use `write_nb notebook.ipynb -` only when the agent runtime can stream stdin reliably. Otherwise, `apply_nb` keeps multiline code out of shell arguments and avoids lingering `/tmp` files.
 
-When adding exported code, also add a non-exported show-off cell below it. Good show-off cells call the exported function with tiny concrete inputs, print or assert the result, and make the behavior obvious to a human reading the notebook.
+When adding exported code, also add a non-exported show-off cell below it. Good show-off cells call the exported function with tiny concrete inputs, print or assert the result, and make the behavior obvious to a human reading the notebook. Add documentation and examples as ordinary neighboring cells with `write_nb`; retrieve them with `read_nb --context` or `show_doc`.
 
 By default `write_nb` runs `nbdev-export`. Use `--no-export` only for scratch notebooks.
 
@@ -184,8 +194,6 @@ chstyle notebook.ipynb
 py2nb module.py
 py2nbs src
 apply_nb dev/nbskill-op.toml
-doc4symbol notebook.ipynb symbol "Markdown docs"
-example4symbol notebook.ipynb symbol "assert symbol(...) == expected"
 install-nbskill --target both
 ```
 

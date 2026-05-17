@@ -17,6 +17,10 @@ rationale/docs -> exported code -> show-off example
 
 For each exported function/class worth understanding, add a small non-exported code cell below it that calls the symbol and shows what it does. These show-off cells are part example, part executable documentation, and part lightweight test.
 
+Use examples and actual tests inside notebooks. This is the easiest way to show if a function works and how it is meant to be used. Prefer tiny concrete inputs, `assert` statements, and `fastcore.test` helpers such as `test_eq`, `test_fail`, or `test_close` in non-exported cells. Avoid pytest fixtures and code-heavy testing frameworks for notebook-local behavior checks unless the project already needs them.
+
+Because show-off/test cells are not exported, they can use local setup, temporary monkeypatching, or even overwrite a name to make behavior observable. Prefer designing exported functions to be naturally testable so this stays rare, but use the freedom of non-exported cells when it makes a small example much clearer.
+
 ## MCP Setup
 
 Install the package as an editable tool, then register the local MCP server:
@@ -67,7 +71,7 @@ write_nb nbs/02_write.ipynb --cells_file /tmp/check.txt --run_test
 diff_nb nbs/02_write.ipynb
 ```
 
-Keep documentation and small examples in the notebook. Documentation/rationale goes before a symbol; exported code is the implementation; executable show-off examples/tests go after it as non-exported cells.
+Keep documentation and small examples in the notebook. Documentation/rationale goes before a symbol; exported code is the implementation; executable show-off examples/tests go after it as non-exported cells. Running the notebook should prove the examples still work.
 
 ## Reading
 
@@ -158,7 +162,16 @@ assert f(1) == 2
 
 Use MCP first. Use `write_nb notebook.ipynb -` only when the agent runtime can stream stdin reliably. Otherwise, `apply_nb` keeps multiline code out of shell arguments and avoids lingering `/tmp` files.
 
-When adding exported code, also add a non-exported show-off cell below it. Good show-off cells call the exported function with tiny concrete inputs, print or assert the result, and make the behavior obvious to a human reading the notebook. Add documentation and examples as ordinary neighboring cells with `write_nb`; retrieve them with `read_nb --context` or `show_doc`.
+When adding exported code, also add a non-exported show-off cell below it. Good show-off cells call the exported function with tiny concrete inputs and assert the result. Use plain `assert` or `fastcore.test` helpers rather than pytest fixtures for these local checks.
+
+```python
+from fastcore.test import test_eq
+
+test_eq(add(1, 2), 3)
+assert add(0, 0) == 0
+```
+
+Add documentation and examples as ordinary neighboring cells with `write_nb`; retrieve them with `read_nb --context` or `show_doc`.
 
 By default `write_nb` runs `nbdev-export`. Use `--no-export` only for scratch notebooks.
 

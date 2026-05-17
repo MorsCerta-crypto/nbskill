@@ -15,30 +15,38 @@ rationale/docs -> exported code -> show-off example
 
 For each exported function/class worth understanding, add a small non-exported code cell below it that calls the symbol and shows what it does. These show-off cells are part example, part executable documentation, and part lightweight test.
 
+The package itself is organized as a notebook story:
+
+```text
+foundation -> reading/inspection -> writing/changing -> execution -> review -> conversion -> skill installation
+```
+
+The matching public modules are `nbskill.foundation`, `nbskill.read`, `nbskill.write`, `nbskill.execute`, `nbskill.review`, `nbskill.convert`, and `nbskill.skill`. Treat `nbskill.core` as obsolete.
+
 ## Daily Loop
 
 1. Orient:
 
 ```bash
-read_nb nbs/core.ipynb
-read_nb nbs/core.ipynb --scope outline
-show_doc nbs/core.ipynb some_function --source
+read_nb nbs/02_write.ipynb
+read_nb nbs/02_write.ipynb --scope outline
+show_doc nbs/02_write.ipynb write_nb --source
 ```
 
 2. Edit:
 
 ```bash
-update_cell nbs/core.ipynb "new source" --cell_id abc123 --source_hash 7f3a91c0d422
-write_nb nbs/core.ipynb --after_id abc123 --cells_file /tmp/new_cells.txt
-write_nb nbs/core.ipynb --chapter "Experiments" --cells_file /tmp/check.txt
+update_cell nbs/02_write.ipynb "new source" --cell_id abc123 --source_hash 7f3a91c0d422
+write_nb nbs/02_write.ipynb --after_id abc123 --cells_file /tmp/new_cells.txt
+write_nb nbs/02_write.ipynb --chapter "Experiments" --cells_file /tmp/check.txt
 ```
 
 3. Run and review:
 
 ```bash
-exec_nb nbs/core.ipynb --up2id abc123
-write_nb nbs/core.ipynb --cells_file /tmp/check.txt --run_test
-diff_nb nbs/core.ipynb
+exec_nb nbs/03_execute.ipynb --up2id abc123
+write_nb nbs/02_write.ipynb --cells_file /tmp/check.txt --run_test
+diff_nb nbs/02_write.ipynb
 ```
 
 Keep documentation and small examples in the notebook. Documentation/rationale goes before a symbol; exported code is the implementation; executable show-off examples/tests go after it as non-exported cells.
@@ -78,8 +86,8 @@ Use `--context 1` or higher when you want the full local story around a cell: ma
 Use `show_doc` when a human or agent needs shared context for a function, class, or method:
 
 ```bash
-show_doc nbs/core.ipynb write_nb
-show_doc nbs/core.ipynb Trainer.fit --source --show_ids
+show_doc nbs/02_write.ipynb write_nb
+show_doc nbs/02_write.ipynb update_cell --source --show_ids
 ```
 
 It prints the full symbol story: rationale/docs before the export, the exported signature/docstring, optional source, and nearby non-exported show-off examples after the symbol.

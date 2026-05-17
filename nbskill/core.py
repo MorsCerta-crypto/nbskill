@@ -40,7 +40,8 @@ def _cli_error(msg):
 
 # %% ../nbs/core.ipynb #b4c433a6
 def _failure_map_path():
-    return Path(os.environ.get("NBSKILL_FAILURE_MAP", ".nbskill-errors.json")).expanduser()
+    default = Path.home() / ".nbskill" / "nbskill-errors.json"
+    return Path(os.environ.get("NBSKILL_FAILURE_MAP", default)).expanduser()
 
 # %% ../nbs/core.ipynb #70d94ccb
 def _empty_failure_map():
@@ -779,6 +780,32 @@ def _exec_limiters(up2id):
         if cell.id == str(up2id): done = True
     return preproc, postproc
 
+# %% ../nbs/core.ipynb #1280fb89
+def _project_root_for_notebook(path):
+    path = Path(path).resolve()
+    start = path.parent if path.suffix else path
+    markers = ("pyproject.toml", "settings.ini", "nbdev.yml", ".git")
+    for folder in (start, *start.parents):
+        if any((folder / marker).exists() for marker in markers): return folder
+    if start.name in {"nbs", "notebooks"} and start.parent != start.parent.parent: return start.parent
+    return start
+
+# %% ../nbs/core.ipynb #ff02175a
+def _local_import_paths(path):
+    nb_dir = Path(path).resolve().parent
+    root = _project_root_for_notebook(path)
+    paths = [nb_dir, root]
+    src = root / "src"
+    if src.exists(): paths.append(src)
+    return [p for i, p in enumerate(paths) if p.exists() and p not in paths[:i]]
+
+# %% ../nbs/core.ipynb #8fde5f5d
+def _exec_shell(path, extra_paths=None):
+    shell = CaptureShell()
+    for pth in reversed([*(_local_import_paths(path)), *(extra_paths or [])]):
+        shell.set_path(pth)
+    return shell
+
 # %% ../nbs/core.ipynb #1e0af2c5
 def _text_output(value):
     if value is None: return ""
@@ -841,7 +868,7 @@ def exec_nb(
     show_output: bool = True,  # Print saved cell outputs and errors after execution
     verbose: bool = False,  # Show stdout/stderr live while executing
 ):
-    "Execute a notebook with execnb and save outputs."
+    "Execute a notebook with execnb and local project imports available."
     dest = dest or path
     chapter_title = None
     if chapter is not None:
@@ -850,7 +877,8 @@ def exec_nb(
         span = _one_chapter(nb.cells, chapter)
         up2id, chapter_title = span["end"], span["title"]
     preproc, postproc = _exec_limiters(up2id)
-    CaptureShell().execute(path, dest=dest, exc_stop=exc_stop, preproc=preproc, postproc=postproc, verbose=verbose)
+    shell = _exec_shell(path)
+    shell.execute(path, dest=dest, exc_stop=exc_stop, preproc=preproc, postproc=postproc, verbose=verbose)
     msg = f"Executed {path} -> {dest}"
     if chapter_title is not None: msg += f" (chapter={chapter_title!r}, up2id={up2id})"
     elif up2id is not None: msg += f" (up2id={up2id})"
@@ -873,7 +901,7 @@ def _notebook_error_summaries(path, up2id=None):
 # %% ../nbs/core.ipynb #891fb269
 def _run_notebook_test(path):
     print(f"Running notebook test with execnb on {path}")
-    CaptureShell().execute(path, dest=path, exc_stop=False, verbose=False)
+    _exec_shell(path).execute(path, dest=path, exc_stop=False, verbose=False)
     _print_nb_outputs(path)
     errors = _notebook_error_summaries(path)
     if errors:

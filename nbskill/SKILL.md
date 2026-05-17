@@ -119,9 +119,11 @@ exec_nb notebook.ipynb --chapter "Experiments"
 
 Outputs and tracebacks are printed to the command line. `write_nb --run_test` executes the notebook through `execnb`, prints outputs, and avoids nbdev worker-pool semaphore issues in restricted environments.
 
+`exec_nb` also prepares local imports for notebook-first projects: it adds the notebook folder, detected project root, and `src/` when present to the execution kernel path. This lets notebooks under `nbs/` import local packages without adding temporary `sys.path` boilerplate cells.
+
 ## Failure Map
 
-nbskill records friction in `.nbskill-errors.json` in the current working directory, or in `NBSKILL_FAILURE_MAP` if that environment variable is set. It records failed tool uses and rapid/repeated calls. Treat this file as workflow telemetry: if the same command keeps failing or getting retried, improve the notebook, command, or this skill.
+nbskill records friction globally in `~/.nbskill/nbskill-errors.json`, or in `NBSKILL_FAILURE_MAP` if that environment variable is set. It records failed tool uses and rapid/repeated calls. Treat this file as workflow telemetry: if the same command keeps failing or getting retried, improve the notebook, command, or this skill.
 
 ## Other Tools
 

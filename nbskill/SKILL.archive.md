@@ -1,13 +1,11 @@
 ---
 name: jupyter-notebooks
-description: Work notebook-first in nbdev projects with nbskill MCP tools and CLI fallbacks. Read, edit, inspect symbols, execute, diff, and export notebooks without touching raw JSON or generated Python.
+description: Work notebook-first in nbdev projects with nbskill CLI tools. Read, edit, inspect symbols, execute, diff, and export notebooks without touching raw JSON or generated Python.
 ---
 
 # Jupyter Notebook Skill
 
 Use notebooks as the source of truth. In nbdev projects, edit `nbs/*.ipynb`, let `write_nb` export Python, and use generated `.py` files only to inspect the export result.
-
-Prefer the nbskill MCP server when it is available. MCP tools accept multiline cell text as structured arguments, so they avoid shell quoting and temporary file workarounds.
 
 Write notebooks as a co-creation story:
 
@@ -20,24 +18,10 @@ For each exported function/class worth understanding, add a small non-exported c
 The package itself is organized as a notebook story:
 
 ```text
-foundation -> reading/inspection -> writing/changing -> execution -> review -> conversion -> skill installation -> MCP integration
+foundation -> reading/inspection -> writing/changing -> execution -> review -> conversion -> skill installation
 ```
 
-The matching public modules are `nbskill.foundation`, `nbskill.read`, `nbskill.write`, `nbskill.execute`, `nbskill.review`, `nbskill.convert`, `nbskill.skill`, and `nbskill.mcp`. Treat `nbskill.core` as obsolete.
-
-## MCP Setup
-
-Install the package as an editable tool, then register the local MCP server:
-
-```bash
-uv tool install --editable . --force
-codex mcp add nbskill -- nbskill-mcp
-claude mcp add nbskill -- nbskill-mcp
-```
-
-The MCP server is implemented in `nbs/07_mcp.ipynb` and exported to `nbskill.mcp`. It exposes `read_nb`, `show_doc`, `write_nb`, `update_cell`, `exec_nb`, `diff_nb`, `doc4symbol`, `example4symbol`, `chstyle`, `py2nb`, `py2nbs`, and the archived `apply_nb` fallback.
-
-When MCP is available, call those MCP tools directly instead of writing scratch `.py` files or shell-quoting notebook cells. Use the CLI examples below only when MCP is not available.
+The matching public modules are `nbskill.foundation`, `nbskill.read`, `nbskill.write`, `nbskill.execute`, `nbskill.review`, `nbskill.convert`, and `nbskill.skill`. Treat `nbskill.core` as obsolete.
 
 ## Daily Loop
 
@@ -54,6 +38,7 @@ show_doc nbs/02_write.ipynb write_nb --source
 ```bash
 update_cell nbs/02_write.ipynb "new source" --cell_id abc123 --source_hash 7f3a91c0d422
 write_nb nbs/02_write.ipynb --after_id abc123 --cells_file /tmp/new_cells.txt
+apply_nb dev/nbskill-op.toml
 write_nb nbs/02_write.ipynb --chapter "Experiments" --cells_file /tmp/check.txt
 ```
 
@@ -114,6 +99,7 @@ Prefer stable IDs and chapter names over positions:
 
 ```bash
 write_nb notebook.ipynb --cells_file /tmp/cells.txt
+apply_nb dev/nbskill-op.toml
 write_nb notebook.ipynb --before_id abc123 --cells_file /tmp/doc.txt
 write_nb notebook.ipynb --after_id abc123 --cells_file /tmp/example.txt
 write_nb notebook.ipynb --chapter "Data loading" --cells_file /tmp/experiment.txt
@@ -122,11 +108,7 @@ write_nb notebook.ipynb --replace --cells_file /tmp/full_notebook.txt
 
 Cell blocks are separated by a line containing only `---`. Start a block with `%%markdown`, `%%md`, `%%code`, or `%%raw` to choose its type. Use `--cells_file` for anything non-trivial so shell quoting cannot corrupt strings like `"\n"`.
 
-## Archived File Workflow
-
-The old scratch-file bridge is archived in `SKILL.archive.md`. Use it only when MCP is not available and shell stdin is unreliable.
-
-Create `dev/nbskill-op.toml` with native file tools, then run `apply_nb`. The manifest is TOML and is removed automatically after a successful operation, along with `cells_file` or `new_file` sidecars inside the same `dev/` folder. Name scratch sidecars like `dev/nbskill-cells.txt` or `dev/nbskill-new.py` so they are clearly disposable.
+When an agent needs to write a larger change, prefer `apply_nb`: create `dev/nbskill-op.toml` with native file tools, then run `apply_nb`. The manifest is TOML and is removed automatically after a successful operation, along with `cells_file` or `new_file` sidecars inside the same `dev/` folder. Name scratch sidecars like `dev/nbskill-cells.txt` or `dev/nbskill-new.py` so they are clearly disposable.
 
 ```toml
 tool = "write_nb"
@@ -147,7 +129,7 @@ assert f(1) == 2
 """
 ```
 
-Use MCP first. Use `write_nb notebook.ipynb -` only when the agent runtime can stream stdin reliably. Otherwise, `apply_nb` keeps multiline code out of shell arguments and avoids lingering `/tmp` files.
+Use `write_nb notebook.ipynb -` only when the agent runtime can stream stdin reliably. Otherwise, `apply_nb` keeps multiline code out of shell arguments and avoids lingering `/tmp` files.
 
 When adding exported code, also add a non-exported show-off cell below it. Good show-off cells call the exported function with tiny concrete inputs, print or assert the result, and make the behavior obvious to a human reading the notebook.
 
@@ -189,4 +171,4 @@ example4symbol notebook.ipynb symbol "assert symbol(...) == expected"
 install-nbskill --target both
 ```
 
-Keep these secondary. The core co-creation workflow is MCP `read_nb`, `show_doc`, `write_nb`, `update_cell`, and `exec_nb`; use CLI `apply_nb` only as the archived fallback.
+Keep these secondary. The core co-creation workflow is `read_nb`, `show_doc`, `write_nb`/`apply_nb`, `update_cell`, and `exec_nb`.

@@ -19,6 +19,7 @@ dependencies = [
     "execnb>=0.2.2",
     "fastaistyle>=0.0.15",
     "fastcore>=1.12.43",
+    "fastmcp>=3.3.1",
     "nbdev>=3.0.15",
 ]
 
@@ -42,6 +43,7 @@ doc4symbol = "nbskill.write:doc4symbol"
 example4symbol = "nbskill.write:example4symbol"
 chstyle = "nbskill.review:chstyle"
 install-nbskill = "nbskill.skill:install_nbskill"
+nbskill-mcp = "nbskill.mcp:main"
 
 [project.entry-points.nbdev]
 nbskill = "nbskill._modidx:d"
@@ -53,6 +55,6 @@ version = {attr = "nbskill.__version__"}
 include = ["nbskill"]
 
 [tool.setuptools.package-data]
-nbskill = ["SKILL.md"]
+nbskill = ["SKILL.md", "SKILL.archive.md"]
 
 [tool.nbdev]

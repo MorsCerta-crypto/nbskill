@@ -51,8 +51,15 @@ def _package_version(name="nbskill"):
 
 def capture_call(func, **kwargs):
     out, err = StringIO(), StringIO()
-    with _CAPTURE_LOCK, redirect_stdout(out), redirect_stderr(err):
-        result = func(**kwargs)
+    try:
+        with _CAPTURE_LOCK, redirect_stdout(out), redirect_stderr(err):
+            result = func(**kwargs)
+    except SystemExit as exc:
+        chunks = []
+        if out.getvalue(): chunks.append(out.getvalue().rstrip())
+        if err.getvalue(): chunks.append(err.getvalue().rstrip())
+        chunks.append(f"SystemExit: {exc.code}")
+        raise RuntimeError(chr(10).join(chunk for chunk in chunks if chunk)) from exc
     chunks = []
     if out.getvalue(): chunks.append(out.getvalue().rstrip())
     if err.getvalue(): chunks.append(err.getvalue().rstrip())

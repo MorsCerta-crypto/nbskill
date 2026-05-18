@@ -90,7 +90,7 @@ def install_nbskill(
     skills_dir: str | None = None,  # Parent skills directory; skill is installed below jupyter-notebooks
     skill_name: str = "jupyter-notebooks",  # Skill folder name
     overwrite: bool = True,  # Overwrite an existing SKILL.md
-    install_hooks: bool = True,  # Install nbdev-clean/nbdev-test pre-commit hooks in the current repo
+    install_hooks: bool = False,  # Install nbdev-clean/nbdev-test pre-commit hooks in the current repo
     restart_mcp: bool = True,  # Detect running Codex nbskill MCP server and print restart guidance
 ):
     "Install the bundled SKILL.md into a Codex or Claude Code skills directory."

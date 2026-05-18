@@ -20,8 +20,9 @@ from .review import style_check
 from nbskill.foundation import (
     cell_hash, cell_matches_hash, cell_source, clear_outputs, cli_error,
     cli_return, find_cell_by_id, find_cell_by_text, load_cells_text,
-    one_chapter, parse_cells, parse_one_cell, replace_cell,
-    stamp_notebook_metadata, tracked_call, validate_code_cells,
+    exported_py_path, one_chapter, parse_cells, parse_one_cell, replace_cell,
+    stamp_export_metadata, stamp_notebook_metadata, tracked_call,
+    validate_code_cells,
 )
 from .parallel import notebook_locks
 
@@ -52,6 +53,14 @@ def _literal_cell_diff(before, after, limit=24):
     ))
     if len(lines) > limit: lines = [*lines[:limit], "... diff truncated ..."]
     return "\n".join(lines)
+
+
+def _stamp_export_hash(nb, nb_path):
+    py_path = exported_py_path(nb_path, nb)
+    if py_path is None or not py_path.exists(): return None
+    stamp_export_metadata(nb, py_path)
+    _write_nb(nb, nb_path)
+    return py_path
 
 
 def _replace_literal_in_notebook(nb, old_str, new_str, validate_code=True, collect_details=False):
@@ -102,7 +111,9 @@ def _write_literal_replacements(path, old_str, new_str, export=True, run_test=Fa
             changed.append((nb_path, cells_changed, matches, details))
             if not dry_run:
                 _write_nb(nb, nb_path)
-                if export: nbdev_export(path=str(nb_path))
+                if export:
+                    nbdev_export(path=str(nb_path))
+                    _stamp_export_hash(nb, nb_path)
                 if run_test: run_notebook_test(nb_path)
     total_matches = sum(matches for _, _, matches, _ in changed)
     total_cells = sum(cells for _, cells, _, _ in changed)
@@ -177,7 +188,9 @@ def write_nb(
 
         stamp_notebook_metadata(nb)
         _write_nb(nb, path)
-        if export: nbdev_export(path=str(path))
+        if export:
+            nbdev_export(path=str(path))
+            _stamp_export_hash(nb, path)
         msg = f"Wrote {len(nb.cells)} cells to {path}"
         if replace: msg += " using replace"
         if chapter is not None: msg += f" in chapter {chapter!r}"
@@ -196,7 +209,9 @@ def _save_nb(nb, path, export=True):
     with notebook_locks(path):
         stamp_notebook_metadata(nb)
         _write_nb(nb, path)
-        if export: nbdev_export(path=str(path))
+        if export:
+            nbdev_export(path=str(path))
+            _stamp_export_hash(nb, path)
 
 # %% ../nbs/02_write.ipynb #8637ca42
 def _parse_line_range(line_range, n_lines):
@@ -283,8 +298,10 @@ def update_cell(
             return cli_return(path)
         stamp_notebook_metadata(nb)
         _write_nb(nb, path)
-        if export: nbdev_export(path=str(path))
-        if export: msg += " and exported with nbdev"
+        if export:
+            nbdev_export(path=str(path))
+            _stamp_export_hash(nb, path)
+            msg += " and exported with nbdev"
         print(msg)
         if run_test: run_notebook_test(path)
     return cli_return(path)
@@ -421,7 +438,9 @@ def batch_edit_nb(
             for nb_path, nb in notebooks.items():
                 stamp_notebook_metadata(nb)
                 _write_nb(nb, nb_path)
-                if export: nbdev_export(path=str(nb_path))
+                if export:
+                    nbdev_export(path=str(nb_path))
+                    _stamp_export_hash(nb, nb_path)
     prefix = "Dry run: would apply" if dry_run else "Applied"
     msg = f"{prefix} {len(ops)} batch operations across {len(paths)} notebook(s)"
     if export and not dry_run: msg += " and exported with nbdev"

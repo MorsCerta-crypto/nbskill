@@ -35,6 +35,7 @@ from .parallel import notebook_locks
 from .read import read_nb as _read_nb
 from .read import show_doc as _show_doc
 from .review import _reset_global_usage_summary
+from .review import notebook_validation_problems as _notebook_validation_problems
 from .review import style_check as _style_check
 from .review import style_report as _style_report
 from .review import diff_nb as _diff_nb
@@ -208,6 +209,14 @@ def _doctor_warnings(path="."):
                 "Run export or use an nbskill write tool with export=True before shipping.",
                 path=owner_rel, generated=py_rel,
             ))
+    for problem in _notebook_validation_problems(root):
+        if problem.get("code") != "exported-py-hash-mismatch": continue
+        warnings.append(_warning(
+            "exported_py_hash_mismatch",
+            f"Notebook {problem['path']} metadata does not match current generated file {problem.get('exported_py_path')}.",
+            "Run nbskill_validate or export the notebook through nbskill write tools.",
+            path=problem.get("path"), generated=problem.get("exported_py_path"),
+        ))
     warnings.extend(_doc_script_warnings(root))
     failures = _failure_data().get("events", [])[-10:]
     recent_failures = [event for event in failures if event.get("kind") == "failure"]

@@ -41,6 +41,7 @@ py2nb = "nbskill.convert:py2nb"
 py2nbs = "nbskill.convert:py2nbs"
 py2nbdev = "nbskill.convert:py2nbdev"
 style_check = "nbskill.review:style_check"
+nbskill_validate = "nbskill.review:validate_nbs"
 install_nbskill = "nbskill.skill:install_nbskill"
 build_nbskill_skill = "nbskill.skill:build_skill_from_readme"
 symbol_graph = "nbskill.graph:symbol_graph"
@@ -61,6 +62,7 @@ include = ["nbskill"]
 nbskill = ["SKILL.md", "SKILL.archive.md", "references/*.md"]
 
 [tool.nbdev]
+allowed_metadata_keys = ["nbskill"]
 allowed_cell_metadata_keys = ["nbskill","nbskill_timeout_hash","nbskill_executed_hash","nbskill_timeout_seconds"]
 
 [dependency-groups]

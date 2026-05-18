@@ -3,9 +3,10 @@
 # %% auto #0
 __all__ = ['remove_demo_path', 'demo_path', 'write_demo_notebook', 'cli_return', 'cli_error', 'install_nbdev_pre_commit_hooks',
            'tracked_call', 'parse_literal', 'none_if_string', 'is_definition_node', 'node_start_line',
-           'is_export_directive', 'cell_source', 'cell_hash', 'cell_metadata', 'parse_one_cell', 'cell_matches_hash',
-           'find_cell_by_id', 'find_cell_by_text', 'replace_cell', 'clear_outputs', 'load_cells_text',
-           'validate_code_cells', 'parse_cells', 'first_line', 'cell_prefix', 'matches_filter', 'is_exported_code_cell',
+           'is_export_directive', 'cell_source', 'cell_hash', 'cell_metadata', 'notebook_metadata', 'file_hash',
+           'exported_py_path', 'stamp_export_metadata', 'parse_one_cell', 'cell_matches_hash', 'find_cell_by_id',
+           'find_cell_by_text', 'replace_cell', 'clear_outputs', 'load_cells_text', 'validate_code_cells',
+           'parse_cells', 'first_line', 'cell_prefix', 'matches_filter', 'is_exported_code_cell',
            'stamp_notebook_metadata', 'cell_class_names', 'cell_matches_type', 'with_context', 'chapter_index_set',
            'one_chapter']
 
@@ -447,6 +448,15 @@ def cell_metadata(cell):
     return meta
 
 
+def notebook_metadata(nb):
+    meta = nb.get("metadata", None) if isinstance(nb, dict) else getattr(nb, "metadata", None)
+    if meta is None:
+        meta = {}
+        if isinstance(nb, dict): nb["metadata"] = meta
+        else: nb.metadata = meta
+    return meta
+
+
 def _nbskill_cell_metadata(cell, create=True):
     meta = cell_metadata(cell) if create else (cell.get("metadata", {}) if isinstance(cell, dict) else getattr(cell, "metadata", {}) or {})
     info = meta.get(_NBSKILL_METADATA_KEY) if isinstance(meta, dict) else None
@@ -455,6 +465,57 @@ def _nbskill_cell_metadata(cell, create=True):
     info = {}
     meta[_NBSKILL_METADATA_KEY] = info
     return info
+
+
+def _nbskill_notebook_metadata(nb, create=True):
+    meta = notebook_metadata(nb) if create else (nb.get("metadata", {}) if isinstance(nb, dict) else getattr(nb, "metadata", {}) or {})
+    info = meta.get(_NBSKILL_METADATA_KEY) if isinstance(meta, dict) else None
+    if isinstance(info, dict): return info
+    if not create: return None
+    info = {}
+    meta[_NBSKILL_METADATA_KEY] = info
+    return info
+
+
+def file_hash(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def _metadata_path(path):
+    path = Path(path)
+    try: return path.resolve().relative_to(Path.cwd().resolve()).as_posix()
+    except (OSError, ValueError): return path.as_posix()
+
+
+def _default_exp_from_notebook(nb):
+    for cell in getattr(nb, "cells", []):
+        for line in cell_source(cell).splitlines():
+            match = re.match(r"^\s*#\|\s*default_exp\s+(.+?)\s*$", line)
+            if match: return match.group(1).strip()
+    return None
+
+
+def exported_py_path(nb_path, nb=None):
+    "Return the generated Python file path for an nbdev notebook, if it has one."
+    nb_path = Path(nb_path)
+    if nb is None:
+        from fastcore.nbio import read_nb as _read_nb
+        nb = _read_nb(nb_path)
+    default_exp = _default_exp_from_notebook(nb)
+    if not default_exp: return None
+    try:
+        from nbdev.config import get_config
+        lib_path = Path(get_config(nb_path.parent).lib_path)
+    except Exception:
+        lib_path = nb_path.parent.parent / default_exp.split(".", 1)[0]
+    return lib_path / (default_exp.replace(".", "/") + ".py")
+
+
+def stamp_export_metadata(nb, py_path):
+    info = _nbskill_notebook_metadata(nb)
+    info["exported_py_path"] = _metadata_path(py_path)
+    info["exported_py_hash"] = file_hash(py_path)
+    return nb
 
 
 def _fresh_semantic_metadata(cell):
@@ -692,11 +753,16 @@ def _semantic_code_class_names(cell):
     return tuple(name for name in _cell_base_class_names(cell) if name in semantic)
 
 
+def _fallback_cell_class_name(cell):
+    cell_type = getattr(cell, "cell_type", None)
+    return f"{cell_type}_cell" if cell_type else "unknown_cell"
+
+
 def _computed_cell_class_names(cell):
     names = _cell_base_class_names(cell)
     if getattr(cell, "cell_type", None) == "code" and len(_semantic_code_class_names(cell)) > 1:
         return (*names, "unclean_cell")
-    return names
+    return names or (_fallback_cell_class_name(cell),)
 
 
 def _refresh_cell_metadata(cell):
@@ -708,8 +774,9 @@ def _refresh_cell_metadata(cell):
     return cell
 
 
-def stamp_notebook_metadata(nb):
+def stamp_notebook_metadata(nb, exported_py_path=None):
     for cell in getattr(nb, "cells", []): _refresh_cell_metadata(cell)
+    if exported_py_path is not None: stamp_export_metadata(nb, exported_py_path)
     return nb
 
 

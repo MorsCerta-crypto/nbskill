@@ -3,6 +3,6 @@
 # %% auto #0
 __all__ = ['double']
 
-# %% ../nbs/data/readme-demo/sample_tool.ipynb #00845420
+# %% ../nbs/data/readme-demo/sample_tool.ipynb #py2nb-454dad7d
 def double(x):
     return x * 2

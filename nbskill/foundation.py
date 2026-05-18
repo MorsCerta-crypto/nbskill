@@ -11,6 +11,7 @@ import os
 import re
 import sys
 import time
+import traceback
 from contextlib import contextmanager
 from functools import wraps
 from pathlib import Path
@@ -56,6 +57,15 @@ def _bump_count(data, kind, tool):
     group = counts.setdefault(kind, {})
     group[tool] = group.get(tool, 0) + 1
 
+# %% ../nbs/00_foundation.ipynb #20566719
+def _call_details(args, kwargs):
+    details = {"cwd": str(Path.cwd())}
+    if args and isinstance(args[0], (str, Path)): details["path"] = str(args[0])
+    for key in ("path", "cell_id", "chapter", "source_hash"):
+        value = kwargs.get(key)
+        if value is not None: details[key] = str(value)
+    return details
+
 # %% ../nbs/00_foundation.ipynb #a2259698
 def _write_failure_map(path, data):
     data["events"] = data.get("events", [])[-200:]
@@ -63,10 +73,11 @@ def _write_failure_map(path, data):
     path.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
 
 # %% ../nbs/00_foundation.ipynb #ab846f37
-def _record_tool_start(tool):
+def _record_tool_start(tool, details=None):
     path = _failure_map_path()
     now = time.time()
-    event = {"tool": tool, "ts": now}
+    details = details or {}
+    event = {"tool": tool, "ts": now, **details}
     try:
         data = _load_failure_map(path)
         last = data.get("last_call")
@@ -80,7 +91,10 @@ def _record_tool_start(tool):
                 data["events"].append({
                     "kind": "friction",
                     "tool": tool,
+                    "path": details.get("path"),
+                    "cell_id": details.get("cell_id"),
                     "previous_tool": last.get("tool"),
+                    "previous_path": last.get("path"),
                     "seconds_since_previous": round(delta, 3),
                     "reasons": reasons,
                     "ts": now,
@@ -97,12 +111,19 @@ def _record_tool_failure(event, exc):
     try:
         data = _load_failure_map(path)
         tool = event["tool"]
+        summary = "".join(traceback.format_exception_only(type(exc), exc)).strip()
         _bump_count(data, "failures", tool)
         data["events"].append({
             "kind": "failure",
             "tool": tool,
+            "path": event.get("path"),
+            "cell_id": event.get("cell_id"),
+            "chapter": event.get("chapter"),
+            "source_hash": event.get("source_hash"),
+            "cwd": event.get("cwd"),
             "error_type": type(exc).__name__,
             "error": str(exc),
+            "summary": summary,
             "ts": time.time(),
         })
         _write_failure_map(path, data)
@@ -111,8 +132,8 @@ def _record_tool_failure(event, exc):
 
 # %% ../nbs/00_foundation.ipynb #747da8b5
 @contextmanager
-def _track_tool(tool):
-    event = _record_tool_start(tool)
+def _track_tool(tool, details=None):
+    event = _record_tool_start(tool, details=details)
     try:
         yield
     except BaseException as exc:
@@ -123,7 +144,7 @@ def _track_tool(tool):
 def _tracked_call(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
-        with _track_tool(func.__name__):
+        with _track_tool(func.__name__, details=_call_details(args, kwargs)):
             return func(*args, **kwargs)
     return wrapper
 

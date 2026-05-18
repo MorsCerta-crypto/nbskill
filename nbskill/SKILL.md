@@ -7,7 +7,7 @@ description: Work notebook-first in nbdev projects with nbskill MCP tools and CL
 
 Use notebooks as the source of truth. In nbdev projects, edit `nbs/*.ipynb`, let `write_nb` export Python, and use generated `.py` files only to inspect the export result.
 
-Prefer the nbskill MCP server when it is available. MCP tools accept multiline cell text as structured arguments, so they avoid shell quoting and temporary file workarounds.
+Prefer the nbskill MCP server for careful single-notebook reads and edits when it is available. MCP tools accept multiline cell text as structured arguments, so they avoid shell quoting and temporary file workarounds. Do not parallelize nbskill MCP calls; use `uv run ...` CLI commands for batch work, dependency-sensitive execution, and final verification.
 
 Write notebooks as a co-creation story:
 
@@ -31,17 +31,19 @@ codex mcp add nbskill -- nbskill-mcp
 claude mcp add nbskill -- nbskill-mcp
 ```
 
-The MCP server is implemented in `nbs/07_mcp.ipynb` and exported to `nbskill.mcp`. It exposes `read_nb`, `show_doc`, `write_nb`, `update_cell`, `exec_nb`, `diff_nb`, `chstyle`, `py2nb`, `py2nbs`, and the archived `apply_nb` fallback.
+The MCP server is implemented in `nbs/07_mcp.ipynb` and exported to `nbskill.mcp`. It exposes `healthcheck`, `read_nb`, `show_doc`, `write_nb`, `update_cell`, `exec_nb`, `diff_nb`, `chstyle`, `py2nb`, `py2nbs`, and the archived `apply_nb` fallback.
 
 When MCP is available, call those MCP tools directly instead of writing scratch `.py` files or shell-quoting notebook cells. Use the CLI examples below only when MCP is not available.
 
 ## MCP Best Practices
 
 - Keep MCP tools small, explicit, and boring: one notebook action per tool call, typed parameters, readable docstrings, and plain-text return values that include the command output a human would need.
+- Keep nbskill MCP calls serial. If several notebook operations are needed, do one call at a time or switch to `uv run` CLI commands.
 - Prefer structured MCP arguments for multiline notebook cells. Do not route multiline code through shell arguments unless MCP is unavailable.
 - Return notebook output, tracebacks, export/test messages, and useful IDs/hashes directly from the tool result. Do not hide failures in side files.
 - Keep tool names stable and aligned with the CLI names: `read_nb`, `show_doc`, `write_nb`, `update_cell`, and `exec_nb` are the primary loop.
 - Avoid long-running hidden background processes. `nbskill-mcp` should run as a stdio MCP server started by Codex or Claude Code.
+- Call MCP `healthcheck` when the server looks stale. If the transport has closed, restart it from the client and use `uv run nbdev-test` as the reliable verification path.
 - Treat `apply_nb` as an archived fallback for clients without MCP support, not as the preferred interface.
 - In nbdev notebooks, any function used from a different exported Python module must be public: do not start its name with `_`. Nbdev only adds non-underscore symbols to `__all__`, so cross-module helpers need names like `capture_call`, not `_capture_call`.
 
@@ -62,6 +64,8 @@ update_cell nbs/02_write.ipynb "new source" --cell_id abc123 --source_hash 7f3a9
 write_nb nbs/02_write.ipynb --after_id abc123 --cells_file /tmp/new_cells.txt
 write_nb nbs/02_write.ipynb --chapter "Experiments" --cells_file /tmp/check.txt
 ```
+
+Batch related notebook edits first, then export once with `uv run nbdev-export`. Avoid exporting after every tiny edit unless you need to inspect the generated Python immediately.
 
 3. Run and review:
 
@@ -192,15 +196,20 @@ update_cell notebook.ipynb "" --cell_id abc123 --line_range 3:5 --source_hash 7f
 exec_nb notebook.ipynb
 exec_nb notebook.ipynb --up2id abc123
 exec_nb notebook.ipynb --chapter "Experiments"
+exec_nb notebook.ipynb --timeout 5
 ```
 
 Outputs and tracebacks are printed to the command line. `write_nb --run_test` executes the notebook through `execnb`, prints outputs, and avoids nbdev worker-pool semaphore issues in restricted environments.
 
 `exec_nb` also prepares local imports for notebook-first projects: it adds the notebook folder, detected project root, and `src/` when present to the execution kernel path. This lets notebooks under `nbs/` import local packages without adding temporary `sys.path` boilerplate cells.
 
+For dependency-sensitive notebooks, prefer `uv run exec_nb ...` or `uv run nbdev-test --path nbs --n_workers 0 --verbose` so execution uses the project environment. Treat MCP `exec_nb` as a convenient local check, not the final source of truth.
+
+Keep notebook execution fast. `exec_nb` applies a per-cell timeout by default (`--timeout 30`); use a smaller value for quick checks, or `--timeout 0` only when a genuinely long-running cell is intentional. When a cell exceeds the timeout, nbskill writes a visible timeout output and stores `nbskill_timeout_hash` metadata for that cell. Later executions skip that cell while the source hash is unchanged, and editing the cell clears the stale timeout mark so it can run again.
+
 ## Failure Map
 
-nbskill records friction globally in `~/.nbskill/nbskill-errors.json`, or in `NBSKILL_FAILURE_MAP` if that environment variable is set. It records failed tool uses and rapid/repeated calls. Treat this file as workflow telemetry: if the same command keeps failing or getting retried, improve the notebook, command, or this skill.
+nbskill records friction globally in `~/.nbskill/nbskill-errors.json`, or in `NBSKILL_FAILURE_MAP` if that environment variable is set. It records failed tool uses and rapid/repeated calls, including path/cell context and short error summaries when available. Treat this file as workflow telemetry: if the same command keeps failing or getting retried, improve the notebook, command, or this skill.
 
 ## Other Tools
 

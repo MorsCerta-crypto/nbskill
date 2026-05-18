@@ -4,8 +4,11 @@
 __all__ = ['as_text', 'capture_call', 'create_mcp', 'main']
 
 # %% ../nbs/07_mcp.ipynb #13ea08ef
+import os
+import sys
 from contextlib import redirect_stdout, redirect_stderr
 from io import StringIO
+from pathlib import Path
 
 from fastcore.script import Param, call_parse
 from fastmcp import FastMCP
@@ -44,9 +47,21 @@ def create_mcp():
         instructions=(
             "Work notebook-first in nbdev projects. Prefer read_nb/show_doc for context, "
             "write_nb/update_cell for edits, and exec_nb for visible notebook execution. "
-            "Keep documentation before exported code and show-off examples after it."
+            "Keep documentation before exported code and show-off examples after it. "
+            "Use nbskill MCP tools serially; for batch work or final verification prefer uv run CLI commands."
         ),
     )
+
+    @mcp.tool(name="healthcheck")
+    def healthcheck_tool() -> str:
+        "Return a small status report for the local nbskill MCP server."
+        return "\n".join([
+            "nbskill mcp ok",
+            f"cwd={Path.cwd()}",
+            f"python={sys.executable}",
+            f"pid={os.getpid()}",
+            "usage=serial MCP calls; use uv run CLI for batch edits/tests",
+        ])
 
     @mcp.tool(name="read_nb")
     def read_nb_tool(
@@ -121,13 +136,14 @@ def create_mcp():
         exc_stop: bool = False,
         up2id: int | str | None = None,
         chapter: str | None = None,
+        timeout: int = 30,
         show_output: bool = True,
         verbose: bool = False,
     ) -> str:
-        "Execute a notebook and return visible outputs/errors."
+        "Execute a notebook and return visible outputs/errors, with a per-cell timeout."
         return capture_call(
             _exec_nb, path=path, dest=dest, exc_stop=exc_stop, up2id=up2id,
-            chapter=chapter, show_output=show_output, verbose=verbose,
+            chapter=chapter, timeout=timeout, show_output=show_output, verbose=verbose,
         )
 
     @mcp.tool(name="diff_nb")

@@ -4,11 +4,13 @@
 __all__ = ['exec_nb']
 
 # %% ../nbs/03_execute.ipynb #2a4844d2
+import hashlib
 import sys
 from pathlib import Path
 
 from execnb.shell import CaptureShell
 from fastcore.nbio import read_nb as _read_nb
+from fastcore.nbio import write_nb as _write_nb
 from fastcore.script import call_parse
 
 from .foundation import _cli_error, _cli_return, _one_chapter, _parse_literal, _tracked_call
@@ -54,6 +56,96 @@ def _exec_shell(path, extra_paths=None):
     for pth in reversed([*(_local_import_paths(path)), *(extra_paths or [])]):
         shell.set_path(pth)
     return shell
+
+# %% ../nbs/03_execute.ipynb #78d2789f
+_TIMEOUT_HASH_KEY = "nbskill_timeout_hash"
+
+# %% ../nbs/03_execute.ipynb #7237ed18
+_TIMEOUT_SECONDS_KEY = "nbskill_timeout_seconds"
+
+# %% ../nbs/03_execute.ipynb #13c9bf5d
+def _source_hash(source):
+    return hashlib.sha256(str(source).encode("utf-8")).hexdigest()
+
+# %% ../nbs/03_execute.ipynb #94178ce7
+def _cell_metadata(cell):
+    meta = cell.get("metadata", None)
+    if meta is None:
+        meta = {}
+        cell["metadata"] = meta
+    return meta
+
+# %% ../nbs/03_execute.ipynb #972f0090
+def _cell_source_hash(cell): return _source_hash(cell.get("source", ""))
+
+# %% ../nbs/03_execute.ipynb #7e35b99b
+def _timeout_stream(text):
+    return {"output_type": "stream", "name": "stderr", "text": text if text.endswith("\n") else text + "\n"}
+
+# %% ../nbs/03_execute.ipynb #2be64e54
+def _timeout_error(ename, text):
+    return {"output_type": "error", "ename": ename, "evalue": text, "traceback": [text]}
+
+# %% ../nbs/03_execute.ipynb #c136baf3
+def _skip_timed_out_cell(cell):
+    if cell.cell_type != "code": return False
+    meta = _cell_metadata(cell)
+    current_hash = _cell_source_hash(cell)
+    timeout_hash = meta.get(_TIMEOUT_HASH_KEY)
+    if timeout_hash == current_hash:
+        seconds = meta.get(_TIMEOUT_SECONDS_KEY, "?")
+        msg = (
+            f"nbskill: skipped cell id={cell.id}; it previously exceeded the "
+            f"{seconds}s timeout. Edit the cell to change its hash and rerun it."
+        )
+        cell.outputs = [_timeout_error("NbskillTimeoutSkipped", msg)]
+        return True
+    if timeout_hash and timeout_hash != current_hash:
+        meta.pop(_TIMEOUT_HASH_KEY, None)
+        meta.pop(_TIMEOUT_SECONDS_KEY, None)
+    return False
+
+# %% ../nbs/03_execute.ipynb #b3f484be
+def _mark_timeout(cell, timeout, outputs):
+    meta = _cell_metadata(cell)
+    meta[_TIMEOUT_HASH_KEY] = _cell_source_hash(cell)
+    meta[_TIMEOUT_SECONDS_KEY] = timeout
+    msg = f"nbskill: cell id={cell.id} ran longer than {timeout}s and was stopped."
+    cell.outputs = [_timeout_stream(msg), *(outputs or [])]
+
+# %% ../nbs/03_execute.ipynb #986fbfcf
+def _clear_timeout_mark(cell):
+    meta = _cell_metadata(cell)
+    meta.pop(_TIMEOUT_HASH_KEY, None)
+    meta.pop(_TIMEOUT_SECONDS_KEY, None)
+
+# %% ../nbs/03_execute.ipynb #abe3e565
+def _run_cell(shell, cell, timeout=30, verbose=False):
+    if cell.cell_type != "code": return
+    shell._cell_idx = cell.idx_ + 1
+    outputs = shell.run(cell.source, timeout=timeout if timeout and timeout > 0 else None, verbose=verbose)
+    cell.outputs = outputs or []
+    if isinstance(shell.exc, TimeoutError): _mark_timeout(cell, timeout, outputs)
+    else: _clear_timeout_mark(cell)
+
+# %% ../nbs/03_execute.ipynb #65848fef
+def _execute_nb(path, dest=None, exc_stop=False, preproc=lambda cell: False, postproc=lambda cell: None, timeout=30, verbose=False):
+    nb = _read_nb(path)
+    shell = _exec_shell(path)
+    first_exc = None
+    for cell in nb.cells:
+        if preproc(cell): continue
+        if _skip_timed_out_cell(cell):
+            postproc(cell)
+            continue
+        _run_cell(shell, cell, timeout=timeout, verbose=verbose)
+        postproc(cell)
+        if shell.exc and exc_stop:
+            first_exc = shell.exc
+            break
+    if dest: _write_nb(nb, dest)
+    if first_exc: raise first_exc
+    return nb
 
 # %% ../nbs/03_execute.ipynb #1e0af2c5
 def _text_output(value):
@@ -114,6 +206,7 @@ def exec_nb(
     exc_stop: bool = False,  # Stop on exceptions
     up2id: int | str | None = None,  # Execute first N cells, or through this cell id
     chapter: str | None = None,  # Execute through this chapter, inclusive
+    timeout: int = 30,  # Per-cell timeout in seconds; <=0 disables timeouts
     show_output: bool = True,  # Print saved cell outputs and errors after execution
     verbose: bool = False,  # Show stdout/stderr live while executing
 ):
@@ -126,11 +219,11 @@ def exec_nb(
         span = _one_chapter(nb.cells, chapter)
         up2id, chapter_title = span["end"], span["title"]
     preproc, postproc = _exec_limiters(up2id)
-    shell = _exec_shell(path)
-    shell.execute(path, dest=dest, exc_stop=exc_stop, preproc=preproc, postproc=postproc, verbose=verbose)
+    _execute_nb(path, dest=dest, exc_stop=exc_stop, preproc=preproc, postproc=postproc, timeout=timeout, verbose=verbose)
     msg = f"Executed {path} -> {dest}"
     if chapter_title is not None: msg += f" (chapter={chapter_title!r}, up2id={up2id})"
     elif up2id is not None: msg += f" (up2id={up2id})"
+    if timeout and timeout > 0: msg += f" (timeout={timeout}s)"
     print(msg)
     if show_output: _print_nb_outputs(dest, up2id=up2id)
     return _cli_return(Path(dest))
@@ -148,9 +241,9 @@ def _notebook_error_summaries(path, up2id=None):
     return errors
 
 # %% ../nbs/03_execute.ipynb #891fb269
-def _run_notebook_test(path):
-    print(f"Running notebook test with execnb on {path}")
-    _exec_shell(path).execute(path, dest=path, exc_stop=False, verbose=False)
+def _run_notebook_test(path, timeout=30):
+    print(f"Running notebook test with execnb on {path} (timeout={timeout}s)")
+    _execute_nb(path, dest=path, exc_stop=False, timeout=timeout, verbose=False)
     _print_nb_outputs(path)
     errors = _notebook_error_summaries(path)
     if errors:

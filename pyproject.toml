@@ -58,7 +58,7 @@ include = ["nbskill"]
 nbskill = ["SKILL.md", "SKILL.archive.md", "references/*.md"]
 
 [tool.nbdev]
-allowed_cell_metadata_keys = ["nbskill","nbskill_timeout_hash","nbskill_executed_hash"]
+allowed_cell_metadata_keys = ["nbskill","nbskill_timeout_hash","nbskill_executed_hash","nbskill_timeout_seconds"]
 
 [dependency-groups]
 dev = [

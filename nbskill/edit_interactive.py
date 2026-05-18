@@ -2,7 +2,7 @@
 
 # %% auto #0
 __all__ = ['EDIT_INTERACTIVE_SYSTEM', 'capture_call_text', 'notebook_view', 'EditSession', 'make_edit_tools', 'make_chat',
-           'response_text', 'final_diff', 'execute_plan']
+           'response_text', 'final_diff', 'execute_plan', 'execute_project_plan']
 
 # %% ../nbs/08_edit_interactive.ipynb #c7e88003
 import difflib
@@ -274,25 +274,45 @@ def execute_plan(
     max_steps: int = 20,  # Maximum Lisette tool-loop steps
     timeout: int = 30,  # Per-cell execution timeout for run_cell
     export: bool = True,  # Run nbdev export after write tools
+    dry_run: bool = False,  # Return proposal context without invoking the inner agent
 ) -> str:
     "Execute `plan` against one notebook using a Lisette edit-interactive loop."
     path = Path(notebook)
     if not path.exists(): raise ValueError(f"Notebook does not exist: {notebook}")
     model = model or os.environ.get("NBSKILL_EDIT_MODEL") or "openai/gpt-4.1"
+    initial_view = notebook_view(path, revision=0)
+    if dry_run:
+        return "\n".join([
+            "edit-interactive dry run",
+            "",
+            f"Notebook: {path}",
+            f"Model: {model}",
+            f"Max steps: {max_steps}",
+            f"Export after writes: {export}",
+            "",
+            "Plan:",
+            plan,
+            "",
+            "Initial notebook view:",
+            initial_view,
+        ]).rstrip()
     session = EditSession(path=path, timeout=timeout, export=export)
     hist = [
         {"role": "user", "content": f"Plan:\n{plan}"},
-        {"role": "user", "content": notebook_view(path, session.revision)},
+        {"role": "user", "content": initial_view},
     ]
     tools = make_edit_tools(session)
     chat = make_chat(model, tools=tools, hist=hist)
     session.chat = chat
     session.notebook_msg_idx = len(chat.hist) - 1
     session.refresh_view()
-    result = chat(
-        "Execute the plan using only the notebook tools. Stop when the plan is complete.",
-        max_steps=max_steps, return_all=True,
-    )
+    try:
+        result = chat(
+            "Execute the plan using only the notebook tools. Stop when the plan is complete.",
+            max_steps=max_steps, return_all=True,
+        )
+    except BaseException as exc:
+        result = f"edit-interactive failed: {type(exc).__name__}: {exc}"
     if not isinstance(result, (list, str, bytes, dict)) and hasattr(result, "__next__"):
         result = list(result)
     sections = [
@@ -313,3 +333,35 @@ def execute_plan(
         final_diff(path).strip(),
     ]
     return "\n".join(sections).rstrip()
+
+# %% ../nbs/08_edit_interactive.ipynb #256a672a
+def _split_notebooks(notebooks):
+    if notebooks is None: return []
+    if isinstance(notebooks, (list, tuple, set)): return [str(item) for item in notebooks if str(item).strip()]
+    return [item.strip() for item in str(notebooks).split(",") if item.strip()]
+
+# %% ../nbs/08_edit_interactive.ipynb #43a4eae6
+def execute_project_plan(
+    plan: str,  # Broad project plan to split into notebook-scoped executions
+    notebooks: str | None = None,  # Comma-separated notebooks to target
+    model: str | None = None,  # Lisette/LiteLLM model
+    max_steps: int = 20,  # Maximum steps per notebook
+    timeout: int = 30,  # Per-cell execution timeout
+    export: bool = True,  # Run nbdev export after notebook writes
+    dry_run: bool = True,  # Return per-notebook proposals without mutation by default
+) -> str:
+    "Coordinate a broad plan as notebook-scoped execute_plan calls."
+    targets = _split_notebooks(notebooks)
+    if not targets: raise ValueError("Pass one or more notebooks to execute_project_plan.")
+    seen = set()
+    repeated = sorted({path for path in targets if path in seen or seen.add(path)})
+    if repeated: raise ValueError(f"Duplicate notebook target(s): {', '.join(repeated)}")
+    chunks = ["project execute_plan coordinator", "", f"Dry run: {dry_run}", f"Targets: {len(targets)}"]
+    for notebook in targets:
+        subplan = f"{plan}\n\nScope: edit only {notebook}."
+        text = execute_plan(
+            notebook=notebook, plan=subplan, model=model, max_steps=max_steps,
+            timeout=timeout, export=export, dry_run=dry_run,
+        )
+        chunks.extend(["", f"## {notebook}", text])
+    return "\n".join(chunks).rstrip()

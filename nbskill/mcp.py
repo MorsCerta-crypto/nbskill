@@ -7,6 +7,7 @@ __all__ = ['as_text', 'capture_call', 'capture_notebook_call', 'mcp_tool_result'
 import os,json
 import shutil
 import sys
+import threading
 from contextlib import redirect_stdout, redirect_stderr
 from importlib.metadata import PackageNotFoundError, version
 from io import StringIO
@@ -18,8 +19,10 @@ from fastmcp.tools import ToolResult
 from mcp.types import TextContent
 
 from .convert import py2nb as _py2nb
+from .convert import py2nbdev as _py2nbdev
 from .convert import py2nbs as _py2nbs
 from .edit_interactive import execute_plan as _execute_plan
+from .edit_interactive import execute_project_plan as _execute_project_plan
 from .execute import exec_nb as _exec_nb
 from .graph import private_symbol_report as _private_symbol_report
 from .graph import symbol_graph as _symbol_graph
@@ -38,6 +41,9 @@ def as_text(value):
     return "" if value is None else str(value)
 
 
+_CAPTURE_LOCK = threading.RLock()
+
+
 def _package_version(name="nbskill"):
     try: return version(name)
     except PackageNotFoundError: return "unknown"
@@ -45,7 +51,7 @@ def _package_version(name="nbskill"):
 
 def capture_call(func, **kwargs):
     out, err = StringIO(), StringIO()
-    with redirect_stdout(out), redirect_stderr(err):
+    with _CAPTURE_LOCK, redirect_stdout(out), redirect_stderr(err):
         result = func(**kwargs)
     chunks = []
     if out.getvalue(): chunks.append(out.getvalue().rstrip())
@@ -66,9 +72,23 @@ def _json_preview(value, limit=1200):
     return f"{text[:limit].rstrip()}\n... truncated ..."
 
 
-def mcp_tool_result(tool, arguments, full_output, **structured):
+def _text_preview(value, limit=12000):
+    text = as_text(value)
+    if limit is None or len(text) <= limit:
+        return {"text": text, "truncated": False, "chars": len(text), "omitted_chars": 0}
+    omitted = len(text) - limit
+    return {
+        "text": f"{text[:limit].rstrip()}\n... truncated {omitted} chars ...",
+        "truncated": True,
+        "chars": len(text),
+        "omitted_chars": omitted,
+    }
+
+
+def mcp_tool_result(tool, arguments, full_output, max_output_chars=12000, **structured):
     "Return visible MCP text plus structured data for clients that inspect it."
     call = {"tool": tool, "arguments": arguments}
+    preview = _text_preview(full_output or "", limit=max_output_chars)
     summary = "\n".join([
         f"{tool} completed",
         "",
@@ -76,9 +96,16 @@ def mcp_tool_result(tool, arguments, full_output, **structured):
         _json_preview(call),
         "",
         "Result:",
-        full_output or "",
+        preview["text"],
     ])
-    data = {"summary": summary, "call": call, "full_output": full_output}
+    data = {
+        "summary": summary,
+        "call": call,
+        "full_output": preview["text"],
+        "output_truncated": preview["truncated"],
+        "output_chars": preview["chars"],
+        "omitted_chars": preview["omitted_chars"],
+    }
     data.update(structured)
     return ToolResult(
         content=[TextContent(type="text", text=summary)],
@@ -137,14 +164,15 @@ def create_mcp():
     "Create the nbskill FastMCP server."
     capabilities = (
         "healthcheck,read_nb,show_doc,write_nb,update_cell,batch_edit_nb,exec_nb,diff_nb,"
-        "execute_plan,symbol_graph,private_symbol_report,style_check,py2nb,py2nbs"
+        "execute_plan,execute_project_plan,symbol_graph,private_symbol_report,style_check,py2nb,py2nbs,py2nbdev"
     )
     mcp = FastMCP(
         "nbskill",
         instructions=(
             "Work notebook-first in nbdev projects. Prefer read_nb/show_doc for context, "
             "write_nb/update_cell/batch_edit_nb for edits, exec_nb for safe visible notebook execution, "
-            "and style_check for notebook hygiene reports. "
+            "execute_plan for bounded interactive single-notebook work, "
+            "and style_check for capped notebook hygiene reports. "
             "Notebook operations are concurrency-safe: calls touching the same notebook are serialized, "
             "calls touching different notebooks can run in parallel, and execution uses a global semaphore. "
             "Keep documentation before exported code and show-off examples after it."
@@ -153,7 +181,7 @@ def create_mcp():
 
     @mcp.tool(name="healthcheck")
     def healthcheck_tool() -> ToolResult:
-        "Return nbskill MCP status, installed version, process details, and available notebook tool capabilities. Use this before notebook work to confirm that the MCP server is alive and that the client has refreshed the latest schemas. If expected tools are missing, reconnect or restart the MCP client after reinstalling nbskill."
+        "Return nbskill MCP status, installed version, process details, and available notebook tool capabilities."
         data = _status_data()
         full_output = "\n".join([
             "nbskill mcp ok",
@@ -169,227 +197,145 @@ def create_mcp():
         return mcp_tool_result("healthcheck", {}, full_output, status=data, capabilities=capabilities.split(","))
 
     @mcp.tool(name="read_nb")
-    def read_nb_tool(
-        path: str,
-        query: str | None = None,
-        cell_id: str | None = None,
-        chapter: str | None = None,
-        cell_type: str | None = None,
-        contains: str | None = None,
-        context: str = "overview",
-        show_ids: bool = False,
-    ) -> ToolResult:
-        "Read notebook source without exposing raw JSON. Use overview for scanning, precise for matched source with stable ids and hashes, and full when surrounding documentation/examples matter. Filters can target a query, cell id, chapter, semantic cell type, or substring."
-        arguments = dict(
-            path=path, query=query, cell_id=cell_id, chapter=chapter,
-            cell_type=cell_type, contains=contains, context=context, show_ids=show_ids,
-        )
-        full_output = capture_notebook_call(
-            _read_nb, path, path=path, query=query, cell_id=cell_id, chapter=chapter,
-            cell_type=cell_type, contains=contains, context=context, show_ids=show_ids,
-        )
+    def read_nb_tool(path: str, query: str | None = None, cell_id: str | None = None, chapter: str | None = None, cell_type: str | None = None, contains: str | None = None, context: str = "overview", show_ids: bool = False) -> ToolResult:
+        "Read notebook source without exposing raw JSON."
+        arguments = dict(path=path, query=query, cell_id=cell_id, chapter=chapter, cell_type=cell_type, contains=contains, context=context, show_ids=show_ids)
+        full_output = capture_notebook_call(_read_nb, path, path=path, query=query, cell_id=cell_id, chapter=chapter, cell_type=cell_type, contains=contains, context=context, show_ids=show_ids)
         return mcp_tool_result("read_nb", arguments, full_output)
 
     @mcp.tool(name="show_doc")
     def show_doc_tool(path: str, symbol: str, context: int = 2, source: bool = False, show_ids: bool = False) -> ToolResult:
-        "Show the notebook story around one exported symbol. Use this when you need rationale, docs, examples, or nearby source for a specific API. Set source=True when implementation details matter, and show_ids=True before guarded edits."
+        "Show the notebook story around one exported symbol."
         arguments = dict(path=path, symbol=symbol, context=context, source=source, show_ids=show_ids)
         full_output = capture_notebook_call(_show_doc, path, path=path, symbol=symbol, context=context, source=source, show_ids=show_ids)
         return mcp_tool_result("show_doc", arguments, full_output)
 
     @mcp.tool(name="write_nb")
     def write_nb_tool(
-        path: str,
-        cells: str = "",
-        cells_file: str | None = None,
-        before_id: str | None = None,
-        after_id: str | None = None,
-        chapter: str | None = None,
-        replace: bool = False,
-        cell_type: str = "code",
-        export: bool = True,
-        run_test: bool = False,
-        run_style: bool = False,
-        style_strict: bool = False,
-        validate_code: bool = True,
-        old_str: str | None = None,
-        new_str: str | None = None,
-        dry_run: bool = False,
+        path: str, cells: str = "", cells_file: str | None = None, before_id: str | None = None,
+        after_id: str | None = None, chapter: str | None = None, replace: bool = False,
+        cell_type: str = "code", export: bool = True, run_test: bool = False,
+        run_style: bool = False, style_strict: bool = False, validate_code: bool = True,
+        old_str: str | None = None, new_str: str | None = None, dry_run: bool = False,
         show_cells: bool = False,
     ) -> ToolResult:
-        "Insert notebook cells or perform exact literal replacements across notebooks. Prefer cells_file for multiline additions because it avoids escaping and newline ambiguity. Use dry_run/show_cells only with old_str/new_str replacement mode to preview touched cell ids and compact diffs."
-        arguments = dict(
-            path=path, cells=cells, cells_file=cells_file, before_id=before_id, after_id=after_id,
-            chapter=chapter, replace=replace, cell_type=cell_type, export=export,
-            run_test=run_test, run_style=run_style, style_strict=style_strict,
-            validate_code=validate_code, old_str=old_str, new_str=new_str,
-            dry_run=dry_run, show_cells=show_cells,
-        )
-        full_output = capture_notebook_call(
-            _write_nb, path, path=path, cells=cells, cells_file=cells_file, before_id=before_id, after_id=after_id,
-            chapter=chapter, replace=replace, cell_type=cell_type, export=export, run_test=run_test,
-            run_style=run_style, style_strict=style_strict, validate_code=validate_code,
-            old_str=old_str, new_str=new_str, dry_run=dry_run, show_cells=show_cells,
-        )
+        "Insert notebook cells or perform exact literal replacements across notebooks."
+        arguments = dict(path=path, cells=cells, cells_file=cells_file, before_id=before_id, after_id=after_id, chapter=chapter, replace=replace, cell_type=cell_type, export=export, run_test=run_test, run_style=run_style, style_strict=style_strict, validate_code=validate_code, old_str=old_str, new_str=new_str, dry_run=dry_run, show_cells=show_cells)
+        full_output = capture_notebook_call(_write_nb, path, **arguments)
         return mcp_tool_result("write_nb", arguments, full_output)
 
     @mcp.tool(name="update_cell")
     def update_cell_tool(
-        path: str,
-        new: str = "",
-        new_file: str | None = None,
-        cell_id: str | None = None,
-        old_str: str | None = None,
-        line_range: str | None = None,
-        source_hash: str | None = None,
-        cell_type: str = "code",
-        export: bool = True,
-        run_test: bool = False,
-        validate_code: bool = True,
-        dry_run: bool = False,
+        path: str, new: str = "", new_file: str | None = None, cell_id: str | None = None,
+        old_str: str | None = None, line_range: str | None = None, source_hash: str | None = None,
+        cell_type: str = "code", export: bool = True, run_test: bool = False,
+        validate_code: bool = True, dry_run: bool = False,
     ) -> ToolResult:
-        "Update one existing notebook cell by id, old text, or line range. Prefer new_file for multiline replacements and pass source_hash from read_nb when stale edits should fail. dry_run prints the target id and hash transition without writing."
-        arguments = dict(
-            path=path, new=new, new_file=new_file, cell_id=cell_id, old_str=old_str,
-            line_range=line_range, source_hash=source_hash, cell_type=cell_type,
-            export=export, run_test=run_test, validate_code=validate_code,
-            dry_run=dry_run,
-        )
-        full_output = capture_notebook_call(
-            _update_cell, path, path=path, new=new, new_file=new_file, cell_id=cell_id, old_str=old_str,
-            line_range=line_range, source_hash=source_hash, cell_type=cell_type, export=export,
-            run_test=run_test, validate_code=validate_code, dry_run=dry_run,
-        )
+        "Update one existing notebook cell by id, old text, or line range."
+        arguments = dict(path=path, new=new, new_file=new_file, cell_id=cell_id, old_str=old_str, line_range=line_range, source_hash=source_hash, cell_type=cell_type, export=export, run_test=run_test, validate_code=validate_code, dry_run=dry_run)
+        full_output = capture_notebook_call(_update_cell, path, **arguments)
         return mcp_tool_result("update_cell", arguments, full_output)
 
     @mcp.tool(name="batch_edit_nb")
-    def batch_edit_nb_tool(
-        plan: str = "",
-        plan_file: str | None = None,
-        path: str | None = None,
-        dry_run: bool = True,
-        export: bool = True,
-        validate_code: bool = True,
-        default_cell_type: str = "code",
-    ) -> ToolResult:
-        "Apply a JSON batch edit plan to one or more notebooks. Use this for coordinated multi-cell changes where repeated update_cell calls would be verbose or unsafe. Operations support set_cell_source, insert_after_id, insert_before_id, delete_cell_id, and replace_text, with optional source_hash guards and dry-run diffs."
+    def batch_edit_nb_tool(plan: str = "", plan_file: str | None = None, path: str | None = None, dry_run: bool = True, export: bool = True, validate_code: bool = True, default_cell_type: str = "code") -> ToolResult:
+        "Apply a JSON batch edit plan to one or more notebooks."
         arguments = dict(plan=plan, plan_file=plan_file, path=path, dry_run=dry_run, export=export, validate_code=validate_code, default_cell_type=default_cell_type)
-        full_output = capture_call(
-            _batch_edit_nb, plan=plan, plan_file=plan_file, path=path, dry_run=dry_run,
-            export=export, validate_code=validate_code, default_cell_type=default_cell_type,
-        )
+        full_output = capture_call(_batch_edit_nb, **arguments)
         return mcp_tool_result("batch_edit_nb", arguments, full_output)
 
     @mcp.tool(name="exec_nb")
     def exec_nb_tool(
-        path: str,
-        dest: str | None = None,
-        exc_stop: bool = False,
-        up2id: int | str | None = None,
-        chapter: str | None = None,
-        timeout: int = 30,
-        show_output: bool = True,
-        verbose: bool = False,
-        safe: bool = True,
-        allow: str | None = None,
-        ok_dests: str | None = None,
-        cache_httpx: bool = False,
-        cache_dir: str | None = None,
-        cache_domains: str | None = None,
-        allow_new: bool = False,
+        path: str, dest: str | None = None, exc_stop: bool = False, up2id: int | str | None = None,
+        chapter: str | None = None, timeout: int = 30, show_output: bool = True,
+        verbose: bool = False, safe: bool = True, allow: str | None = None,
+        ok_dests: str | None = None, cache_httpx: bool = False, cache_dir: str | None = None,
+        cache_domains: str | None = None, allow_new: bool = False,
     ) -> ToolResult:
-        "Execute a notebook and return visible outputs/errors. Safe mode is enabled by default and rejects fresh or changed cells unless allow_new=True is explicit. Use chapter or up2id for focused checks and timeout to bound long-running cells."
-        arguments = dict(
-            path=path, dest=dest, exc_stop=exc_stop, up2id=up2id,
-            chapter=chapter, timeout=timeout, show_output=show_output,
-            verbose=verbose, safe=safe, allow=allow, ok_dests=ok_dests,
-            cache_httpx=cache_httpx, cache_dir=cache_dir,
-            cache_domains=cache_domains, allow_new=allow_new,
-        )
-        full_output = capture_notebook_call(
-            _exec_nb, path, dest or path, path=path, dest=dest, exc_stop=exc_stop, up2id=up2id,
-            chapter=chapter, timeout=timeout, show_output=show_output, verbose=verbose,
-            safe=safe, allow=allow, ok_dests=ok_dests, cache_httpx=cache_httpx,
-            cache_dir=cache_dir, cache_domains=cache_domains, allow_new=allow_new,
-        )
+        "Execute a notebook and return visible outputs/errors."
+        arguments = dict(path=path, dest=dest, exc_stop=exc_stop, up2id=up2id, chapter=chapter, timeout=timeout, show_output=show_output, verbose=verbose, safe=safe, allow=allow, ok_dests=ok_dests, cache_httpx=cache_httpx, cache_dir=cache_dir, cache_domains=cache_domains, allow_new=allow_new)
+        full_output = capture_notebook_call(_exec_nb, path, dest or path, **arguments)
         return mcp_tool_result("exec_nb", arguments, full_output)
 
     @mcp.tool(name="diff_nb")
     def diff_nb_tool(path: str, ref_a: str | None = "HEAD", ref_b: str | None = None, adds: bool = True, changes: bool = True, dels: bool = False) -> ToolResult:
-        "Diff notebook code cells without expanding raw notebook JSON. Use this after edits to review exported-code changes and ignored nbskill metadata churn. For Markdown changes, use normal git diff alongside this focused code-cell diff."
+        "Diff notebook code cells without expanding raw notebook JSON."
         arguments = dict(path=path, ref_a=ref_a, ref_b=ref_b, adds=adds, changes=changes, dels=dels)
-        full_output = capture_notebook_call(_diff_nb, path, path=path, ref_a=ref_a, ref_b=ref_b, adds=adds, changes=changes, dels=dels)
+        full_output = capture_notebook_call(_diff_nb, path, **arguments)
         return mcp_tool_result("diff_nb", arguments, full_output)
 
     @mcp.tool(name="execute_plan")
-    def execute_plan_tool(
-        notebook: str,
-        plan: str,
-        model: str | None = None,
-        max_steps: int = 20,
-        timeout: int = 30,
-        export: bool = True,
-    ) -> ToolResult:
-        "Run a bounded edit-interactive loop against exactly one notebook. Use this when a plan is small but still easier to delegate than manual write_nb/update_cell calls. Keep broad repository edits in explicit notebook-level calls or batch_edit_nb plans."
-        arguments = dict(notebook=notebook, plan=plan, model=model, max_steps=max_steps, timeout=timeout, export=export)
-        full_output = capture_call(
-            _execute_plan, notebook=notebook, plan=plan, model=model,
-            max_steps=max_steps, timeout=timeout, export=export,
-        )
+    def execute_plan_tool(notebook: str, plan: str, model: str | None = None, max_steps: int = 20, timeout: int = 30, export: bool = True, dry_run: bool = False) -> ToolResult:
+        "Run a bounded edit-interactive loop against exactly one notebook."
+        arguments = dict(notebook=notebook, plan=plan, model=model, max_steps=max_steps, timeout=timeout, export=export, dry_run=dry_run)
+        full_output = capture_call(_execute_plan, **arguments)
         return mcp_tool_result("execute_plan", arguments, full_output)
 
+    @mcp.tool(name="execute_project_plan")
+    def execute_project_plan_tool(plan: str, notebooks: str | None = None, model: str | None = None, max_steps: int = 20, timeout: int = 30, export: bool = True, dry_run: bool = True) -> ToolResult:
+        "Coordinate a broad plan as notebook-scoped execute_plan calls."
+        arguments = dict(plan=plan, notebooks=notebooks, model=model, max_steps=max_steps, timeout=timeout, export=export, dry_run=dry_run)
+        full_output = capture_call(_execute_project_plan, **arguments)
+        return mcp_tool_result("execute_project_plan", arguments, full_output)
 
     @mcp.tool(name="symbol_graph")
     def symbol_graph_tool(path: str = "nbs", symbol: str = "") -> ToolResult:
-        "Show definitions, callers, and callees for one notebook symbol. Use it when changing a shared helper or checking how an exported API is wired through notebooks. The report is AST-based and points back to notebook paths and cell ids."
+        "Show definitions, callers, and callees for one notebook symbol."
         arguments = dict(path=path, symbol=symbol)
-        full_output = capture_call(_symbol_graph, path=path, symbol=symbol)
+        full_output = capture_call(_symbol_graph, **arguments)
         return mcp_tool_result("symbol_graph", arguments, full_output)
 
     @mcp.tool(name="private_symbol_report")
     def private_symbol_report_tool(path: str = "nbs") -> ToolResult:
-        "Report cross-notebook calls to private underscore-prefixed symbols. Use this before renaming or moving private helpers. A clean report means notebook-local helpers are not being used as hidden public APIs."
+        "Report cross-notebook calls to private underscore-prefixed symbols."
         arguments = dict(path=path)
-        full_output = capture_call(_private_symbol_report, path=path)
+        full_output = capture_call(_private_symbol_report, **arguments)
         return mcp_tool_result("private_symbol_report", arguments, full_output)
 
     @mcp.tool(name="style_check")
     def style_check_tool(
-        path: str = ".",
-        skip_folder_re: str | None = None,
-        skip_path: str | None = None,
-        strict: bool = False,
-        delete_after_output: bool = False,
-        delete_after_outout: bool = False,
+        path: str = ".", skip_folder_re: str | None = None, skip_path: str | None = None,
+        strict: bool = False, delete_after_output: bool = False, delete_after_outout: bool = False,
+        max_output_chars: int = 12000, max_diagnostics: int = 200, fix: bool = False,
+        dry_run: bool = True,
     ) -> ToolResult:
-        "Print fast.ai style hints plus nbskill notebook hygiene warnings and global tool usage. Use this as the main report surface for large cells, mixed semantic cells, duplicate imports, cell-order problems, and recent tool failures. The MCP response includes a structured style_report alongside the visible text."
-        arguments = dict(
-            path=path, skip_folder_re=skip_folder_re, skip_path=skip_path, strict=strict,
-            delete_after_output=delete_after_output, delete_after_outout=delete_after_outout,
-        )
-        report = _style_report(path)
+        "Print capped fast.ai style hints plus nbskill notebook hygiene warnings and global tool usage."
+        arguments = dict(path=path, skip_folder_re=skip_folder_re, skip_path=skip_path, strict=strict, delete_after_output=delete_after_output, delete_after_outout=delete_after_outout, max_output_chars=max_output_chars, max_diagnostics=max_diagnostics, fix=fix, dry_run=dry_run)
         full_output = capture_call(_style_check, **arguments)
-        return mcp_tool_result("style_check", arguments, full_output, style_report=report)
+        report = _style_report(path, max_output_chars=max_output_chars, max_diagnostics=max_diagnostics)
+        return mcp_tool_result("style_check", arguments, full_output, max_output_chars=max_output_chars, style_report=report)
 
     @mcp.tool(name="py2nb")
-    def py2nb_tool(path: str, nbs_path: str = "nbs", dest: str | None = None, class_lines: int = 100, method_lines: int = 10) -> ToolResult:
-        "Convert one Python file into an nbdev notebook. Use this when importing legacy Python into a notebook-first project. Large classes and methods can be split with class_lines and method_lines thresholds."
-        arguments = dict(path=path, nbs_path=nbs_path, dest=dest, class_lines=class_lines, method_lines=method_lines)
-        full_output = capture_call(_py2nb, path=path, nbs_path=nbs_path, dest=dest, class_lines=class_lines, method_lines=method_lines)
+    def py2nb_tool(
+        path: str, nbs_path: str = "nbs", dest: str | None = None, recursive: bool = True,
+        maxdepth: int | None = None, preserve_tree: bool = True, class_lines: int = 100,
+        method_lines: int = 10, package: str | None = None, include: str | None = None,
+        exclude: str | None = None, skip_init: bool = True, include_tests: bool = False,
+        dry_run: bool = False, force: bool = True,
+    ) -> ToolResult:
+        "Convert one Python file or folder into nbdev notebook source."
+        arguments = dict(path=path, nbs_path=nbs_path, dest=dest, recursive=recursive, maxdepth=maxdepth, preserve_tree=preserve_tree, class_lines=class_lines, method_lines=method_lines, package=package, include=include, exclude=exclude, skip_init=skip_init, include_tests=include_tests, dry_run=dry_run, force=force)
+        full_output = capture_call(_py2nb, **arguments)
         return mcp_tool_result("py2nb", arguments, full_output)
 
     @mcp.tool(name="py2nbs")
-    def py2nbs_tool(path: str, nbs_path: str = "nbs", recursive: bool = True, maxdepth: int | None = None, preserve_tree: bool = True, class_lines: int = 100, method_lines: int = 10) -> ToolResult:
-        "Convert Python files in a folder into nbdev notebooks. Use this for broader migrations from generated or hand-written modules into notebook source. preserve_tree keeps the source folder layout under the notebook destination."
-        arguments = dict(
-            path=path, nbs_path=nbs_path, recursive=recursive, maxdepth=maxdepth,
-            preserve_tree=preserve_tree, class_lines=class_lines, method_lines=method_lines,
-        )
-        full_output = capture_call(
-            _py2nbs, path=path, nbs_path=nbs_path, recursive=recursive, maxdepth=maxdepth,
-            preserve_tree=preserve_tree, class_lines=class_lines, method_lines=method_lines,
-        )
+    def py2nbs_tool(
+        path: str, nbs_path: str = "nbs", recursive: bool = True, maxdepth: int | None = None,
+        preserve_tree: bool = True, class_lines: int = 100, method_lines: int = 10,
+        package: str | None = None, include: str | None = None, exclude: str | None = None,
+        skip_init: bool = True, include_tests: bool = False, dry_run: bool = False,
+        force: bool = True,
+    ) -> ToolResult:
+        "Convert Python files in a folder into valid nbdev notebooks."
+        arguments = dict(path=path, nbs_path=nbs_path, recursive=recursive, maxdepth=maxdepth, preserve_tree=preserve_tree, class_lines=class_lines, method_lines=method_lines, package=package, include=include, exclude=exclude, skip_init=skip_init, include_tests=include_tests, dry_run=dry_run, force=force)
+        full_output = capture_call(_py2nbs, **arguments)
         return mcp_tool_result("py2nbs", arguments, full_output)
+
+    @mcp.tool(name="py2nbdev")
+    def py2nbdev_tool(source: str, dest: str, package: str | None = None, nbs_path: str = "nbs", dry_run: bool = True, force: bool = False, run_validation: bool = True) -> ToolResult:
+        "Create a pragmatic nbdev project from a pure-Python package."
+        arguments = dict(source=source, dest=dest, package=package, nbs_path=nbs_path, dry_run=dry_run, force=force, run_validation=run_validation)
+        full_output = capture_call(_py2nbdev, **arguments)
+        return mcp_tool_result("py2nbdev", arguments, full_output)
 
     return mcp
 

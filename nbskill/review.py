@@ -8,8 +8,12 @@ import ast
 import glob
 import json
 import os
+import re
 import subprocess
 import sys
+from collections import Counter
+from contextlib import redirect_stderr, redirect_stdout
+from io import StringIO
 from pathlib import Path
 
 from chkstyle.core import main as _chkstyle_main
@@ -91,11 +95,12 @@ def _import_keys(tree):
     return keys
 
 # %% ../nbs/04_review.ipynb #1bbffbc4
-def _problem(code, path, cell=None, detail="", severity="warning", **kwargs):
+def _problem(code, path, cell=None, detail="", severity="warning", source="nbskill", **kwargs):
     problem = {
         "code": code,
         "path": str(path),
         "severity": severity,
+        "source": source,
         "detail": detail,
     }
     if cell is not None: problem["cell_id"] = getattr(cell, "id", "")
@@ -107,7 +112,7 @@ def _format_problem(problem):
     cell = f" id={problem['cell_id']}" if problem.get("cell_id") else ""
     line = f" line={problem['line']}" if problem.get("line") else ""
     fields = []
-    for key in ("scope", "symbol", "import_key", "cells", "semantic_types"):
+    for key in ("scope", "symbol", "import_key", "cells", "semantic_types", "confidence", "hint"):
         if key in problem:
             value = problem[key]
             if isinstance(value, list): value = ", ".join(map(str, value))
@@ -217,29 +222,118 @@ def _reset_global_usage_summary():
     except OSError: path.write_text(json.dumps(_empty_failure_map(), indent=2, sort_keys=True), encoding="utf-8")
 
 # %% ../nbs/04_review.ipynb #18a87c4c
+_CHKSTYLE_RE = re.compile(r"^# (?P<path>.*?):cell\[(?P<cell>[^\]]+)\]:(?P<line>\d+): (?P<detail>.*)$")
+
+
+def _cap_text(text, max_output_chars=12000):
+    text = text or ""
+    if max_output_chars is None or len(text) <= max_output_chars:
+        return {"text": text, "truncated": False, "chars": len(text), "omitted_chars": 0}
+    omitted = len(text) - max_output_chars
+    return {
+        "text": f"{text[:max_output_chars].rstrip()}\n... truncated {omitted} chars ...",
+        "truncated": True,
+        "chars": len(text),
+        "omitted_chars": omitted,
+    }
+
+
+def _chkstyle_diagnostics(text, max_diagnostics=200):
+    diagnostics = []
+    for line in (text or "").splitlines():
+        match = _CHKSTYLE_RE.match(line)
+        if not match: continue
+        detail = match.group("detail")
+        hint = None
+        if "(hint:" in detail:
+            detail, hint = detail.split("(hint:", 1)
+            hint = hint.rstrip(")").strip()
+        diagnostics.append({
+            "source": "chkstyle",
+            "code": detail.strip().split(" (", 1)[0],
+            "path": match.group("path"),
+            "cell_id": match.group("cell"),
+            "line": int(match.group("line")),
+            "severity": "hint",
+            "detail": detail.strip(),
+            "hint": hint,
+        })
+        if max_diagnostics and len(diagnostics) >= max_diagnostics: break
+    return diagnostics
+
+
+def _problem_chart(diagnostics):
+    def counts(key):
+        return dict(sorted(Counter(str(item.get(key, "")) for item in diagnostics if item.get(key)).items()))
+    return {
+        "by_code": counts("code"),
+        "by_severity": counts("severity"),
+        "by_path": counts("path"),
+        "by_source": counts("source"),
+    }
+
+
+def _fix_suggestions(diagnostics):
+    fixes = []
+    for item in diagnostics:
+        if item.get("code") == "duplicate-import":
+            fixes.append({
+                "code": "duplicate-import",
+                "path": item.get("path"),
+                "cells": item.get("cells", []),
+                "description": f"Remove repeated import {item.get('import_key')} from later cells after checking scope.",
+                "automatic": False,
+            })
+    return fixes
+
+
 def style_report(
     path: str = ".",  # File or folder to check
+    chkstyle: dict | None = None,  # Captured chkstyle result to include
+    max_output_chars: int = 12000,  # Maximum raw chkstyle text to keep in report
+    max_diagnostics: int = 200,  # Maximum parsed chkstyle diagnostics
 ):
-    "Return structured notebook hygiene and global nbskill usage data."
+    "Return structured style diagnostics, problem chart, and global nbskill usage data."
     notebook_problems = _notebook_style_problems(path)
     usage = _global_usage_summary_data()
+    chkstyle = chkstyle or {"status": 0, "output": ""}
+    capped = _cap_text(chkstyle.get("output", ""), max_output_chars=max_output_chars)
+    diagnostics = [
+        *(_chkstyle_diagnostics(chkstyle.get("output", ""), max_diagnostics=max_diagnostics)),
+        *notebook_problems,
+    ]
     notebook_text = _format_notebook_style_report(path)
     usage_text = _format_global_usage_summary(usage)
+    chkstyle_text = capped["text"].strip()
+    text = "\n\n".join(chunk for chunk in [chkstyle_text, notebook_text, usage_text] if chunk)
     return {
         "path": str(path),
         "summary": {
             "notebook_problem_count": len(notebook_problems),
+            "chkstyle_problem_count": len([item for item in diagnostics if item.get("source") == "chkstyle"]),
+            "diagnostic_count": len(diagnostics),
             "recent_problem_count": len(usage.get("recent_problems", [])),
+            "output_truncated": capped["truncated"],
+            "output_chars": capped["chars"],
+            "omitted_chars": capped["omitted_chars"],
         },
+        "diagnostics": diagnostics[:max_diagnostics] if max_diagnostics else diagnostics,
+        "problem_chart": _problem_chart(diagnostics),
         "notebook_problems": notebook_problems,
         "global_usage": usage,
-        "text": f"{notebook_text}\n\n{usage_text}",
+        "chkstyle": {"status": chkstyle.get("status", 0), **capped},
+        "fixes": _fix_suggestions(diagnostics),
+        "text": text,
     }
 
 # %% ../nbs/04_review.ipynb #bc59a7ff
-def run_style_check(path=".", skip_folder_re=None, skip_path=None, strict=False):
-    status = _chkstyle_main(_style_check_argv(path, skip_folder_re, skip_path))
-    return status
+def run_style_check(path=".", skip_folder_re=None, skip_path=None, strict=False, max_output_chars=None):
+    out, err = StringIO(), StringIO()
+    with redirect_stdout(out), redirect_stderr(err):
+        status = _chkstyle_main(_style_check_argv(path, skip_folder_re, skip_path))
+    output = "\n".join(chunk.rstrip() for chunk in (out.getvalue(), err.getvalue()) if chunk)
+    capped = _cap_text(output, max_output_chars=max_output_chars) if max_output_chars else {"text": output, "truncated": False, "chars": len(output), "omitted_chars": 0}
+    return {"status": status, "output": output, **capped}
 
 # %% ../nbs/04_review.ipynb #a620d02a
 def _normalize_style_check_cli_aliases():
@@ -262,15 +356,26 @@ def style_check(
     strict: bool = False,  # Exit non-zero when style hints or notebook hygiene problems are found
     delete_after_output: bool = False,  # Reset ~/.nbskill-errors.json after printing the global summary
     delete_after_outout: bool = False,  # Backward-compatible typo alias for delete_after_output
+    max_output_chars: int = 12000,  # Cap printed chkstyle output
+    max_diagnostics: int = 200,  # Cap returned diagnostics
+    fix: bool = False,  # Show conservative fix suggestions
+    dry_run: bool = True,  # Keep fix mode non-mutating by default
 ):
-    "Print fast.ai style hints, notebook hygiene warnings, and global tool usage."
-    status = run_style_check(path, skip_folder_re, skip_path, strict=False)
-    report = style_report(path)
+    "Print capped fast.ai style hints, notebook hygiene warnings, and global tool usage."
+    chkstyle = run_style_check(path, skip_folder_re, skip_path, strict=False, max_output_chars=max_output_chars)
+    report = style_report(path, chkstyle=chkstyle, max_output_chars=max_output_chars, max_diagnostics=max_diagnostics)
     print(report["text"])
+    if fix:
+        print("\nFix suggestions:")
+        fixes = report.get("fixes", [])
+        if not fixes: print("- no deterministic fixes available")
+        for item in fixes:
+            mode = "would apply" if dry_run else "manual-review-required"
+            print(f"- {mode}: {item['description']} ({item['path']})")
     if delete_after_output or delete_after_outout: _reset_global_usage_summary()
-    has_notebook_problems = bool(report["notebook_problems"])
-    if strict and (status or has_notebook_problems): raise SystemExit(status or 1)
-    return cli_return(status or int(has_notebook_problems))
+    has_problems = bool(report["diagnostics"])
+    if strict and (chkstyle["status"] or has_problems): raise SystemExit(chkstyle["status"] or 1)
+    return cli_return(chkstyle["status"] or int(has_problems))
 
 
 def code_source(cell): return cell.source if cell.cell_type == "code" else None

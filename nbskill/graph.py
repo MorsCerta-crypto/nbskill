@@ -232,11 +232,13 @@ class _CallRootVisitor(ast.NodeVisitor):
     def _is_local(self, name):
         return any(name in scope for scope in self.local_scopes)
 
-    def _visit_deferred_body(self, node, body):
-        local_names = _argument_names(node.args) | _body_binding_names(body)
-        self.local_scopes.append(local_names)
-        for child in body: self.visit(child)
+    def _with_scope(self, names, visit):
+        self.local_scopes.append(names)
+        visit()
         self.local_scopes.pop()
+
+    def _visit_deferred_body(self, node, body):
+        self._with_scope(_argument_names(node.args) | _body_binding_names(body), lambda: [self.visit(child) for child in body])
 
     def visit_FunctionDef(self, node):
         for item in [*node.decorator_list, *node.args.defaults, *node.args.kw_defaults]:
@@ -247,10 +249,24 @@ class _CallRootVisitor(ast.NodeVisitor):
     def visit_AsyncFunctionDef(self, node): self.visit_FunctionDef(node)
 
     def visit_Lambda(self, node):
-        local_names = _argument_names(node.args)
-        self.local_scopes.append(local_names)
-        self.visit(node.body)
-        self.local_scopes.pop()
+        self._with_scope(_argument_names(node.args), lambda: self.visit(node.body))
+
+    def _visit_comprehension(self, node):
+        names = set()
+        for generator in node.generators: names.update(_target_names(generator.target))
+        def visit_body():
+            for generator in node.generators:
+                self.visit(generator.iter)
+                for item in generator.ifs: self.visit(item)
+            if hasattr(node, "elt"): self.visit(node.elt)
+            if hasattr(node, "key"): self.visit(node.key)
+            if hasattr(node, "value"): self.visit(node.value)
+        self._with_scope(names, visit_body)
+
+    def visit_ListComp(self, node): self._visit_comprehension(node)
+    def visit_SetComp(self, node): self._visit_comprehension(node)
+    def visit_DictComp(self, node): self._visit_comprehension(node)
+    def visit_GeneratorExp(self, node): self._visit_comprehension(node)
 
     def visit_Call(self, node):
         name = _call_root_name(node.func)
@@ -302,6 +318,7 @@ def _order_problem(kind, nb_path, item, call, detail, confidence="medium"):
         "symbol": call["symbol"],
         "detail": detail,
         "severity": "warning",
+        "source": "nbskill",
         "confidence": confidence,
     }
 

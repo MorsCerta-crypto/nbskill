@@ -1,58 +1,80 @@
 ---
 name: jupyter-notebooks
-description: Work notebook-first in nbdev projects with nbskill MCP tools and CLI fallbacks. Read, edit, inspect symbols, execute, diff, and export notebooks without touching raw JSON or generated Python.
+description: Work notebook-first in nbdev projects with nbskill MCP tools for reading, writing, updating, and executing notebooks without raw JSON.
 ---
 
 # Jupyter Notebooks
 
-Use this skill when a repository treats notebooks as source files, especially nbdev projects where `nbs/*.ipynb` exports to Python modules. Prefer the nbskill MCP server for normal work: it reads notebooks as compact text, writes cells with structured arguments, executes notebooks, and exports through nbdev without asking the model to edit raw notebook JSON.
+Use this skill when a repository treats notebooks as source files,
+especially nbdev projects where `nbs/*.ipynb` exports to Python modules.
+Keep the active workflow small: inspect notebooks, edit notebooks,
+execute notebooks, and use references only when the task needs a
+supporting tool.
 
 ## Setup
 
 Install the local package and register the MCP server:
 
-```bash
+``` bash
 uv tool install --editable . --force
 codex mcp add nbskill -- nbskill-mcp
 claude mcp add nbskill -- nbskill-mcp
 ```
 
-Call `healthcheck` first when you need to confirm the server is alive. The server supports parallel calls: operations on the same notebook are serialized, operations on different notebooks can run in parallel, and notebook execution waits on a global semaphore.
+Prefer the MCP server when it is available. Call `healthcheck` first to
+confirm the server is alive and to see its concurrency policy.
 
-## MCP Workflow
+## Core Workflow
 
-Use MCP tools directly when they are available:
+1.  Use
+    [`read_nb`](https://MorsCerta-crypto.github.io/nbskill/read.html#read_nb)
+    to inspect notebooks without raw JSON. Start with
+    `context="overview"` and use `context="precise"` when you need
+    numbered source for a selected cell.
+2.  Use
+    [`write_nb`](https://MorsCerta-crypto.github.io/nbskill/write.html#write_nb)
+    to add notebook cells by cell id, chapter, or full-notebook
+    replacement. Use `cells_file` for multiline additions.
+3.  Use
+    [`update_cell`](https://MorsCerta-crypto.github.io/nbskill/write.html#update_cell)
+    for precise edits to an existing cell by id, text replacement, or
+    line range. Use `source_hash` when stale context should fail instead
+    of overwriting newer work.
+4.  Use
+    [`exec_nb`](https://MorsCerta-crypto.github.io/nbskill/execute.html#exec_nb)
+    to run a notebook, chapter, or cells up to an id, then inspect
+    visible outputs and errors.
 
-- `read_nb(notebook, context="overview"|"precise"|"full", query=..., ...)` to inspect a notebook without JSON noise. Use `query` for semicolon-separated or JSON selections in one call.
-- `show_doc(notebook, symbol, source=False, ...)` to inspect the documentation, exported source, and nearby examples for a symbol.
-- `write_nb(notebook, cells, before_id=None, after_id=None, chapter=None, ...)` to insert or replace cells.
-- `update_cell(notebook, new, cell_id=None, old_str=None, line_range=None, source_hash=None, ...)` for precise edits.
-- `exec_nb(notebook, up2id=None, chapter=None, timeout=30, ...)` to execute a notebook or section.
-- `diff_nb(notebook)` to review the notebook-aware diff.
-- `execute_plan(notebook, plan, model=None, max_steps=20, timeout=30, export=True)` for a bounded single-notebook edit-interactive loop.
-
-Use stable cell ids and `source_hash` when editing existing cells. Keep generated `.py` files as inspection artifacts; edit the notebook instead.
+Stay notebook-first: edit `nbs/*.ipynb` source notebooks, not generated
+`.py` files. Use stable cell ids and source hashes from
+`read_nb --show_ids` when an edit must be guarded against stale context.
 
 ## CLI Fallback
 
-Use CLI tools when MCP is unavailable, for batch work, or for final verification in the project environment:
+Use CLI commands only when MCP tools are unavailable or final
+verification must run in the project environment:
 
-```bash
-uv run read_nb nbs/02_write.ipynb --context precise --query "cell_type=exported_code; cell_type=test_cell"
-uv run show_doc nbs/02_write.ipynb write_nb --source
-uv run write_nb nbs/02_write.ipynb --after_id abc123 --cells_file /tmp/cells.txt
-uv run update_cell nbs/02_write.ipynb --cell_id abc123 --source_hash 7f3a91c0d422 --new_file /tmp/cell.txt
+``` bash
+uv run read_nb nbs/02_write.ipynb --context overview --show_ids
+uv run read_nb nbs/02_write.ipynb --context precise --cell_id abc123 --show_ids
+uv run write_nb nbs/02_write.ipynb --after_id abc123 --cells_file /tmp/cells.txt --no-export
+uv run update_cell nbs/02_write.ipynb "replacement line" --cell_id abc123 --line_range 3 --source_hash 7f3a91c0d422 --no-export
 uv run exec_nb nbs/03_execute.ipynb --up2id abc123 --timeout 10
-uv run diff_nb nbs/02_write.ipynb
-uv run nbdev-export
-uv run nbdev-test --path nbs --n_workers 0 --verbose
 ```
 
-For multiline cells, prefer `--cells_file` or `--new_file` so shell quoting cannot corrupt code. Cell blocks for `write_nb` are separated by a line containing only `---`; start blocks with `%%markdown`, `%%md`, `%%code`, or `%%raw` when the cell type matters.
+Cell blocks for
+[`write_nb`](https://MorsCerta-crypto.github.io/nbskill/write.html#write_nb)
+are separated by a line containing only `---`; start blocks with
+`%%markdown`, `%%md`, `%%code`, or `%%raw` when the cell type matters.
 
 ## References
 
-Open these only when you need more detail:
+Open references only when the core workflow is not enough:
 
-- `references/mcp-tools.md` for MCP tool behavior, parallel editing, and `execute_plan`.
-- `references/cli-fallbacks.md` for CLI options, cell block syntax, and verification recipes.
+- `references/mcp-tools.md` for detailed MCP behavior and concurrency
+  notes.
+- `references/cli-fallbacks.md` for shell-friendly command patterns.
+- `references/conversion.md` for converting Python files or folders with
+  [`py2nb`](https://MorsCerta-crypto.github.io/nbskill/convert.html#py2nb).
+- `references/extended-tools.md` for symbol docs, review, graph reports,
+  and edit-interactive plans.

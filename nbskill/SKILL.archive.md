@@ -162,7 +162,7 @@ nbskill records friction globally in `~/.nbskill/nbskill-errors.json`, or in `NB
 
 ```bash
 diff_nb notebook.ipynb
-chstyle notebook.ipynb
+style_check notebook.ipynb
 py2nb module.py
 py2nbs src
 apply_nb dev/nbskill-op.toml

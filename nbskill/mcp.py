@@ -17,10 +17,12 @@ from .convert import py2nb as _py2nb
 from .convert import py2nbs as _py2nbs
 from .edit_interactive import execute_plan as _execute_plan
 from .execute import exec_nb as _exec_nb
+from .graph import private_symbol_report as _private_symbol_report
+from .graph import symbol_graph as _symbol_graph
 from .parallel import notebook_locks
 from .read import read_nb as _read_nb
 from .read import show_doc as _show_doc
-from .review import chstyle as _chstyle
+from .review import style_check as _style_check
 from .review import diff_nb as _diff_nb
 from .write import apply_nb as _apply_nb
 from .write import update_cell as _update_cell
@@ -110,12 +112,16 @@ def create_mcp():
         run_style: bool = False,
         style_strict: bool = False,
         validate_code: bool = True,
+        old_str: str | None = None,
+        new_str: str | None = None,
+        dry_run: bool = False,
     ) -> str:
-        "Write multiline cell text directly to a notebook."
+        "Write cells to a notebook, or replace literal text across notebooks."
         return capture_notebook_call(
             _write_nb, path, path=path, cells=cells, cells_file=None, before_id=before_id, after_id=after_id,
             chapter=chapter, replace=replace, cell_type=cell_type, export=export, run_test=run_test,
             run_style=run_style, style_strict=style_strict, validate_code=validate_code,
+            old_str=old_str, new_str=new_str, dry_run=dry_run,
         )
 
     @mcp.tool(name="update_cell")
@@ -176,15 +182,26 @@ def create_mcp():
             max_steps=max_steps, timeout=timeout, export=export,
         )
 
+
+    @mcp.tool(name="symbol_graph")
+    def symbol_graph_tool(path: str = "nbs", symbol: str = "") -> str:
+        "Show definitions, callers, and callees for a notebook symbol."
+        return capture_call(_symbol_graph, path=path, symbol=symbol)
+
+    @mcp.tool(name="private_symbol_report")
+    def private_symbol_report_tool(path: str = "nbs") -> str:
+        "Show cross-notebook calls to private `_` symbols."
+        return capture_call(_private_symbol_report, path=path)
+
     @mcp.tool(name="apply_nb")
     def apply_nb_tool(spec_path: str = "dev/nbskill-op.toml") -> str:
         "Apply the archived TOML manifest workflow. Prefer write_nb/update_cell MCP tools when available."
         return capture_call(_apply_nb, spec_path=spec_path)
 
-    @mcp.tool(name="chstyle")
-    def chstyle_tool(path: str = ".", skip_folder_re: str | None = None, skip_path: str | None = None, strict: bool = False) -> str:
+    @mcp.tool(name="style_check")
+    def style_check_tool(path: str = ".", skip_folder_re: str | None = None, skip_path: str | None = None, strict: bool = False) -> str:
         "Print fast.ai style hints."
-        return capture_call(_chstyle, path=path, skip_folder_re=skip_folder_re, skip_path=skip_path, strict=strict)
+        return capture_call(_style_check, path=path, skip_folder_re=skip_folder_re, skip_path=skip_path, strict=strict)
 
     @mcp.tool(name="py2nb")
     def py2nb_tool(path: str, nbs_path: str = "nbs", dest: str | None = None, class_lines: int = 100, method_lines: int = 10) -> str:

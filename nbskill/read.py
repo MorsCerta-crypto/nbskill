@@ -14,18 +14,18 @@ from fastcore.nbio import read_nb as _read_nb
 from fastcore.script import Param, call_parse
 
 from nbskill.foundation import (
-    _cell_hash, _cell_matches_type, _cell_prefix, _cell_source, _chapter_index_set,
-    _cli_return, _find_cell_by_id, _first_line, _is_definition_node,
-    _is_export_directive, _is_exported_code_cell, _matches_filter, _tracked_call,
-    _with_context,
+    cell_hash, cell_matches_type, cell_prefix, cell_source, chapter_index_set,
+    cli_return, find_cell_by_id, first_line, is_definition_node,
+    is_export_directive, is_exported_code_cell, matches_filter, tracked_call,
+    with_context,
 )
 
 # %% ../nbs/01_read.ipynb #3876f40e
 def _format_overview(items, show_ids=False):
     lines = []
     for idx, cell in items:
-        summary = _first_line(cell.source)
-        lines.append(f"{_cell_prefix(idx, cell, show_ids)} | {summary}")
+        summary = first_line(cell.source)
+        lines.append(f"{cell_prefix(idx, cell, show_ids)} | {summary}")
     return "\n".join(lines)
 
 # %% ../nbs/01_read.ipynb #975e37c5
@@ -85,7 +85,7 @@ def _format_headers(items, show_ids=False):
         if cell.cell_type == "markdown": lines = _markdown_overview(cell)
         elif cell.cell_type == "code": lines = _code_overview(cell)
         else: lines = []
-        if lines: chunks.append(f"{_cell_prefix(idx, cell, show_ids)}\n" + "\n".join(lines))
+        if lines: chunks.append(f"{cell_prefix(idx, cell, show_ids)}\n" + "\n".join(lines))
     return "\n\n".join(chunks)
 
 # %% ../nbs/01_read.ipynb #f204f489
@@ -98,7 +98,7 @@ def _format_source(source, line_numbers=False):
 def _format_full(items, show_ids=False, line_numbers=False):
     chunks = []
     for idx, cell in items:
-        chunks.append(f"{_cell_prefix(idx, cell, show_ids)}\n{_format_source(cell.source, line_numbers=line_numbers)}")
+        chunks.append(f"{cell_prefix(idx, cell, show_ids)}\n{_format_source(cell_source(cell), line_numbers=line_numbers)}")
     return "\n\n".join(chunks)
 
 # %% ../nbs/01_read.ipynb #98fc4d1a
@@ -170,13 +170,13 @@ def _query_label(spec):
 
 
 def _select_query_items(nb, spec):
-    items = [_find_cell_by_id(nb.cells, spec["cell_id"])] if spec.get("cell_id") else list(enumerate(nb.cells))
+    items = [find_cell_by_id(nb.cells, spec["cell_id"])] if spec.get("cell_id") else list(enumerate(nb.cells))
     if spec.get("chapter") is not None:
-        chapter_idxs = _chapter_index_set(nb.cells, spec["chapter"])
+        chapter_idxs = chapter_index_set(nb.cells, spec["chapter"])
         items = [(i, c) for i, c in items if i in chapter_idxs]
-    if spec.get("cell_type") is not None: items = [(i, c) for i, c in items if _cell_matches_type(c, spec["cell_type"])]
+    if spec.get("cell_type") is not None: items = [(i, c) for i, c in items if cell_matches_type(c, spec["cell_type"])]
     if spec.get("contains") is not None: items = [(i, c) for i, c in items if spec["contains"] in c.source]
-    if spec.get("regex") is not None: items = [(i, c) for i, c in items if _matches_filter(c.source, spec["regex"])]
+    if spec.get("regex") is not None: items = [(i, c) for i, c in items if matches_filter(c.source, spec["regex"])]
     return items
 
 
@@ -188,13 +188,38 @@ def _normalize_context(context):
 
 
 def _format_context(items, context, show_ids=False):
+    if context == "overview" and len(items) == 1: return _format_full(items, show_ids=show_ids, line_numbers=True)
     if context == "overview": return _format_overview(items, show_ids=show_ids)
     return _format_full(items, show_ids=show_ids, line_numbers=True)
 
 
+def _cell_defined_symbols(cell):
+    if getattr(cell, "cell_type", None) != "code": return []
+    try: tree = ast.parse(_source_without_directives(cell_source(cell)))
+    except SyntaxError: return []
+    symbols = []
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)): symbols.append(node.name)
+        if isinstance(node, ast.ClassDef):
+            for child in node.body:
+                if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)): symbols.append(f"{node.name}.{child.name}")
+    return symbols
+
+
+def _format_usage_for_items(path, items):
+    symbols = []
+    for _, cell in items: symbols.extend(_cell_defined_symbols(cell))
+    if not symbols: return ""
+    try:
+        from nbskill.graph import symbol_usage_summary
+        return symbol_usage_summary(path, symbols)
+    except Exception as exc:
+        return f"Usage unavailable: {type(exc).__name__}: {exc}"
+
+
 # %% ../nbs/01_read.ipynb #e09b2650
 @call_parse
-@_tracked_call
+@tracked_call
 def read_nb(
     path: str,  # Notebook path
     query: str | None = None,  # JSON/list or semicolon key=value clauses; combines multiple selections
@@ -213,19 +238,20 @@ def read_nb(
     specs = [_merge_query(base, spec) for spec in _parse_query(query)]
     chunks = []
     for pos, spec in enumerate(specs, start=1):
-        items = _select_query_items(nb, spec)
-        if context == "full": items = _with_context(nb.cells, items, include=True)
+        selected = _select_query_items(nb, spec)
+        items = with_context(nb.cells, selected, include=True) if context == "full" else selected
         body = _format_context(items, context, show_ids=show_ids)
+        if context == "full" and (usage := _format_usage_for_items(path, selected)):
+            body = f"{body}\n\nUsage:\n{usage}" if body else f"Usage:\n{usage}"
         if len(specs) == 1:
             chunks.append(body)
         else:
             label = f"Query {pos}: {_query_label(spec)}"
             chunks.append(f"{label}\n{body or '(no matches)'}")
 
-
     text = "\n\n".join(chunk for chunk in chunks if chunk)
     if text: print(text)
-    return _cli_return(text)
+    return cli_return(text)
 
 # %% ../nbs/01_read.ipynb #4b23b7ed
 def _source_without_directives(source):
@@ -305,7 +331,7 @@ def _following_examples(cells, idx, limit):
     pos = idx + 1
     while pos < len(cells) and len(examples) < limit:
         cell = cells[pos]
-        if _is_exported_code_cell(cell): break
+        if is_exported_code_cell(cell): break
         if getattr(cell, "cell_type", None) in {"markdown", "code"}: examples.append((pos, cell))
         pos += 1
     return examples
@@ -318,16 +344,16 @@ def _symbol_signature_text(cell, symbol):
     return _function_overview(node)
 
 # %% ../nbs/01_read.ipynb #f21fcefb
-def _format_symbol_doc(nb, symbol, context=2, source=False, show_ids=False):
+def _format_symbol_doc(path, nb, symbol, context=2, source=False, show_ids=False):
     idx = _find_symbol_cell(nb, symbol)
     cell = nb.cells[idx]
-    lines = [f"Symbol {symbol}", "Full context: rationale/docs -> exported code -> show-off examples", _cell_prefix(idx, cell, show_ids)]
+    lines = [f"Symbol {symbol}", "Full context: rationale/docs -> exported code -> show-off examples", cell_prefix(idx, cell, show_ids)]
     docs = _previous_markdown(nb.cells, idx, context)
     if docs:
         lines.append("")
         lines.append("Rationale/docs before the symbol:")
         for doc_idx, doc_cell in docs:
-            lines.append(_cell_prefix(doc_idx, doc_cell, show_ids))
+            lines.append(cell_prefix(doc_idx, doc_cell, show_ids))
             lines.append(doc_cell.source.strip())
     signature = _symbol_signature_text(cell, symbol)
     if signature:
@@ -343,22 +369,31 @@ def _format_symbol_doc(nb, symbol, context=2, source=False, show_ids=False):
         lines.append("")
         lines.append("Show-off examples after the symbol:")
         for ex_idx, ex_cell in examples:
-            lines.append(_cell_prefix(ex_idx, ex_cell, show_ids))
+            lines.append(cell_prefix(ex_idx, ex_cell, show_ids))
             lines.append(ex_cell.source.strip())
+    if usage := _format_usage_for_items(path, [(idx, cell)]):
+        lines.append("")
+        lines.append("Usage:")
+        lines.append(usage)
     return "\n".join(lines)
 
 # %% ../nbs/01_read.ipynb #1584953f
 @call_parse
-@_tracked_call
+@tracked_call
 def show_doc(
     path: str,  # Notebook path
-    symbol: str,  # Function, class, or Class.method to inspect
+    symbol: str | None = None,  # Function, class, or Class.method to inspect
     context: int = 2,  # Rationale/docs before and show-off example cells after to include
     source: bool = False,  # Include the full source cell
     show_ids: bool = False,  # Include source hashes in output
 ):
     "Show rationale/docs, exported code, and show-off examples for a notebook symbol."
+    if symbol is None:
+        if not isinstance(path, str):
+            from nbdev.showdoc import show_doc as _nbdev_show_doc
+            return _nbdev_show_doc(path)
+        raise ValueError("Pass symbol when path is a notebook")
     nb = _read_nb(path)
-    text = _format_symbol_doc(nb, symbol, context=context, source=source, show_ids=show_ids)
+    text = _format_symbol_doc(path, nb, symbol, context=context, source=source, show_ids=show_ids)
     print(text)
-    return _cli_return(text)
+    return cli_return(text)

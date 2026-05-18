@@ -12,7 +12,7 @@ from fastcore.nbio import write_nb as _write_nb
 from fastcore.script import call_parse
 from fastcore.xtras import pglob
 
-from .foundation import _cli_return, _is_definition_node, _node_start_line, _tracked_call
+from .foundation import cli_return, is_definition_node, node_start_line, tracked_call
 
 # %% ../nbs/05_convert.ipynb #ac1075c9
 def _node_source(lines, node):
@@ -113,34 +113,7 @@ def _py2nb_file(path, nbs_path="nbs", dest=None, class_lines=100, method_lines=1
     return out_path, len(nb.cells)
 
 # %% ../nbs/05_convert.ipynb #49a4e465
-@call_parse
-@_tracked_call
-def py2nb(
-    path: str,  # Python file path
-    nbs_path: str = "nbs",  # Folder for generated notebooks
-    dest: str | None = None,  # Explicit notebook path; overrides nbs_path
-    class_lines: int = 100,  # Split methods out of classes longer than this
-    method_lines: int = 10,  # Split methods longer than this out of large classes
-):
-    "Convert a Python file into an nbdev-style notebook using AST parsing."
-    out_path, n_cells = _py2nb_file(path, nbs_path=nbs_path, dest=dest, class_lines=class_lines, method_lines=method_lines)
-    msg = f"Wrote {n_cells} cells to {out_path}"
-    print(msg)
-    return _cli_return(out_path)
-
-# %% ../nbs/05_convert.ipynb #35c804b1
-@call_parse
-@_tracked_call
-def py2nbs(
-    path: str,  # Folder containing Python files
-    nbs_path: str = "nbs",  # Folder for generated notebooks
-    recursive: bool = True,  # Search subfolders
-    maxdepth: int | None = None,  # Maximum folder depth to search
-    preserve_tree: bool = True,  # Preserve folder structure below nbs_path
-    class_lines: int = 100,  # Split methods out of classes longer than this
-    method_lines: int = 10,  # Split methods longer than this out of large classes
-):
-    "Convert all Python files in a folder into nbdev-style notebooks."
+def _py2nbs_folder(path, nbs_path="nbs", recursive=True, maxdepth=None, preserve_tree=True, class_lines=100, method_lines=10):
     root = Path(path)
     py_files = pglob(root, exts="py", recursive=recursive, maxdepth=maxdepth)
     outs = []
@@ -153,4 +126,51 @@ def py2nbs(
         outs.append(out_path)
         print(f"Wrote {n_cells} cells to {out_path}")
     print(f"Converted {len(outs)} Python files to {nbs_path}")
-    return _cli_return(outs)
+    return outs
+
+
+@call_parse
+@tracked_call
+def py2nb(
+    path: str,  # Python file or folder to convert
+    nbs_path: str = "nbs",  # Folder for generated notebooks
+    dest: str | None = None,  # Explicit notebook path for one file, or output folder for a directory
+    recursive: bool = True,  # Search subfolders when path is a folder
+    maxdepth: int | None = None,  # Maximum folder depth to search
+    preserve_tree: bool = True,  # Preserve folder structure below nbs_path for folder conversion
+    class_lines: int = 100,  # Split methods out of classes longer than this
+    method_lines: int = 10,  # Split methods longer than this out of large classes
+):
+    "Convert a Python file or folder into nbdev-style notebooks using AST parsing."
+    pth = Path(path)
+    if pth.is_dir():
+        out_root = dest or nbs_path
+        outs = _py2nbs_folder(
+            pth, nbs_path=out_root, recursive=recursive, maxdepth=maxdepth,
+            preserve_tree=preserve_tree, class_lines=class_lines, method_lines=method_lines,
+        )
+        return cli_return(outs)
+
+    out_path, n_cells = _py2nb_file(path, nbs_path=nbs_path, dest=dest, class_lines=class_lines, method_lines=method_lines)
+    msg = f"Wrote {n_cells} cells to {out_path}"
+    print(msg)
+    return cli_return(out_path)
+
+# %% ../nbs/05_convert.ipynb #35c804b1
+@call_parse
+@tracked_call
+def py2nbs(
+    path: str,  # Folder containing Python files
+    nbs_path: str = "nbs",  # Folder for generated notebooks
+    recursive: bool = True,  # Search subfolders
+    maxdepth: int | None = None,  # Maximum folder depth to search
+    preserve_tree: bool = True,  # Preserve folder structure below nbs_path
+    class_lines: int = 100,  # Split methods out of classes longer than this
+    method_lines: int = 10,  # Split methods longer than this out of large classes
+):
+    "Convert all Python files in a folder into nbdev-style notebooks."
+    outs = _py2nbs_folder(
+        path, nbs_path=nbs_path, recursive=recursive, maxdepth=maxdepth,
+        preserve_tree=preserve_tree, class_lines=class_lines, method_lines=method_lines,
+    )
+    return cli_return(outs)

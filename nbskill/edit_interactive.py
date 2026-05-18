@@ -19,8 +19,8 @@ from nbdev.doclinks import nbdev_export
 
 from .execute import exec_nb as _exec_nb
 from nbskill.foundation import (
-    _cell_class_names, _cell_hash, _cell_matches_hash, _cell_source, _clear_outputs,
-    _parse_one_cell, _validate_code_cells,
+    cell_class_names, cell_hash, cell_matches_hash, cell_source, clear_outputs,
+    parse_one_cell, stamp_notebook_metadata, validate_code_cells,
 )
 from .parallel import notebook_locks
 from .review import diff_nb as _diff_nb
@@ -55,11 +55,11 @@ def notebook_view(path, revision=0):
         nb = _read_nb(path)
         lines = [f"Notebook: {path}", f"Revision: {revision}", ""]
         for idx, cell in enumerate(nb.cells):
-            classes = _cell_class_names(cell)
+            classes = cell_class_names(cell)
             class_text = f" classes={','.join(classes)}" if classes else ""
-            lines.append(f"CELL {idx} id={cell.id} type={cell.cell_type}{class_text} hash={_cell_hash(cell)}")
+            lines.append(f"CELL {idx} id={cell.id} type={cell.cell_type}{class_text} hash={cell_hash(cell)}")
             lines.append("<<<SOURCE")
-            lines.append(_cell_source(cell).rstrip())
+            lines.append(cell_source(cell).rstrip())
             lines.append("SOURCE")
             lines.append("")
         return "\n".join(lines).rstrip() + "\n"
@@ -97,6 +97,7 @@ class EditSession:
 # %% ../nbs/08_edit_interactive.ipynb #eee248a5
 def _save_notebook(nb, path, export=True):
     with notebook_locks(path):
+        stamp_notebook_metadata(nb)
         _write_nb(nb, path)
         if export: nbdev_export(path=str(path))
 
@@ -132,7 +133,7 @@ def _finish_write(session, nb, message, diff):
 
 # %% ../nbs/08_edit_interactive.ipynb #b78004d1
 def _validate_cell(cell):
-    _validate_code_cells([cell])
+    validate_code_cells([cell])
     return cell
 
 # %% ../nbs/08_edit_interactive.ipynb #8ef57685
@@ -146,7 +147,7 @@ def make_edit_tools(session):
         "Add one cell to the current notebook."
         with notebook_locks(session.path):
             nb = _read_nb(session.path)
-            new_cell = _validate_cell(_parse_one_cell(content, "code"))
+            new_cell = _validate_cell(parse_one_cell(content, "code"))
             anchor = _none_if_blank(after_id)
             target = len(nb.cells)
             if anchor is not None:
@@ -154,7 +155,7 @@ def make_edit_tools(session):
                 target = idx + 1
             session.record_tool("add_cell", f"after_id={anchor!r}")
             nb.cells.insert(target, new_cell)
-            src = _cell_source(new_cell)
+            src = cell_source(new_cell)
             where = f"after id={anchor}" if anchor is not None else "at end"
             msg = f"Added cell id={new_cell.id} {where}"
             return _finish_write(session, nb, msg, _source_diff("", src, f"cell {new_cell.id}"))
@@ -170,28 +171,28 @@ def make_edit_tools(session):
             nb = _read_nb(session.path)
             idx, cell = _edit_find_cell_by_id(nb.cells, id)
             expected_hash = _none_if_blank(source_hash)
-            if not _cell_matches_hash(cell, expected_hash):
-                actual = _cell_hash(cell, n=None)
+            if not cell_matches_hash(cell, expected_hash):
+                actual = cell_hash(cell, n=None)
                 raise ValueError(f"Hash mismatch for id={id}: expected {expected_hash}, actual {actual[:12]}")
-            before = _cell_source(cell)
+            before = cell_source(cell)
             old_src = _none_if_blank(old_src)
             session.record_tool(
                 "edit_cell",
                 f"id={id!r}, old_src={'yes' if old_src is not None else 'no'}, source_hash={expected_hash!r}",
             )
             if old_src is None:
-                new_cell = _validate_cell(_parse_one_cell(new_src, cell.cell_type))
-                _clear_outputs(new_cell)
+                new_cell = _validate_cell(parse_one_cell(new_src, cell.cell_type))
+                clear_outputs(new_cell)
                 new_cell.id = cell.id
                 nb.cells[idx] = new_cell
-                after = _cell_source(new_cell)
+                after = cell_source(new_cell)
                 mode = "cell"
             else:
                 if old_src not in before: raise ValueError(f"old_src was not found in id={id}")
                 after = before.replace(old_src, new_src, 1)
                 if cell.cell_type == "code": _validate_cell(mk_cell(after, cell_type="code"))
                 cell.source = after
-                _clear_outputs(cell)
+                clear_outputs(cell)
                 mode = "text"
             msg = f"Edited {mode} id={id}"
             return _finish_write(session, nb, msg, _source_diff(before, after, f"cell {id}"))
@@ -220,11 +221,11 @@ def make_edit_tools(session):
             nb = _read_nb(session.path)
             idx, cell = _edit_find_cell_by_id(nb.cells, id)
             expected_hash = _none_if_blank(source_hash)
-            if not _cell_matches_hash(cell, expected_hash):
-                actual = _cell_hash(cell, n=None)
+            if not cell_matches_hash(cell, expected_hash):
+                actual = cell_hash(cell, n=None)
                 raise ValueError(f"Hash mismatch for id={id}: expected {expected_hash}, actual {actual[:12]}")
             session.record_tool("remove_cell", f"id={id!r}, source_hash={expected_hash!r}")
-            before = _cell_source(cell)
+            before = cell_source(cell)
             del nb.cells[idx]
             msg = f"Removed cell id={id}"
             return _finish_write(session, nb, msg, _source_diff(before, "", f"cell {id}"))

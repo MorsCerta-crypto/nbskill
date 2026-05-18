@@ -4,6 +4,7 @@
 __all__ = ['write_nb', 'update_cell', 'apply_nb']
 
 # %% ../nbs/02_write.ipynb #04dbc0fe
+import glob
 import tomllib
 from pathlib import Path
 
@@ -13,20 +14,86 @@ from fastcore.nbio import write_nb as _write_nb
 from fastcore.script import Param, call_parse
 from nbdev.doclinks import nbdev_export
 
-from .execute import _run_notebook_test
+from .execute import run_notebook_test
+from .review import run_style_check
 from nbskill.foundation import (
-    _cell_hash, _cell_matches_hash, _cell_source, _clear_outputs, _cli_error,
-    _cli_return, _find_cell_by_id, _find_cell_by_text, _load_cells_text,
-    _one_chapter, _parse_cells, _parse_one_cell, _replace_cell, _tracked_call,
-    _validate_code_cells,
+    cell_hash, cell_matches_hash, cell_source, clear_outputs, cli_error,
+    cli_return, find_cell_by_id, find_cell_by_text, load_cells_text,
+    one_chapter, parse_cells, parse_one_cell, replace_cell,
+    stamp_notebook_metadata, tracked_call, validate_code_cells,
 )
 from .parallel import notebook_locks
 
 # %% ../nbs/02_write.ipynb #e14e4a46
+def _literal_replacement_mode(old_str, new_str):
+    return old_str is not None or new_str is not None
+
+
+def _resolve_notebook_paths(path):
+    raw = str(path)
+    pth = Path(raw).expanduser()
+    if any(char in raw for char in "*?[]"):
+        candidates = [Path(item) for item in glob.glob(raw, recursive=True)]
+    elif pth.is_dir():
+        candidates = list(pth.rglob("*.ipynb"))
+    elif pth.is_file():
+        candidates = [pth]
+    else:
+        candidates = []
+    paths = sorted({candidate for candidate in candidates if candidate.suffix == ".ipynb" and ".ipynb_checkpoints" not in candidate.parts})
+    if not paths: cli_error(f"No notebooks matched {path!r}")
+    return paths
+
+
+def _replace_literal_in_notebook(nb, old_str, new_str, validate_code=True):
+    changed_cells, matches = 0, 0
+    for cell in nb.cells:
+        before = cell_source(cell)
+        count = before.count(old_str)
+        if not count: continue
+        after = before.replace(old_str, new_str)
+        if validate_code and getattr(cell, "cell_type", None) == "code": validate_code_cells([mk_cell(after)])
+        cell.source = after
+        clear_outputs(cell)
+        changed_cells += 1
+        matches += count
+    if matches: stamp_notebook_metadata(nb)
+    return changed_cells, matches
+
+
+def _write_literal_replacements(path, old_str, new_str, export=True, run_test=False, validate_code=True, dry_run=False):
+    if old_str in {None, ""}: cli_error("Pass a non-empty old_str for literal replacements")
+    if new_str is None: cli_error("Pass new_str for literal replacements")
+    paths = _resolve_notebook_paths(path)
+    changed = []
+    with notebook_locks(*paths):
+        for nb_path in paths:
+            nb = _read_nb(nb_path)
+            cells_changed, matches = _replace_literal_in_notebook(nb, old_str, new_str, validate_code=validate_code)
+            if not matches: continue
+            changed.append((nb_path, cells_changed, matches))
+            if not dry_run:
+                _write_nb(nb, nb_path)
+                if export: nbdev_export(path=str(nb_path))
+                if run_test: run_notebook_test(nb_path)
+    total_matches = sum(matches for _, _, matches in changed)
+    total_cells = sum(cells for _, cells, _ in changed)
+    if not changed:
+        msg = f"No matches for {old_str!r} in {len(paths)} notebook(s)"
+    else:
+        prefix = "Dry run: would replace" if dry_run else "Replaced"
+        msg = f"{prefix} {total_matches} matches in {total_cells} cells across {len(changed)} notebook(s)"
+        details = "; ".join(f"{nb_path}: {matches} matches/{cells} cells" for nb_path, cells, matches in changed)
+        msg += f" ({details})"
+        if export and not dry_run: msg += " and exported with nbdev"
+    print(msg)
+    return cli_return([path for path, _, _ in changed])
+
+
 @call_parse
-@_tracked_call
+@tracked_call
 def write_nb(
-    path: str,  # Notebook path
+    path: str,  # Notebook path, directory, or glob when replacing literals
     cells: Param("Cell block text", str, opt=False, nargs="?") = "",  # Cells to write; use - to read stdin
     cells_file: str | None = None,  # Read cell block text from a UTF-8 file to avoid shell escaping
     before_id: str | None = None,  # Insert before this stable cell id
@@ -36,18 +103,26 @@ def write_nb(
     cell_type: str = "code",  # Default type for cells without %% marker
     export: bool = True,  # Run nbdev-export after writing
     run_test: bool = False,  # Execute the notebook with execnb after writing
-    run_style: bool = False,  # Run chstyle after writing
-    style_strict: bool = False,  # Fail when chstyle finds hints
+    run_style: bool = False,  # Run style_check after writing
+    style_strict: bool = False,  # Fail when style_check finds hints
     validate_code: bool = True,  # Validate new Python code cells before writing
+    old_str: str | None = None,  # Literal text to replace across notebook cell sources
+    new_str: str | None = None,  # Literal replacement text for old_str
+    dry_run: bool = False,  # Show literal replacement plan without writing
 ):
-    "Write cells to a notebook using append, replace, id anchors, or chapters."
-    if before_id and after_id: _cli_error("Use either before_id or after_id, not both")
-    if (before_id or after_id) and chapter is not None: _cli_error("Use id-based insertion or chapter insertion, not both")
-    if (before_id or after_id) and replace: _cli_error("Use id-based insertion or replace, not both")
+    "Write cells to a notebook, or replace literal text across notebooks."
+    if _literal_replacement_mode(old_str, new_str):
+        if cells or cells_file or before_id or after_id or chapter or replace:
+            cli_error("Literal replacement mode only accepts path, old_str, new_str, export, run_test, validate_code, and dry_run")
+        return _write_literal_replacements(path, old_str, new_str, export=export, run_test=run_test, validate_code=validate_code, dry_run=dry_run)
+    if dry_run: cli_error("dry_run is only supported with old_str/new_str literal replacement mode")
+    if before_id and after_id: cli_error("Use either before_id or after_id, not both")
+    if (before_id or after_id) and chapter is not None: cli_error("Use id-based insertion or chapter insertion, not both")
+    if (before_id or after_id) and replace: cli_error("Use id-based insertion or replace, not both")
     path = Path(path)
-    cells = _load_cells_text(cells, cells_file)
-    new_cells = _parse_cells(cells, cell_type)
-    if validate_code: _validate_code_cells(new_cells)
+    cells = load_cells_text(cells, cells_file)
+    new_cells = parse_cells(cells, cell_type)
+    if validate_code: validate_code_cells(new_cells)
 
     with notebook_locks(path):
         if replace and chapter is None:
@@ -55,20 +130,21 @@ def write_nb(
         else:
             nb = _read_nb(path) if path.exists() else new_nb([])
             if chapter is not None:
-                span = _one_chapter(nb.cells, chapter, create=True)
+                span = one_chapter(nb.cells, chapter, create=True)
                 if replace:
                     del nb.cells[span["start"] + 1:span["end"]]
                     target = span["start"] + 1
                 else:
                     target = span["end"]
             elif before_id or after_id:
-                idx, _ = _find_cell_by_id(nb.cells, before_id or after_id)
+                idx, _ = find_cell_by_id(nb.cells, before_id or after_id)
                 target = idx if before_id else idx + 1
             else:
                 target = len(nb.cells)
             for offset, cell in enumerate(new_cells):
                 nb.cells.insert(target + offset, cell)
 
+        stamp_notebook_metadata(nb)
         _write_nb(nb, path)
         if export: nbdev_export(path=str(path))
         msg = f"Wrote {len(nb.cells)} cells to {path}"
@@ -78,15 +154,16 @@ def write_nb(
         if after_id: msg += f" after id={after_id}"
         if export: msg += " and exported with nbdev"
         print(msg)
-        if run_test: _run_notebook_test(path)
+        if run_test: run_notebook_test(path)
         if run_style:
-            print(f"Running chstyle on {path}")
-            _run_chstyle(path, strict=style_strict)
-    return _cli_return(path)
+            print(f"Running style_check on {path}")
+            run_style_check(path, strict=style_strict)
+    return cli_return(path)
 
 # %% ../nbs/02_write.ipynb #5ef9f86f
 def _save_nb(nb, path, export=True):
     with notebook_locks(path):
+        stamp_notebook_metadata(nb)
         _write_nb(nb, path)
         if export: nbdev_export(path=str(path))
 
@@ -102,7 +179,7 @@ def _parse_line_range(line_range, n_lines):
     else:
         start = end = int(value)
     if start < 1 or end < start or end > n_lines:
-        _cli_error(f"line_range must be 1-based and within 1:{n_lines}; got {line_range!r}")
+        cli_error(f"line_range must be 1-based and within 1:{n_lines}; got {line_range!r}")
     return start - 1, end
 
 
@@ -114,7 +191,7 @@ def _replace_line_range(source, line_range, new):
 
 
 @call_parse
-@_tracked_call
+@tracked_call
 def update_cell(
     path: str,  # Notebook path
     new: Param("Replacement cell source, replacement text, or line-range replacement", str, opt=False, nargs="?") = "",
@@ -130,55 +207,56 @@ def update_cell(
     dry_run: bool = False,  # Show the update plan without writing
 ):
     "Update one notebook cell by id, replace old_str, or replace a 1-based line range."
-    if cell_id is None and old_str is None: _cli_error("Pass --cell_id, --old_str, or both")
-    if line_range is not None and cell_id is None: _cli_error("Pass --cell_id with --line_range")
+    if cell_id is None and old_str is None: cli_error("Pass --cell_id, --old_str, or both")
+    if line_range is not None and cell_id is None: cli_error("Pass --cell_id with --line_range")
     path = Path(path)
-    new = _load_cells_text(new, new_file)
+    new = load_cells_text(new, new_file)
 
     with notebook_locks(path):
         nb = _read_nb(path)
-        idx, cell = _find_cell_by_id(nb.cells, cell_id) if cell_id else _find_cell_by_text(nb.cells, old_str)
-        if old_str is not None and old_str not in _cell_source(cell):
-            _cli_error(f"old_str was not found in id={cell.id}")
-        if not _cell_matches_hash(cell, source_hash):
-            actual = _cell_hash(cell, n=None)
-            _cli_error(f"Hash mismatch for id={cell.id}: expected {source_hash}, actual {actual[:12]}")
+        idx, cell = find_cell_by_id(nb.cells, cell_id) if cell_id else find_cell_by_text(nb.cells, old_str)
+        if old_str is not None and old_str not in cell_source(cell):
+            cli_error(f"old_str was not found in id={cell.id}")
+        if not cell_matches_hash(cell, source_hash):
+            actual = cell_hash(cell, n=None)
+            cli_error(f"Hash mismatch for id={cell.id}: expected {source_hash}, actual {actual[:12]}")
 
-        before_hash = _cell_hash(cell)
+        before_hash = cell_hash(cell)
         if line_range is not None:
-            replacement = _replace_line_range(_cell_source(cell), line_range, new)
-            if validate_code and getattr(cell, "cell_type", None) == "code": _validate_code_cells([mk_cell(replacement)])
-            after_hash = _cell_hash(replacement)
+            replacement = _replace_line_range(cell_source(cell), line_range, new)
+            if validate_code and getattr(cell, "cell_type", None) == "code": validate_code_cells([mk_cell(replacement)])
+            after_hash = cell_hash(replacement)
             mode = f"lines {line_range}"
             if not dry_run:
                 cell.source = replacement
-                _clear_outputs(cell)
+                clear_outputs(cell)
         elif old_str is None:
-            new_cell = _parse_one_cell(new, cell_type)
-            if validate_code: _validate_code_cells([new_cell])
-            _clear_outputs(new_cell)
-            if not dry_run: _replace_cell(nb, idx, new_cell)
-            after_hash = _cell_hash(new_cell)
+            new_cell = parse_one_cell(new, cell_type)
+            if validate_code: validate_code_cells([new_cell])
+            clear_outputs(new_cell)
+            if not dry_run: replace_cell(nb, idx, new_cell)
+            after_hash = cell_hash(new_cell)
             mode = "cell"
         else:
-            replacement = _cell_source(cell).replace(old_str, new, 1)
-            if validate_code and getattr(cell, "cell_type", None) == "code": _validate_code_cells([mk_cell(replacement)])
-            after_hash = _cell_hash(replacement)
+            replacement = cell_source(cell).replace(old_str, new, 1)
+            if validate_code and getattr(cell, "cell_type", None) == "code": validate_code_cells([mk_cell(replacement)])
+            after_hash = cell_hash(replacement)
             mode = "text"
             if not dry_run:
                 cell.source = replacement
-                _clear_outputs(cell)
+                clear_outputs(cell)
 
         msg = f"{'Dry run: would update' if dry_run else 'Updated'} {mode} id={cell.id} hash={before_hash}->{after_hash}"
         if dry_run:
             print(msg)
-            return _cli_return(path)
+            return cli_return(path)
+        stamp_notebook_metadata(nb)
         _write_nb(nb, path)
         if export: nbdev_export(path=str(path))
         if export: msg += " and exported with nbdev"
         print(msg)
-        if run_test: _run_notebook_test(path)
-    return _cli_return(path)
+        if run_test: run_notebook_test(path)
+    return cli_return(path)
 
 # %% ../nbs/02_write.ipynb #ead02d6a
 def _read_apply_nb_spec(spec_path):
@@ -229,7 +307,7 @@ def _cleanup_apply_nb_inputs(spec_path, params, base, cleanup):
 
 # %% ../nbs/02_write.ipynb #6a9adfbb
 @call_parse
-@_tracked_call
+@tracked_call
 def apply_nb(
     spec_path: Param("TOML operation file; use - to read TOML from stdin", str, opt=False, nargs="?") = "dev/nbskill-op.toml",
 ):
@@ -242,8 +320,8 @@ def apply_nb(
         "write_nb": write_nb,
         "update_cell": update_cell,
     }
-    if tool not in tools: _cli_error(f"Unknown apply_nb tool {tool!r}; expected one of {', '.join(tools)}")
+    if tool not in tools: cli_error(f"Unknown apply_nb tool {tool!r}; expected one of {', '.join(tools)}")
     result = tools[tool](**params)
     removed = _cleanup_apply_nb_inputs(spec_path, cleanup_params, base, cleanup)
     if removed: print("Removed " + ", ".join(removed))
-    return _cli_return(result)
+    return cli_return(result)

@@ -23,9 +23,10 @@ claude mcp add nbskill -- nbskill_mcp
 
 Prefer the MCP server when it is available. Call `healthcheck` first to
 confirm the server is alive, see the installed version, inspect
-capabilities, and confirm concurrency policy. After reinstalling or
-exporting new MCP tool signatures, fully restart or reconnect the MCP
-client so it refreshes cached schemas.
+capabilities, and confirm concurrency policy. If MCP tools are missing,
+run `uv run nbskill_status` to see the canonical command names and
+reconnect instructions, then restart or reconnect the MCP client after
+reinstalling nbskill.
 
 ## Core Workflow
 
@@ -40,20 +41,27 @@ client so it refreshes cached schemas.
     to add notebook cells by cell id, chapter, or full-notebook
     replacement. Use `cells_file` for multiline additions.
 3.  Use
-    `write_nb(path, old_str="old", new_str="new", dry_run=True, show_cells=True)`
-    to preview exact literal replacements with touched cell ids and
-    compact diffs before writing.
-4.  Use
     [`update_cell`](https://MorsCerta-crypto.github.io/nbskill/write.html#update_cell)
     for precise edits to an existing cell by id, text replacement, or
-    line range. Use `source_hash` when stale context should fail instead
-    of overwriting newer work.
+    line range. Use `new_file` for multiline replacements and
+    `source_hash` when stale context should fail instead of overwriting
+    newer work.
+4.  Use
+    [`batch_edit_nb`](https://MorsCerta-crypto.github.io/nbskill/write.html#batch_edit_nb)
+    for coordinated multi-cell or multi-notebook edits. Start with
+    `dry_run=True`, include source hashes for guarded cells, and inspect
+    the printed diffs before writing.
 5.  Use
+    [`style_check`](https://MorsCerta-crypto.github.io/nbskill/review.html#style_check)
+    as the main hygiene report for large cells, mixed semantic cells,
+    duplicate imports, cell-order problems, and global tool
+    usage/problems.
+6.  Use
     [`diff_nb`](https://MorsCerta-crypto.github.io/nbskill/review.html#diff_nb)
     to inspect code-cell diffs; use `git diff` for Markdown or
     documentation changes. nbskill metadata-only changes are summarized
     instead of expanded.
-6.  Use
+7.  Use
     [`exec_nb`](https://MorsCerta-crypto.github.io/nbskill/execute.html#exec_nb)
     to run a notebook, chapter, or cells up to an id, then inspect
     visible outputs and errors.
@@ -70,12 +78,15 @@ Use CLI commands only when MCP tools are unavailable or final
 verification must run in the project environment:
 
 ``` bash
+uv run nbskill_status
 uv run read_nb nbs/02_write.ipynb --context overview --show_ids
 uv run read_nb nbs/02_write.ipynb --context precise --query 'contains="def write_nb"'
-uv run write_nb nbs/02_write.ipynb --after_id abc123 --cells_file nbs/data/cells.txt --no-export
+uv run write_nb nbs/02_write.ipynb --after_id abc123 --cells_file /tmp/cells.txt --no-export
 uv run write_nb nbs --old_str old_name --new_str new_name --dry_run --show_cells --no-export
-uv run update_cell nbs/02_write.ipynb "replacement line" --cell_id abc123 --line_range 3 --source_hash 7f3a91c0d422 --no-export
+uv run update_cell nbs/02_write.ipynb --cell_id abc123 --source_hash 7f3a91c0d422 --new_file /tmp/cell.txt --no-export
+uv run batch_edit_nb --plan_file /tmp/nbskill-plan.json --dry_run
 uv run diff_nb nbs/02_write.ipynb
+uv run style_check nbs --delete-after-output
 uv run private_symbol_report --path nbs
 uv run exec_nb nbs/03_execute.ipynb --up2id abc123 --timeout 10
 ```

@@ -2,6 +2,12 @@
 
 Use the CLI when MCP is unavailable, when you need shell-friendly batch work, or when final verification must run inside the project environment with `uv run`.
 
+Check the local install and canonical command names:
+
+```bash
+uv run nbskill_status
+```
+
 ## Reading
 
 ```bash
@@ -41,6 +47,13 @@ uv run update_cell notebook.ipynb "" --cell_id abc123 --line_range 3:5 --source_
 ```
 
 `--line_range` is 1-based and inclusive. A single number replaces one line; `START:END` replaces or deletes multiple lines; an empty replacement deletes the selected lines.
+
+Use `batch_edit_nb` when multiple guarded edits should be applied together:
+
+```bash
+uv run batch_edit_nb --plan_file /tmp/nbskill-plan.json --dry_run
+uv run batch_edit_nb --plan_file /tmp/nbskill-plan.json --no-dry_run
+```
 
 ## Running And Verifying
 

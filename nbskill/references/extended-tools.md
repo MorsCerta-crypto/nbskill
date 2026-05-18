@@ -1,6 +1,6 @@
 # Extended Tool Reference
 
-The main `SKILL.md` intentionally stays focused on the core loop: MCP, `read_nb`, `write_nb`, and `exec_nb`. Use this reference when a task needs supporting tools.
+The main `SKILL.md` intentionally stays focused on the core loop: MCP, `read_nb`, `write_nb`, `batch_edit_nb`, and `exec_nb`. Use this reference when a task needs supporting tools.
 
 ## Reading More Context
 
@@ -10,9 +10,14 @@ The main `SKILL.md` intentionally stays focused on the core loop: MCP, `read_nb`
 ## Review And Analysis
 
 - `diff_nb` prints code-cell diffs without notebook output and metadata noise.
-- `style_check` prints fast.ai style hints.
+- `style_report(path)` returns structured notebook hygiene and global usage/problem data.
+- `style_check` prints fast.ai style hints plus nbskill hygiene warnings.
 - `symbol_graph` reports definitions, callers, and callees for one symbol.
 - `private_symbol_report` finds cross-notebook calls to private helpers.
+
+## Batch Editing
+
+`batch_edit_nb(plan_file="/tmp/plan.json", dry_run=True)` applies deterministic JSON edit plans with source-hash guards and diffs. Use it when the target cells and operations are known and repeated `update_cell` calls would be fragile.
 
 ## Single-Notebook Agent Loop
 

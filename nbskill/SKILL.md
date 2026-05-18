@@ -23,7 +23,7 @@ Call `healthcheck` first when you need to confirm the server is alive. The serve
 
 Use MCP tools directly when they are available:
 
-- `read_nb(notebook, scope="overview"|"outline"|"full", ...)` to inspect a notebook without JSON noise.
+- `read_nb(notebook, context="overview"|"precise"|"full", query=..., ...)` to inspect a notebook without JSON noise. Use `query` for semicolon-separated or JSON selections in one call.
 - `show_doc(notebook, symbol, source=False, ...)` to inspect the documentation, exported source, and nearby examples for a symbol.
 - `write_nb(notebook, cells, before_id=None, after_id=None, chapter=None, ...)` to insert or replace cells.
 - `update_cell(notebook, new, cell_id=None, old_str=None, line_range=None, source_hash=None, ...)` for precise edits.
@@ -38,7 +38,7 @@ Use stable cell ids and `source_hash` when editing existing cells. Keep generate
 Use CLI tools when MCP is unavailable, for batch work, or for final verification in the project environment:
 
 ```bash
-uv run read_nb nbs/02_write.ipynb --scope outline
+uv run read_nb nbs/02_write.ipynb --context precise --query "cell_type=exported_code; cell_type=test_cell"
 uv run show_doc nbs/02_write.ipynb write_nb --source
 uv run write_nb nbs/02_write.ipynb --after_id abc123 --cells_file /tmp/cells.txt
 uv run update_cell nbs/02_write.ipynb --cell_id abc123 --source_hash 7f3a91c0d422 --new_file /tmp/cell.txt

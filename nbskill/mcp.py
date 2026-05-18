@@ -77,19 +77,18 @@ def create_mcp():
     @mcp.tool(name="read_nb")
     def read_nb_tool(
         path: str,
+        query: str | None = None,
         cell_id: str | None = None,
         chapter: str | None = None,
         cell_type: str | None = None,
         contains: str | None = None,
-        filter: str | None = None,
-        context: int = 0,
+        context: str = "overview",
         show_ids: bool = False,
-        scope: str = "overview",
     ) -> str:
-        "Read a compact, non-JSON notebook view. Use context to include docs/examples around a cell."
+        "Read compact notebook views; context controls overview, precise source, or full surrounding docs/examples."
         return capture_notebook_call(
-            _read_nb, path, path=path, cell_id=cell_id, chapter=chapter, cell_type=cell_type,
-            contains=contains, filter=filter, context=context, show_ids=show_ids, scope=scope,
+            _read_nb, path, path=path, query=query, cell_id=cell_id, chapter=chapter,
+            cell_type=cell_type, contains=contains, context=context, show_ids=show_ids,
         )
 
     @mcp.tool(name="show_doc")

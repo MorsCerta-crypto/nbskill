@@ -6,7 +6,9 @@ __all__ = ['read_nb', 'show_doc']
 # %% ../nbs/01_read.ipynb #727ac178
 import ast
 import copy
+import json
 import re
+import shlex
 
 from fastcore.nbio import read_nb as _read_nb
 from fastcore.script import Param, call_parse
@@ -100,44 +102,128 @@ def _format_full(items, show_ids=False, line_numbers=False):
     return "\n\n".join(chunks)
 
 # %% ../nbs/01_read.ipynb #98fc4d1a
-def _format_filter(items, show_ids=False, line_numbers=False):
-    return "\n\n".join(
-        f"{_cell_prefix(idx, cell, show_ids)}\n{_format_source(cell.source, line_numbers=line_numbers)}"
-        for idx, cell in items
-    )
+_QUERY_KEY_ALIASES = {
+    "id": "cell_id",
+    "cell": "cell_id",
+    "cell_id": "cell_id",
+    "chapter": "chapter",
+    "type": "cell_type",
+    "class": "cell_type",
+    "cell_type": "cell_type",
+    "contains": "contains",
+    "text": "contains",
+    "regex": "regex",
+    "re": "regex",
+}
+
+
+def _normalize_query_key(key):
+    name = _QUERY_KEY_ALIASES.get(str(key).strip().lower())
+    if name is None:
+        choices = ", ".join(sorted(_QUERY_KEY_ALIASES))
+        raise ValueError(f"Unknown query key {key!r}; use one of: {choices}")
+    return name
+
+
+def _normalize_query_dict(spec):
+    return {_normalize_query_key(key): None if value is None else str(value) for key, value in dict(spec).items()}
+
+
+def _parse_query_terms(text):
+    spec, bare = {}, []
+    for term in shlex.split(str(text)):
+        sep = "=" if "=" in term else ":" if ":" in term else None
+        if sep is None:
+            bare.append(term)
+            continue
+        key, value = term.split(sep, 1)
+        spec[_normalize_query_key(key)] = value
+    if bare and "contains" not in spec: spec["contains"] = " ".join(bare)
+    return spec
+
+
+def _parse_query(query):
+    if query is None: return [{}]
+    if isinstance(query, dict): return [_normalize_query_dict(query)]
+    if isinstance(query, (list, tuple)):
+        specs = []
+        for item in query: specs.extend(_parse_query(item))
+        return specs or [{}]
+
+    text = str(query).strip()
+    if not text: return [{}]
+    try: parsed = json.loads(text)
+    except json.JSONDecodeError:
+        return [_parse_query_terms(part) for part in text.split(";") if part.strip()]
+    return _parse_query(parsed)
+
+
+def _merge_query(base, spec):
+    merged = {key: value for key, value in base.items() if value is not None}
+    merged.update({key: value for key, value in spec.items() if value is not None})
+    return merged
+
+
+def _query_label(spec):
+    if not spec: return "all cells"
+    return " ".join(f"{key}={value}" for key, value in spec.items() if value is not None)
+
+
+def _select_query_items(nb, spec):
+    items = [_find_cell_by_id(nb.cells, spec["cell_id"])] if spec.get("cell_id") else list(enumerate(nb.cells))
+    if spec.get("chapter") is not None:
+        chapter_idxs = _chapter_index_set(nb.cells, spec["chapter"])
+        items = [(i, c) for i, c in items if i in chapter_idxs]
+    if spec.get("cell_type") is not None: items = [(i, c) for i, c in items if _cell_matches_type(c, spec["cell_type"])]
+    if spec.get("contains") is not None: items = [(i, c) for i, c in items if spec["contains"] in c.source]
+    if spec.get("regex") is not None: items = [(i, c) for i, c in items if _matches_filter(c.source, spec["regex"])]
+    return items
+
+
+def _normalize_context(context):
+    value = "overview" if context is None else str(context).strip().lower()
+    if value not in {"overview", "precise", "full"}:
+        raise ValueError("context must be overview, precise, or full")
+    return value
+
+
+def _format_context(items, context, show_ids=False):
+    if context == "overview": return _format_overview(items, show_ids=show_ids)
+    return _format_full(items, show_ids=show_ids, line_numbers=True)
+
 
 # %% ../nbs/01_read.ipynb #e09b2650
 @call_parse
 @_tracked_call
 def read_nb(
     path: str,  # Notebook path
+    query: str | None = None,  # JSON/list or semicolon key=value clauses; combines multiple selections
     cell_id: str | None = None,  # Stable notebook cell id to select
     chapter: str | None = None,  # Chapter title string or regex to select
-    cell_type: str | None = None,  # Filter cells: code/py, md/markdown, raw, export; comma-separated is allowed
+    cell_type: str | None = None,  # Filter cells: code/py/md/raw or dynamic classes like exported_code/test_cell
     contains: str | None = None,  # Include only cells whose source contains this text
-    filter: str | None = None,  # Regex or string; print only matching cell ids and sources
-    context: int = 0,  # Add up to N previous markdown and following non-export code cells
+    context: Param("overview, precise, or full", str, choices=("overview", "precise", "full")) = "overview",  # Output shape; full adds neighboring docs/examples
     show_ids: bool = False,  # Include source hashes in output
-    scope: Param("overview, outline, or full", str, choices=("overview", "outline", "full")) = "overview",
 ):
     "Print a compact, non-JSON view of a notebook."
-    if context < 0: raise ValueError("context must be >= 0")
+    context = _normalize_context(context)
 
     nb = _read_nb(path)
-    selected = any(value is not None for value in (cell_id, contains, filter))
-    items = [_find_cell_by_id(nb.cells, cell_id)] if cell_id is not None else list(enumerate(nb.cells))
-    if chapter is not None:
-        chapter_idxs = _chapter_index_set(nb.cells, chapter)
-        items = [(i, c) for i, c in items if i in chapter_idxs]
-    if cell_type is not None: items = [(i, c) for i, c in items if _cell_matches_type(c, cell_type)]
-    if contains is not None: items = [(i, c) for i, c in items if contains in c.source]
-    if filter is not None: items = [(i, c) for i, c in items if _matches_filter(c.source, filter)]
-    items = _with_context(nb.cells, items, context)
+    base = dict(cell_id=cell_id, chapter=chapter, cell_type=cell_type, contains=contains)
+    specs = [_merge_query(base, spec) for spec in _parse_query(query)]
+    chunks = []
+    for pos, spec in enumerate(specs, start=1):
+        items = _select_query_items(nb, spec)
+        if context == "full": items = _with_context(nb.cells, items, include=True)
+        body = _format_context(items, context, show_ids=show_ids)
+        if len(specs) == 1:
+            chunks.append(body)
+        else:
+            label = f"Query {pos}: {_query_label(spec)}"
+            chunks.append(f"{label}\n{body or '(no matches)'}")
 
-    if filter is not None: text = _format_filter(items, show_ids=show_ids, line_numbers=True)
-    elif scope == "overview": text = _format_overview(items, show_ids=show_ids)
-    elif scope == "outline": text = _format_headers(items, show_ids=show_ids)
-    else: text = _format_full(items, show_ids=show_ids, line_numbers=selected)
+
+    text = "\n\n".join(chunk for chunk in chunks if chunk)
     if text: print(text)
     return _cli_return(text)
 

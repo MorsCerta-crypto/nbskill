@@ -5,7 +5,7 @@ The MCP server is started with `nbskill-mcp`. It is intended to be the normal in
 ## Tool Loop
 
 1. `healthcheck` confirms the server is alive and reports concurrency behavior.
-2. `read_nb` gives a compact view of cells, ids, hashes, headings, and selected source.
+2. `read_nb` gives compact or precise notebook context. Use `context="overview"` for summaries, `context="precise"` for matched source, and `context="full"` when you also need contiguous markdown before and non-export code after matches.
 3. `show_doc` focuses on one exported symbol and its surrounding notebook story.
 4. `write_nb` inserts new cells or replaces a selected chapter/full notebook.
 5. `update_cell` changes one existing cell by id, source text, or line range.
@@ -22,7 +22,7 @@ The locks are local to one MCP server process. If multiple independent MCP serve
 
 ## Editing Safely
 
-Prefer cell ids over numeric positions. When updating an existing cell, pass `source_hash` from `read_nb --show_ids` or the MCP `read_nb` result so stale edits fail instead of overwriting newer work.
+Prefer text anchors or cell ids over numeric positions. When an edit is risky or concurrent, pass `source_hash` from `read_nb --show_ids` or the MCP `read_nb` result so stale edits fail instead of overwriting newer work.
 
 For nbdev projects, exported code belongs in notebook cells marked with nbdev directives such as `#| export`. After notebook edits, use export or verification tools rather than editing generated Python directly.
 

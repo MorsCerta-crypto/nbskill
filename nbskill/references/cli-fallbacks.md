@@ -6,17 +6,18 @@ Use the CLI when MCP is unavailable, when you need shell-friendly batch work, or
 
 ```bash
 uv run read_nb notebook.ipynb
-uv run read_nb notebook.ipynb --scope outline
-uv run read_nb notebook.ipynb --scope full --cell_id abc123 --show_ids
-uv run read_nb notebook.ipynb --filter "def train|class Model" --context 1
+uv run read_nb notebook.ipynb --context precise --cell_id abc123 --show_ids
+uv run read_nb notebook.ipynb --context full --contains "def train"
+uv run read_nb notebook.ipynb --query "cell_type=exported_code contains=train; cell_type=test_cell" --context overview
+uv run read_nb notebook.ipynb --query '[{"cell_type":"exported_code","contains":"Model"},{"regex":"def train|class Model"}]' --context precise
 uv run show_doc notebook.ipynb symbol --source --show_ids
 ```
 
-Scopes:
+Context levels:
 
-- `overview`: compact one-line cell summaries.
-- `outline`: markdown headings, prose, signatures, and docstrings.
-- `full`: full source for selected cells.
+- `overview`: compact one-line summaries for exactly matched cells.
+- `precise`: numbered source for exactly matched cells.
+- `full`: numbered source for matched cells plus contiguous markdown before and non-export code after each match.
 
 ## Writing
 

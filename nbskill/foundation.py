@@ -420,7 +420,9 @@ def _first_line(source):
 # %% ../nbs/00_foundation.ipynb #f4e29752
 def _cell_prefix(idx, cell, show_ids=False):
     suffix = f" hash={_cell_hash(cell)}" if show_ids else ""
-    return f"Cell id={cell.id}{suffix}: {cell.cell_type}"
+    classes = _cell_class_names(cell)
+    class_suffix = f" classes={','.join(classes)}" if classes else ""
+    return f"Cell id={cell.id}{suffix}: {cell.cell_type}{class_suffix}"
 
 # %% ../nbs/00_foundation.ipynb #45af5771
 def _format_chapter_spans(spans, cells, show_ids=False):
@@ -444,6 +446,83 @@ def _is_exported_code_cell(cell):
     return any(_is_export_directive(line) for line in _cell_source(cell).splitlines())
 
 
+def _cell_outputs(cell):
+    return list(getattr(cell, "outputs", []) or [])
+
+
+def _has_cell_output(cell):
+    return bool(_cell_outputs(cell))
+
+
+def _code_tree(cell):
+    try: return ast.parse(_cell_source(cell))
+    except SyntaxError: return None
+
+
+def _code_body(cell):
+    tree = _code_tree(cell)
+    return [] if tree is None else list(tree.body)
+
+
+def _is_import_cell(cell):
+    if getattr(cell, "cell_type", None) != "code": return False
+    body = _code_body(cell)
+    return bool(body) and all(isinstance(node, (ast.Import, ast.ImportFrom)) for node in body)
+
+
+def _has_private_function(cell):
+    if getattr(cell, "cell_type", None) != "code": return False
+    tree = _code_tree(cell)
+    if tree is None: return False
+    return any(
+        isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("_")
+        for node in tree.body
+    )
+
+
+def _has_test_marker(cell):
+    source = _cell_source(cell)
+    tree = _code_tree(cell)
+    if tree is None: return re.search(r"\b(assert|test_[A-Za-z0-9_]*)\b", source) is not None
+    if any(isinstance(node, ast.Assert) for node in ast.walk(tree)): return True
+    return any(
+        isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("test_")
+        for node in tree.body
+    )
+
+
+def _is_test_cell(cell):
+    return getattr(cell, "cell_type", None) == "code" and not _has_cell_output(cell) and _has_test_marker(cell)
+
+
+def _is_section_header(cell):
+    if getattr(cell, "cell_type", None) != "markdown": return False
+    return any(re.match(r"^#{1,2}\s+", line.strip()) for line in _cell_source(cell).splitlines())
+
+
+def _is_docs_cell(cell):
+    if getattr(cell, "cell_type", None) != "markdown": return False
+    return any(line.strip() and not re.match(r"^#{1,2}\s+", line.strip()) for line in _cell_source(cell).splitlines())
+
+
+def _cell_base_class_names(cell):
+    names = []
+    if _is_import_cell(cell): names.append("import_cell")
+    if _has_private_function(cell): names.append("private_code")
+    if _is_exported_code_cell(cell): names.append("exported_code")
+    if _is_test_cell(cell): names.append("test_cell")
+    if getattr(cell, "cell_type", None) == "code" and _has_cell_output(cell): names.append("exploration_cell")
+    if _is_docs_cell(cell): names.append("docs_cell")
+    if _is_section_header(cell): names.append("section_header")
+    return tuple(names)
+
+
+def _cell_class_names(cell):
+    names = _cell_base_class_names(cell)
+    if len(names) > 1: return (*names, "unclean_cell")
+    return names
+
+
 def _normalize_cell_type_filter(value):
     if value is None: return None
     aliases = {
@@ -455,14 +534,36 @@ def _normalize_cell_type_filter(value):
         "doc": "markdown",
         "docs": "markdown",
         "raw": "raw",
-        "export": "export",
-        "exported": "export",
+        "export": "exported_code",
+        "exported": "exported_code",
+        "exported_code": "exported_code",
+        "import": "import_cell",
+        "imports": "import_cell",
+        "import_cell": "import_cell",
+        "private": "private_code",
+        "private_code": "private_code",
+        "test": "test_cell",
+        "tests": "test_cell",
+        "test_cell": "test_cell",
+        "exploration": "exploration_cell",
+        "example": "exploration_cell",
+        "examples": "exploration_cell",
+        "exploration_cell": "exploration_cell",
+        "docs_cell": "docs_cell",
+        "documentation": "docs_cell",
+        "section": "section_header",
+        "header": "section_header",
+        "section_header": "section_header",
+        "unclean": "unclean_cell",
+        "unclean_cell": "unclean_cell",
     }
     normalized = set()
     for item in str(value).split(","):
         key = item.strip().lower()
         if not key: continue
-        if key not in aliases: raise ValueError(f"Unknown cell_type {item!r}; use code, md, raw, or export")
+        if key not in aliases:
+            choices = ", ".join(sorted(set(aliases)))
+            raise ValueError(f"Unknown cell_type {item!r}; use one of: {choices}")
         normalized.add(aliases[key])
     return normalized or None
 
@@ -470,26 +571,28 @@ def _normalize_cell_type_filter(value):
 def _cell_matches_type(cell, cell_type):
     wanted = _normalize_cell_type_filter(cell_type)
     if wanted is None: return True
-    if "export" in wanted and _is_exported_code_cell(cell): return True
-    return getattr(cell, "cell_type", None) in (wanted - {"export"})
+    if getattr(cell, "cell_type", None) in wanted: return True
+    return bool(set(_cell_class_names(cell)) & wanted)
 
 # %% ../nbs/00_foundation.ipynb #917c7bb6
-def _with_context(cells, items, context=0):
-    context = int(context or 0)
-    if context < 0: raise ValueError("context must be >= 0")
-    if context == 0: return items
+def _with_context(cells, items, include=False):
+    if not include: return items
 
     idxs = {idx for idx, _ in items}
     for idx in list(idxs):
-        for offset in range(1, context + 1):
-            prev = idx - offset
-            if prev < 0: break
-            if cells[prev].cell_type == "markdown": idxs.add(prev)
-        for offset in range(1, context + 1):
-            nxt = idx + offset
-            if nxt >= len(cells): break
-            if cells[nxt].cell_type == "code" and not _is_exported_code_cell(cells[nxt]): idxs.add(nxt)
+        prev = idx - 1
+        while prev >= 0 and cells[prev].cell_type == "markdown":
+            idxs.add(prev)
+            prev -= 1
+
+        nxt = idx + 1
+        while nxt < len(cells):
+            cell = cells[nxt]
+            if cell.cell_type != "code" or _is_exported_code_cell(cell): break
+            idxs.add(nxt)
+            nxt += 1
     return [(idx, cells[idx]) for idx in sorted(idxs)]
+
 
 # %% ../nbs/00_foundation.ipynb #dd511845
 def _chapter_title(cell):

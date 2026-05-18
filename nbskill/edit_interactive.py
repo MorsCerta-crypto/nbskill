@@ -19,7 +19,7 @@ from nbdev.doclinks import nbdev_export
 
 from .execute import exec_nb as _exec_nb
 from nbskill.foundation import (
-    _cell_hash, _cell_matches_hash, _cell_source, _clear_outputs,
+    _cell_class_names, _cell_hash, _cell_matches_hash, _cell_source, _clear_outputs,
     _parse_one_cell, _validate_code_cells,
 )
 from .parallel import notebook_locks
@@ -55,7 +55,9 @@ def notebook_view(path, revision=0):
         nb = _read_nb(path)
         lines = [f"Notebook: {path}", f"Revision: {revision}", ""]
         for idx, cell in enumerate(nb.cells):
-            lines.append(f"CELL {idx} id={cell.id} type={cell.cell_type} hash={_cell_hash(cell)}")
+            classes = _cell_class_names(cell)
+            class_text = f" classes={','.join(classes)}" if classes else ""
+            lines.append(f"CELL {idx} id={cell.id} type={cell.cell_type}{class_text} hash={_cell_hash(cell)}")
             lines.append("<<<SOURCE")
             lines.append(_cell_source(cell).rstrip())
             lines.append("SOURCE")

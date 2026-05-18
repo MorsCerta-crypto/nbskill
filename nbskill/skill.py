@@ -27,7 +27,9 @@ def install_nbskill(
     elif target in {"claude", "claude-code", "claude_code"}: roots = [Path.home() / ".claude" / "skills"]
     elif target == "both": roots = [Path.home() / ".codex" / "skills", Path.home() / ".claude" / "skills"]
     else: raise ValueError("target must be codex, claude, both, or use skills_dir")
-    skill_text = files("nbskill").joinpath("SKILL.md").read_text(encoding="utf-8")
+    package = files("nbskill")
+    skill_text = package.joinpath("SKILL.md").read_text(encoding="utf-8")
+    references = package.joinpath("references")
     installed = []
     for root in roots:
         dst_dir = root / skill_name
@@ -35,6 +37,12 @@ def install_nbskill(
         if dst.exists() and not overwrite: raise FileExistsError(dst)
         dst_dir.mkdir(parents=True, exist_ok=True)
         dst.write_text(skill_text, encoding="utf-8")
+        if references.is_dir():
+            ref_dir = dst_dir / "references"
+            ref_dir.mkdir(exist_ok=True)
+            for ref in references.iterdir():
+                if ref.is_file():
+                    (ref_dir / ref.name).write_text(ref.read_text(encoding="utf-8"), encoding="utf-8")
         installed.append(dst)
     msg = "\n".join(f"Installed {path}" for path in installed)
     print(msg)

@@ -20,6 +20,7 @@ from nbskill.foundation import (
     _one_chapter, _parse_cells, _parse_one_cell, _replace_cell, _tracked_call,
     _validate_code_cells,
 )
+from .parallel import notebook_locks
 
 # %% ../nbs/02_write.ipynb #e14e4a46
 @call_parse
@@ -48,44 +49,46 @@ def write_nb(
     new_cells = _parse_cells(cells, cell_type)
     if validate_code: _validate_code_cells(new_cells)
 
-    if replace and chapter is None:
-        nb = new_nb(new_cells)
-    else:
-        nb = _read_nb(path) if path.exists() else new_nb([])
-        if chapter is not None:
-            span = _one_chapter(nb.cells, chapter, create=True)
-            if replace:
-                del nb.cells[span["start"] + 1:span["end"]]
-                target = span["start"] + 1
-            else:
-                target = span["end"]
-        elif before_id or after_id:
-            idx, _ = _find_cell_by_id(nb.cells, before_id or after_id)
-            target = idx if before_id else idx + 1
+    with notebook_locks(path):
+        if replace and chapter is None:
+            nb = new_nb(new_cells)
         else:
-            target = len(nb.cells)
-        for offset, cell in enumerate(new_cells):
-            nb.cells.insert(target + offset, cell)
+            nb = _read_nb(path) if path.exists() else new_nb([])
+            if chapter is not None:
+                span = _one_chapter(nb.cells, chapter, create=True)
+                if replace:
+                    del nb.cells[span["start"] + 1:span["end"]]
+                    target = span["start"] + 1
+                else:
+                    target = span["end"]
+            elif before_id or after_id:
+                idx, _ = _find_cell_by_id(nb.cells, before_id or after_id)
+                target = idx if before_id else idx + 1
+            else:
+                target = len(nb.cells)
+            for offset, cell in enumerate(new_cells):
+                nb.cells.insert(target + offset, cell)
 
-    _write_nb(nb, path)
-    if export: nbdev_export(path=str(path))
-    msg = f"Wrote {len(nb.cells)} cells to {path}"
-    if replace: msg += " using replace"
-    if chapter is not None: msg += f" in chapter {chapter!r}"
-    if before_id: msg += f" before id={before_id}"
-    if after_id: msg += f" after id={after_id}"
-    if export: msg += " and exported with nbdev"
-    print(msg)
-    if run_test: _run_notebook_test(path)
-    if run_style:
-        print(f"Running chstyle on {path}")
-        _run_chstyle(path, strict=style_strict)
+        _write_nb(nb, path)
+        if export: nbdev_export(path=str(path))
+        msg = f"Wrote {len(nb.cells)} cells to {path}"
+        if replace: msg += " using replace"
+        if chapter is not None: msg += f" in chapter {chapter!r}"
+        if before_id: msg += f" before id={before_id}"
+        if after_id: msg += f" after id={after_id}"
+        if export: msg += " and exported with nbdev"
+        print(msg)
+        if run_test: _run_notebook_test(path)
+        if run_style:
+            print(f"Running chstyle on {path}")
+            _run_chstyle(path, strict=style_strict)
     return _cli_return(path)
 
 # %% ../nbs/02_write.ipynb #5ef9f86f
 def _save_nb(nb, path, export=True):
-    _write_nb(nb, path)
-    if export: nbdev_export(path=str(path))
+    with notebook_locks(path):
+        _write_nb(nb, path)
+        if export: nbdev_export(path=str(path))
 
 # %% ../nbs/02_write.ipynb #8637ca42
 def _parse_line_range(line_range, n_lines):
@@ -130,50 +133,51 @@ def update_cell(
     if cell_id is None and old_str is None: _cli_error("Pass --cell_id, --old_str, or both")
     if line_range is not None and cell_id is None: _cli_error("Pass --cell_id with --line_range")
     path = Path(path)
-    nb = _read_nb(path)
     new = _load_cells_text(new, new_file)
 
-    idx, cell = _find_cell_by_id(nb.cells, cell_id) if cell_id else _find_cell_by_text(nb.cells, old_str)
-    if old_str is not None and old_str not in _cell_source(cell):
-        _cli_error(f"old_str was not found in id={cell.id}")
-    if not _cell_matches_hash(cell, source_hash):
-        actual = _cell_hash(cell, n=None)
-        _cli_error(f"Hash mismatch for id={cell.id}: expected {source_hash}, actual {actual[:12]}")
+    with notebook_locks(path):
+        nb = _read_nb(path)
+        idx, cell = _find_cell_by_id(nb.cells, cell_id) if cell_id else _find_cell_by_text(nb.cells, old_str)
+        if old_str is not None and old_str not in _cell_source(cell):
+            _cli_error(f"old_str was not found in id={cell.id}")
+        if not _cell_matches_hash(cell, source_hash):
+            actual = _cell_hash(cell, n=None)
+            _cli_error(f"Hash mismatch for id={cell.id}: expected {source_hash}, actual {actual[:12]}")
 
-    before_hash = _cell_hash(cell)
-    if line_range is not None:
-        replacement = _replace_line_range(_cell_source(cell), line_range, new)
-        if validate_code and getattr(cell, "cell_type", None) == "code": _validate_code_cells([mk_cell(replacement)])
-        after_hash = _cell_hash(replacement)
-        mode = f"lines {line_range}"
-        if not dry_run:
-            cell.source = replacement
-            _clear_outputs(cell)
-    elif old_str is None:
-        new_cell = _parse_one_cell(new, cell_type)
-        if validate_code: _validate_code_cells([new_cell])
-        _clear_outputs(new_cell)
-        if not dry_run: _replace_cell(nb, idx, new_cell)
-        after_hash = _cell_hash(new_cell)
-        mode = "cell"
-    else:
-        replacement = _cell_source(cell).replace(old_str, new, 1)
-        if validate_code and getattr(cell, "cell_type", None) == "code": _validate_code_cells([mk_cell(replacement)])
-        after_hash = _cell_hash(replacement)
-        mode = "text"
-        if not dry_run:
-            cell.source = replacement
-            _clear_outputs(cell)
+        before_hash = _cell_hash(cell)
+        if line_range is not None:
+            replacement = _replace_line_range(_cell_source(cell), line_range, new)
+            if validate_code and getattr(cell, "cell_type", None) == "code": _validate_code_cells([mk_cell(replacement)])
+            after_hash = _cell_hash(replacement)
+            mode = f"lines {line_range}"
+            if not dry_run:
+                cell.source = replacement
+                _clear_outputs(cell)
+        elif old_str is None:
+            new_cell = _parse_one_cell(new, cell_type)
+            if validate_code: _validate_code_cells([new_cell])
+            _clear_outputs(new_cell)
+            if not dry_run: _replace_cell(nb, idx, new_cell)
+            after_hash = _cell_hash(new_cell)
+            mode = "cell"
+        else:
+            replacement = _cell_source(cell).replace(old_str, new, 1)
+            if validate_code and getattr(cell, "cell_type", None) == "code": _validate_code_cells([mk_cell(replacement)])
+            after_hash = _cell_hash(replacement)
+            mode = "text"
+            if not dry_run:
+                cell.source = replacement
+                _clear_outputs(cell)
 
-    msg = f"{'Dry run: would update' if dry_run else 'Updated'} {mode} id={cell.id} hash={before_hash}->{after_hash}"
-    if dry_run:
+        msg = f"{'Dry run: would update' if dry_run else 'Updated'} {mode} id={cell.id} hash={before_hash}->{after_hash}"
+        if dry_run:
+            print(msg)
+            return _cli_return(path)
+        _write_nb(nb, path)
+        if export: nbdev_export(path=str(path))
+        if export: msg += " and exported with nbdev"
         print(msg)
-        return _cli_return(path)
-    _write_nb(nb, path)
-    if export: nbdev_export(path=str(path))
-    if export: msg += " and exported with nbdev"
-    print(msg)
-    if run_test: _run_notebook_test(path)
+        if run_test: _run_notebook_test(path)
     return _cli_return(path)
 
 # %% ../nbs/02_write.ipynb #ead02d6a

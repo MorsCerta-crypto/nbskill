@@ -14,6 +14,7 @@ from fastcore.nbio import write_nb as _write_nb
 from fastcore.script import call_parse
 
 from .foundation import _cli_error, _cli_return, _one_chapter, _parse_literal, _tracked_call
+from .parallel import execution_slot, notebook_locks
 
 # %% ../nbs/03_execute.ipynb #d43ace86
 def _exec_limiters(up2id):
@@ -130,22 +131,24 @@ def _run_cell(shell, cell, timeout=30, verbose=False):
 
 # %% ../nbs/03_execute.ipynb #65848fef
 def _execute_nb(path, dest=None, exc_stop=False, preproc=lambda cell: False, postproc=lambda cell: None, timeout=30, verbose=False):
-    nb = _read_nb(path)
-    shell = _exec_shell(path)
-    first_exc = None
-    for cell in nb.cells:
-        if preproc(cell): continue
-        if _skip_timed_out_cell(cell):
-            postproc(cell)
-            continue
-        _run_cell(shell, cell, timeout=timeout, verbose=verbose)
-        postproc(cell)
-        if shell.exc and exc_stop:
-            first_exc = shell.exc
-            break
-    if dest: _write_nb(nb, dest)
-    if first_exc: raise first_exc
-    return nb
+    with notebook_locks(path, dest):
+        with execution_slot():
+            nb = _read_nb(path)
+            shell = _exec_shell(path)
+            first_exc = None
+            for cell in nb.cells:
+                if preproc(cell): continue
+                if _skip_timed_out_cell(cell):
+                    postproc(cell)
+                    continue
+                _run_cell(shell, cell, timeout=timeout, verbose=verbose)
+                postproc(cell)
+                if shell.exc and exc_stop:
+                    first_exc = shell.exc
+                    break
+            if dest: _write_nb(nb, dest)
+            if first_exc: raise first_exc
+            return nb
 
 # %% ../nbs/03_execute.ipynb #1e0af2c5
 def _text_output(value):
@@ -186,16 +189,17 @@ def _executed_cells(nb, up2id=None):
 
 
 def _print_nb_outputs(path, up2id=None):
-    nb = _read_nb(path)
-    for idx, cell in _executed_cells(nb, up2id):
-        outputs = getattr(cell, "outputs", None) or []
-        has_error = any(output.get("output_type") == "error" for output in outputs)
-        for output in outputs:
-            if has_error and _is_rich_traceback_stream(output): continue
-            text = _output_text(output)
-            if not text: continue
-            print(f"--- output id={cell.id} ---")
-            print(text, end="" if text.endswith("\n") else "\n")
+    with notebook_locks(path):
+        nb = _read_nb(path)
+        for idx, cell in _executed_cells(nb, up2id):
+            outputs = getattr(cell, "outputs", None) or []
+            has_error = any(output.get("output_type") == "error" for output in outputs)
+            for output in outputs:
+                if has_error and _is_rich_traceback_stream(output): continue
+                text = _output_text(output)
+                if not text: continue
+                print(f"--- output id={cell.id} ---")
+                print(text, end="" if text.endswith("\n") else "\n")
 
 # %% ../nbs/03_execute.ipynb #434c13b3
 @call_parse
@@ -215,8 +219,9 @@ def exec_nb(
     chapter_title = None
     if chapter is not None:
         if up2id is not None: raise ValueError("Use either chapter or up2id, not both")
-        nb = _read_nb(path)
-        span = _one_chapter(nb.cells, chapter)
+        with notebook_locks(path):
+            nb = _read_nb(path)
+            span = _one_chapter(nb.cells, chapter)
         up2id, chapter_title = span["end"], span["title"]
     preproc, postproc = _exec_limiters(up2id)
     _execute_nb(path, dest=dest, exc_stop=exc_stop, preproc=preproc, postproc=postproc, timeout=timeout, verbose=verbose)
@@ -230,15 +235,16 @@ def exec_nb(
 
 # %% ../nbs/03_execute.ipynb #e9c50752
 def _notebook_error_summaries(path, up2id=None):
-    nb = _read_nb(path)
-    errors = []
-    for idx, cell in _executed_cells(nb, up2id=up2id):
-        for output in cell.get("outputs", []):
-            if output.get("output_type") == "error":
-                ename = output.get("ename", "Error")
-                evalue = output.get("evalue", "")
-                errors.append(f"id={cell.id} {ename}: {evalue}".strip())
-    return errors
+    with notebook_locks(path):
+        nb = _read_nb(path)
+        errors = []
+        for idx, cell in _executed_cells(nb, up2id=up2id):
+            for output in cell.get("outputs", []):
+                if output.get("output_type") == "error":
+                    ename = output.get("ename", "Error")
+                    evalue = output.get("evalue", "")
+                    errors.append(f"id={cell.id} {ename}: {evalue}".strip())
+        return errors
 
 # %% ../nbs/03_execute.ipynb #891fb269
 def _run_notebook_test(path, timeout=30):

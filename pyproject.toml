@@ -20,6 +20,7 @@ dependencies = [
     "fastaistyle>=0.0.15",
     "fastcore>=1.12.43",
     "fastmcp>=3.3.1",
+    "lisette>=0.1.33",
     "nbdev>=3.0.15",
 ]
 
@@ -53,6 +54,6 @@ version = {attr = "nbskill.__version__"}
 include = ["nbskill"]
 
 [tool.setuptools.package-data]
-nbskill = ["SKILL.md", "SKILL.archive.md"]
+nbskill = ["SKILL.md", "SKILL.archive.md", "references/*.md"]
 
 [tool.nbdev]

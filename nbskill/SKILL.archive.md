@@ -168,7 +168,7 @@ py2nbs src
 apply_nb dev/nbskill-op.toml
 doc4symbol notebook.ipynb symbol "Markdown docs"
 example4symbol notebook.ipynb symbol "assert symbol(...) == expected"
-install-nbskill --target both
+install_nbskill --target both
 ```
 
 Keep these secondary. The core co-creation workflow is `read_nb`, `show_doc`, `write_nb`/`apply_nb`, `update_cell`, and `exec_nb`.

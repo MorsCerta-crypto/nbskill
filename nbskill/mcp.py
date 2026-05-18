@@ -7,6 +7,7 @@ __all__ = ['as_text', 'capture_call', 'capture_notebook_call', 'create_mcp', 'ma
 import os
 import sys
 from contextlib import redirect_stdout, redirect_stderr
+from importlib.metadata import PackageNotFoundError, version
 from io import StringIO
 from pathlib import Path
 
@@ -33,6 +34,11 @@ def as_text(value):
     return "" if value is None else str(value)
 
 
+def _package_version(name="nbskill"):
+    try: return version(name)
+    except PackageNotFoundError: return "unknown"
+
+
 def capture_call(func, **kwargs):
     out, err = StringIO(), StringIO()
     with redirect_stdout(out), redirect_stderr(err):
@@ -52,6 +58,10 @@ def capture_notebook_call(func, *paths, **kwargs):
 # %% ../nbs/07_mcp.ipynb #6daab47d
 def create_mcp():
     "Create the nbskill FastMCP server."
+    capabilities = (
+        "read_nb,show_doc,write_nb,update_cell,exec_nb,diff_nb,execute_plan,"
+        "symbol_graph,private_symbol_report,apply_nb,style_check,py2nb,py2nbs"
+    )
     mcp = FastMCP(
         "nbskill",
         instructions=(
@@ -69,11 +79,14 @@ def create_mcp():
         "Return a small status report for the local nbskill MCP server."
         return "\n".join([
             "nbskill mcp ok",
+            f"version={_package_version()}",
             f"cwd={Path.cwd()}",
             f"python={sys.executable}",
             f"pid={os.getpid()}",
+            f"capabilities={capabilities}",
             "parallel=same-notebook operations serialized; different notebooks may run in parallel",
             "execution=global semaphore with one active notebook execution",
+            "schema_refresh=restart or reconnect the MCP client after reinstall/export to refresh tool schemas",
         ])
 
     @mcp.tool(name="read_nb")
@@ -115,13 +128,14 @@ def create_mcp():
         old_str: str | None = None,
         new_str: str | None = None,
         dry_run: bool = False,
+        show_cells: bool = False,
     ) -> str:
         "Write cells to a notebook, or replace literal text across notebooks."
         return capture_notebook_call(
             _write_nb, path, path=path, cells=cells, cells_file=None, before_id=before_id, after_id=after_id,
             chapter=chapter, replace=replace, cell_type=cell_type, export=export, run_test=run_test,
             run_style=run_style, style_strict=style_strict, validate_code=validate_code,
-            old_str=old_str, new_str=new_str, dry_run=dry_run,
+            old_str=old_str, new_str=new_str, dry_run=dry_run, show_cells=show_cells,
         )
 
     @mcp.tool(name="update_cell")
@@ -164,7 +178,7 @@ def create_mcp():
 
     @mcp.tool(name="diff_nb")
     def diff_nb_tool(path: str, ref_a: str | None = "HEAD", ref_b: str | None = None, adds: bool = True, changes: bool = True, dels: bool = False) -> str:
-        "Diff code cells only."
+        "Diff code cells only. nbskill metadata-only changes are summarized, not expanded."
         return capture_notebook_call(_diff_nb, path, path=path, ref_a=ref_a, ref_b=ref_b, adds=adds, changes=changes, dels=dels)
 
     @mcp.tool(name="execute_plan")

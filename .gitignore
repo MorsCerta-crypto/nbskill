@@ -48,7 +48,7 @@ wheels/
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
 *.spec
-
+tools-report.md
 # Installer logs
 pip-log.txt
 pip-delete-this-directory.txt

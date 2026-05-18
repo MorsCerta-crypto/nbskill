@@ -4,6 +4,7 @@
 __all__ = ['run_style_check', 'style_check', 'code_source', 'diff_nb']
 
 # %% ../nbs/04_review.ipynb #3cff0f46
+import json
 import subprocess
 from pathlib import Path
 
@@ -71,6 +72,53 @@ def _git_ref_path_error(path, ref):
     )
 
 
+def _git_root_rel(path):
+    path = Path(path)
+    root_cmd = subprocess.run(
+        ["git", "-C", str(path.parent), "rev-parse", "--show-toplevel"],
+        capture_output=True, text=True,
+    )
+    if root_cmd.returncode != 0: return None, None
+    root = Path(root_cmd.stdout.strip())
+    try: return root, path.resolve().relative_to(root.resolve()).as_posix()
+    except ValueError: return None, None
+
+
+def _notebook_json_at_ref(path, ref):
+    path = Path(path)
+    if ref is None:
+        return json.loads(path.read_text(encoding="utf-8"))
+    root, rel = _git_root_rel(path)
+    if root is None: return None
+    show = subprocess.run(["git", "-C", str(root), "show", f"{ref}:{rel}"], capture_output=True, text=True)
+    if show.returncode != 0: return None
+    return json.loads(show.stdout)
+
+
+def _nbskill_metadata_by_cell(nb_json):
+    cells = (nb_json or {}).get("cells", [])
+    return {
+        cell.get("id", str(idx)): (cell.get("metadata", {}) or {}).get("nbskill")
+        for idx, cell in enumerate(cells)
+    }
+
+
+def _nbskill_metadata_change_count(path, ref_a, ref_b):
+    try:
+        old = _nbskill_metadata_by_cell(_notebook_json_at_ref(path, ref_a))
+        new = _nbskill_metadata_by_cell(_notebook_json_at_ref(path, ref_b))
+    except (OSError, json.JSONDecodeError, TypeError):
+        return 0
+    keys = set(old) | set(new)
+    return sum(1 for key in keys if old.get(key) != new.get(key) and (old.get(key) is not None or new.get(key) is not None))
+
+
+def _metadata_summary(count):
+    if not count: return ""
+    noun = "cell" if count == 1 else "cells"
+    return f"Ignored nbskill metadata changes in {count} {noun}."
+
+
 @call_parse
 @tracked_call
 def diff_nb(
@@ -81,7 +129,7 @@ def diff_nb(
     changes: bool = True,  # Include changed code cells
     dels: bool = False,  # Include deleted code cells
 ):
-    "Print nbdev-style diffs for code cells only."
+    "Print nbdev-style diffs for code cells only; summarize nbskill metadata-only changes."
     ref_a, ref_b = none_if_string(ref_a), none_if_string(ref_b)
     if msg := (_git_ref_path_error(path, ref_a) or _git_ref_path_error(path, ref_b)):
         cli_error(msg)
@@ -103,6 +151,10 @@ def diff_nb(
     if changes: blocks += [(cid, source_diff(old[cid], new[cid])) for cid in new if cid in old and new[cid] != old[cid]]
     if dels:    blocks += [(cid, source_diff(old[cid], "")) for cid in old if cid not in new]
     text = "\n\n".join(f"--- code cell {cid} ---\n{diff}" for cid, diff in blocks if diff.strip())
-    if text: print(text)
-    else: print("No code cell changes")
-    return cli_return(text)
+    metadata_summary = _metadata_summary(_nbskill_metadata_change_count(path, ref_a, ref_b))
+    if text and metadata_summary: report = f"{text}\n\n{metadata_summary}"
+    elif text: report = text
+    elif metadata_summary: report = f"No code cell changes\n{metadata_summary}"
+    else: report = "No code cell changes"
+    print(report)
+    return cli_return(report)

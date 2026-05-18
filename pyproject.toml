@@ -41,13 +41,15 @@ diff_nb = "nbskill.review:diff_nb"
 py2nb = "nbskill.convert:py2nb"
 py2nbs = "nbskill.convert:py2nbs"
 style_check = "nbskill.review:style_check"
+install_nbskill = "nbskill.skill:install_nbskill"
 install-nbskill = "nbskill.skill:install_nbskill"
-build-nbskill-skill = "nbskill.skill:build_skill_from_readme"
 build_nbskill_skill = "nbskill.skill:build_skill_from_readme"
-symbol-graph = "nbskill.graph:symbol_graph"
+build-nbskill-skill = "nbskill.skill:build_skill_from_readme"
 symbol_graph = "nbskill.graph:symbol_graph"
-private-symbol-report = "nbskill.graph:private_symbol_report"
+symbol-graph = "nbskill.graph:symbol_graph"
 private_symbol_report = "nbskill.graph:private_symbol_report"
+private-symbol-report = "nbskill.graph:private_symbol_report"
+nbskill_mcp = "nbskill.mcp:main"
 nbskill-mcp = "nbskill.mcp:main"
 
 [project.entry-points.nbdev]
@@ -63,6 +65,7 @@ include = ["nbskill"]
 nbskill = ["SKILL.md", "SKILL.archive.md", "references/*.md"]
 
 [tool.nbdev]
+allowed_cell_metadata_keys = ["nbskill"]
 
 [dependency-groups]
 dev = [

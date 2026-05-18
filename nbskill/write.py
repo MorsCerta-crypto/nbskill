@@ -4,6 +4,7 @@
 __all__ = ['write_nb', 'update_cell', 'apply_nb']
 
 # %% ../nbs/02_write.ipynb #04dbc0fe
+import difflib
 import glob
 import tomllib
 from pathlib import Path
@@ -15,7 +16,7 @@ from fastcore.script import Param, call_parse
 from nbdev.doclinks import nbdev_export
 
 from .execute import run_notebook_test
-from .review import run_style_check
+from .review import style_check
 from nbskill.foundation import (
     cell_hash, cell_matches_hash, cell_source, clear_outputs, cli_error,
     cli_return, find_cell_by_id, find_cell_by_text, load_cells_text,
@@ -45,23 +46,48 @@ def _resolve_notebook_paths(path):
     return paths
 
 
-def _replace_literal_in_notebook(nb, old_str, new_str, validate_code=True):
-    changed_cells, matches = 0, 0
+def _literal_cell_diff(before, after, limit=24):
+    lines = list(difflib.unified_diff(
+        before.splitlines(), after.splitlines(), fromfile="before", tofile="after", lineterm="", n=2,
+    ))
+    if len(lines) > limit: lines = [*lines[:limit], "... diff truncated ..."]
+    return "\n".join(lines)
+
+
+def _replace_literal_in_notebook(nb, old_str, new_str, validate_code=True, collect_details=False):
+    changed_cells, matches, details = 0, 0, []
     for cell in nb.cells:
         before = cell_source(cell)
         count = before.count(old_str)
         if not count: continue
         after = before.replace(old_str, new_str)
         if validate_code and getattr(cell, "cell_type", None) == "code": validate_code_cells([mk_cell(after)])
+        if collect_details:
+            details.append({
+                "cell_id": getattr(cell, "id", ""),
+                "cell_type": getattr(cell, "cell_type", ""),
+                "matches": count,
+                "diff": _literal_cell_diff(before, after),
+            })
         cell.source = after
         clear_outputs(cell)
         changed_cells += 1
         matches += count
     if matches: stamp_notebook_metadata(nb)
-    return changed_cells, matches
+    return changed_cells, matches, details
 
 
-def _write_literal_replacements(path, old_str, new_str, export=True, run_test=False, validate_code=True, dry_run=False):
+def _format_literal_replacement_details(changed):
+    lines = ["Changed cells:"]
+    for nb_path, _, _, details in changed:
+        for detail in details:
+            lines.append(f"- {nb_path} id={detail['cell_id']} type={detail['cell_type']} matches={detail['matches']}")
+            if detail["diff"]:
+                lines.extend(f"    {line}" for line in detail["diff"].splitlines())
+    return "\n".join(lines)
+
+
+def _write_literal_replacements(path, old_str, new_str, export=True, run_test=False, validate_code=True, dry_run=False, show_cells=False):
     if old_str in {None, ""}: cli_error("Pass a non-empty old_str for literal replacements")
     if new_str is None: cli_error("Pass new_str for literal replacements")
     paths = _resolve_notebook_paths(path)
@@ -69,25 +95,28 @@ def _write_literal_replacements(path, old_str, new_str, export=True, run_test=Fa
     with notebook_locks(*paths):
         for nb_path in paths:
             nb = _read_nb(nb_path)
-            cells_changed, matches = _replace_literal_in_notebook(nb, old_str, new_str, validate_code=validate_code)
+            cells_changed, matches, details = _replace_literal_in_notebook(
+                nb, old_str, new_str, validate_code=validate_code, collect_details=show_cells,
+            )
             if not matches: continue
-            changed.append((nb_path, cells_changed, matches))
+            changed.append((nb_path, cells_changed, matches, details))
             if not dry_run:
                 _write_nb(nb, nb_path)
                 if export: nbdev_export(path=str(nb_path))
                 if run_test: run_notebook_test(nb_path)
-    total_matches = sum(matches for _, _, matches in changed)
-    total_cells = sum(cells for _, cells, _ in changed)
+    total_matches = sum(matches for _, _, matches, _ in changed)
+    total_cells = sum(cells for _, cells, _, _ in changed)
     if not changed:
         msg = f"No matches for {old_str!r} in {len(paths)} notebook(s)"
     else:
         prefix = "Dry run: would replace" if dry_run else "Replaced"
         msg = f"{prefix} {total_matches} matches in {total_cells} cells across {len(changed)} notebook(s)"
-        details = "; ".join(f"{nb_path}: {matches} matches/{cells} cells" for nb_path, cells, matches in changed)
+        details = "; ".join(f"{nb_path}: {matches} matches/{cells} cells" for nb_path, cells, matches, _ in changed)
         msg += f" ({details})"
         if export and not dry_run: msg += " and exported with nbdev"
+        if show_cells: msg += f"\n{_format_literal_replacement_details(changed)}"
     print(msg)
-    return cli_return([path for path, _, _ in changed])
+    return cli_return([path for path, _, _, _ in changed])
 
 
 @call_parse
@@ -103,18 +132,20 @@ def write_nb(
     cell_type: str = "code",  # Default type for cells without %% marker
     export: bool = True,  # Run nbdev-export after writing
     run_test: bool = False,  # Execute the notebook with execnb after writing
-    run_style: bool = False,  # Run style_check after writing
-    style_strict: bool = False,  # Fail when style_check finds hints
+    run_style: bool = False,  # Run chstyle after writing
+    style_strict: bool = False,  # Fail when chstyle finds hints
     validate_code: bool = True,  # Validate new Python code cells before writing
     old_str: str | None = None,  # Literal text to replace across notebook cell sources
     new_str: str | None = None,  # Literal replacement text for old_str
     dry_run: bool = False,  # Show literal replacement plan without writing
+    show_cells: bool = False,  # Include touched cell ids and compact diffs for literal replacements
 ):
     "Write cells to a notebook, or replace literal text across notebooks."
     if _literal_replacement_mode(old_str, new_str):
         if cells or cells_file or before_id or after_id or chapter or replace:
-            cli_error("Literal replacement mode only accepts path, old_str, new_str, export, run_test, validate_code, and dry_run")
-        return _write_literal_replacements(path, old_str, new_str, export=export, run_test=run_test, validate_code=validate_code, dry_run=dry_run)
+            cli_error("Literal replacement mode only accepts path, old_str, new_str, export, run_test, validate_code, dry_run, and show_cells")
+        return _write_literal_replacements(path, old_str, new_str, export=export, run_test=run_test, validate_code=validate_code, dry_run=dry_run, show_cells=show_cells)
+    if show_cells: cli_error("show_cells is only supported with old_str/new_str literal replacement mode")
     if dry_run: cli_error("dry_run is only supported with old_str/new_str literal replacement mode")
     if before_id and after_id: cli_error("Use either before_id or after_id, not both")
     if (before_id or after_id) and chapter is not None: cli_error("Use id-based insertion or chapter insertion, not both")
@@ -156,8 +187,8 @@ def write_nb(
         print(msg)
         if run_test: run_notebook_test(path)
         if run_style:
-            print(f"Running style_check on {path}")
-            run_style_check(path, strict=style_strict)
+            print(f"Running chstyle on {path}")
+            style_check(path, strict=style_strict)
     return cli_return(path)
 
 # %% ../nbs/02_write.ipynb #5ef9f86f

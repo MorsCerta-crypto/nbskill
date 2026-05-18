@@ -4,8 +4,7 @@
 __all__ = ['as_text', 'capture_call', 'capture_notebook_call', 'mcp_tool_result', 'create_mcp', 'main']
 
 # %% ../nbs/07_mcp.ipynb #13ea08ef
-import json
-import os
+import os,json
 import sys
 from contextlib import redirect_stdout, redirect_stderr
 from importlib.metadata import PackageNotFoundError, version
@@ -28,9 +27,9 @@ from .read import read_nb as _read_nb
 from .read import show_doc as _show_doc
 from .review import style_check as _style_check
 from .review import diff_nb as _diff_nb
-from .write import apply_nb as _apply_nb
 from .write import update_cell as _update_cell
 from .write import write_nb as _write_nb
+
 
 # %% ../nbs/07_mcp.ipynb #3b1a669a
 def as_text(value):
@@ -87,7 +86,7 @@ def create_mcp():
     "Create the nbskill FastMCP server."
     capabilities = (
         "read_nb,show_doc,write_nb,update_cell,exec_nb,diff_nb,execute_plan,"
-        "symbol_graph,private_symbol_report,apply_nb,style_check,py2nb,py2nbs"
+        "symbol_graph,private_symbol_report,style_check,py2nb,py2nbs"
     )
     mcp = FastMCP(
         "nbskill",
@@ -282,18 +281,21 @@ def create_mcp():
         full_output = capture_call(_private_symbol_report, path=path)
         return mcp_tool_result("private_symbol_report", arguments, full_output)
 
-    @mcp.tool(name="apply_nb")
-    def apply_nb_tool(spec_path: str = "dev/nbskill-op.toml") -> ToolResult:
-        "Apply the archived TOML manifest workflow. Prefer write_nb/update_cell MCP tools when available."
-        arguments = dict(spec_path=spec_path)
-        full_output = capture_call(_apply_nb, spec_path=spec_path)
-        return mcp_tool_result("apply_nb", arguments, full_output)
-
     @mcp.tool(name="style_check")
-    def style_check_tool(path: str = ".", skip_folder_re: str | None = None, skip_path: str | None = None, strict: bool = False) -> ToolResult:
-        "Print fast.ai style hints."
-        arguments = dict(path=path, skip_folder_re=skip_folder_re, skip_path=skip_path, strict=strict)
-        full_output = capture_call(_style_check, path=path, skip_folder_re=skip_folder_re, skip_path=skip_path, strict=strict)
+    def style_check_tool(
+        path: str = ".",
+        skip_folder_re: str | None = None,
+        skip_path: str | None = None,
+        strict: bool = False,
+        delete_after_output: bool = False,
+        delete_after_outout: bool = False,
+    ) -> ToolResult:
+        "Print fast.ai style hints, notebook hygiene warnings, and global tool usage."
+        arguments = dict(
+            path=path, skip_folder_re=skip_folder_re, skip_path=skip_path, strict=strict,
+            delete_after_output=delete_after_output, delete_after_outout=delete_after_outout,
+        )
+        full_output = capture_call(_style_check, **arguments)
         return mcp_tool_result("style_check", arguments, full_output)
 
     @mcp.tool(name="py2nb")

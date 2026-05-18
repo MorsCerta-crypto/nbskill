@@ -1,6 +1,6 @@
 # nbskill MCP Tools
 
-The MCP server is started with `nbskill-mcp`. It is intended to be the normal interface for agents because it accepts structured parameters and returns notebook-aware text instead of raw `.ipynb` JSON.
+The MCP server is started with `nbskill_mcp`. It is intended to be the normal interface for agents because it accepts structured parameters and returns notebook-aware text instead of raw `.ipynb` JSON.
 
 ## Tool Loop
 

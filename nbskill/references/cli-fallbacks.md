@@ -57,4 +57,4 @@ uv run nbdev-test --path nbs --n_workers 0 --verbose
 
 `exec_nb` prints outputs and tracebacks. It adds the notebook folder, detected project root, and `src/` when present to the execution kernel path, which helps notebooks import local packages.
 
-Keep `apply_nb` as an archived fallback for runtimes that cannot call MCP and cannot stream multiline shell input reliably.
+Use `--cells_file`, `--new_file`, or stdin for multiline edits when shell quoting would be fragile.

@@ -4,15 +4,25 @@
 __all__ = ['run_style_check', 'style_check', 'code_source', 'diff_nb']
 
 # %% ../nbs/04_review.ipynb #3cff0f46
+import ast
+import glob
 import json
+import os
 import subprocess
+import sys
 from pathlib import Path
 
 from chkstyle.core import main as _chkstyle_main
+from fastcore.nbio import read_nb as _read_nb
 from fastcore.script import Param, call_parse
 from nbdev.diff import nbs_pair, source_diff
 
-from .foundation import cli_error, cli_return, none_if_string, tracked_call
+from nbskill.foundation import (
+    _empty_failure_map, _failure_map_path, _load_failure_map, cell_class_names,
+    cell_source, cli_error, cli_return, is_export_directive, is_exported_code_cell,
+    none_if_string, tracked_call,
+)
+
 
 # %% ../nbs/04_review.ipynb #43d8201b
 def _style_check_argv(path=".", skip_folder_re=None, skip_path=None):
@@ -22,27 +32,199 @@ def _style_check_argv(path=".", skip_folder_re=None, skip_path=None):
     if skip_path: argv += ["--skip-path", str(skip_path)]
     return argv
 
+
+def _is_notebook_path(path):
+    path = Path(path)
+    return path.suffix == ".ipynb" and ".ipynb_checkpoints" not in path.parts
+
+
+def _notebook_paths(path="."):
+    raw = str(path)
+    pth = Path(raw).expanduser()
+    if any(char in raw for char in "*?[]"):
+        candidates = [Path(item) for item in glob.glob(raw, recursive=True)]
+    elif pth.is_dir():
+        candidates = list(pth.rglob("*.ipynb"))
+    elif pth.is_file() and pth.suffix == ".ipynb":
+        candidates = [pth]
+    else:
+        candidates = []
+    return sorted({candidate for candidate in candidates if _is_notebook_path(candidate)})
+
+
+def _source_without_directives(source):
+    return "\n".join(line for line in source.splitlines() if not is_export_directive(line))
+
+
+def _parse_code_cell(cell):
+    if getattr(cell, "cell_type", None) != "code": return None
+    try: return ast.parse(_source_without_directives(cell_source(cell)))
+    except SyntaxError: return None
+
+
+def _top_level_function_count(tree):
+    return sum(isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) for node in tree.body)
+
+
+def _assert_count(tree):
+    return sum(isinstance(node, ast.Assert) for node in ast.walk(tree))
+
+
+def _test_function_count(tree):
+    return sum(
+        isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("test_")
+        for node in tree.body
+    )
+
+
+def _import_keys(tree):
+    keys = []
+    for node in tree.body:
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                local = alias.asname or alias.name.split(".", 1)[0]
+                keys.append(f"import {alias.name} as {local}")
+        elif isinstance(node, ast.ImportFrom):
+            module = "." * node.level + (node.module or "")
+            for alias in node.names:
+                local = alias.asname or alias.name
+                keys.append(f"from {module} import {alias.name} as {local}")
+    return keys
+
+
+def _problem_line(kind, path, cell, detail):
+    return f"- {kind}: {path} id={getattr(cell, 'id', '')} {detail}"
+
+
 # %% ../nbs/04_review.ipynb #1bbffbc4
-def run_style_check(path=".", skip_folder_re=None, skip_path=None, strict=False):
-    status = _chkstyle_main(_style_check_argv(path, skip_folder_re, skip_path))
-    if strict and status: raise SystemExit(status)
-    return status
+def _notebook_style_problem_lines(path="."):
+    lines = []
+    duplicate_imports = {}
+    for nb_path in _notebook_paths(path):
+        nb = _read_nb(nb_path)
+        imports_by_scope = {"exported": {}, "internal": {}}
+        for cell in nb.cells:
+            classes = cell_class_names(cell)
+            if "unclean_cell" in classes:
+                visible = ", ".join(name for name in classes if name != "unclean_cell")
+                lines.append(_problem_line("unclean-cell", nb_path, cell, f"semantic_types={visible}"))
+            tree = _parse_code_cell(cell)
+            if tree is None: continue
+            source_lines = _source_without_directives(cell_source(cell)).splitlines()
+            line_count = len(source_lines)
+            function_count = _top_level_function_count(tree)
+            if function_count > 2:
+                lines.append(_problem_line("large-cell", nb_path, cell, f"{function_count} top-level functions"))
+            if line_count > 20:
+                lines.append(_problem_line("large-cell", nb_path, cell, f"{line_count} non-directive lines"))
+            if "test_cell" in classes:
+                problem_count = _assert_count(tree) + _test_function_count(tree)
+                if problem_count > 1:
+                    lines.append(_problem_line("multi-problem-test", nb_path, cell, f"{problem_count} asserts/test functions; split into one-problem-at-a-time cells"))
+            scope = "exported" if is_exported_code_cell(cell) else "internal"
+            for key in _import_keys(tree):
+                imports_by_scope[scope].setdefault(key, []).append(getattr(cell, "id", ""))
+        for scope, imports in imports_by_scope.items():
+            for key, ids in imports.items():
+                if len(ids) > 1:
+                    duplicate_imports.setdefault(str(nb_path), []).append((scope, key, ids))
+    for nb_path, items in duplicate_imports.items():
+        for scope, key, ids in items:
+            lines.append(f"- duplicate-import: {nb_path} scope={scope} import={key!r} cells={', '.join(ids)}")
+    if _notebook_paths(path):
+        from nbskill.graph import notebook_order_problem_lines
+        lines.extend(notebook_order_problem_lines(path))
+    return lines
+
+
+def _format_notebook_style_report(path="."):
+    lines = _notebook_style_problem_lines(path)
+    if not lines: return "Notebook style report: no notebook hygiene problems found."
+    return "\n".join(["Notebook style report:", *lines])
+
 
 # %% ../nbs/04_review.ipynb #124d0968
+def _format_count_group(title, counts):
+    if not counts: return [f"{title}: none"]
+    ordered = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+    return [f"{title}: " + ", ".join(f"{tool}={count}" for tool, count in ordered)]
+
+
+def _format_failure_event(event):
+    kind = event.get("kind", "event")
+    tool = event.get("tool", "unknown")
+    path = event.get("path")
+    detail = event.get("summary") or event.get("error") or ",".join(event.get("reasons", []))
+    location = f" path={path}" if path else ""
+    return f"- {kind}: {tool}{location} {detail}".rstrip()
+
+
+def _format_global_usage_summary():
+    path = _failure_map_path()
+    if not path.exists(): return f"Global nbskill usage: no records at {path}"
+    data = _load_failure_map(path)
+    counts = data.get("counts", {})
+    lines = [f"Global nbskill usage: {path}"]
+    lines += _format_count_group("usage", counts.get("usage", {}))
+    lines += _format_count_group("failures", counts.get("failures", {}))
+    lines += _format_count_group("friction", counts.get("friction", {}))
+    problems = [event for event in data.get("events", []) if event.get("kind") in {"failure", "friction"}][-5:]
+    if problems:
+        lines.append("recent problems:")
+        lines.extend(_format_failure_event(event) for event in problems)
+    else:
+        lines.append("recent problems: none")
+    return "\n".join(lines)
+
+
+def _reset_global_usage_summary():
+    path = _failure_map_path()
+    try: path.unlink()
+    except FileNotFoundError: pass
+    except OSError: path.write_text(json.dumps(_empty_failure_map(), indent=2, sort_keys=True), encoding="utf-8")
+
+
+# %% ../nbs/04_review.ipynb #a620d02a
+def run_style_check(path=".", skip_folder_re=None, skip_path=None, strict=False):
+    status = _chkstyle_main(_style_check_argv(path, skip_folder_re, skip_path))
+    return status
+
+
+def _normalize_style_check_cli_aliases():
+    aliases = {
+        "--delete-after-output": "--delete_after_output",
+        "--delete-after-outout": "--delete_after_outout",
+    }
+    sys.argv[:] = [aliases.get(arg, arg) for arg in sys.argv]
+
+
+_normalize_style_check_cli_aliases()
+
+
 @call_parse
 @tracked_call
 def style_check(
     path: Param("File or folder to check", str, opt=False, nargs="?") = ".",  # File or folder to check
     skip_folder_re: str | None = None,  # Regex for folders to skip
     skip_path: str | None = None,  # Folder name/path to skip
-    strict: bool = False,  # Exit non-zero when style hints are found
+    strict: bool = False,  # Exit non-zero when style hints or notebook hygiene problems are found
+    delete_after_output: bool = False,  # Reset ~/.nbskill-errors.json after printing the global summary
+    delete_after_outout: bool = False,  # Backward-compatible typo alias for delete_after_output
 ):
-    "Print fast.ai style hints using fastaistyle/chkstyle."
-    status = run_style_check(path, skip_folder_re, skip_path, strict)
-    return cli_return(status)
+    "Print fast.ai style hints, notebook hygiene warnings, and global tool usage."
+    status = run_style_check(path, skip_folder_re, skip_path, strict=False)
+    report = _format_notebook_style_report(path)
+    usage = _format_global_usage_summary()
+    text = f"{report}\n\n{usage}"
+    print(text)
+    if delete_after_output or delete_after_outout: _reset_global_usage_summary()
+    has_notebook_problems = bool(_notebook_style_problem_lines(path))
+    if strict and (status or has_notebook_problems): raise SystemExit(status or 1)
+    return cli_return(status or int(has_notebook_problems))
 
-# %% ../nbs/04_review.ipynb #a620d02a
+
 def code_source(cell): return cell.source if cell.cell_type == "code" else None
+
 
 # %% ../nbs/04_review.ipynb #655e3ccd
 def _git_ref_path_error(path, ref):

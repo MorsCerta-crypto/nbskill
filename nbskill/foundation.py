@@ -67,12 +67,14 @@ def cli_error(msg):
 
 # %% ../nbs/00_foundation.ipynb #b4c433a6
 def _failure_map_path():
-    default = Path.home() / ".nbskill" / "nbskill-errors.json"
+    default = Path.home() / ".nbskill-errors.json"
     return Path(os.environ.get("NBSKILL_FAILURE_MAP", default)).expanduser()
+
 
 # %% ../nbs/00_foundation.ipynb #70d94ccb
 def _empty_failure_map():
     return {"version": 1, "events": [], "counts": {}, "last_call": None}
+
 
 # %% ../nbs/00_foundation.ipynb #2f80149c
 def _load_failure_map(path):
@@ -115,6 +117,7 @@ def _record_tool_start(tool, details=None):
     event = {"tool": tool, "ts": now, **details}
     try:
         data = _load_failure_map(path)
+        _bump_count(data, "usage", tool)
         last = data.get("last_call")
         if last:
             delta = now - float(last.get("ts", now))
@@ -139,6 +142,7 @@ def _record_tool_start(tool, details=None):
     except OSError:
         pass
     return event
+
 
 # %% ../nbs/00_foundation.ipynb #963e84e1
 def _record_tool_failure(event, exc):
@@ -380,7 +384,9 @@ def _fresh_semantic_metadata(cell):
     if info.get("cell_type") != getattr(cell, "cell_type", None): return None
     types = info.get("semantic_types")
     if not isinstance(types, list): return None
-    return tuple(str(item) for item in types)
+    normalized = tuple("example_cell" if str(item) == "exploration_cell" else str(item) for item in types)
+    if getattr(cell, "cell_type", None) != "code" and "unclean_cell" in normalized: return None
+    return normalized
 
 # %% ../nbs/00_foundation.ipynb #8d32aa50
 def parse_one_cell(text, default_type="code"):
@@ -422,12 +428,25 @@ def clear_outputs(cell):
     return cell
 
 # %% ../nbs/00_foundation.ipynb #da743abe
+def _looks_like_multiline_cli_text(text):
+    if not isinstance(text, str) or "\\n" not in text: return False
+    stripped = text.lstrip().lower()
+    if stripped.startswith(("%%code\\n", "%%markdown\\n", "%%md\\n", "%%raw\\n")): return True
+    if "\\n---\\n" in text: return True
+    return "\\n    " in text or "\\n\t" in text
+
+
+def _decode_cli_newlines(text):
+    return text.replace("\\n", "\n") if _looks_like_multiline_cli_text(text) else text
+
+
 def load_cells_text(cells="", cells_file=None):
     if cells_file:
         if cells: raise ValueError("Use either cells or cells_file, not both")
         return Path(cells_file).expanduser().read_text(encoding="utf-8")
     if cells == "-": return sys.stdin.read()
-    return cells
+    return _decode_cli_newlines(cells)
+
 
 # %% ../nbs/00_foundation.ipynb #079cbcac
 def _should_validate_python(source):
@@ -562,6 +581,10 @@ def _is_test_cell(cell):
     return getattr(cell, "cell_type", None) == "code" and not _has_cell_output(cell) and _has_test_marker(cell)
 
 
+def _is_example_cell(cell):
+    return getattr(cell, "cell_type", None) == "code" and _has_cell_output(cell)
+
+
 def _is_section_header(cell):
     if getattr(cell, "cell_type", None) != "markdown": return False
     return any(re.match(r"^#{1,2}\s+", line.strip()) for line in cell_source(cell).splitlines())
@@ -575,18 +598,24 @@ def _is_docs_cell(cell):
 def _cell_base_class_names(cell):
     names = []
     if _is_import_cell(cell): names.append("import_cell")
+    if _is_example_cell(cell): names.append("example_cell")
+    if _is_test_cell(cell): names.append("test_cell")
     if _has_private_function(cell): names.append("private_code")
     if is_exported_code_cell(cell): names.append("exported_code")
-    if _is_test_cell(cell): names.append("test_cell")
-    if getattr(cell, "cell_type", None) == "code" and _has_cell_output(cell): names.append("exploration_cell")
     if _is_docs_cell(cell): names.append("docs_cell")
     if _is_section_header(cell): names.append("section_header")
     return tuple(names)
 
 
+def _semantic_code_class_names(cell):
+    semantic = {"import_cell", "example_cell", "test_cell", "private_code", "exported_code"}
+    return tuple(name for name in _cell_base_class_names(cell) if name in semantic)
+
+
 def _computed_cell_class_names(cell):
     names = _cell_base_class_names(cell)
-    if len(names) > 1: return (*names, "unclean_cell")
+    if getattr(cell, "cell_type", None) == "code" and len(_semantic_code_class_names(cell)) > 1:
+        return (*names, "unclean_cell")
     return names
 
 
@@ -608,6 +637,7 @@ def cell_class_names(cell):
     return _fresh_semantic_metadata(cell) or _computed_cell_class_names(cell)
 
 
+# %% ../nbs/00_foundation.ipynb #917c7bb6
 def _normalize_cell_type_filter(value):
     if value is None: return None
     aliases = {
@@ -630,10 +660,12 @@ def _normalize_cell_type_filter(value):
         "test": "test_cell",
         "tests": "test_cell",
         "test_cell": "test_cell",
-        "exploration": "exploration_cell",
-        "example": "exploration_cell",
-        "examples": "exploration_cell",
-        "exploration_cell": "exploration_cell",
+        "example": "example_cell",
+        "examples": "example_cell",
+        "example_cell": "example_cell",
+        "exploration": "example_cell",
+        "explorations": "example_cell",
+        "exploration_cell": "example_cell",
         "docs_cell": "docs_cell",
         "documentation": "docs_cell",
         "section": "section_header",
@@ -659,7 +691,7 @@ def cell_matches_type(cell, cell_type):
     if getattr(cell, "cell_type", None) in wanted: return True
     return bool(set(cell_class_names(cell)) & wanted)
 
-# %% ../nbs/00_foundation.ipynb #917c7bb6
+
 def with_context(cells, items, include=False):
     if not include: return items
 

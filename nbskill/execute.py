@@ -533,18 +533,21 @@ def _executed_cells(nb, up2id=None):
     return items
 
 
+def _print_outputs_from_nb(nb, up2id=None):
+    for idx, cell in _executed_cells(nb, up2id):
+        outputs = getattr(cell, "outputs", None) or []
+        has_error = any(output.get("output_type") == "error" for output in outputs)
+        for output in outputs:
+            if has_error and _is_rich_traceback_stream(output): continue
+            text = _output_text(output)
+            if not text: continue
+            print(f"--- output id={cell.id} ---")
+            print(text, end="" if text.endswith("\n") else "\n")
+
+
 def _print_nb_outputs(path, up2id=None):
     with notebook_locks(path):
-        nb = _read_nb(path)
-        for idx, cell in _executed_cells(nb, up2id):
-            outputs = getattr(cell, "outputs", None) or []
-            has_error = any(output.get("output_type") == "error" for output in outputs)
-            for output in outputs:
-                if has_error and _is_rich_traceback_stream(output): continue
-                text = _output_text(output)
-                if not text: continue
-                print(f"--- output id={cell.id} ---")
-                print(text, end="" if text.endswith("\n") else "\n")
+        _print_outputs_from_nb(_read_nb(path), up2id=up2id)
 
 # %% ../nbs/03_execute.ipynb #434c13b3
 @call_parse
@@ -565,9 +568,10 @@ def exec_nb(
     cache_dir: str | None = None,  # Directory containing cachy.jsonl; defaults to project root
     cache_domains: str | None = None,  # Comma-separated or literal list of cacheable domains
     allow_new: bool = False,  # Execute cells without prior user/nbskill execution approval
+    check_only: bool = False,  # Run in memory without writing notebook outputs or metadata
 ):
     "Execute a notebook with safe Python by default and local project imports available."
-    dest = dest or path
+    dest = None if check_only else (dest or path)
     chapter_title = None
     if chapter is not None:
         if up2id is not None: raise ValueError("Use either chapter or up2id, not both")
@@ -576,20 +580,24 @@ def exec_nb(
             span = one_chapter(nb.cells, chapter)
         up2id, chapter_title = span["end"], span["title"]
     preproc, postproc = _exec_limiters(up2id)
-    _execute_nb(
+    nb = _execute_nb(
         path, dest=dest, exc_stop=exc_stop, preproc=preproc, postproc=postproc,
         timeout=timeout, verbose=verbose, safe=safe, allow=allow, ok_dests=ok_dests,
         cache_httpx=cache_httpx, cache_dir=cache_dir, cache_domains=cache_domains,
         allow_new=allow_new,
     )
     mode = "safe" if safe else "unsafe"
-    msg = f"Executed {path} -> {dest} ({mode})"
+    target = "not written" if check_only else dest
+    msg = f"Executed {path} -> {target} ({mode})"
+    if check_only: msg += " (check_only=True)"
     if chapter_title is not None: msg += f" (chapter={chapter_title!r}, up2id={up2id})"
     elif up2id is not None: msg += f" (up2id={up2id})"
     if timeout and timeout > 0: msg += f" (timeout={timeout}s)"
     print(msg)
-    if show_output: _print_nb_outputs(dest, up2id=up2id)
-    return cli_return(Path(dest))
+    if show_output:
+        if check_only: _print_outputs_from_nb(nb, up2id=up2id)
+        else: _print_nb_outputs(dest, up2id=up2id)
+    return cli_return(Path(path) if check_only else Path(dest))
 
 # %% ../nbs/03_execute.ipynb #e9c50752
 def _notebook_error_summaries(path, up2id=None):

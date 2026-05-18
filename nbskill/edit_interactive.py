@@ -2,7 +2,7 @@
 
 # %% auto #0
 __all__ = ['EDIT_INTERACTIVE_SYSTEM', 'capture_call_text', 'notebook_view', 'EditSession', 'make_edit_tools', 'make_chat',
-           'response_text', 'final_diff', 'execute_plan', 'execute_project_plan']
+           'response_text', 'plan_result_text', 'final_diff', 'execute_plan', 'execute_project_plan']
 
 # %% ../nbs/08_edit_interactive.ipynb #c7e88003
 import difflib
@@ -32,7 +32,8 @@ You are nbskill edit-interactive. You edit exactly one notebook.
 You receive a plan and one notebook view. Use only the provided notebook tools.
 Prefer id-based edits with source_hash when the view gives one. Keep changes
 small and aligned with the plan. Run cells when that is needed to verify the
-work. Stop when the plan is complete and summarize what changed.
+work. Stop when the plan is complete. Your final message must summarize what
+you did and what you could not do.
 """
 
 # %% ../nbs/08_edit_interactive.ipynb #155505b9
@@ -74,6 +75,7 @@ class EditSession:
     revision: int = 0
     log: list[str] = field(default_factory=list)
     tool_log: list[str] = field(default_factory=list)
+    history: list[dict] = field(default_factory=list)
     chat: object | None = None
     notebook_msg_idx: int | None = None
 
@@ -90,9 +92,12 @@ class EditSession:
         self.log.append(f"r{self.revision}: {message}")
 
     def record_tool(self, name, detail=""):
-        "Append one tool use to the session log."
+        "Append one tool use to the session history."
         suffix = f"({detail})" if detail else "()"
         self.tool_log.append(f"r{self.revision}: {name}{suffix}")
+        item = {"revision": self.revision, "tool": name}
+        if detail: item["detail"] = detail
+        self.history.append(item)
 
 # %% ../nbs/08_edit_interactive.ipynb #eee248a5
 def _save_notebook(nb, path, export=True):
@@ -251,6 +256,22 @@ def response_text(response):
         return "".join(str(item.get("text", item)) if isinstance(item, dict) else str(item) for item in content)
     return "" if content is None else str(content)
 
+
+def plan_result_text(result):
+    "Return the human-readable text for an execute_plan result."
+    if not isinstance(result, dict): return "" if result is None else str(result)
+    if result.get("text"): return str(result["text"])
+    sections = [
+        "edit-interactive complete",
+        "",
+        "Final response:",
+        str(result.get("summary") or "(no final response)"),
+        "",
+        "Tools used:",
+        "\n".join(item.get("detail", item.get("tool", "")) for item in result.get("history", [])) or "(no tool calls)",
+    ]
+    return "\n".join(sections).rstrip()
+
 # %% ../nbs/08_edit_interactive.ipynb #5b4daf87
 def final_diff(path):
     "Return a nbdev code-cell diff, or a clear unavailable message."
@@ -270,19 +291,19 @@ def final_diff(path):
 def execute_plan(
     notebook: str,  # Path to the one notebook the inner agent may edit
     plan: str,  # Plan for the inner agent to execute
-    model: str | None = None,  # Lisette/LiteLLM model; defaults via env then openai/gpt-4.1
+    model: str | None = None,  # Lisette/LiteLLM model; defaults via NBSKILL_AGENT then a Codex model
     max_steps: int = 20,  # Maximum Lisette tool-loop steps
     timeout: int = 30,  # Per-cell execution timeout for run_cell
     export: bool = True,  # Run nbdev export after write tools
     dry_run: bool = False,  # Return proposal context without invoking the inner agent
-) -> str:
+) -> dict:
     "Execute `plan` against one notebook using a Lisette edit-interactive loop."
     path = Path(notebook)
     if not path.exists(): raise ValueError(f"Notebook does not exist: {notebook}")
-    model = model or os.environ.get("NBSKILL_EDIT_MODEL") or "openai/gpt-4.1"
+    model = model or os.environ.get("NBSKILL_AGENT") or "chatgpt/gpt-5.4-mini"
     initial_view = notebook_view(path, revision=0)
     if dry_run:
-        return "\n".join([
+        text = "\n".join([
             "edit-interactive dry run",
             "",
             f"Notebook: {path}",
@@ -296,6 +317,7 @@ def execute_plan(
             "Initial notebook view:",
             initial_view,
         ]).rstrip()
+        return {"summary": "Dry run only; no agent was invoked and no notebook edits were made.", "history": [], "text": text}
     session = EditSession(path=path, timeout=timeout, export=export)
     hist = [
         {"role": "user", "content": f"Plan:\n{plan}"},
@@ -308,18 +330,21 @@ def execute_plan(
     session.refresh_view()
     try:
         result = chat(
-            "Execute the plan using only the notebook tools. Stop when the plan is complete.",
+            "Execute the plan using only the notebook tools. Stop when the plan is complete. "
+            "Your final answer must say what you did and what you could not do.",
             max_steps=max_steps, return_all=True,
         )
     except BaseException as exc:
         result = f"edit-interactive failed: {type(exc).__name__}: {exc}"
     if not isinstance(result, (list, str, bytes, dict)) and hasattr(result, "__next__"):
         result = list(result)
-    sections = [
+    summary = response_text(result).strip() or "(no final response)"
+    diff = final_diff(path).strip()
+    text = "\n".join([
         "edit-interactive complete",
         "",
         "Final response:",
-        response_text(result).strip() or "(no final response)",
+        summary,
         "",
         "Tools used:",
         "\n".join(session.tool_log) if session.tool_log else "(no tool calls)",
@@ -330,9 +355,18 @@ def execute_plan(
         f"Final revision: {session.revision}",
         "",
         "Notebook diff:",
-        final_diff(path).strip(),
-    ]
-    return "\n".join(sections).rstrip()
+        diff,
+    ]).rstrip()
+    return {
+        "summary": summary,
+        "history": session.history,
+        "text": text,
+        "model": model,
+        "notebook": str(path),
+        "revision": session.revision,
+        "operations": list(session.log),
+        "diff": diff,
+    }
 
 # %% ../nbs/08_edit_interactive.ipynb #256a672a
 def _split_notebooks(notebooks):
@@ -359,9 +393,9 @@ def execute_project_plan(
     chunks = ["project execute_plan coordinator", "", f"Dry run: {dry_run}", f"Targets: {len(targets)}"]
     for notebook in targets:
         subplan = f"{plan}\n\nScope: edit only {notebook}."
-        text = execute_plan(
+        result = execute_plan(
             notebook=notebook, plan=subplan, model=model, max_steps=max_steps,
             timeout=timeout, export=export, dry_run=dry_run,
         )
-        chunks.extend(["", f"## {notebook}", text])
+        chunks.extend(["", f"## {notebook}", plan_result_text(result)])
     return "\n".join(chunks).rstrip()

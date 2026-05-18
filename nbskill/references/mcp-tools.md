@@ -80,7 +80,7 @@ execute_plan(
     max_steps: int = 20,
     timeout: int = 30,
     export: bool = True,
-) -> str
+) -> dict
 ```
 
-Model resolution is `model or NBSKILL_EDIT_MODEL or "openai/gpt-4.1"`. Keep plans bounded to one notebook. For broad repository changes, split work into explicit notebook-level calls or separate `execute_plan` calls.
+Model resolution is `model or NBSKILL_AGENT or "chatgpt/gpt-5.4-mini"`. The result includes `history` with the notebook tool calls and `summary` with the agent's final message. Keep plans bounded to one notebook. For broad repository changes, split work into explicit notebook-level calls or separate `execute_plan` calls.

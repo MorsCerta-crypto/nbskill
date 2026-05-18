@@ -13,6 +13,8 @@ from pathlib import Path
 
 from fastcore.script import Param, call_parse
 from fastmcp import FastMCP
+from fastmcp.tools import ToolResult
+from mcp.types import TextContent
 
 from .convert import py2nb as _py2nb
 from .convert import py2nbs as _py2nbs
@@ -75,9 +77,9 @@ def create_mcp():
     )
 
     @mcp.tool(name="healthcheck")
-    def healthcheck_tool() -> str:
+    def healthcheck_tool() -> ToolResult:
         "Return a small status report for the local nbskill MCP server."
-        return "\n".join([
+        full_output = "\n".join([
             "nbskill mcp ok",
             f"version={_package_version()}",
             f"cwd={Path.cwd()}",
@@ -88,6 +90,11 @@ def create_mcp():
             "execution=global semaphore with one active notebook execution",
             "schema_refresh=restart or reconnect the MCP client after reinstall/export to refresh tool schemas",
         ])
+        summary = f"healthcheck completed\n\n{full_output}"
+        return ToolResult(
+            content=[TextContent(type="text", text=summary)],
+            structured_content={"summary": summary, "full_output": full_output},
+        )
 
     @mcp.tool(name="read_nb")
     def read_nb_tool(

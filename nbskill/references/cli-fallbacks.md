@@ -46,11 +46,12 @@ uv run update_cell notebook.ipynb "" --cell_id abc123 --line_range 3:5 --source_
 
 ```bash
 uv run exec_nb notebook.ipynb
-uv run exec_nb notebook.ipynb --up2id abc123
-uv run exec_nb notebook.ipynb --chapter "Experiments"
+uv run exec_nb notebook.ipynb --up2id abc123 # execute up to that cell id
+uv run exec_nb notebook.ipynb --chapter "Experiments" # execute up to and including <chapter>
 uv run exec_nb notebook.ipynb --timeout 5
 uv run diff_nb notebook.ipynb
 uv run nbdev-export
+uv run nbdev-test # tests all notebooks with multiple workers
 uv run nbdev-test --path nbs --n_workers 0 --verbose
 ```
 

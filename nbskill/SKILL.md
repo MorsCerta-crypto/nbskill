@@ -56,7 +56,11 @@ client so it refreshes cached schemas.
 6.  Use
     [`exec_nb`](https://MorsCerta-crypto.github.io/nbskill/execute.html#exec_nb)
     to run a notebook, chapter, or cells up to an id, then inspect
-    visible outputs and errors.
+    visible outputs and errors. Execution is safe by default: fresh or
+    changed cells are denied unless the user already ran them or nbskill
+    has a matching execution stamp. Use `allow_new=True` only after the
+    user has explicitly approved that source; use `safe=False` only when
+    unsafe legacy execution is deliberately required.
 
 Stay notebook-first: edit `nbs/*.ipynb` source notebooks, not generated
 `.py` files. Use stable cell ids and source hashes from
@@ -77,7 +81,7 @@ uv run write_nb nbs --old_str old_name --new_str new_name --dry_run --show_cells
 uv run update_cell nbs/02_write.ipynb "replacement line" --cell_id abc123 --line_range 3 --source_hash 7f3a91c0d422 --no-export
 uv run diff_nb nbs/02_write.ipynb
 uv run private-symbol-report --path nbs
-uv run exec_nb nbs/03_execute.ipynb --up2id abc123 --timeout 10
+uv run exec_nb nbs/03_execute.ipynb --up2id abc123 --timeout 10 --allow_new
 ```
 
 Cell blocks for

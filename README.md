@@ -69,8 +69,7 @@ functions that are exposed as CLI commands and MCP tools. Nothing here
 edits this repository.
 
 ``` python
-tmpdir = tempfile.TemporaryDirectory()
-workspace = Path(tmpdir.name)
+workspace = _reset_demo_workspace(project_root)
 demo_nb = workspace / "demo.ipynb"
 
 _write_nb(new_nb([
@@ -148,9 +147,11 @@ _ = read_nb(str(demo_nb), cell_id=answer_cell.id, context="precise", show_ids=Tr
 ## Executing: run the notebook as a notebook
 
 [`exec_nb`](https://MorsCerta-crypto.github.io/nbskill/execute.html#exec_nb)
-uses `execnb` and adds the notebook directory plus the project root to
-the import path. That lets tests and examples behave like they do inside
-an nbdev project.
+uses `safepyrun` by default and adds the notebook directory plus the
+project root to the import path. New or changed cells are denied until
+they have prior user execution history or a matching nbskill execution
+stamp; pass `allow_new=True` only after the user has approved that
+source. The legacy `execnb` shell remains available with `safe=False`.
 
 This matters because many notebook bugs only appear when cells are run
 in order with the same imports, fixtures, and local package path a real
@@ -158,7 +159,7 @@ user gets. A normal Python import check can miss that story; executing
 the notebook checks the literate source itself.
 
 ``` python
-_ = exec_nb(str(demo_nb), timeout=5, show_output=True)
+_ = exec_nb(str(demo_nb), timeout=5, show_output=True, allow_new=True)
 ```
 
 ## Reviewing: look at behavior and code changes
@@ -344,7 +345,11 @@ client so it refreshes cached schemas.
 6.  Use
     [`exec_nb`](https://MorsCerta-crypto.github.io/nbskill/execute.html#exec_nb)
     to run a notebook, chapter, or cells up to an id, then inspect
-    visible outputs and errors.
+    visible outputs and errors. Execution is safe by default: fresh or
+    changed code cells are denied until they have either been run by the
+    user or stamped by a previous nbskill run. Use `allow_new=True` only
+    after explicit approval, and reserve `safe=False` for deliberate
+    legacy execution.
 
 Stay notebook-first: edit `nbs/*.ipynb` source notebooks, not generated
 `.py` files. Use stable cell ids and source hashes from
@@ -360,12 +365,12 @@ verification must run in the project environment:
 ``` bash
 uv run read_nb nbs/02_write.ipynb --context overview --show_ids
 uv run read_nb nbs/02_write.ipynb --context precise --query 'contains="def write_nb"'
-uv run write_nb nbs/02_write.ipynb --after_id abc123 --cells_file /tmp/cells.txt --no-export
+uv run write_nb nbs/02_write.ipynb --after_id abc123 --cells_file nbs/data/cells.txt --no-export
 uv run write_nb nbs --old_str old_name --new_str new_name --dry_run --show_cells --no-export
 uv run update_cell nbs/02_write.ipynb "replacement line" --cell_id abc123 --line_range 3 --source_hash 7f3a91c0d422 --no-export
 uv run diff_nb nbs/02_write.ipynb
 uv run private-symbol-report --path nbs
-uv run exec_nb nbs/03_execute.ipynb --up2id abc123 --timeout 10
+uv run exec_nb nbs/03_execute.ipynb --up2id abc123 --timeout 10 --allow_new
 ```
 
 Cell blocks for

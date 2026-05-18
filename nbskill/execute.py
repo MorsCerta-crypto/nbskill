@@ -4,14 +4,25 @@
 __all__ = ['exec_nb', 'run_notebook_test']
 
 # %% ../nbs/03_execute.ipynb #2a4844d2
+import asyncio
+import base64
 import hashlib
+import json
+import re
 import sys
+import threading
+import traceback
+from contextlib import contextmanager, redirect_stderr, redirect_stdout
+from io import StringIO
 from pathlib import Path
 
+import pyskills
 from execnb.shell import CaptureShell
 from fastcore.nbio import read_nb as _read_nb
 from fastcore.nbio import write_nb as _write_nb
 from fastcore.script import call_parse
+from safepyrun import RunPython
+from safepyrun.core import allow as _safepyrun_allow
 
 from nbskill.foundation import (
     cell_metadata, cli_error, cli_return, one_chapter, parse_literal,
@@ -55,7 +66,292 @@ def _local_import_paths(path):
     return [p for i, p in enumerate(paths) if p.exists() and p not in paths[:i]]
 
 # %% ../nbs/03_execute.ipynb #8fde5f5d
-def _exec_shell(path, extra_paths=None):
+_SAFE_SENTINEL = "__nbskill_safe_exec__"
+
+_DEFAULT_CACHE_DOMAINS = (
+    "chatgpt.com", "api.openai.com", "api.anthropic.com",
+    "generativelanguage.googleapis.com", "api.deepseek.com",
+    "api.fireworks.ai", "openrouter.ai", "api.groq.com",
+    "api.together.xyz", "api.mistral.ai", "api.x.ai", "api.moonshot.ai",
+)
+
+_CACHY_NORM_PATS = [
+    (re.compile(r"/ipykernel_\d+/\d+\.py"), "/ipykernel_N/X.py"),
+    (re.compile(r"<ipython-input-\d+-\w+>"), "<ipython-input>"),
+    (re.compile(r"/var/folders/[\w|/]+"), "/tmp/tmpT"),
+    (re.compile(r"/tmp/tmp\w+"), "/tmp/tmpX"),
+    (re.compile(r"ipykernel_\d+"), "ipykernel_N"),
+    (re.compile(r"0x[0-9a-fA-F]{6,}"), "0xMEM"),
+    (re.compile(r"line \d+, in"), "line N, in"),
+]
+
+
+def _parse_str_list(value, default=None):
+    value = parse_literal(value)
+    if value is None: return list(default or [])
+    if isinstance(value, (list, tuple, set)): return [str(o) for o in value if str(o).strip()]
+    if isinstance(value, str): return [part.strip() for part in value.split(",") if part.strip()]
+    return [str(value)]
+
+
+@contextmanager
+def _temporary_sys_path(paths):
+    old_path = list(sys.path)
+    for path in reversed([str(Path(p)) for p in paths]):
+        if path not in sys.path: sys.path.insert(0, path)
+    try: yield
+    finally: sys.path[:] = old_path
+
+
+@contextmanager
+def _temporary_allow_registry():
+    snapshot = {key: set(value) for key, value in pyskills.__pytools__.items()}
+    try: yield
+    finally:
+        pyskills.__pytools__.clear()
+        for key, value in snapshot.items(): pyskills.__pytools__[key].update(value)
+
+
+def _resolve_allowed_name(name, namespace):
+    if name in namespace: return namespace[name]
+    parts = str(name).split(".")
+    for i in range(len(parts), 0, -1):
+        module_name = ".".join(parts[:i])
+        try:
+            module = __import__(module_name, fromlist=["*"])
+            obj = module
+            for part in parts[i:]: obj = getattr(obj, part)
+            return obj
+        except (ImportError, AttributeError):
+            continue
+    raise ValueError(f"Could not resolve allow entry {name!r}")
+
+
+def _register_allowed(allow, namespace):
+    for name in _parse_str_list(allow):
+        _safepyrun_allow(_resolve_allowed_name(name, namespace))
+
+
+def _cachy_content(request):
+    if not hasattr(request, "_content"): request.read()
+    content_type = request.headers.get("Content-Type", "").encode()
+    boundary = None
+    try:
+        import httpx
+        boundary = httpx._multipart.get_multipart_boundary_from_content_type(content_type)
+    except Exception:
+        boundary = None
+    return request.content.replace(boundary, b"cachy-boundary") if boundary else request.content
+
+
+def _cachy_normalize(data):
+    text = data.decode("utf-8", errors="replace")
+    for pattern, replacement in _CACHY_NORM_PATS: text = pattern.sub(replacement, text)
+    return text.encode("utf-8")
+
+
+def _cachy_norm_content(request):
+    content = _cachy_content(request)
+    if "json" in request.headers.get("content-type", "").lower():
+        try: return json.dumps(json.loads(content), sort_keys=True).encode()
+        except Exception: pass
+    return content
+
+
+def _cachy_key(request, is_stream=False):
+    url = request.url.copy_remove_param("key")
+    data = f"{url}{bool(is_stream)}".encode() + _cachy_normalize(_cachy_norm_content(request))
+    return hashlib.sha256(data).hexdigest()[:8]
+
+
+def _cache_path_for_notebook(path, cache_dir=None):
+    base = Path(cache_dir) if cache_dir else _project_root_for_notebook(path)
+    return base / "cachy.jsonl"
+
+
+def _cached_response(key, cache_path, request):
+    if not cache_path.exists(): return None
+    import httpx
+    with cache_path.open(encoding="utf-8") as handle:
+        for line in handle:
+            if not line.strip(): continue
+            entry = json.loads(line)
+            if entry.get("key") != key: continue
+            content = entry.get("response", "")
+            if entry.get("binary"): content = base64.b64decode(content)
+            return httpx.Response(
+                status_code=entry.get("status_code", 200),
+                content=content,
+                headers=entry.get("headers"),
+                request=request,
+            )
+    return None
+
+
+def _url_allowed(url, domains):
+    return any(domain in str(url) for domain in domains)
+
+
+@contextmanager
+def _httpx_guard(path, cache_httpx=False, cache_dir=None, cache_domains=None):
+    try: import httpx
+    except ImportError:
+        yield
+        return
+    _safepyrun_allow({
+        httpx: ["get", "post", "put", "patch", "delete", "head", "options", "request", "stream"],
+        httpx.Client: ["send", "request", "get", "post", "put", "patch", "delete", "head", "options", "stream"],
+        httpx.AsyncClient: ["send", "request", "get", "post", "put", "patch", "delete", "head", "options", "stream"],
+    })
+    original_sync, original_async = httpx.Client.send, httpx.AsyncClient.send
+    original_funcs = {
+        name: getattr(httpx, name)
+        for name in ("request", "get", "post", "put", "patch", "delete", "head", "options")
+        if hasattr(httpx, name)
+    }
+    domains = tuple(_parse_str_list(cache_domains, default=_DEFAULT_CACHE_DOMAINS))
+    cache_path = _cache_path_for_notebook(path, cache_dir)
+
+    def from_cache(request, is_stream):
+        if not cache_httpx:
+            raise RuntimeError(f"nbskill safe execution blocked live httpx call to {request.url}")
+        if not _url_allowed(request.url, domains):
+            raise RuntimeError(f"nbskill safe execution has no cached domain rule for {request.url}")
+        key = _cachy_key(request, is_stream=is_stream)
+        response = _cached_response(key, cache_path, request)
+        if response is None:
+            raise RuntimeError(f"nbskill safe execution has no cached httpx response for {request.url} (key={key})")
+        return response
+
+    def send(self, request, **kwargs):
+        return from_cache(request, kwargs.get("stream", False))
+
+    async def asend(self, request, **kwargs):
+        return from_cache(request, kwargs.get("stream", False))
+
+    def request(method, url, **kwargs):
+        req = httpx.Request(
+            method, url, params=kwargs.get("params"), headers=kwargs.get("headers"),
+            content=kwargs.get("content"), data=kwargs.get("data"), json=kwargs.get("json"),
+        )
+        return from_cache(req, kwargs.get("stream", False))
+
+    def method_request(method):
+        return lambda url, **kwargs: request(method, url, **kwargs)
+
+    httpx.Client.send = send
+    httpx.AsyncClient.send = asend
+    httpx.request = request
+    for method in ("get", "post", "put", "patch", "delete", "head", "options"):
+        setattr(httpx, method, method_request(method.upper()))
+    try: yield
+    finally:
+        httpx.Client.send = original_sync
+        httpx.AsyncClient.send = original_async
+        for name, func in original_funcs.items(): setattr(httpx, name, func)
+
+
+def _run_async(coro):
+    try: asyncio.get_running_loop()
+    except RuntimeError: return asyncio.run(coro)
+    box = {}
+    def target():
+        try: box["result"] = asyncio.run(coro)
+        except BaseException as exc: box["exc"] = exc
+    thread = threading.Thread(target=target)
+    thread.start()
+    thread.join()
+    if "exc" in box: raise box["exc"]
+    return box.get("result")
+
+
+def _stream_output(name, text):
+    if not text: return None
+    return {"output_type": "stream", "name": name, "text": text}
+
+
+def _result_output(value):
+    return {
+        "output_type": "execute_result",
+        "execution_count": None,
+        "metadata": {},
+        "data": {"text/plain": repr(value)},
+    }
+
+
+def _error_output(exc):
+    tb = traceback.format_exception(type(exc), exc, exc.__traceback__)
+    return {"output_type": "error", "ename": type(exc).__name__, "evalue": str(exc), "traceback": tb}
+
+
+def _magic_error(source):
+    for line in source.splitlines():
+        stripped = line.lstrip()
+        if stripped.startswith("!") or stripped.startswith("%"):
+            return RuntimeError("nbskill safe execution blocks IPython shell escapes and magics")
+    return None
+
+
+class _SafeShell:
+    def __init__(self, path, extra_paths=None, allow=None, ok_dests=None, cache_httpx=False, cache_dir=None, cache_domains=None):
+        self.path = Path(path)
+        self.paths = [*(_local_import_paths(path)), *(extra_paths or [])]
+        self.cache_httpx = cache_httpx
+        self.cache_dir = cache_dir
+        self.cache_domains = cache_domains
+        self.safe = True
+        self.exc = None
+        self.g = {
+            _SAFE_SENTINEL: True,
+            "__name__": "__main__",
+            "__file__": str(self.path),
+        }
+        with _temporary_sys_path(self.paths):
+            _register_allowed(allow, self.g)
+        self.runner = RunPython(g=self.g, ok_dests=_parse_str_list(ok_dests))
+
+    def run(self, source, timeout=30, verbose=False):
+        self.exc = _magic_error(source)
+        if self.exc: return [_error_output(self.exc)]
+        out, err = StringIO(), StringIO()
+        result = None
+        try:
+            async def call_runner():
+                with _temporary_sys_path(self.paths), _httpx_guard(
+                    self.path, cache_httpx=self.cache_httpx, cache_dir=self.cache_dir, cache_domains=self.cache_domains,
+                ), redirect_stdout(out), redirect_stderr(err):
+                    return await self.runner(source)
+            coro = call_runner()
+            if timeout and timeout > 0: coro = asyncio.wait_for(coro, timeout=timeout)
+            result = _run_async(coro)
+        except (asyncio.TimeoutError, TimeoutError):
+            self.exc = TimeoutError(f"cell ran longer than {timeout}s")
+        except BaseException as exc:
+            self.exc = exc
+        if verbose:
+            if out.getvalue(): print(out.getvalue(), end="")
+            if err.getvalue(): print(err.getvalue(), end="", file=sys.stderr)
+        outputs = [o for o in (_stream_output("stdout", out.getvalue()), _stream_output("stderr", err.getvalue())) if o]
+        if self.exc: outputs.append(_error_output(self.exc))
+        elif result is not None: outputs.append(_result_output(result))
+        return outputs
+
+
+def _exec_shell(
+    path,
+    extra_paths=None,
+    safe=True,
+    allow=None,
+    ok_dests=None,
+    cache_httpx=False,
+    cache_dir=None,
+    cache_domains=None,
+):
+    if safe:
+        return _SafeShell(
+            path, extra_paths=extra_paths, allow=allow, ok_dests=ok_dests,
+            cache_httpx=cache_httpx, cache_dir=cache_dir, cache_domains=cache_domains,
+        )
     shell = CaptureShell()
     for pth in reversed([*(_local_import_paths(path)), *(extra_paths or [])]):
         shell.set_path(pth)
@@ -67,6 +363,8 @@ _TIMEOUT_HASH_KEY = "nbskill_timeout_hash"
 # %% ../nbs/03_execute.ipynb #7237ed18
 _TIMEOUT_SECONDS_KEY = "nbskill_timeout_seconds"
 
+_EXECUTED_HASH_KEY = "nbskill_executed_hash"
+
 # %% ../nbs/03_execute.ipynb #13c9bf5d
 def _source_hash(source):
     return hashlib.sha256(str(source).encode("utf-8")).hexdigest()
@@ -76,6 +374,26 @@ def _source_hash(source):
 
 # %% ../nbs/03_execute.ipynb #972f0090
 def _cell_source_hash(cell): return _source_hash(cell.get("source", ""))
+
+
+class _ExecutionApprovalRequired(RuntimeError): pass
+
+
+def _cell_has_execution_approval(cell):
+    if getattr(cell, "execution_count", None) not in (None, 0): return True
+    return cell_metadata(cell).get(_EXECUTED_HASH_KEY) == _cell_source_hash(cell)
+
+
+def _approval_required_error(cell):
+    msg = (
+        f"nbskill: refusing to execute unapproved cell id={cell.id}. "
+        "Run it once yourself, or rerun nbskill with allow_new=True if you approve this source."
+    )
+    return _ExecutionApprovalRequired(msg)
+
+
+def _mark_executed(cell):
+    if cell.cell_type == "code": cell_metadata(cell)[_EXECUTED_HASH_KEY] = _cell_source_hash(cell)
 
 # %% ../nbs/03_execute.ipynb #7e35b99b
 def _timeout_stream(text):
@@ -119,31 +437,58 @@ def _clear_timeout_mark(cell):
     meta.pop(_TIMEOUT_SECONDS_KEY, None)
 
 # %% ../nbs/03_execute.ipynb #abe3e565
-def _run_cell(shell, cell, timeout=30, verbose=False):
+def _run_cell(shell, cell, timeout=30, verbose=False, allow_new=False):
     if cell.cell_type != "code": return
     shell._cell_idx = cell.idx_ + 1
+    if getattr(shell, "safe", False) and not allow_new and not _cell_has_execution_approval(cell):
+        shell.exc = _approval_required_error(cell)
+        cell.outputs = [_error_output(shell.exc)]
+        return
     outputs = shell.run(cell.source, timeout=timeout if timeout and timeout > 0 else None, verbose=verbose)
     cell.outputs = outputs or []
     if isinstance(shell.exc, TimeoutError): _mark_timeout(cell, timeout, outputs)
-    else: _clear_timeout_mark(cell)
+    else:
+        _clear_timeout_mark(cell)
+        if shell.exc is None: _mark_executed(cell)
 
 # %% ../nbs/03_execute.ipynb #65848fef
-def _execute_nb(path, dest=None, exc_stop=False, preproc=lambda cell: False, postproc=lambda cell: None, timeout=30, verbose=False):
+def _execute_nb(
+    path,
+    dest=None,
+    exc_stop=False,
+    preproc=lambda cell: False,
+    postproc=lambda cell: None,
+    timeout=30,
+    verbose=False,
+    safe=True,
+    allow=None,
+    ok_dests=None,
+    cache_httpx=False,
+    cache_dir=None,
+    cache_domains=None,
+    allow_new=False,
+):
     with notebook_locks(path, dest):
         with execution_slot():
             nb = _read_nb(path)
-            shell = _exec_shell(path)
             first_exc = None
-            for cell in nb.cells:
-                if preproc(cell): continue
-                if _skip_timed_out_cell(cell):
+            with _temporary_allow_registry():
+                shell = _exec_shell(
+                    path, safe=safe, allow=allow, ok_dests=ok_dests, cache_httpx=cache_httpx,
+                    cache_dir=cache_dir, cache_domains=cache_domains,
+                )
+                for cell in nb.cells:
+                    if preproc(cell): continue
+                    if _skip_timed_out_cell(cell):
+                        postproc(cell)
+                        continue
+                    _run_cell(shell, cell, timeout=timeout, verbose=verbose, allow_new=allow_new)
                     postproc(cell)
-                    continue
-                _run_cell(shell, cell, timeout=timeout, verbose=verbose)
-                postproc(cell)
-                if shell.exc and exc_stop:
-                    first_exc = shell.exc
-                    break
+                    if isinstance(shell.exc, _ExecutionApprovalRequired):
+                        break
+                    if shell.exc and exc_stop:
+                        first_exc = shell.exc
+                        break
             if dest:
                 stamp_notebook_metadata(nb)
                 _write_nb(nb, dest)
@@ -213,8 +558,15 @@ def exec_nb(
     timeout: int = 30,  # Per-cell timeout in seconds; <=0 disables timeouts
     show_output: bool = True,  # Print saved cell outputs and errors after execution
     verbose: bool = False,  # Show stdout/stderr live while executing
+    safe: bool = True,  # Use safepyrun instead of the legacy execnb shell
+    allow: str | None = None,  # Comma-separated or literal list of trusted callables to allow
+    ok_dests: str | None = None,  # Comma-separated or literal list of allowed write destinations
+    cache_httpx: bool = False,  # Return cached httpx responses instead of making live calls
+    cache_dir: str | None = None,  # Directory containing cachy.jsonl; defaults to project root
+    cache_domains: str | None = None,  # Comma-separated or literal list of cacheable domains
+    allow_new: bool = False,  # Execute cells without prior user/nbskill execution approval
 ):
-    "Execute a notebook with execnb and local project imports available."
+    "Execute a notebook with safe Python by default and local project imports available."
     dest = dest or path
     chapter_title = None
     if chapter is not None:
@@ -224,8 +576,14 @@ def exec_nb(
             span = one_chapter(nb.cells, chapter)
         up2id, chapter_title = span["end"], span["title"]
     preproc, postproc = _exec_limiters(up2id)
-    _execute_nb(path, dest=dest, exc_stop=exc_stop, preproc=preproc, postproc=postproc, timeout=timeout, verbose=verbose)
-    msg = f"Executed {path} -> {dest}"
+    _execute_nb(
+        path, dest=dest, exc_stop=exc_stop, preproc=preproc, postproc=postproc,
+        timeout=timeout, verbose=verbose, safe=safe, allow=allow, ok_dests=ok_dests,
+        cache_httpx=cache_httpx, cache_dir=cache_dir, cache_domains=cache_domains,
+        allow_new=allow_new,
+    )
+    mode = "safe" if safe else "unsafe"
+    msg = f"Executed {path} -> {dest} ({mode})"
     if chapter_title is not None: msg += f" (chapter={chapter_title!r}, up2id={up2id})"
     elif up2id is not None: msg += f" (up2id={up2id})"
     if timeout and timeout > 0: msg += f" (timeout={timeout}s)"
@@ -248,7 +606,7 @@ def _notebook_error_summaries(path, up2id=None):
 
 # %% ../nbs/03_execute.ipynb #891fb269
 def run_notebook_test(path, timeout=30):
-    print(f"Running notebook test with execnb on {path} (timeout={timeout}s)")
+    print(f"Running notebook test with safe execution on {path} (timeout={timeout}s)")
     _execute_nb(path, dest=path, exc_stop=False, timeout=timeout, verbose=False)
     _print_nb_outputs(path)
     errors = _notebook_error_summaries(path)

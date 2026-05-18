@@ -71,6 +71,7 @@ class EditSession:
     export: bool = True
     revision: int = 0
     log: list[str] = field(default_factory=list)
+    tool_log: list[str] = field(default_factory=list)
     chat: object | None = None
     notebook_msg_idx: int | None = None
 
@@ -85,6 +86,11 @@ class EditSession:
     def record(self, message):
         "Append an operation to the session log."
         self.log.append(f"r{self.revision}: {message}")
+
+    def record_tool(self, name, detail=""):
+        "Append one tool use to the session log."
+        suffix = f"({detail})" if detail else "()"
+        self.tool_log.append(f"r{self.revision}: {name}{suffix}")
 
 # %% ../nbs/08_edit_interactive.ipynb #eee248a5
 def _save_notebook(nb, path, export=True):
@@ -144,6 +150,7 @@ def make_edit_tools(session):
             if anchor is not None:
                 idx, _ = _edit_find_cell_by_id(nb.cells, anchor)
                 target = idx + 1
+            session.record_tool("add_cell", f"after_id={anchor!r}")
             nb.cells.insert(target, new_cell)
             src = _cell_source(new_cell)
             where = f"after id={anchor}" if anchor is not None else "at end"
@@ -166,6 +173,10 @@ def make_edit_tools(session):
                 raise ValueError(f"Hash mismatch for id={id}: expected {expected_hash}, actual {actual[:12]}")
             before = _cell_source(cell)
             old_src = _none_if_blank(old_src)
+            session.record_tool(
+                "edit_cell",
+                f"id={id!r}, old_src={'yes' if old_src is not None else 'no'}, source_hash={expected_hash!r}",
+            )
             if old_src is None:
                 new_cell = _validate_cell(_parse_one_cell(new_src, cell.cell_type))
                 _clear_outputs(new_cell)
@@ -189,12 +200,14 @@ def make_edit_tools(session):
         "Run notebook cells up to and including this cell id."
         with notebook_locks(session.path):
             _edit_find_cell_by_id(_read_nb(session.path).cells, id)
+            session.record_tool("run_cell", f"id={id!r}")
             text = capture_call_text(
                 _exec_nb, path=str(session.path), dest=str(session.path), up2id=str(id),
                 timeout=session.timeout, show_output=True, verbose=False,
             )
-            session.record(f"Ran cells through id={id}")
-            return text or f"Executed through id={id}"
+            status = "error" if "Traceback (most recent call last)" in text else "ok"
+            session.record(f"Ran cells through id={id} ({status})")
+            return f"status={status}\n{text}" if text else f"Executed through id={id} ({status})"
 
     def remove_cell(
         id: str,  # Cell id to remove
@@ -208,6 +221,7 @@ def make_edit_tools(session):
             if not _cell_matches_hash(cell, expected_hash):
                 actual = _cell_hash(cell, n=None)
                 raise ValueError(f"Hash mismatch for id={id}: expected {expected_hash}, actual {actual[:12]}")
+            session.record_tool("remove_cell", f"id={id!r}, source_hash={expected_hash!r}")
             before = _cell_source(cell)
             del nb.cells[idx]
             msg = f"Removed cell id={id}"
@@ -219,7 +233,7 @@ def make_edit_tools(session):
 def make_chat(model, tools, hist, system_prompt=EDIT_INTERACTIVE_SYSTEM):
     "Create the Lisette chat object for edit-interactive."
     from lisette import Chat
-    return Chat(model, sp=system_prompt, tools=tools, hist=hist)
+    return Chat(model, sp=system_prompt, tools=tools, hist=hist, stream=str(model).startswith("chatgpt/"))
 
 # %% ../nbs/08_edit_interactive.ipynb #7b3292af
 def response_text(response):
@@ -241,7 +255,13 @@ def final_diff(path):
         with notebook_locks(path):
             return capture_call_text(_diff_nb, path=str(path))
     except BaseException as exc:
-        return f"diff_nb unavailable: {type(exc).__name__}: {exc}"
+        detail = str(exc)
+        if "Could not find notebook" in detail or "No git repository found" in detail:
+            return (
+                "Code-cell diff against HEAD is unavailable because this notebook has no git baseline. "
+                "This is expected for new or untracked notebooks."
+            )
+        return f"Code-cell diff unavailable: {type(exc).__name__}: {exc}"
 
 # %% ../nbs/08_edit_interactive.ipynb #c1425865
 def execute_plan(
@@ -270,11 +290,16 @@ def execute_plan(
         "Execute the plan using only the notebook tools. Stop when the plan is complete.",
         max_steps=max_steps, return_all=True,
     )
+    if not isinstance(result, (list, str, bytes, dict)) and hasattr(result, "__next__"):
+        result = list(result)
     sections = [
         "edit-interactive complete",
         "",
         "Final response:",
         response_text(result).strip() or "(no final response)",
+        "",
+        "Tools used:",
+        "\n".join(session.tool_log) if session.tool_log else "(no tool calls)",
         "",
         "Operation log:",
         "\n".join(session.log) if session.log else "(no notebook operations)",

@@ -250,16 +250,17 @@ _NOTEBOOK_LEVEL_CONTEXT_WARNING_CODES = {
 
 
 def _filter_warnings_for_scope(warnings, root, scope_path=None, scope_cell_ids=None):
-    if scope_path in (None, "", ".") and not scope_cell_ids: return warnings
+    if scope_path in (None, "", ".") and scope_cell_ids is None: return warnings
     scope = None if scope_path in (None, "", ".") else {_warning_scope_root_rel(scope_path, root).rstrip("/")}
+    cell_filter_active = scope_cell_ids is not None
     cell_ids = set(scope_cell_ids or [])
     filtered = []
     for item in warnings:
         if scope is not None and not any(_warning_scope_matches(path, root, scope) for path in _warning_related_paths(item)):
             continue
         cell_id = _warning_cell_id(item)
-        if cell_ids and cell_id and cell_id not in cell_ids: continue
-        if cell_ids and not cell_id and item.get("code") not in _NOTEBOOK_LEVEL_CONTEXT_WARNING_CODES: continue
+        if cell_filter_active and cell_id and cell_id not in cell_ids: continue
+        if cell_filter_active and not cell_id and item.get("code") not in _NOTEBOOK_LEVEL_CONTEXT_WARNING_CODES: continue
         filtered.append(item)
     return filtered
 
@@ -327,14 +328,16 @@ def _doc_script_warnings(root):
     return warnings
 
 
-
 def _response_scope_cell_ids(tool, arguments, preview):
-    ids = set(re.findall(r"Cell id=([^\s:]+)", preview.get("text", "")))
-    ids = set(re.findall(r"Cell id=([^\\s:]+)", preview.get("text", "")))
+    text = preview.get("text", "")
+    ids = set(re.findall(r"Cell id=([^\s:]+)", text))
+    ids.update(re.findall(r"--- code cell ([^\s]+) ---", text))
     for key in ("id", "cell_id", "any_cell_id"):
         value = arguments.get(key)
         if value: ids.add(str(value))
+    if tool == "diff_nb" and not ids: return set()
     return ids or None
+
 def _response_warnings(tool, arguments, preview):
     warnings = []
     if preview.get("truncated"):
@@ -350,8 +353,8 @@ def _response_warnings(tool, arguments, preview):
             "Use nb_cell(id=...) and pass the source_hash for concurrent or risky edits.",
             path=arguments.get("path"), cell_id=arguments.get("cell_id"),
         ))
-    context_tools = {"nb_overview", "nb_chapter", "nb_cell", "show_doc"}
-    project_tools = {"healthcheck", "write_nb", "update_cell", "batch_edit_nb", "exec_nb", "diff_nb"}
+    context_tools = {"nb_overview", "nb_chapter", "nb_cell", "show_doc", "diff_nb"}
+    project_tools = {"healthcheck", "write_nb", "update_cell", "batch_edit_nb", "exec_nb"}
     if tool in context_tools:
         path = arguments.get("path") or arguments.get("nb_path") or "."
         cell_ids = _response_scope_cell_ids(tool, arguments, preview)

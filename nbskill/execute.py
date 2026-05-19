@@ -10,6 +10,7 @@ import base64
 import hashlib
 import json
 import re
+import site
 import sys
 import threading
 import traceback
@@ -95,11 +96,36 @@ def _parse_str_list(value, default=None):
     return [str(value)]
 
 
+def _project_env_site_paths(path):
+    root = _project_root_for_notebook(path)
+    candidates = []
+    for name in (".venv", "venv"):
+        env = root / name
+        candidates.append(env / "Lib" / "site-packages")
+        lib = env / "lib"
+        current = lib / f"python{sys.version_info.major}.{sys.version_info.minor}" / "site-packages"
+        if current.exists(): candidates.append(current)
+        elif lib.exists(): candidates.extend(sorted(lib.glob("python*/site-packages")))
+    return [path for i, path in enumerate(candidates) if path.exists() and path not in candidates[:i]]
+
+
+def _prepend_sys_path(path):
+    path = str(Path(path))
+    if path in sys.path: sys.path.remove(path)
+    sys.path.insert(0, path)
+
+
 @contextmanager
 def _temporary_sys_path(paths):
     old_path = list(sys.path)
-    for path in reversed([str(Path(p)) for p in paths]):
-        if path not in sys.path: sys.path.insert(0, path)
+    for path in reversed([Path(p) for p in paths]):
+        if path.name == "site-packages":
+            before = list(sys.path)
+            site.addsitedir(str(path))
+            for added in reversed([item for item in sys.path if item not in before]):
+                _prepend_sys_path(added)
+        else:
+            _prepend_sys_path(path)
     try: yield
     finally: sys.path[:] = old_path
 
@@ -296,7 +322,7 @@ def _magic_error(source):
 class _SafeShell:
     def __init__(self, path, extra_paths=None, allow=None, ok_dests=None, cache_httpx=False, cache_dir=None, cache_domains=None):
         self.path = Path(path)
-        self.paths = [*(_local_import_paths(path)), *(extra_paths or [])]
+        self.paths = [*(_local_import_paths(path)), *(_project_env_site_paths(path)), *(extra_paths or [])]
         self.cache_httpx = cache_httpx
         self.cache_dir = cache_dir
         self.cache_domains = cache_domains
@@ -348,13 +374,14 @@ def _exec_shell(
     cache_dir=None,
     cache_domains=None,
 ):
+    paths = [*(_local_import_paths(path)), *(_project_env_site_paths(path)), *(extra_paths or [])]
     if safe:
         return _SafeShell(
             path, extra_paths=extra_paths, allow=allow, ok_dests=ok_dests,
             cache_httpx=cache_httpx, cache_dir=cache_dir, cache_domains=cache_domains,
         )
     shell = CaptureShell()
-    for pth in reversed([*(_local_import_paths(path)), *(extra_paths or [])]):
+    for pth in reversed(paths):
         shell.set_path(pth)
     return shell
 

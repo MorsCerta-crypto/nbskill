@@ -31,12 +31,4 @@ Useful options:
 - `preserve_tree=False`: flatten output notebooks into `nbs_path`.
 - `class_lines` and `method_lines`: control when large classes have long methods split into `@patch` cells.
 
-## `py2nbs`
-
-`py2nbs` remains as the explicit folder-oriented name:
-
-```bash
-uv run py2nbs src_package --nbs_path nbs/from_py
-```
-
-Prefer `py2nb` for new workflows because it handles both one file and a folder.
+`py2nb` is the preferred conversion entry point for both files and folders.

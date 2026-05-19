@@ -33,10 +33,8 @@ test, or a show-off example before they touch it.
   [`style_check`](https://MorsCerta-crypto.github.io/nbskill/review.html#style_check)
   make review focused on code cells and style hints.
 - [`py2nb`](https://MorsCerta-crypto.github.io/nbskill/convert.html#py2nb)
-  and
-  [`py2nbs`](https://MorsCerta-crypto.github.io/nbskill/convert.html#py2nbs)
-  bootstrap notebooks from Python modules when a project is moving
-  toward nbdev.
+  bootstraps notebooks from a Python file or folder when a project is
+  moving toward nbdev.
 - `nbskill_mcp` exposes the same operations to Codex, Claude, or any MCP
   client.
 
@@ -300,7 +298,7 @@ reinstalling nbskill.
 7.  Use
     [`style_check`](https://MorsCerta-crypto.github.io/nbskill/review.html#style_check)
     as the main hygiene report for large cells, mixed semantic cells,
-    duplicate imports, cell-order problems, and global tool
+    private symbol leaks, duplicate imports, cell-order problems, and global tool
     usage/problems.
 8.  Use
     [`diff_nb`](https://MorsCerta-crypto.github.io/nbskill/review.html#diff_nb)
@@ -334,7 +332,6 @@ uv run update_cell nbs/02_write.ipynb --cell_id abc123 --source_hash 7f3a91c0d42
 uv run batch_edit_nb --plan_file /tmp/nbskill-plan.json --dry_run
 uv run diff_nb nbs/02_write.ipynb
 uv run style_check nbs --delete-after-output
-uv run private_symbol_report --path nbs
 uv run exec_nb nbs/03_execute.ipynb --up2id abc123 --timeout 10
 ```
 
@@ -381,10 +378,9 @@ diff body and summarized in one line when they are the only notebook
 changes.
 
 `symbol_graph(path="nbs", symbol="name")` reports definitions, callers,
-and callees with notebook paths and cell ids.
-`private_symbol_report(path="nbs")` surfaces imported cross-notebook
-calls to private helpers, including `from nbskill.module import _helper`
-policy violations.
+and callees with notebook paths and cell ids. `doctor(scopes="warning")`
+and `style_check` surface imported cross-notebook calls to private helpers,
+including `from nbskill.module import _helper` policy violations.
 
 Functions, classes, and methods starting with `_` are excluded from
 nbdev’s exported `__all__`. Treat them as notebook-local implementation
@@ -468,7 +464,7 @@ uv run write_nb nbs/02_write.ipynb --after_id abc123 --cells_file nbs/data/cells
 uv run write_nb nbs --old_str old_name --new_str new_name --dry_run --show_cells --no-export
 uv run update_cell nbs/02_write.ipynb "replacement line" --cell_id abc123 --line_range 3 --source_hash 7f3a91c0d422 --no-export
 uv run diff_nb nbs/02_write.ipynb
-uv run private_symbol_report --path nbs
+uv run style_check nbs --delete-after-output
 uv run exec_nb nbs/03_execute.ipynb --up2id abc123 --timeout 10
 ```
 

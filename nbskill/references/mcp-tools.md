@@ -16,13 +16,13 @@ See `references/mcp-tool-report.md` for the current usefulness review and reduct
 
 | Feature area | Tools | Normal use |
 | --- | --- | --- |
-| Diagnostics | `healthcheck`, `doctor` | Check MCP liveness, reconnect hints, generated/source drift, and setup failures. |
+| Diagnostics | `healthcheck`, `doctor` | Check MCP liveness, fatal notebook errors, warnings, private symbol leaks, optional style diagnostics, reconnect hints, and setup failures. |
 | Focused reading | `nb_overview`, `nb_chapter`, `nb_cell`, `show_doc` | Move from notebook map to chapter context to one line-numbered edit target; use `show_doc` for symbol-first docs work. |
 | Notebook editing | `write_nb`, `update_cell`, `batch_edit_nb` | Add cells, update one guarded cell, or apply deterministic JSON edit plans. |
-| Verification and review | `exec_nb`, `diff_nb`, `style_check` | Run notebooks safely, review code-cell diffs, and catch structural hygiene issues. |
-| Symbol analysis | `symbol_graph`, `private_symbol_report` | Inspect call relationships and private helper leakage. |
-| Agentic planning | `execute_plan`, `execute_project_plan` | Run bounded nested edit loops only when deterministic tools are not enough. |
-| Conversion | `py2nb`, `py2nbs`, `py2nbdev` | Migrate Python files/folders or bootstrap nbdev projects. |
+| Verification and review | `exec_nb`, `diff_nb`, `style_check` | Run notebooks safely, review code-cell diffs, and catch structural hygiene/private-symbol issues. |
+| Symbol analysis | `symbol_graph` | Inspect definitions, callers, and callees for one symbol. |
+| Agentic planning | `execute_plan` | Run bounded nested edit loops for one notebook or a project scope only when deterministic tools are not enough. |
+| Conversion | `py2nb`, `py2nbdev` | Migrate Python files/folders or bootstrap nbdev projects. |
 
 ## Tool Loop
 
@@ -34,11 +34,13 @@ See `references/mcp-tool-report.md` for the current usefulness review and reduct
 6. `write_nb` inserts new cells or replaces a selected chapter/full notebook. Prefer `cells_file` for multiline additions.
 7. `update_cell` changes one existing cell by id, source text, or line range. Prefer `new_file` for multiline replacements.
 8. `batch_edit_nb` applies JSON edit plans with dry-run diffs, source-hash guards, and multi-notebook locks.
-9. `style_check` reports notebook hygiene, cell-order warnings, duplicate imports, and global tool usage/problems.
+9. `style_check` reports chkstyle output, notebook hygiene, private symbol warnings, duplicate imports, and global tool usage/problems.
 10. `exec_nb` runs a notebook, a chapter, or cells up to an id. It is safe by default: fresh or changed cells are denied until they have either been run by the user or stamped by a prior nbskill execution. Pass `allow_new=True` only after explicit approval, and use `safe=False` only for deliberate legacy execution.
 11. `diff_nb` reviews notebook changes in a text form.
 
-Use `execute_plan` when a bounded single-notebook plan should be delegated to the edit-interactive agent loop. Use `batch_edit_nb` when the operations are already known and should be applied deterministically from a JSON plan.
+Use `doctor(scopes="error,warning")` for fatal notebook problems and warnings. Add `style` only when chkstyle output is useful; `doctor` does not run or show chkstyle for error/warning-only scopes. Private symbol reporting is part of the warning scope.
+
+Use `execute_plan(scope="notebook", notebook=...)` for a bounded single-notebook plan, or `execute_plan(scope="project", notebooks=...)` for project-level decomposition. Use `batch_edit_nb` when the operations are already known and should be applied deterministically from a JSON plan.
 
 ## Concurrency
 
@@ -98,13 +100,16 @@ Signature:
 
 ```python
 execute_plan(
-    notebook: str,
     plan: str,
+    notebook: str | None = None,
+    scope: str = "notebook",
+    notebooks: str | None = None,
     model: str | None = None,
     max_steps: int = 20,
     timeout: int = 30,
     export: bool = True,
+    dry_run: bool | None = None,
 ) -> dict
 ```
 
-Model resolution is `model or NBSKILL_AGENT or "chatgpt/gpt-5.4-mini"`. The result includes `history` with the notebook tool calls and `summary` with the agent's final message. Keep plans bounded to one notebook. For broad repository changes, split work into explicit notebook-level calls or separate `execute_plan` calls.
+Model resolution is `model or NBSKILL_AGENT or "chatgpt/gpt-5.4-mini"`. With `scope="notebook"`, pass `notebook` and the result includes `history` with notebook tool calls plus the agent's final `summary`. With `scope="project"`, pass `notebooks` to constrain decomposition; project mode defaults to dry-run unless `dry_run=False` is explicit.

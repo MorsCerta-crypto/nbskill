@@ -55,7 +55,7 @@ reinstalling nbskill.
 7.  Use
     [`style_check`](https://MorsCerta-crypto.github.io/nbskill/review.html#style_check)
     as the main hygiene report for large cells, mixed semantic cells,
-    duplicate imports, cell-order problems, and global tool
+    private symbol leaks, duplicate imports, cell-order problems, and global tool
     usage/problems.
 8.  Use
     [`diff_nb`](https://MorsCerta-crypto.github.io/nbskill/review.html#diff_nb)
@@ -89,7 +89,6 @@ uv run update_cell nbs/02_write.ipynb --cell_id abc123 --source_hash 7f3a91c0d42
 uv run batch_edit_nb --plan_file /tmp/nbskill-plan.json --dry_run
 uv run diff_nb nbs/02_write.ipynb
 uv run style_check nbs --delete-after-output
-uv run private_symbol_report --path nbs
 uv run exec_nb nbs/03_execute.ipynb --up2id abc123 --timeout 10
 ```
 

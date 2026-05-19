@@ -23,12 +23,12 @@ from mcp.types import TextContent
 
 from .convert import py2nb as _py2nb
 from .convert import py2nbdev as _py2nbdev
-from .convert import py2nbs as _py2nbs
 from .edit_interactive import execute_plan as _execute_plan
 from .edit_interactive import execute_project_plan as _execute_project_plan
 from .edit_interactive import plan_result_text as _plan_result_text
 from .execute import exec_nb as _exec_nb
 from .foundation import _empty_failure_map, _failure_map_path, _load_failure_map
+from .graph import notebook_order_problems as _notebook_order_problems
 from .graph import private_symbol_report as _private_symbol_report
 from .graph import symbol_graph as _symbol_graph
 from .parallel import notebook_locks
@@ -38,6 +38,7 @@ from .read import nb_overview as _nb_overview
 from .read import show_doc as _show_doc
 from .review import _reset_global_usage_summary
 from .review import notebook_validation_problems as _notebook_validation_problems
+from .review import run_style_check as _run_style_check
 from .review import style_check as _style_check
 from .review import style_report as _style_report
 from .review import diff_nb as _diff_nb
@@ -354,20 +355,32 @@ def _format_status(data):
     return "\n".join(lines)
 
 
-def _doctor_report(path=".", detail="summary", fix=False, reset=False, capabilities=""):
+def _doctor_report(
+    path=".",
+    detail="summary",
+    fix=False,
+    reset=False,
+    capabilities="",
+    scopes="error,warning",
+    skip_folder_re=None,
+    skip_path=None,
+    max_output_chars=12000,
+    max_diagnostics=200,
+):
     root = _git_root(path) or _git_base(path).resolve()
     status = _status_data()
-    warnings = _doctor_warnings(path)
-    if not status.get("mcp_command_path"):
-        warnings.append(_warning(
-            "mcp_command_missing",
-            "nbskill_mcp is not on PATH for this process.",
-            "Run uv tool install --editable . --force and reconnect the MCP client.",
-        ))
+    selected = _doctor_scope_set(scopes)
+    errors = _doctor_error_items(path, status) if "error" in selected else []
+    warnings, private_text = _doctor_warning_items(path) if "warning" in selected else ([], "")
+    style = (
+        _doctor_style_report(path, skip_folder_re=skip_folder_re, skip_path=skip_path, max_output_chars=max_output_chars, max_diagnostics=max_diagnostics)
+        if "style" in selected else None
+    )
     failure_map = _failure_data()
     if reset: _reset_global_usage_summary()
     hints = [
-        "Use detail='debug' for raw recent events, changed paths, generated owner pairs, and full status data.",
+        "Use scopes='error,warning,style' or scopes='all' for the full doctor report.",
+        "Use scopes='style' to include chkstyle output; chkstyle is omitted from error/warning scopes.",
         "Use nb_overview/nb_chapter/nb_cell/show_doc, then update_cell or batch_edit_nb with source hashes for notebook edits.",
     ]
     changed = sorted(_git_changed_paths(root)) if (root / ".git").exists() else []
@@ -375,15 +388,31 @@ def _doctor_report(path=".", detail="summary", fix=False, reset=False, capabilit
         {"path": _rel_to_root(py, root), "owner": _rel_to_root(owner, root)}
         for py, owner in _generated_files(root)
     ]
-    summary = "nbskill doctor: " + ("no actionable warnings" if not warnings else f"{len(warnings)} actionable warning(s)")
+    issue_count = len(errors) + len(warnings)
+    style_count = (style or {}).get("summary", {}).get("diagnostic_count", 0)
+    summary = f"nbskill doctor: {len(errors)} error(s), {len(warnings)} warning(s)"
+    if "style" in selected: summary += f", {style_count} style diagnostic(s)"
+    if not issue_count and "style" not in selected: summary = "nbskill doctor: no actionable errors or warnings"
     text_lines = [summary]
-    for item in warnings:
-        text_lines.append(f"- {item['message']}" + (f" Next: {item['next_action']}" if item.get("next_action") else ""))
+    if errors:
+        text_lines.append("\nErrors:")
+        text_lines.extend(f"- {item['message']}" + (f" Next: {item['next_action']}" if item.get("next_action") else "") for item in errors)
+    if warnings:
+        text_lines.append("\nWarnings:")
+        text_lines.extend(f"- {item['message']}" + (f" Next: {item['next_action']}" if item.get("next_action") else "") for item in warnings)
+    if style is not None and style.get("text", "").strip():
+        text_lines.append("\nStyle:")
+        text_lines.append(style["text"].strip())
     report = {
         "path": str(path),
         "root": str(root),
+        "scopes": sorted(selected),
         "status": status,
+        "errors": errors,
         "warnings": warnings,
+        "issues": [*errors, *warnings],
+        "style": style,
+        "private_symbol_report": private_text if "warning" in selected else "",
         "hints": hints,
         "capabilities": [item for item in capabilities.split(",") if item],
         "changed_paths": changed if detail == "debug" else changed[:20],
@@ -404,6 +433,139 @@ def nbskill_status(json_output: bool = False):  # Print JSON instead of text
     print(json.dumps(data, indent=2, sort_keys=True) if json_output else _format_status(data))
     return data if not _in_call_parse else None
 
+# %% ../nbs/07_mcp.ipynb #30bdcef7
+_DOCTOR_SCOPES = {"error", "warning", "style"}
+
+
+def _doctor_scope_set(scopes="error,warning"):
+    "Normalize comma/space-separated doctor scopes."
+    if scopes is None: return {"error", "warning"}
+    raw = str(scopes).replace(",", " ").split()
+    selected = set(raw) or {"error", "warning"}
+    if "all" in selected: return set(_DOCTOR_SCOPES)
+    unknown = selected - _DOCTOR_SCOPES
+    if unknown: raise ValueError(f"Unknown doctor scope(s): {', '.join(sorted(unknown))}")
+    return selected
+
+
+def _problem_message(problem):
+    parts = [str(problem.get("path") or "")]
+    if problem.get("cell_id"): parts.append(f"id={problem['cell_id']}")
+    if problem.get("line"): parts.append(f"line={problem['line']}")
+    if problem.get("symbol"): parts.append(f"symbol={problem['symbol']!r}")
+    if problem.get("code"): parts.append(f"code={problem['code']}")
+    if problem.get("detail"): parts.append(str(problem["detail"]))
+    return " ".join(part for part in parts if part)
+
+
+def _doctor_validation_errors(path):
+    errors = []
+    for problem in _notebook_validation_problems(path):
+        errors.append(_warning(
+            problem.get("code", "notebook-validation"),
+            _problem_message(problem),
+            "Fix notebook metadata/source ordering before relying on guarded notebook edits.",
+            severity="error", scope="error", problem=problem,
+        ))
+    return errors
+
+
+def _doctor_order_errors(path):
+    errors = []
+    try:
+        problems = _notebook_order_problems(path)
+    except FileNotFoundError as exc:
+        return [_warning(
+            "notebook_order_missing_file",
+            f"Notebook order scan found a missing notebook: {exc.filename or exc}",
+            "Remove stale notebook references or recreate the missing notebook before rerunning doctor.",
+            severity="error", scope="error", path=exc.filename,
+        )]
+    for problem in problems:
+        errors.append(_warning(
+            problem.get("code", "notebook-order"),
+            _problem_message(problem),
+            "Move definitions/imports before use, or add the missing import.",
+            severity="error", scope="error", problem=problem,
+        ))
+    return errors
+
+
+def _doctor_recent_failure_errors():
+    errors = []
+    recent = [event for event in _failure_data().get("events", [])[-10:] if event.get("kind") == "failure"]
+    if recent:
+        last = recent[-1]
+        errors.append(_warning(
+            "recent_tool_failures",
+            f"Recent nbskill failure: {last.get('tool')} {last.get('summary') or last.get('error')}",
+            "Run doctor(detail='debug', scopes='error') after resolving it.",
+            severity="error", scope="error", tool=last.get("tool"),
+        ))
+    return errors
+
+
+def _doctor_error_items(path, status):
+    errors = [
+        *_doctor_validation_errors(path),
+        *_doctor_order_errors(path),
+        *_doctor_recent_failure_errors(),
+    ]
+    if not status.get("mcp_command_path"):
+        errors.append(_warning(
+            "mcp_command_missing",
+            "nbskill_mcp is not on PATH for this process.",
+            "Run uv tool install --editable . --force and reconnect the MCP client.",
+            severity="error", scope="error",
+        ))
+    return errors
+
+
+def _private_symbol_report_text(path):
+    return capture_call(_private_symbol_report, path=str(path))
+
+
+def _private_symbol_warnings(path):
+    try:
+        text = _private_symbol_report_text(path)
+    except FileNotFoundError as exc:
+        text = f"Private symbol scan found a missing notebook: {exc.filename or exc}"
+        return [_warning(
+            "private_symbol_missing_file",
+            text,
+            "Remove stale notebook references or recreate the missing notebook before rerunning doctor.",
+            severity="warning", scope="warning", path=exc.filename,
+        )], text
+    if "No cross-notebook private symbol calls found." in text:
+        return [], text
+    warnings = [
+        _warning(
+            "private_symbol_call",
+            line[2:],
+            "Promote the helper to public API or keep the call inside the defining notebook.",
+            severity="warning", scope="warning",
+        )
+        for line in text.splitlines()
+        if line.startswith("- ")
+    ]
+    return warnings, text
+
+
+def _doctor_warning_items(path):
+    error_codes = {"exported_py_hash_mismatch", "recent_tool_failures"}
+    warnings = [
+        {**item, "severity": item.get("severity", "warning"), "scope": "warning"}
+        for item in _doctor_warnings(path)
+        if item.get("code") not in error_codes
+    ]
+    private_warnings, private_text = _private_symbol_warnings(path)
+    return [*warnings, *private_warnings], private_text
+
+
+def _doctor_style_report(path, skip_folder_re=None, skip_path=None, max_output_chars=12000, max_diagnostics=200):
+    chkstyle = _run_style_check(path, skip_folder_re, skip_path, strict=False, max_output_chars=max_output_chars)
+    return _style_report(path, chkstyle=chkstyle, max_output_chars=max_output_chars, max_diagnostics=max_diagnostics)
+
 # %% ../nbs/07_mcp.ipynb #14cc4098
 _MCP_TOOL_CATALOG = {
     "healthcheck": {
@@ -417,10 +579,10 @@ _MCP_TOOL_CATALOG = {
     "doctor": {
         "feature": "diagnostics",
         "usefulness": "core",
-        "tags": ("status", "diagnostics", "drift"),
-        "description": "Full setup and drift report for MCP registration, generated/source files, recent failures, docs, and next steps.",
-        "when_to_use": "Use when tools are missing, exports look stale, generated Python may not match notebooks, or a prior tool failed.",
-        "combine_with": "Keep separate from healthcheck because it is heavier and intended for troubleshooting.",
+        "tags": ("status", "diagnostics", "error", "warning", "style"),
+        "description": "Scoped diagnostics for MCP setup, fatal notebook problems, warnings, private symbol leaks, and optional chkstyle output.",
+        "when_to_use": "Use scopes='error', scopes='warning', scopes='style', or scopes='all' depending on the diagnostic depth needed.",
+        "combine_with": "Now absorbs private symbol warnings and scoped style diagnostics; healthcheck stays separate as a cheap probe.",
     },
     "nb_overview": {
         "feature": "read_context",
@@ -497,18 +659,10 @@ _MCP_TOOL_CATALOG = {
     "execute_plan": {
         "feature": "agentic_planning",
         "usefulness": "advanced",
-        "tags": ("agent", "edit", "plan", "notebook"),
-        "description": "Run a bounded edit-interactive agent loop against exactly one notebook, returning history and a final summary.",
-        "when_to_use": "Use only when a higher-level notebook plan should drive multiple read/write/execute steps.",
-        "combine_with": "Can be merged with execute_project_plan as execute_plan(scope='notebook'|'project').",
-    },
-    "execute_project_plan": {
-        "feature": "agentic_planning",
-        "usefulness": "advanced",
-        "tags": ("agent", "edit", "plan", "project"),
-        "description": "Coordinate a broad project plan as notebook-scoped execute_plan calls, dry-run by default.",
-        "when_to_use": "Use for broad nbdev work that must be decomposed into notebook-local plan execution.",
-        "combine_with": "Best candidate to merge with execute_plan via an explicit scope parameter.",
+        "tags": ("agent", "edit", "plan", "notebook", "project"),
+        "description": "Run a bounded edit-interactive plan against one notebook or a project-scoped set of notebooks.",
+        "when_to_use": "Use scope='notebook' with notebook=... for one notebook, or scope='project' with notebooks=... for broad plans.",
+        "combine_with": "Combined former execute_project_plan into this tool via scope.",
     },
     "symbol_graph": {
         "feature": "symbol_analysis",
@@ -516,39 +670,23 @@ _MCP_TOOL_CATALOG = {
         "tags": ("analysis", "symbol", "graph"),
         "description": "Analyze one symbol's definitions, callers, and callees across notebooks.",
         "when_to_use": "Use when understanding impact, dependencies, or call relationships around one symbol.",
-        "combine_with": "Could merge with private_symbol_report as analyze_symbols(mode='graph'|'private-report').",
-    },
-    "private_symbol_report": {
-        "feature": "symbol_analysis",
-        "usefulness": "situational",
-        "tags": ("analysis", "symbol", "privacy"),
-        "description": "Report cross-notebook calls to underscore-prefixed private symbols that may need promotion or cleanup.",
-        "when_to_use": "Use before publishing APIs or when checking whether private helpers leak across notebook boundaries.",
-        "combine_with": "Could merge with symbol_graph under one symbol analysis tool with a mode selector.",
+        "combine_with": "Private symbol reporting moved into doctor(scope='warning') and style_check output.",
     },
     "style_check": {
         "feature": "review",
         "usefulness": "core",
-        "tags": ("review", "style", "hygiene"),
-        "description": "Notebook hygiene and style report for large cells, mixed semantic cells, duplicate imports, order issues, and tool usage.",
+        "tags": ("review", "style", "hygiene", "privacy"),
+        "description": "Notebook hygiene and style report including chkstyle output, private symbol warnings, duplicate imports, and order issues.",
         "when_to_use": "Use after substantial edits or when a notebook feels structurally messy.",
-        "combine_with": "Keep separate from diff_nb because style_check finds structural problems, not changed code.",
+        "combine_with": "Doctor can include style diagnostics with scopes='style'; standalone style_check remains the explicit review tool.",
     },
     "py2nb": {
         "feature": "conversion",
         "usefulness": "situational",
-        "tags": ("convert", "python", "notebook"),
-        "description": "Convert one Python file or folder into nbdev notebook source with pragmatic cell splitting.",
-        "when_to_use": "Use when migrating existing Python code into nbdev notebooks.",
-        "combine_with": "Could merge with py2nbs because folder handling already overlaps.",
-    },
-    "py2nbs": {
-        "feature": "conversion",
-        "usefulness": "situational",
         "tags": ("convert", "python", "notebook", "folder"),
-        "description": "Convert Python files in a folder into valid nbdev notebooks.",
-        "when_to_use": "Use for folder-level Python-to-notebook migration.",
-        "combine_with": "Best candidate to merge with py2nb as one convert_py_to_nbs tool.",
+        "description": "Convert one Python file or a folder of Python files into nbdev notebook source with pragmatic cell splitting.",
+        "when_to_use": "Use for file-level or folder-level Python-to-notebook migration.",
+        "combine_with": "Combined former py2nbs behavior into this file-or-folder converter.",
     },
     "py2nbdev": {
         "feature": "conversion",
@@ -556,7 +694,7 @@ _MCP_TOOL_CATALOG = {
         "tags": ("convert", "project", "nbdev"),
         "description": "Create a pragmatic nbdev project from a pure-Python package or project tree.",
         "when_to_use": "Use when bootstrapping a whole nbdev project rather than converting one module or folder.",
-        "combine_with": "Keep separate from py2nb/py2nbs because it creates project structure, not only notebooks.",
+        "combine_with": "Keep separate from py2nb because it creates project structure, not only notebooks.",
     },
 }
 
@@ -589,9 +727,10 @@ def create_mcp():
             "line-numbered edit context, and show_doc when starting from a public symbol. "
             "For edits, prefer update_cell for one guarded cell, write_nb for inserts/replacements, "
             "and batch_edit_nb for deterministic multi-cell or multi-notebook plans. "
-            "Use exec_nb, diff_nb, and style_check for verification and review; use doctor for setup, "
-            "drift, and failure diagnostics. Reserve execute_plan/execute_project_plan for agentic edits "
-            "and py2nb/py2nbs/py2nbdev for migration or bootstrap work. "
+            "Use exec_nb, diff_nb, and style_check for verification and review; use doctor with "
+            "scopes='error', 'warning', 'style', or 'all' for diagnostics. Chkstyle output only appears "
+            "when doctor includes the style scope. Reserve execute_plan for agentic notebook/project edits "
+            "and py2nb/py2nbdev for migration or bootstrap work. "
             "Normal tool output is concise; use detail='debug' only when troubleshooting. "
             "Notebook operations are concurrency-safe: calls touching the same notebook are serialized, "
             "calls touching different notebooks can run in parallel, and execution uses a global semaphore. "
@@ -612,19 +751,24 @@ def create_mcp():
             f"capabilities={capabilities}",
             "parallel=same-notebook operations serialized; different notebooks may run in parallel",
             "execution=global semaphore with one active safe notebook execution",
-            "diagnostics=run doctor() for drift, recent failures, and setup warnings",
+            "diagnostics=run doctor(scopes='error,warning') for fatal problems and warnings; add style for chkstyle",
             "schema_refresh=restart or reconnect the MCP client after reinstall/export to refresh tool schemas",
         ])
         return mcp_tool_result("healthcheck", {"detail": detail}, full_output, detail=detail, status=data, capabilities=capabilities.split(","))
 
     @mcp.tool(**_mcp_tool_meta("doctor"))
-    def doctor_tool(path: str = ".", detail: str = "summary", fix: bool = False, reset: bool = False) -> ToolResult:
-        "Report MCP setup, generated/source drift, recent failures, docs drift, and actionable next steps."
-        arguments = dict(path=path, detail=detail, fix=fix, reset=reset)
-        report = _doctor_report(path=path, detail=detail, fix=fix, reset=reset, capabilities=capabilities)
+    def doctor_tool(
+        path: str = ".", scopes: str = "error,warning", detail: str = "summary",
+        fix: bool = False, reset: bool = False, skip_folder_re: str | None = None,
+        skip_path: str | None = None, max_output_chars: int = 12000,
+        max_diagnostics: int = 200,
+    ) -> ToolResult:
+        "Report scoped MCP diagnostics: errors, warnings, and optional chkstyle/style details."
+        arguments = dict(path=path, scopes=scopes, detail=detail, fix=fix, reset=reset, skip_folder_re=skip_folder_re, skip_path=skip_path, max_output_chars=max_output_chars, max_diagnostics=max_diagnostics)
+        report = _doctor_report(path=path, detail=detail, fix=fix, reset=reset, capabilities=capabilities, scopes=scopes, skip_folder_re=skip_folder_re, skip_path=skip_path, max_output_chars=max_output_chars, max_diagnostics=max_diagnostics)
         return mcp_tool_result(
-            "doctor", arguments, report["text"].splitlines()[0], detail=detail,
-            warnings=report["warnings"], hints=report["hints"], doctor=report,
+            "doctor", arguments, report["text"], detail=detail,
+            warnings=report["issues"], hints=report["hints"], doctor=report,
         )
 
     @mcp.tool(**_mcp_tool_meta("nb_overview"))
@@ -712,10 +856,22 @@ def create_mcp():
         return mcp_tool_result("diff_nb", arguments, full_output, detail=detail)
 
     @mcp.tool(**_mcp_tool_meta("execute_plan"))
-    def execute_plan_tool(notebook: str, plan: str, model: str | None = None, max_steps: int = 20, timeout: int = 30, export: bool = True, dry_run: bool = False, detail: str = "summary") -> ToolResult:
-        "Run a bounded edit-interactive loop against exactly one notebook."
-        arguments = dict(notebook=notebook, plan=plan, model=model, max_steps=max_steps, timeout=timeout, export=export, dry_run=dry_run, detail=detail)
-        result = _execute_plan(**{k: v for k, v in arguments.items() if k != "detail"})
+    def execute_plan_tool(
+        plan: str, notebook: str | None = None, scope: str = "notebook",
+        notebooks: str | None = None, model: str | None = None, max_steps: int = 20,
+        timeout: int = 30, export: bool = True, dry_run: bool | None = None,
+        detail: str = "summary",
+    ) -> ToolResult:
+        "Run a bounded edit-interactive loop against one notebook or a project notebook set."
+        arguments = dict(plan=plan, notebook=notebook, scope=scope, notebooks=notebooks, model=model, max_steps=max_steps, timeout=timeout, export=export, dry_run=dry_run, detail=detail)
+        mode = "project" if scope == "project" or notebooks else "notebook"
+        if mode == "project":
+            project_args = dict(plan=plan, notebooks=notebooks, model=model, max_steps=max_steps, timeout=timeout, export=export, dry_run=True if dry_run is None else dry_run)
+            full_output = capture_call(_execute_project_plan, **project_args)
+            return mcp_tool_result("execute_plan", arguments, full_output, detail=detail)
+        if not notebook: raise ValueError("notebook is required when scope='notebook'")
+        notebook_args = dict(notebook=notebook, plan=plan, model=model, max_steps=max_steps, timeout=timeout, export=export, dry_run=False if dry_run is None else dry_run)
+        result = _execute_plan(**notebook_args)
         full_output = _plan_result_text(result)
         tool_result = mcp_tool_result("execute_plan", arguments, full_output, detail=detail)
         if isinstance(result, dict):
@@ -724,26 +880,12 @@ def create_mcp():
             tool_result.structured_content["execute_plan"] = result
         return tool_result
 
-    @mcp.tool(**_mcp_tool_meta("execute_project_plan"))
-    def execute_project_plan_tool(plan: str, notebooks: str | None = None, model: str | None = None, max_steps: int = 20, timeout: int = 30, export: bool = True, dry_run: bool = True, detail: str = "summary") -> ToolResult:
-        "Coordinate a broad plan as notebook-scoped execute_plan calls."
-        arguments = dict(plan=plan, notebooks=notebooks, model=model, max_steps=max_steps, timeout=timeout, export=export, dry_run=dry_run, detail=detail)
-        full_output = capture_call(_execute_project_plan, **{k: v for k, v in arguments.items() if k != "detail"})
-        return mcp_tool_result("execute_project_plan", arguments, full_output, detail=detail)
-
     @mcp.tool(**_mcp_tool_meta("symbol_graph"))
     def symbol_graph_tool(path: str = "nbs", symbol: str = "", detail: str = "summary") -> ToolResult:
         "Show definitions, callers, and callees for one notebook symbol."
         arguments = dict(path=path, symbol=symbol, detail=detail)
         full_output = capture_call(_symbol_graph, path=path, symbol=symbol)
         return mcp_tool_result("symbol_graph", arguments, full_output, detail=detail)
-
-    @mcp.tool(**_mcp_tool_meta("private_symbol_report"))
-    def private_symbol_report_tool(path: str = "nbs", detail: str = "summary") -> ToolResult:
-        "Report cross-notebook calls to private underscore-prefixed symbols."
-        arguments = dict(path=path, detail=detail)
-        full_output = capture_call(_private_symbol_report, path=path)
-        return mcp_tool_result("private_symbol_report", arguments, full_output, detail=detail)
 
     @mcp.tool(**_mcp_tool_meta("style_check"))
     def style_check_tool(
@@ -752,10 +894,13 @@ def create_mcp():
         max_output_chars: int = 12000, max_diagnostics: int = 200, fix: bool = False,
         dry_run: bool = True, detail: str = "summary",
     ) -> ToolResult:
-        "Print capped fast.ai style hints plus nbskill notebook hygiene warnings and global tool usage."
+        "Print capped chkstyle output, notebook hygiene warnings, private symbol warnings, and global tool usage."
         arguments = dict(path=path, skip_folder_re=skip_folder_re, skip_path=skip_path, strict=strict, delete_after_output=delete_after_output, max_output_chars=max_output_chars, max_diagnostics=max_diagnostics, fix=fix, dry_run=dry_run, detail=detail)
-        full_output = capture_call(_style_check, **{k: v for k, v in arguments.items() if k != "detail"})
+        style_output = capture_call(_style_check, **{k: v for k, v in arguments.items() if k != "detail"})
+        private_output = _private_symbol_report_text(path)
+        full_output = "\n\n".join(chunk for chunk in [private_output, style_output] if chunk)
         report = _style_report(path, max_output_chars=max_output_chars, max_diagnostics=max_diagnostics)
+        report["private_symbol_report"] = private_output
         return mcp_tool_result("style_check", arguments, full_output, max_output_chars=max_output_chars, detail=detail, style_report=report)
 
     @mcp.tool(**_mcp_tool_meta("py2nb"))
@@ -766,23 +911,10 @@ def create_mcp():
         exclude: str | None = None, skip_init: bool = True, include_tests: bool = False,
         dry_run: bool = False, force: bool = True, detail: str = "summary",
     ) -> ToolResult:
-        "Convert one Python file or folder into nbdev notebook source."
+        "Convert one Python file or a folder of Python files into nbdev notebook source."
         arguments = dict(path=path, nbs_path=nbs_path, dest=dest, recursive=recursive, maxdepth=maxdepth, preserve_tree=preserve_tree, class_lines=class_lines, method_lines=method_lines, package=package, include=include, exclude=exclude, skip_init=skip_init, include_tests=include_tests, dry_run=dry_run, force=force, detail=detail)
         full_output = capture_call(_py2nb, **{k: v for k, v in arguments.items() if k != "detail"})
         return mcp_tool_result("py2nb", arguments, full_output, detail=detail)
-
-    @mcp.tool(**_mcp_tool_meta("py2nbs"))
-    def py2nbs_tool(
-        path: str, nbs_path: str = "nbs", recursive: bool = True, maxdepth: int | None = None,
-        preserve_tree: bool = True, class_lines: int = 100, method_lines: int = 10,
-        package: str | None = None, include: str | None = None, exclude: str | None = None,
-        skip_init: bool = True, include_tests: bool = False, dry_run: bool = False,
-        force: bool = True, detail: str = "summary",
-    ) -> ToolResult:
-        "Convert Python files in a folder into valid nbdev notebooks."
-        arguments = dict(path=path, nbs_path=nbs_path, recursive=recursive, maxdepth=maxdepth, preserve_tree=preserve_tree, class_lines=class_lines, method_lines=method_lines, package=package, include=include, exclude=exclude, skip_init=skip_init, include_tests=include_tests, dry_run=dry_run, force=force, detail=detail)
-        full_output = capture_call(_py2nbs, **{k: v for k, v in arguments.items() if k != "detail"})
-        return mcp_tool_result("py2nbs", arguments, full_output, detail=detail)
 
     @mcp.tool(**_mcp_tool_meta("py2nbdev"))
     def py2nbdev_tool(source: str, dest: str, package: str | None = None, nbs_path: str = "nbs", dry_run: bool = True, force: bool = False, run_validation: bool = True, detail: str = "summary") -> ToolResult:

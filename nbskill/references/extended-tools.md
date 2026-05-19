@@ -11,9 +11,9 @@ The main `SKILL.md` intentionally stays focused on the core loop: MCP, focused n
 
 - `diff_nb` prints code-cell diffs without notebook output and metadata noise.
 - `style_report(path)` returns structured notebook hygiene and global usage/problem data.
-- `style_check` prints fast.ai style hints plus nbskill hygiene warnings.
+- `style_check` prints chkstyle hints, nbskill hygiene warnings, and private-symbol warnings.
 - `symbol_graph` reports definitions, callers, and callees for one symbol.
-- `private_symbol_report` finds cross-notebook calls to private helpers.
+- `doctor(scopes="warning")` includes cross-notebook calls to private helpers.
 
 ## Batch Editing
 
@@ -21,4 +21,4 @@ The main `SKILL.md` intentionally stays focused on the core loop: MCP, focused n
 
 ## Single-Notebook Agent Loop
 
-`execute_plan(notebook, plan, max_steps=20, timeout=30, export=True)` runs a bounded edit loop against exactly one notebook. Use it for small, contained notebook edits when direct calls to `write_nb` and `exec_nb` would be too verbose.
+`execute_plan(scope="notebook", notebook=..., plan=..., max_steps=20, timeout=30, export=True)` runs a bounded edit loop against exactly one notebook. Use `scope="project"` with `notebooks=...` for project-level decomposition when direct calls to `write_nb` and `exec_nb` would be too verbose.

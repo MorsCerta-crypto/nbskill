@@ -2,6 +2,28 @@
 
 The MCP server is started with `nbskill_mcp`. It is intended to be the normal interface for agents because it accepts structured parameters and returns notebook-aware text instead of raw `.ipynb` JSON.
 
+Each MCP tool is registered with semantic metadata:
+
+- `description` explains the outcome and safe default in one sentence.
+- `tags` expose routing labels such as `read`, `edit`, `review`, `diagnostics`, `convert`, and `agent`.
+- `meta.feature` groups the tool into a feature area.
+- `meta.usefulness` marks the tool as `core`, `situational`, or `advanced`.
+- `meta.when_to_use` and `meta.combine_with` give agent-facing guidance and consolidation notes.
+
+See `references/mcp-tool-report.md` for the current usefulness review and reduction candidates.
+
+## Feature Areas
+
+| Feature area | Tools | Normal use |
+| --- | --- | --- |
+| Diagnostics | `healthcheck`, `doctor` | Check MCP liveness, reconnect hints, generated/source drift, and setup failures. |
+| Focused reading | `nb_overview`, `nb_chapter`, `nb_cell`, `show_doc` | Move from notebook map to chapter context to one line-numbered edit target; use `show_doc` for symbol-first docs work. |
+| Notebook editing | `write_nb`, `update_cell`, `batch_edit_nb` | Add cells, update one guarded cell, or apply deterministic JSON edit plans. |
+| Verification and review | `exec_nb`, `diff_nb`, `style_check` | Run notebooks safely, review code-cell diffs, and catch structural hygiene issues. |
+| Symbol analysis | `symbol_graph`, `private_symbol_report` | Inspect call relationships and private helper leakage. |
+| Agentic planning | `execute_plan`, `execute_project_plan` | Run bounded nested edit loops only when deterministic tools are not enough. |
+| Conversion | `py2nb`, `py2nbs`, `py2nbdev` | Migrate Python files/folders or bootstrap nbdev projects. |
+
 ## Tool Loop
 
 1. `healthcheck` confirms the server is alive and reports concurrency behavior.

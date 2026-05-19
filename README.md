@@ -349,6 +349,8 @@ Open references only when the core workflow is not enough:
 
 - `references/mcp-tools.md` for detailed MCP behavior, reconnect notes,
   and concurrency behavior.
+- `references/mcp-tool-report.md` for MCP feature groups, usefulness
+  tiers, and tool-count reduction candidates.
 - `references/cli-fallbacks.md` for shell-friendly command patterns.
 - `references/conversion.md` for converting Python files or folders with
   [`py2nb`](https://MorsCerta-crypto.github.io/nbskill/convert.html#py2nb).
@@ -481,6 +483,8 @@ Open references only when the core workflow is not enough:
 
 - `references/mcp-tools.md` for detailed MCP behavior, reconnect notes,
   and concurrency behavior.
+- `references/mcp-tool-report.md` for MCP feature groups, usefulness
+  tiers, and tool-count reduction candidates.
 - `references/cli-fallbacks.md` for shell-friendly command patterns.
 - `references/conversion.md` for converting Python files or folders with
   [`py2nb`](https://MorsCerta-crypto.github.io/nbskill/convert.html#py2nb).

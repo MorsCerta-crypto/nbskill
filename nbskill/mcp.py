@@ -404,21 +404,194 @@ def nbskill_status(json_output: bool = False):  # Print JSON instead of text
     print(json.dumps(data, indent=2, sort_keys=True) if json_output else _format_status(data))
     return data if not _in_call_parse else None
 
+# %% ../nbs/07_mcp.ipynb #14cc4098
+_MCP_TOOL_CATALOG = {
+    "healthcheck": {
+        "feature": "diagnostics",
+        "usefulness": "core",
+        "tags": ("status", "diagnostics", "setup"),
+        "description": "Cheap liveness probe for the nbskill MCP server, installed version, capabilities, concurrency policy, and reconnect hints.",
+        "when_to_use": "Call first when checking that the MCP server is connected or after reinstalling/exporting tool signatures.",
+        "combine_with": "Could be folded into doctor, but a cheap health probe is useful enough to keep separate.",
+    },
+    "doctor": {
+        "feature": "diagnostics",
+        "usefulness": "core",
+        "tags": ("status", "diagnostics", "drift"),
+        "description": "Full setup and drift report for MCP registration, generated/source files, recent failures, docs, and next steps.",
+        "when_to_use": "Use when tools are missing, exports look stale, generated Python may not match notebooks, or a prior tool failed.",
+        "combine_with": "Keep separate from healthcheck because it is heavier and intended for troubleshooting.",
+    },
+    "nb_overview": {
+        "feature": "read_context",
+        "usefulness": "core",
+        "tags": ("read", "notebook", "orientation"),
+        "description": "Compact notebook map showing section headers plus exported functions/classes and their docstrings; markdown is optional.",
+        "when_to_use": "Start here when opening a notebook or choosing which chapter or cell to inspect next.",
+        "combine_with": "Do not merge back into a broad reader; this intentionally stays small and scannable.",
+    },
+    "nb_chapter": {
+        "feature": "read_context",
+        "usefulness": "core",
+        "tags": ("read", "notebook", "chapter"),
+        "description": "Notebook head plus one selected chapter found by chapter name, text query, or any cell id inside the chapter.",
+        "when_to_use": "Use after nb_overview when a section-level view is enough and line numbers are unnecessary.",
+        "combine_with": "Could share implementation with nb_cell, but the agent-facing context level is distinct.",
+    },
+    "nb_cell": {
+        "feature": "read_context",
+        "usefulness": "core",
+        "tags": ("read", "notebook", "cell", "line-numbers"),
+        "description": "Precise line-numbered cell context with previous markdown, examples/tests, and caller/callee usage.",
+        "when_to_use": "Use before editing one cell, especially when source hashes, line numbers, examples, or usage context matter.",
+        "combine_with": "Keep separate because it is the only reader that should expose line numbers and edit-local context.",
+    },
+    "show_doc": {
+        "feature": "read_context",
+        "usefulness": "situational",
+        "tags": ("read", "symbol", "documentation"),
+        "description": "Symbol-focused documentation view that shows the notebook story around one exported function, class, or object.",
+        "when_to_use": "Use when the task starts from a public symbol rather than a notebook section or cell.",
+        "combine_with": "Could be covered by nb_cell plus symbol search, but it remains useful for API documentation work.",
+    },
+    "write_nb": {
+        "feature": "notebook_edit",
+        "usefulness": "core",
+        "tags": ("edit", "notebook", "insert", "replace"),
+        "description": "Insert notebook cells, replace a chapter/full notebook, or perform exact literal replacements with optional export and checks.",
+        "when_to_use": "Use for adding new cells or exact text replacements; prefer cells_file for multiline content.",
+        "combine_with": "Do not merge with update_cell now; separate insert and update tools keep schemas simpler.",
+    },
+    "update_cell": {
+        "feature": "notebook_edit",
+        "usefulness": "core",
+        "tags": ("edit", "notebook", "guarded", "cell"),
+        "description": "Update one existing cell by id, old text, or line range, with optional source-hash guarding, export, and validation.",
+        "when_to_use": "Use for precise single-cell edits after nb_cell gives the id, line numbers, and source hash.",
+        "combine_with": "Keep separate from write_nb because guarded single-cell updates are the safest common edit path.",
+    },
+    "batch_edit_nb": {
+        "feature": "notebook_edit",
+        "usefulness": "core",
+        "tags": ("edit", "notebook", "batch", "plan"),
+        "description": "Apply a deterministic JSON edit plan across one or more notebooks with dry-run diffs, locks, validation, and export.",
+        "when_to_use": "Use when the intended operations are already known and should be applied atomically or across files.",
+        "combine_with": "Could absorb write/update operations, but that would make the main edit schema broader and less discoverable.",
+    },
+    "exec_nb": {
+        "feature": "verification",
+        "usefulness": "core",
+        "tags": ("execute", "notebook", "verify", "safe"),
+        "description": "Execute a notebook, chapter, or cells up to an id with safe-mode controls and visible output/error capture.",
+        "when_to_use": "Use after edits or before trusting notebook behavior; use check_only=True when outputs should not be written.",
+        "combine_with": "Keep separate because execution has distinct safety and concurrency semantics.",
+    },
+    "diff_nb": {
+        "feature": "review",
+        "usefulness": "core",
+        "tags": ("review", "notebook", "diff"),
+        "description": "Notebook-aware code-cell diff that avoids raw .ipynb noise and can map generated Python diffs back to notebook owners.",
+        "when_to_use": "Use before final reporting or when reviewing notebook edits without expanding JSON metadata churn.",
+        "combine_with": "Could be grouped with style_check under review, but diff parameters and output are meaningfully different.",
+    },
+    "execute_plan": {
+        "feature": "agentic_planning",
+        "usefulness": "advanced",
+        "tags": ("agent", "edit", "plan", "notebook"),
+        "description": "Run a bounded edit-interactive agent loop against exactly one notebook, returning history and a final summary.",
+        "when_to_use": "Use only when a higher-level notebook plan should drive multiple read/write/execute steps.",
+        "combine_with": "Can be merged with execute_project_plan as execute_plan(scope='notebook'|'project').",
+    },
+    "execute_project_plan": {
+        "feature": "agentic_planning",
+        "usefulness": "advanced",
+        "tags": ("agent", "edit", "plan", "project"),
+        "description": "Coordinate a broad project plan as notebook-scoped execute_plan calls, dry-run by default.",
+        "when_to_use": "Use for broad nbdev work that must be decomposed into notebook-local plan execution.",
+        "combine_with": "Best candidate to merge with execute_plan via an explicit scope parameter.",
+    },
+    "symbol_graph": {
+        "feature": "symbol_analysis",
+        "usefulness": "situational",
+        "tags": ("analysis", "symbol", "graph"),
+        "description": "Analyze one symbol's definitions, callers, and callees across notebooks.",
+        "when_to_use": "Use when understanding impact, dependencies, or call relationships around one symbol.",
+        "combine_with": "Could merge with private_symbol_report as analyze_symbols(mode='graph'|'private-report').",
+    },
+    "private_symbol_report": {
+        "feature": "symbol_analysis",
+        "usefulness": "situational",
+        "tags": ("analysis", "symbol", "privacy"),
+        "description": "Report cross-notebook calls to underscore-prefixed private symbols that may need promotion or cleanup.",
+        "when_to_use": "Use before publishing APIs or when checking whether private helpers leak across notebook boundaries.",
+        "combine_with": "Could merge with symbol_graph under one symbol analysis tool with a mode selector.",
+    },
+    "style_check": {
+        "feature": "review",
+        "usefulness": "core",
+        "tags": ("review", "style", "hygiene"),
+        "description": "Notebook hygiene and style report for large cells, mixed semantic cells, duplicate imports, order issues, and tool usage.",
+        "when_to_use": "Use after substantial edits or when a notebook feels structurally messy.",
+        "combine_with": "Keep separate from diff_nb because style_check finds structural problems, not changed code.",
+    },
+    "py2nb": {
+        "feature": "conversion",
+        "usefulness": "situational",
+        "tags": ("convert", "python", "notebook"),
+        "description": "Convert one Python file or folder into nbdev notebook source with pragmatic cell splitting.",
+        "when_to_use": "Use when migrating existing Python code into nbdev notebooks.",
+        "combine_with": "Could merge with py2nbs because folder handling already overlaps.",
+    },
+    "py2nbs": {
+        "feature": "conversion",
+        "usefulness": "situational",
+        "tags": ("convert", "python", "notebook", "folder"),
+        "description": "Convert Python files in a folder into valid nbdev notebooks.",
+        "when_to_use": "Use for folder-level Python-to-notebook migration.",
+        "combine_with": "Best candidate to merge with py2nb as one convert_py_to_nbs tool.",
+    },
+    "py2nbdev": {
+        "feature": "conversion",
+        "usefulness": "situational",
+        "tags": ("convert", "project", "nbdev"),
+        "description": "Create a pragmatic nbdev project from a pure-Python package or project tree.",
+        "when_to_use": "Use when bootstrapping a whole nbdev project rather than converting one module or folder.",
+        "combine_with": "Keep separate from py2nb/py2nbs because it creates project structure, not only notebooks.",
+    },
+}
+
+
+def _mcp_tool_meta(name):
+    "Return FastMCP registration metadata for one nbskill tool."
+    info = _MCP_TOOL_CATALOG[name]
+    return {
+        "name": name,
+        "description": info["description"],
+        "tags": set(info["tags"]),
+        "meta": {
+            "feature": info["feature"],
+            "usefulness": info["usefulness"],
+            "when_to_use": info["when_to_use"],
+            "combine_with": info["combine_with"],
+        },
+    }
+
 # %% ../nbs/07_mcp.ipynb #6daab47d
 def create_mcp():
     "Create the nbskill FastMCP server."
-    capabilities = (
-        "healthcheck,doctor,nb_overview,nb_chapter,nb_cell,show_doc,"
-        "write_nb,update_cell,batch_edit_nb,exec_nb,diff_nb,execute_plan,execute_project_plan,"
-        "symbol_graph,private_symbol_report,style_check,py2nb,py2nbs,py2nbdev"
-    )
+    capabilities = ",".join(_MCP_TOOL_CATALOG)
     mcp = FastMCP(
         "nbskill",
         instructions=(
-            "Work notebook-first in nbdev projects. Prefer nb_overview for a map, "
-            "nb_chapter for a selected section, and nb_cell for precise numbered source. "
-            "Use write_nb/update_cell/batch_edit_nb for edits, exec_nb for safe visible notebook execution, "
-            "and doctor for setup, drift, and failure diagnostics. "
+            "Work notebook-first in nbdev projects. Feature areas are diagnostics, focused reads, "
+            "notebook edits, verification/review, symbol analysis, agentic planning, and conversion. "
+            "For reading, use nb_overview for a map, nb_chapter for one section, nb_cell for precise "
+            "line-numbered edit context, and show_doc when starting from a public symbol. "
+            "For edits, prefer update_cell for one guarded cell, write_nb for inserts/replacements, "
+            "and batch_edit_nb for deterministic multi-cell or multi-notebook plans. "
+            "Use exec_nb, diff_nb, and style_check for verification and review; use doctor for setup, "
+            "drift, and failure diagnostics. Reserve execute_plan/execute_project_plan for agentic edits "
+            "and py2nb/py2nbs/py2nbdev for migration or bootstrap work. "
             "Normal tool output is concise; use detail='debug' only when troubleshooting. "
             "Notebook operations are concurrency-safe: calls touching the same notebook are serialized, "
             "calls touching different notebooks can run in parallel, and execution uses a global semaphore. "
@@ -426,7 +599,7 @@ def create_mcp():
         ),
     )
 
-    @mcp.tool(name="healthcheck")
+    @mcp.tool(**_mcp_tool_meta("healthcheck"))
     def healthcheck_tool(detail: str = "summary") -> ToolResult:
         "Return lightweight nbskill MCP status and point deeper diagnostics to doctor."
         data = _status_data()
@@ -444,7 +617,7 @@ def create_mcp():
         ])
         return mcp_tool_result("healthcheck", {"detail": detail}, full_output, detail=detail, status=data, capabilities=capabilities.split(","))
 
-    @mcp.tool(name="doctor")
+    @mcp.tool(**_mcp_tool_meta("doctor"))
     def doctor_tool(path: str = ".", detail: str = "summary", fix: bool = False, reset: bool = False) -> ToolResult:
         "Report MCP setup, generated/source drift, recent failures, docs drift, and actionable next steps."
         arguments = dict(path=path, detail=detail, fix=fix, reset=reset)
@@ -454,35 +627,35 @@ def create_mcp():
             warnings=report["warnings"], hints=report["hints"], doctor=report,
         )
 
-    @mcp.tool(name="nb_overview")
+    @mcp.tool(**_mcp_tool_meta("nb_overview"))
     def nb_overview_tool(nb_path: str, include_markdown: bool = False, detail: str = "summary") -> ToolResult:
         "Show section headings and function/class signatures with docstrings."
         arguments = dict(nb_path=nb_path, include_markdown=include_markdown, detail=detail)
         full_output = capture_notebook_call(_nb_overview, nb_path, nb_path=nb_path, include_markdown=include_markdown)
         return mcp_tool_result("nb_overview", arguments, full_output, detail=detail)
 
-    @mcp.tool(name="nb_chapter")
+    @mcp.tool(**_mcp_tool_meta("nb_chapter"))
     def nb_chapter_tool(nb_path: str, query: str | None = None, name: str | None = None, any_cell_id: str | None = None, detail: str = "summary") -> ToolResult:
         "Show the notebook head plus one selected chapter."
         arguments = dict(nb_path=nb_path, query=query, name=name, any_cell_id=any_cell_id, detail=detail)
         full_output = capture_notebook_call(_nb_chapter, nb_path, nb_path=nb_path, query=query, name=name, any_cell_id=any_cell_id)
         return mcp_tool_result("nb_chapter", arguments, full_output, detail=detail)
 
-    @mcp.tool(name="nb_cell")
+    @mcp.tool(**_mcp_tool_meta("nb_cell"))
     def nb_cell_tool(nb_path: str, query: str | None = None, id: str | None = None, detail: str = "summary") -> ToolResult:
         "Show one cell with previous docs, examples/tests, and caller/callee usage."
         arguments = dict(nb_path=nb_path, query=query, id=id, detail=detail)
         full_output = capture_notebook_call(_nb_cell, nb_path, nb_path=nb_path, query=query, id=id)
         return mcp_tool_result("nb_cell", arguments, full_output, detail=detail)
 
-    @mcp.tool(name="show_doc")
+    @mcp.tool(**_mcp_tool_meta("show_doc"))
     def show_doc_tool(path: str, symbol: str, context: int = 2, source: bool = False, show_ids: bool = False, detail: str = "summary") -> ToolResult:
         "Show the notebook story around one exported symbol."
         arguments = dict(path=path, symbol=symbol, context=context, source=source, show_ids=show_ids, detail=detail)
         full_output = capture_notebook_call(_show_doc, path, path=path, symbol=symbol, context=context, source=source, show_ids=show_ids)
         return mcp_tool_result("show_doc", arguments, full_output, detail=detail)
 
-    @mcp.tool(name="write_nb")
+    @mcp.tool(**_mcp_tool_meta("write_nb"))
     def write_nb_tool(
         path: str, cells: str = "", cells_file: str | None = None, before_id: str | None = None,
         after_id: str | None = None, chapter: str | None = None, replace: bool = False,
@@ -496,7 +669,7 @@ def create_mcp():
         full_output = capture_notebook_call(_write_nb, path, **{k: v for k, v in arguments.items() if k != "detail"})
         return mcp_tool_result("write_nb", arguments, full_output, detail=detail)
 
-    @mcp.tool(name="update_cell")
+    @mcp.tool(**_mcp_tool_meta("update_cell"))
     def update_cell_tool(
         path: str, new: str = "", new_file: str | None = None, cell_id: str | None = None,
         old_str: str | None = None, line_range: str | None = None, source_hash: str | None = None,
@@ -508,14 +681,14 @@ def create_mcp():
         full_output = capture_notebook_call(_update_cell, path, **{k: v for k, v in arguments.items() if k != "detail"})
         return mcp_tool_result("update_cell", arguments, full_output, detail=detail)
 
-    @mcp.tool(name="batch_edit_nb")
+    @mcp.tool(**_mcp_tool_meta("batch_edit_nb"))
     def batch_edit_nb_tool(plan: str = "", plan_file: str | None = None, path: str | None = None, dry_run: bool = True, export: bool = True, validate_code: bool = True, default_cell_type: str = "code", detail: str = "summary") -> ToolResult:
         "Apply a JSON batch edit plan to one or more notebooks."
         arguments = dict(plan=plan, plan_file=plan_file, path=path, dry_run=dry_run, export=export, validate_code=validate_code, default_cell_type=default_cell_type, detail=detail)
         full_output = capture_call(_batch_edit_nb, **{k: v for k, v in arguments.items() if k != "detail"})
         return mcp_tool_result("batch_edit_nb", arguments, full_output, detail=detail)
 
-    @mcp.tool(name="exec_nb")
+    @mcp.tool(**_mcp_tool_meta("exec_nb"))
     def exec_nb_tool(
         path: str, dest: str | None = None, exc_stop: bool = False, up2id: int | str | None = None,
         chapter: str | None = None, timeout: int = 30, show_output: bool = True,
@@ -529,7 +702,7 @@ def create_mcp():
         full_output = capture_notebook_call(_exec_nb, path, dest or path, **{k: v for k, v in arguments.items() if k != "detail"})
         return mcp_tool_result("exec_nb", arguments, full_output, detail=detail)
 
-    @mcp.tool(name="diff_nb")
+    @mcp.tool(**_mcp_tool_meta("diff_nb"))
     def diff_nb_tool(path: str, ref_a: str | None = "HEAD", ref_b: str | None = None, adds: bool = True, changes: bool = True, dels: bool = False, show_owner: bool = False, detail: str = "summary") -> ToolResult:
         "Diff notebook code cells without expanding raw notebook JSON; optionally map generated Python to its owner."
         arguments = dict(path=path, ref_a=ref_a, ref_b=ref_b, adds=adds, changes=changes, dels=dels, show_owner=show_owner, detail=detail)
@@ -538,7 +711,7 @@ def create_mcp():
         full_output = capture_notebook_call(_diff_nb, path, **{k: v for k, v in arguments.items() if k not in {"show_owner", "detail"}})
         return mcp_tool_result("diff_nb", arguments, full_output, detail=detail)
 
-    @mcp.tool(name="execute_plan")
+    @mcp.tool(**_mcp_tool_meta("execute_plan"))
     def execute_plan_tool(notebook: str, plan: str, model: str | None = None, max_steps: int = 20, timeout: int = 30, export: bool = True, dry_run: bool = False, detail: str = "summary") -> ToolResult:
         "Run a bounded edit-interactive loop against exactly one notebook."
         arguments = dict(notebook=notebook, plan=plan, model=model, max_steps=max_steps, timeout=timeout, export=export, dry_run=dry_run, detail=detail)
@@ -551,28 +724,28 @@ def create_mcp():
             tool_result.structured_content["execute_plan"] = result
         return tool_result
 
-    @mcp.tool(name="execute_project_plan")
+    @mcp.tool(**_mcp_tool_meta("execute_project_plan"))
     def execute_project_plan_tool(plan: str, notebooks: str | None = None, model: str | None = None, max_steps: int = 20, timeout: int = 30, export: bool = True, dry_run: bool = True, detail: str = "summary") -> ToolResult:
         "Coordinate a broad plan as notebook-scoped execute_plan calls."
         arguments = dict(plan=plan, notebooks=notebooks, model=model, max_steps=max_steps, timeout=timeout, export=export, dry_run=dry_run, detail=detail)
         full_output = capture_call(_execute_project_plan, **{k: v for k, v in arguments.items() if k != "detail"})
         return mcp_tool_result("execute_project_plan", arguments, full_output, detail=detail)
 
-    @mcp.tool(name="symbol_graph")
+    @mcp.tool(**_mcp_tool_meta("symbol_graph"))
     def symbol_graph_tool(path: str = "nbs", symbol: str = "", detail: str = "summary") -> ToolResult:
         "Show definitions, callers, and callees for one notebook symbol."
         arguments = dict(path=path, symbol=symbol, detail=detail)
         full_output = capture_call(_symbol_graph, path=path, symbol=symbol)
         return mcp_tool_result("symbol_graph", arguments, full_output, detail=detail)
 
-    @mcp.tool(name="private_symbol_report")
+    @mcp.tool(**_mcp_tool_meta("private_symbol_report"))
     def private_symbol_report_tool(path: str = "nbs", detail: str = "summary") -> ToolResult:
         "Report cross-notebook calls to private underscore-prefixed symbols."
         arguments = dict(path=path, detail=detail)
         full_output = capture_call(_private_symbol_report, path=path)
         return mcp_tool_result("private_symbol_report", arguments, full_output, detail=detail)
 
-    @mcp.tool(name="style_check")
+    @mcp.tool(**_mcp_tool_meta("style_check"))
     def style_check_tool(
         path: str = ".", skip_folder_re: str | None = None, skip_path: str | None = None,
         strict: bool = False, delete_after_output: bool = False,
@@ -585,7 +758,7 @@ def create_mcp():
         report = _style_report(path, max_output_chars=max_output_chars, max_diagnostics=max_diagnostics)
         return mcp_tool_result("style_check", arguments, full_output, max_output_chars=max_output_chars, detail=detail, style_report=report)
 
-    @mcp.tool(name="py2nb")
+    @mcp.tool(**_mcp_tool_meta("py2nb"))
     def py2nb_tool(
         path: str, nbs_path: str = "nbs", dest: str | None = None, recursive: bool = True,
         maxdepth: int | None = None, preserve_tree: bool = True, class_lines: int = 100,
@@ -598,7 +771,7 @@ def create_mcp():
         full_output = capture_call(_py2nb, **{k: v for k, v in arguments.items() if k != "detail"})
         return mcp_tool_result("py2nb", arguments, full_output, detail=detail)
 
-    @mcp.tool(name="py2nbs")
+    @mcp.tool(**_mcp_tool_meta("py2nbs"))
     def py2nbs_tool(
         path: str, nbs_path: str = "nbs", recursive: bool = True, maxdepth: int | None = None,
         preserve_tree: bool = True, class_lines: int = 100, method_lines: int = 10,
@@ -611,7 +784,7 @@ def create_mcp():
         full_output = capture_call(_py2nbs, **{k: v for k, v in arguments.items() if k != "detail"})
         return mcp_tool_result("py2nbs", arguments, full_output, detail=detail)
 
-    @mcp.tool(name="py2nbdev")
+    @mcp.tool(**_mcp_tool_meta("py2nbdev"))
     def py2nbdev_tool(source: str, dest: str, package: str | None = None, nbs_path: str = "nbs", dry_run: bool = True, force: bool = False, run_validation: bool = True, detail: str = "summary") -> ToolResult:
         "Create a pragmatic nbdev project from a pure-Python package."
         arguments = dict(source=source, dest=dest, package=package, nbs_path=nbs_path, dry_run=dry_run, force=force, run_validation=run_validation, detail=detail)

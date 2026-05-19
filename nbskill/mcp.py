@@ -27,7 +27,7 @@ from .edit_interactive import execute_plan as _execute_plan
 from .edit_interactive import execute_project_plan as _execute_project_plan
 from .edit_interactive import plan_result_text as _plan_result_text
 from .execute import exec_nb as _exec_nb
-from .workbench import _agent_workbench_result
+from .workbench import agent_workbench as _agent_workbench
 from .foundation import _empty_failure_map, _failure_map_path, _load_failure_map
 from .graph import notebook_order_problems as _notebook_order_problems
 from .graph import private_symbol_report as _private_symbol_report
@@ -216,7 +216,55 @@ def _style_problem_warnings(root):
     return warnings
 
 
-def _doctor_warnings(path="."):
+
+def _warning_scope_root_rel(path, root):
+    if path in (None, ""): return ""
+    try:
+        return Path(path).expanduser().resolve().relative_to(Path(root).resolve()).as_posix()
+    except (OSError, ValueError):
+        return str(path).strip()
+
+
+def _warning_scope_matches(value, root, scope):
+    if scope is None: return True
+    rel = _warning_scope_root_rel(value, root)
+    return any(rel == item or rel.startswith(f"{item.rstrip('/')}/") for item in scope)
+
+
+def _warning_related_paths(item):
+    for key in ("path", "generated", "owner"):
+        if item.get(key): yield item[key]
+    problem = item.get("problem") or {}
+    for key in ("path", "exported_py_path"):
+        if problem.get(key): yield problem[key]
+
+
+def _warning_cell_id(item):
+    problem = item.get("problem") or {}
+    return item.get("cell_id") or problem.get("cell_id")
+
+
+_NOTEBOOK_LEVEL_CONTEXT_WARNING_CODES = {
+    "generated_without_notebook", "notebook_export_missing", "exported_py_hash_mismatch",
+}
+
+
+def _filter_warnings_for_scope(warnings, root, scope_path=None, scope_cell_ids=None):
+    if scope_path in (None, "", ".") and not scope_cell_ids: return warnings
+    scope = None if scope_path in (None, "", ".") else {_warning_scope_root_rel(scope_path, root).rstrip("/")}
+    cell_ids = set(scope_cell_ids or [])
+    filtered = []
+    for item in warnings:
+        if scope is not None and not any(_warning_scope_matches(path, root, scope) for path in _warning_related_paths(item)):
+            continue
+        cell_id = _warning_cell_id(item)
+        if cell_ids and cell_id and cell_id not in cell_ids: continue
+        if cell_ids and not cell_id and item.get("code") not in _NOTEBOOK_LEVEL_CONTEXT_WARNING_CODES: continue
+        filtered.append(item)
+    return filtered
+
+
+def _doctor_warnings(path=".", scope_path=None, scope_cell_ids=None):
     root = _git_root(path) or _git_base(path).resolve()
     changed = _git_changed_paths(root) if (root / ".git").exists() else set()
     warnings = []
@@ -257,7 +305,7 @@ def _doctor_warnings(path="."):
             "Run doctor(detail='debug') or style_check(delete_after_output=True) after resolving it.",
             tool=last.get("tool"),
         ))
-    return warnings
+    return _filter_warnings_for_scope(warnings, root, scope_path, scope_cell_ids)
 
 
 def _doc_script_warnings(root):
@@ -279,6 +327,14 @@ def _doc_script_warnings(root):
     return warnings
 
 
+
+def _response_scope_cell_ids(tool, arguments, preview):
+    ids = set(re.findall(r"Cell id=([^\s:]+)", preview.get("text", "")))
+    ids = set(re.findall(r"Cell id=([^\\s:]+)", preview.get("text", "")))
+    for key in ("id", "cell_id", "any_cell_id"):
+        value = arguments.get(key)
+        if value: ids.add(str(value))
+    return ids or None
 def _response_warnings(tool, arguments, preview):
     warnings = []
     if preview.get("truncated"):
@@ -294,7 +350,13 @@ def _response_warnings(tool, arguments, preview):
             "Use nb_cell(id=...) and pass the source_hash for concurrent or risky edits.",
             path=arguments.get("path"), cell_id=arguments.get("cell_id"),
         ))
-    if tool in {"healthcheck", "nb_overview", "nb_chapter", "nb_cell", "write_nb", "update_cell", "batch_edit_nb", "exec_nb", "diff_nb"}:
+    context_tools = {"nb_overview", "nb_chapter", "nb_cell", "show_doc"}
+    project_tools = {"healthcheck", "write_nb", "update_cell", "batch_edit_nb", "exec_nb", "diff_nb"}
+    if tool in context_tools:
+        path = arguments.get("path") or arguments.get("nb_path") or "."
+        cell_ids = _response_scope_cell_ids(tool, arguments, preview)
+        warnings.extend(_doctor_warnings(path, scope_path=path, scope_cell_ids=cell_ids)[:3])
+    elif tool in project_tools:
         path = arguments.get("path") or arguments.get("nb_path") or "."
         warnings.extend(_doctor_warnings(path)[:3])
     return warnings
@@ -590,7 +652,46 @@ def _doctor_warning_items(path):
 
 def _doctor_style_report(path, skip_folder_re=None, skip_path=None, max_output_chars=12000, max_diagnostics=200):
     chkstyle = _run_style_check(path, skip_folder_re, skip_path, strict=False, max_output_chars=max_output_chars)
-    return _style_report(path, chkstyle=chkstyle, max_output_chars=max_output_chars, max_diagnostics=max_diagnostics)
+    try:
+        return _style_report(path, chkstyle=chkstyle, max_output_chars=max_output_chars, max_diagnostics=max_diagnostics)
+    except FileNotFoundError as exc:
+        message = f"Style scan found a missing notebook: {exc.filename or exc}"
+        diagnostic = {
+            "source": "notebook",
+            "code": "style_missing_file",
+            "severity": "error",
+            "path": exc.filename,
+            "detail": message,
+        }
+        output = chkstyle.get("output", "") if isinstance(chkstyle, dict) else ""
+        truncated = max_output_chars is not None and len(output) > max_output_chars
+        text = output[:max_output_chars].rstrip() if truncated else output.strip()
+        if text: text = f"{text}\n\n{message}"
+        else: text = message
+        return {
+            "path": str(path),
+            "summary": {
+                "notebook_problem_count": 1,
+                "chkstyle_problem_count": 0,
+                "diagnostic_count": 1,
+                "recent_problem_count": 0,
+                "output_truncated": truncated,
+                "output_chars": len(output),
+                "omitted_chars": max(0, len(output) - (max_output_chars or len(output))),
+            },
+            "diagnostics": [diagnostic],
+            "problem_chart": {
+                "by_code": {"style_missing_file": 1},
+                "by_severity": {"error": 1},
+                "by_path": {str(exc.filename): 1} if exc.filename else {},
+                "by_source": {"notebook": 1},
+            },
+            "notebook_problems": [diagnostic],
+            "global_usage": {},
+            "chkstyle": {"status": chkstyle.get("status", 0) if isinstance(chkstyle, dict) else 0, "text": output[:max_output_chars] if truncated else output, "truncated": truncated, "chars": len(output), "omitted_chars": max(0, len(output) - (max_output_chars or len(output)))},
+            "fixes": [],
+            "text": text,
+        }
 
 # %% ../nbs/07_mcp.ipynb #14cc4098
 _MCP_TOOL_CATALOG = {
@@ -638,9 +739,9 @@ _MCP_TOOL_CATALOG = {
         "feature": "read_context",
         "usefulness": "situational",
         "tags": ("read", "symbol", "documentation"),
-        "description": "Symbol-focused documentation view that shows the notebook story around one exported function, class, or object.",
-        "when_to_use": "Use when the task starts from a public symbol rather than a notebook section or cell.",
-        "combine_with": "Could be covered by nb_cell plus symbol search, but it remains useful for API documentation work.",
+        "description": "Symbol card showing location, nearest docs, signature/docstring, optional source/examples, and compact grouped usage.",
+        "when_to_use": "Use when the task starts from a public symbol and needs API-level context; use nb_cell for line-numbered edit context.",
+        "combine_with": "Could be covered by nb_cell plus symbol search, but it remains useful as a compact API documentation view.",
     },
     "write_nb": {
         "feature": "notebook_edit",
@@ -828,7 +929,7 @@ def create_mcp():
 
     @mcp.tool(**_mcp_tool_meta("show_doc"))
     def show_doc_tool(path: str, symbol: str, context: int = 2, source: bool = False, show_ids: bool = False, detail: str = "summary") -> ToolResult:
-        "Show the notebook story around one exported symbol."
+        "Show a compact symbol card with location, docs, definition, optional source/examples, and grouped usage."
         arguments = dict(path=path, symbol=symbol, context=context, source=source, show_ids=show_ids, detail=detail)
         full_output = capture_notebook_call(_show_doc, path, path=path, symbol=symbol, context=context, source=source, show_ids=show_ids)
         return mcp_tool_result("show_doc", arguments, full_output, detail=detail)
@@ -922,7 +1023,7 @@ def create_mcp():
     ) -> ToolResult:
         "Prepare or execute a taste-aware small-diff workbench run."
         arguments = dict(goal=goal, notebook=notebook, contract_file=contract_file, execute=execute, max_steps=max_steps, timeout=timeout, export=export, detail=detail)
-        result = _agent_workbench_result(**{k: v for k, v in arguments.items() if k != "detail"})
+        result = _agent_workbench(**{k: v for k, v in arguments.items() if k != "detail"})
         full_output = result.get("rendered_plan") or result.get("summary", "")
         tool_result = mcp_tool_result("agent_workbench", arguments, full_output, detail=detail)
         if isinstance(result, dict): tool_result.structured_content["agent_workbench"] = result

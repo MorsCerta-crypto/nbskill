@@ -420,37 +420,92 @@ def _symbol_signature_text(cell, symbol):
     return _function_overview(node)
 
 # %% ../nbs/01_read.ipynb #f21fcefb
+def _usage_group_locations(raw_locations):
+    raw = str(raw_locations or "").strip()
+    if not raw or raw == "none": return [], 0
+    grouped = {}
+    for item in [part.strip() for part in raw.split(";") if part.strip()]:
+        path, _, cell_id = item.rpartition(" id=")
+        if not path: path, cell_id = item, ""
+        grouped.setdefault(path, []).append(cell_id)
+    return list(grouped.items()), sum(len(ids) for ids in grouped.values())
+
+
+def _format_usage_locations(label, raw_locations, max_paths=4, max_ids=4):
+    groups, total = _usage_group_locations(raw_locations)
+    if not total: return [f"{label}: none"]
+    cell_word = "cell" if total == 1 else "cells"
+    notebook_word = "notebook" if len(groups) == 1 else "notebooks"
+    lines = [f"{label}: {total} {cell_word} across {len(groups)} {notebook_word}"]
+    for path, ids in groups[:max_paths]:
+        shown_ids = [item for item in ids[:max_ids] if item]
+        suffix = f": {', '.join(shown_ids)}" if shown_ids else ""
+        if len(ids) > max_ids: suffix += f", +{len(ids) - max_ids} more"
+        lines.append(f"- {path}{suffix}")
+    if len(groups) > max_paths: lines.append(f"- +{len(groups) - max_paths} more notebooks")
+    return lines
+
+
+def _raw_caller_usage_lines(raw_lines):
+    if "Caller usages:" not in raw_lines: return []
+    start = raw_lines.index("Caller usages:") + 1
+    return [line for line in raw_lines[start:] if line.startswith("- ")]
+
+
+def _format_symbol_usage(path, symbol):
+    try:
+        from nbskill.graph import symbol_usage_summary
+        raw = symbol_usage_summary(path, [symbol])
+    except Exception as exc:
+        return [f"Usage unavailable: {type(exc).__name__}: {exc}"]
+    if not raw: return []
+    raw_lines = raw.splitlines()
+    line = raw_lines[0]
+    prefix = f"{symbol}: callers="
+    if not line.startswith(prefix) or "; callees=" not in line: return raw_lines
+    callers, _, callees = line[len(prefix):].partition("; callees=")
+    lines = _format_usage_locations("Callers", callers)
+    caller_usage = _raw_caller_usage_lines(raw_lines)
+    if caller_usage:
+        lines.append("Caller usages:")
+        lines.extend(caller_usage)
+    callee_items = [item.strip() for item in callees.split(";") if item.strip() and item.strip() != "none"]
+    lines.append(f"Callees: {', '.join(callee_items)}" if callee_items else "Callees: none")
+    return lines
+
+
 def _format_symbol_doc(path, nb, symbol, context=2, source=False, show_ids=False):
     idx = _find_symbol_cell(nb, symbol)
     cell = nb.cells[idx]
-    lines = [f"Symbol {symbol}", "Full context: rationale/docs -> exported code -> show-off examples", cell_prefix(idx, cell, show_ids)]
+    lines = [f"Symbol {symbol}", f"Location: {path} {cell_prefix(idx, cell, show_ids)}"]
     docs = _previous_markdown(nb.cells, idx, context)
     if docs:
         lines.append("")
-        lines.append("Rationale/docs before the symbol:")
+        lines.append("Docs")
         for doc_idx, doc_cell in docs:
-            lines.append(cell_prefix(doc_idx, doc_cell, show_ids))
+            if show_ids: lines.append(cell_prefix(doc_idx, doc_cell, show_ids))
             lines.append(doc_cell.source.strip())
     signature = _symbol_signature_text(cell, symbol)
     if signature:
         lines.append("")
-        lines.append("Exported definition:")
+        lines.append("Definition")
         lines.extend(signature)
     if source:
         lines.append("")
-        lines.append("Source cell:")
+        lines.append("Source cell")
         lines.append(cell.source.strip())
     examples = _following_examples(nb.cells, idx, context)
     if examples:
         lines.append("")
-        lines.append("Show-off examples after the symbol:")
+        lines.append("Examples/tests")
         for ex_idx, ex_cell in examples:
             lines.append(cell_prefix(ex_idx, ex_cell, show_ids))
             lines.append(ex_cell.source.strip())
-    if usage := _format_usage_for_items(path, [(idx, cell)]):
+    usage = _format_symbol_usage(path, symbol)
+    if usage:
         lines.append("")
-        lines.append("Usage:")
-        lines.append(usage)
+        lines.append("Usage")
+        lines.extend(usage)
     return "\n".join(lines)
 
 # %% ../nbs/01_read.ipynb #1584953f
@@ -459,7 +514,7 @@ def _format_symbol_doc(path, nb, symbol, context=2, source=False, show_ids=False
 def show_doc(
     path: str,  # Notebook path
     symbol: str | None = None,  # Function, class, or Class.method to inspect
-    context: int = 2,  # Rationale/docs before and show-off example cells after to include
+    context: int = 2,  # Nearby doc/example cells to include around the symbol
     source: bool = False,  # Include the full source cell
     show_ids: bool = False,  # Include source hashes in output
 ):

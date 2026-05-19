@@ -262,7 +262,10 @@ def _notebook_style_problems(path="."):
     duplicate_imports = {}
     for nb_path in _notebook_paths(path):
         if _style_root_is_skipped(nb_path, skip_style_paths): continue
-        nb = _read_nb(nb_path)
+        try:
+            nb = _read_nb(nb_path)
+        except FileNotFoundError:
+            continue
         problems.extend(_notebook_size_problems_for_nb(nb_path, nb))
         imports_by_scope = {"exported": {}, "internal": {}}
         for cell in nb.cells:

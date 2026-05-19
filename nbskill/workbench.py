@@ -20,7 +20,7 @@ from fastcore.nbio import read_nb as _read_nb
 from fastcore.script import call_parse, _in_call_parse
 
 from .edit_interactive import execute_plan as _execute_plan
-from .foundation import cell_class_names, cell_hash, cell_source, cli_return, exported_py_path, tracked_call
+from .foundation import cell_class_names, cell_hash, cell_source, exported_py_path, tracked_call
 from .graph import notebook_order_problems, symbol_usage_summary
 from .read import nb_cell, nb_overview
 from .review import notebook_validation_problems, style_report
@@ -242,9 +242,26 @@ def capture_state(path=".") -> dict:
     "Capture git, notebook, export, and style state for later patch scoring."
     root = _git_root(path)
     base = root or Path(path).expanduser()
-    changed = _git_status_paths(root) if root else set()
-    tracked = _git_tracked_paths(root) if root else set()
-    stats = _git_diff_stats(root) if root else {}
+    target = Path(path).expanduser()
+
+    def _scope_rel():
+        if str(path) in {"", "."}: return None
+        try:
+            rel = target.resolve().relative_to(base.resolve()).as_posix()
+        except ValueError:
+            return None
+        return None if rel in {"", "."} else rel
+
+    scope = _scope_rel()
+
+    def _in_scope(rel):
+        if scope is None: return True
+        rel = str(rel)
+        return rel == scope or rel.startswith(f"{scope.rstrip('/')}/")
+
+    changed = {item for item in (_git_status_paths(root) if root else set()) if _in_scope(item)}
+    tracked = {item for item in (_git_tracked_paths(root) if root else set()) if _in_scope(item)}
+    stats = {key: value for key, value in (_git_diff_stats(root) if root else {}).items() if _in_scope(key)}
     notebooks = _notebook_paths(path if Path(path).exists() else base)
     rel_notebooks = []
     for nb_path in notebooks:
@@ -259,6 +276,11 @@ def capture_state(path=".") -> dict:
     for rel, item in list(stats.items()):
         if item["added"] == 0 and rel not in tracked and (base / rel).exists():
             item["added"] = _line_count(base / rel)
+    generated_pairs = [
+        {"path": str(py), "owner": str(owner)}
+        for py, owner in _generated_pairs(base)
+        if _in_scope(py) or _in_scope(owner)
+    ]
     return {
         "root": str(base),
         "changed_paths": sorted(changed),
@@ -269,10 +291,7 @@ def capture_state(path=".") -> dict:
         "validation_problem_count": len(notebook_validation_problems(path)),
         "order_problem_count": len(notebook_order_problems(path)),
         "style": _style_summary(path),
-        "generated_pairs": [
-            {"path": str(py), "owner": str(owner)}
-            for py, owner in _generated_pairs(base)
-        ],
+        "generated_pairs": generated_pairs,
     }
 
 # %% ../nbs/11_agent_workbench.ipynb #56fa4bdd
@@ -533,26 +552,24 @@ def _print_cli_result(result):
     print(text)
     return None
 
-# %% ../nbs/11_agent_workbench.ipynb #2927f514
-@call_parse
-@tracked_call
-def agent_workbench(
-    goal: str,  # Desired software-development outcome
-    notebook: str | None = None,  # Required when execute=True; also narrows context when provided
-    contract_file: str | None = None,  # Optional JSON contract overrides
-    execute: bool = False,  # Execute the rendered plan through execute_plan
-    max_steps: int = 8,  # Maximum inner-agent steps when executing
-    timeout: int = 30,  # Per-cell timeout for execute_plan
-    export: bool = True,  # Export after inner notebook writes
+# %% ../nbs/11_agent_workbench.ipynb #7131526e
+def _agent_workbench_result(
+    goal: str,
+    notebook: str | None = None,
+    contract_file: str | None = None,
+    execute: bool = False,
+    max_steps: int = 8,
+    timeout: int = 30,
+    export: bool = True,
 ) -> dict:
-    "Prepare or execute a taste-aware, small-diff agent workbench run."
+    "Build the structured workbench result without CLI printing side effects."
     overrides = _load_contract_file(contract_file)
     contract_goal = overrides.pop("goal", goal)
     contract = make_task_contract(contract_goal, **overrides)
     context_path = notebook or "nbs"
     taste = _deep_merge(load_taste_profile(project_path=context_path), contract.get("taste", {}))
     context = compile_context(contract["goal"], path=context_path, contract=contract, taste=taste)
-    baseline = capture_state(".")
+    baseline = capture_state(context_path)
     rendered_plan = _render_workbench_plan(contract, taste, context)
     result = {
         "summary": "agent_workbench prepared execution context",
@@ -573,7 +590,26 @@ def agent_workbench(
             timeout=timeout, export=export,
         )
         result["execution"] = execution
-        result["score"] = score_patch(baseline, contract, path=".")
+        result["score"] = score_patch(baseline, contract, path=context_path)
         result["summary"] = "agent_workbench executed plan"
+    return result
+
+# %% ../nbs/11_agent_workbench.ipynb #2927f514
+@call_parse
+@tracked_call
+def agent_workbench(
+    goal: str,  # Desired software-development outcome
+    notebook: str | None = None,  # Required when execute=True; also narrows context when provided
+    contract_file: str | None = None,  # Optional JSON contract overrides
+    execute: bool = False,  # Execute the rendered plan through execute_plan
+    max_steps: int = 8,  # Maximum inner-agent steps when executing
+    timeout: int = 30,  # Per-cell timeout for execute_plan
+    export: bool = True,  # Export after inner notebook writes
+) -> dict:
+    "Prepare or execute a taste-aware, small-diff agent workbench run."
+    result = _agent_workbench_result(
+        goal, notebook=notebook, contract_file=contract_file, execute=execute,
+        max_steps=max_steps, timeout=timeout, export=export,
+    )
     if _in_call_parse.get(): return _print_cli_result(result)
-    return cli_return(result)
+    return result

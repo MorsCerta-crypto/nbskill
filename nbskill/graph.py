@@ -65,16 +65,22 @@ def _call_name(node):
     return ".".join(parts) if parts else None
 
 
-def _call_names(node):
-    names = []
+def _call_site_records(node, source=""):
+    source_lines = str(source or "").splitlines()
+    records = []
     for child in ast.walk(node):
         if not isinstance(child, ast.Call): continue
         name = _call_name(child.func)
         if not name: continue
-        names.append(name)
-        short = name.rsplit(".", 1)[-1]
-        if short != name: names.append(short)
-    return tuple(dict.fromkeys(names))
+        lineno = getattr(child, "lineno", None)
+        line = source_lines[lineno - 1].strip() if lineno and lineno <= len(source_lines) else ""
+        for call_name in dict.fromkeys([name, name.rsplit(".", 1)[-1]]):
+            records.append({"name": call_name, "lineno": lineno, "line": line})
+    return tuple(records)
+
+
+def _call_names(node):
+    return tuple(dict.fromkeys(site["name"] for site in _call_site_records(node)))
 
 
 def _node_definitions(node):
@@ -107,11 +113,18 @@ def _cell_definition_records(path, module, idx, cell):
 
 
 def _cell_call_record(path, idx, cell):
+    source = _source_without_directives(cell_source(cell))
     tree = _parse_cell(cell)
     if tree is None: return None
     calls = _call_names(tree)
     if not calls: return None
-    return {"path": str(path), "cell_id": getattr(cell, "id", ""), "cell_idx": idx, "calls": calls}
+    return {
+        "path": str(path),
+        "cell_id": getattr(cell, "id", ""),
+        "cell_idx": idx,
+        "calls": calls,
+        "call_sites": _call_site_records(tree, source),
+    }
 
 
 def _import_module_name(node):
@@ -286,7 +299,10 @@ def _cell_call_root_records(cell):
 def _cell_order_data(path):
     data = []
     for nb_path in _notebook_paths(path):
-        nb = _read_nb(nb_path)
+        try:
+            nb = _read_nb(nb_path)
+        except FileNotFoundError:
+            continue
         cells = []
         for idx, cell in enumerate(nb.cells):
             tree = _parse_cell(cell)
@@ -415,12 +431,31 @@ def _symbol_graph_data(path, symbol):
     return {"symbol": symbol, "definitions": definitions, "callers": callers, "callees": callee_symbols, "graph": graph}
 
 
+def _caller_usage_lines(records, symbol, limit=8):
+    lines, seen = [], set()
+    for record in records:
+        for site in record.get("call_sites", ()):
+            if not _call_matches_symbol(site.get("name"), symbol): continue
+            key = (record["path"], record["cell_id"], site.get("lineno"), site.get("line"))
+            if key in seen: continue
+            seen.add(key)
+            lineno = f" line {site['lineno']}" if site.get("lineno") else ""
+            source = f": {site['line']}" if site.get("line") else ""
+            lines.append(f"- {record['path']} id={record['cell_id']}{lineno}{source}")
+            if len(lines) >= limit: return lines
+    return lines
+
+
 def _format_symbol_graph_data(data):
     lines = [f"Symbol {data['symbol']}"]
     lines.append("Definitions:")
     lines.extend([f"- {loc}" for loc in _locations(data["definitions"]) ] or ["- (none)"])
     lines.append("Callers:")
     lines.extend([f"- {loc}" for loc in _locations(data["callers"]) ] or ["- (none)"])
+    caller_usage = _caller_usage_lines(data["callers"], data["symbol"])
+    if caller_usage:
+        lines.append("Caller usages:")
+        lines.extend(caller_usage)
     lines.append("Callees:")
     if data["callees"]:
         for symbol in data["callees"]:
@@ -440,6 +475,10 @@ def symbol_usage_summary(path, symbols):
         callers = "; ".join(_locations(data["callers"])[:8]) or "none"
         callees = "; ".join(data["callees"][:8]) or "none"
         chunks.append(f"{symbol}: callers={callers}; callees={callees}")
+        caller_usage = _caller_usage_lines(data["callers"], symbol)
+        if caller_usage:
+            chunks.append("Caller usages:")
+            chunks.extend(caller_usage)
     return "\n".join(chunks)
 
 # %% ../nbs/10_graph.ipynb #27b349df

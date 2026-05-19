@@ -110,3 +110,21 @@ More specifically:
 - The notebook execution/export flow was still used for verification and generation; I used standard tools mainly for bulk source edits and searches.
 
 The goal should be for a future agent to prefer nbskill tools naturally because they are easier than raw shell/file workflows for notebook edits. The biggest missing piece is a trustworthy batch edit tool with dry-run diffs and source-hash guards.
+
+## 9. Workbench Dogfood: Keep The Feedback Loop Tight
+
+While checking `agent_workbench`, the useful feedback was the narrow path: `nb_cell` gave the exact stale hash, `update_cell` dry-run showed the intended tiny diff, CLI `exec_nb(..., check_only=True)` validated the notebook without writing outputs, and a fresh local MCP factory call proved the structured result path.
+
+Observed friction:
+
+- The active MCP process kept the old `agent_workbench` wrapper after notebook export, so the tool still failed until restart/reconnect even though a fresh local `create_mcp()` call passed.
+- `exec_nb` through MCP failed with `signal only works in main thread of the main interpreter`; the CLI path worked.
+- `doctor(scopes='error,warning', path='nbs/11_agent_workbench.ipynb')` reported zero errors but still surfaced 130 repo-wide warnings, which makes the task-relevant signal too noisy for an autonomous loop.
+- Inline `update_cell(new=...)` can still mis-handle Python string literals containing escaped newlines; old-string or line-range edits were safer for the small patch.
+
+Improvements:
+
+- Make workbench output foreground touched/relevant diagnostics first, with repo-wide warnings available only as background context.
+- Add an explicit reconnect/restart hint when MCP tool code has changed since the running server imported it.
+- Make MCP notebook execution avoid signal-based timeout handling outside the main interpreter, or route users to the CLI check path automatically.
+- Add a rendered solveit loop to workbench plans: inspect one cell, edit one cell, run the narrowest check, inspect the diff, then stop or repeat.

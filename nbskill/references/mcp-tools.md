@@ -18,7 +18,7 @@ See `references/mcp-tool-report.md` for the current usefulness review and reduct
 | --- | --- | --- |
 | Diagnostics | `healthcheck`, `doctor` | Check MCP liveness, fatal notebook errors, warnings, private symbol leaks, optional style diagnostics, reconnect hints, and setup failures. |
 | Focused reading | `nb_overview`, `nb_chapter`, `nb_cell`, `show_doc` | Move from notebook map to chapter context to one line-numbered edit target; use `show_doc` for symbol-first docs work. |
-| Notebook editing | `write_nb`, `update_cell`, `batch_edit_nb` | Add cells, update one guarded cell, or apply deterministic JSON edit plans. |
+| Notebook editing | `write_nb`, `update_cell`, `batch_edit_nb` | Add cells, update one existing cell, or apply deterministic JSON edit plans. |
 | Verification and review | `exec_nb`, `diff_nb`, `style_check` | Run notebooks safely, review code-cell diffs, and catch structural hygiene/private-symbol issues. |
 | Symbol analysis | `symbol_graph` | Inspect definitions, callers, and callees for one symbol. |
 | Agentic planning | `execute_plan` | Run bounded nested edit loops for one notebook or a project scope only when deterministic tools are not enough. |
@@ -33,7 +33,7 @@ See `references/mcp-tool-report.md` for the current usefulness review and reduct
 5. `show_doc` focuses on one exported symbol and its surrounding notebook story.
 6. `write_nb` inserts new cells or replaces a selected chapter/full notebook. Prefer `cells_file` for multiline additions.
 7. `update_cell` changes one existing cell by id, source text, or line range. Prefer `line_range` for partial edits. For whole-cell replacement, pass one cell block only: optional `%%code`/`%%markdown`/`%%raw` marker plus source, with no standalone `---` separators. Use `write_nb` or `batch_edit_nb` for multi-cell edits.
-8. `batch_edit_nb` applies JSON edit plans with dry-run diffs, source-hash guards, and multi-notebook locks.
+8. `batch_edit_nb` applies JSON edit plans with dry-run diffs and multi-notebook locks.
 9. `style_check` reports chkstyle output, notebook hygiene, private symbol warnings, duplicate imports, and global tool usage/problems.
 10. `exec_nb` runs a notebook, a chapter, or cells up to an id. It is safe by default: fresh or changed cells are denied until they have either been run by the user or stamped by a prior nbskill execution. Pass `allow_new=True` only after explicit approval, and use `safe=False` only for deliberate legacy execution.
 11. `diff_nb` reviews notebook changes in a text form.
@@ -50,8 +50,6 @@ The locks are local to one MCP server process. If multiple independent MCP serve
 
 ## Editing Safely
 
-Prefer text anchors or cell ids over numeric positions. When an edit is risky or concurrent, pass `source_hash` from `nb_cell` so stale edits fail instead of overwriting newer work.
-
 For nbdev projects, exported code belongs in notebook cells marked with nbdev directives such as `#| export`. After notebook edits, use export or verification tools rather than editing generated Python directly.
 
 ## `batch_edit_nb`
@@ -61,7 +59,7 @@ Plan shape:
 ```json
 {
   "operations": [
-    {"op": "set_cell_source", "path": "nbs/02_write.ipynb", "cell_id": "abc123", "source_hash": "7f3a91c0d422", "source": "value = 2"},
+    {"op": "set_cell_source", "path": "nbs/02_write.ipynb", "cell_id": "abc123", "source": "value = 2"},
     {"op": "insert_after_id", "path": "nbs/02_write.ipynb", "cell_id": "abc123", "cells": "%%code\nassert value == 2"},
     {"op": "replace_text", "path": "nbs/02_write.ipynb", "old": "old_name", "new": "new_name"}
   ]
@@ -108,7 +106,6 @@ execute_plan(
     model: str | None = None,
     max_steps: int = 20,
     timeout: int = 30,
-    export: bool = True,
     dry_run: bool | None = None,
 ) -> dict
 ```

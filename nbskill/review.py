@@ -24,7 +24,7 @@ from nbdev.diff import nbs_pair, source_diff
 
 from nbskill.foundation import (
     _empty_failure_map, _failure_map_path, _load_failure_map, cell_class_names,
-    cell_hash, cell_source, cli_error, cli_return, exported_py_path, file_hash,
+    cell_source, cli_error, cli_return, exported_py_path, file_hash,
     is_export_directive, is_exported_code_cell, none_if_string, tracked_call,
 )
 
@@ -194,12 +194,6 @@ def _cell_metadata_validation_problems(nb_path, cell):
     if not isinstance(info, dict):
         return [_validation_problem("missing-cell-nbskill-metadata", nb_path, cell)]
     problems = []
-    expected_hash = cell_hash(cell, n=None)
-    stored_hash = info.get("source_hash")
-    if not stored_hash:
-        problems.append(_validation_problem("missing-cell-source-hash", nb_path, cell))
-    elif stored_hash != expected_hash:
-        problems.append(_validation_problem("cell-source-hash-mismatch", nb_path, cell, f"expected {expected_hash[:12]}, stored {str(stored_hash)[:12]}"))
     expected_type = getattr(cell, "cell_type", None)
     if "cell_type" not in info:
         problems.append(_validation_problem("missing-cell-type", nb_path, cell))

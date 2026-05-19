@@ -323,7 +323,7 @@ def _doctor_warnings(path=".", scope_path=None, scope_cell_ids=None):
             warnings.append(_warning(
                 "notebook_export_missing",
                 f"Notebook {owner_rel} changed but generated file {py_rel} is unchanged.",
-                "Run export or use an nbskill write tool with export=True before shipping.",
+                "Run export or use an nbskill write tool before shipping.",
                 path=owner_rel, generated=py_rel,
             ))
     for problem in _notebook_validation_problems(diagnostic_path):
@@ -462,13 +462,6 @@ def _response_warnings(tool, arguments, preview):
             f"{tool} output was truncated by {preview['omitted_chars']} chars.",
             "Repeat with a narrower query or detail='debug' if you need full context.",
         ))
-    if tool == "update_cell" and arguments.get("cell_id") and not arguments.get("source_hash") and not arguments.get("dry_run"):
-        warnings.append(_warning(
-            "missing_source_hash",
-            "update_cell is writing by cell id without a source_hash guard.",
-            "Use nb_cell(id=...) and pass the source_hash for concurrent or risky edits.",
-            path=arguments.get("path"), cell_id=arguments.get("cell_id"),
-        ))
     context_tools = {"nb_overview", "nb_chapter", "nb_cell", "show_doc", "diff_nb"}
     scoped_project_tools = {"write_nb", "update_cell", "batch_edit_nb", "exec_nb"}
     if tool in context_tools:
@@ -589,7 +582,7 @@ def _doctor_report(
     hints = [
         "Use scopes='error,warning,style' or scopes='all' for the full doctor report.",
         "Use scopes='style' to include chkstyle output; chkstyle is omitted from error/warning scopes.",
-        "Use nb_overview/nb_chapter/nb_cell/show_doc, then update_cell or batch_edit_nb with source hashes for notebook edits.",
+        "Use nb_overview/nb_chapter/nb_cell/show_doc, then update_cell or batch_edit_nb for notebook edits.",
     ]
     changed = sorted(_git_changed_paths(root)) if (root / ".git").exists() else []
     generated = [
@@ -672,7 +665,7 @@ def _doctor_validation_errors(path):
         errors.append(_warning(
             problem.get("code", "notebook-validation"),
             _problem_message(problem),
-            "Fix notebook metadata/source ordering before relying on guarded notebook edits.",
+            "Fix notebook metadata/source ordering before relying on notebook edits.",
             severity="error", scope="error", problem=problem,
         ))
     return errors
@@ -852,7 +845,7 @@ _MCP_TOOL_CATALOG = {
         "usefulness": "core",
         "tags": ("read", "notebook", "cell", "line-numbers"),
         "description": "Precise line-numbered cell context with previous markdown, examples/tests, and caller/callee usage.",
-        "when_to_use": "Use before editing one cell, especially when source hashes, line numbers, examples, or usage context matter.",
+        "when_to_use": "Use before editing one cell, especially when line numbers, examples, or usage context matter.",
         "combine_with": "Keep separate because it is the only reader that should expose line numbers and edit-local context.",
     },
     "show_doc": {
@@ -867,17 +860,17 @@ _MCP_TOOL_CATALOG = {
         "feature": "notebook_edit",
         "usefulness": "core",
         "tags": ("edit", "notebook", "insert", "replace"),
-        "description": "Insert notebook cells, replace a chapter/full notebook, or perform exact literal replacements with optional export and checks.",
+        "description": "Insert notebook cells, replace a chapter/full notebook, or perform exact literal replacements with validation and automatic export.",
         "when_to_use": "Use for adding new cells or exact text replacements; prefer cells_file for multiline content.",
         "combine_with": "Do not merge with update_cell now; separate insert and update tools keep schemas simpler.",
     },
     "update_cell": {
         "feature": "notebook_edit",
         "usefulness": "core",
-        "tags": ("edit", "notebook", "guarded", "cell"),
-        "description": "Update one existing cell by id, old text, or line range, with optional source-hash guarding, export, and validation; whole-cell replacements must be one cell block with no standalone --- separators.",
-        "when_to_use": "Use after nb_cell gives the id, line numbers, and source hash. Prefer line_range for partial edits, whole-cell replacement for one cell source block, and write_nb/batch_edit_nb for adding or replacing multiple cells.",
-        "combine_with": "Keep separate from write_nb because guarded single-cell updates are the safest common edit path; do not use it for multi-cell blocks.",
+        "tags": ("edit", "notebook", "cell"),
+        "description": "Update one existing cell by id, old text, or line range, with validation and automatic export; whole-cell replacements must be one cell block with no standalone --- separators.",
+        "when_to_use": "Use after nb_cell gives the id and line numbers. Prefer line_range for partial edits, whole-cell replacement for one cell source block, and write_nb/batch_edit_nb for adding or replacing multiple cells.",
+        "combine_with": "Keep separate from write_nb because single-cell updates are the safest common edit path; do not use it for multi-cell blocks.",
     },
     "batch_edit_nb": {
         "feature": "notebook_edit",
@@ -980,7 +973,7 @@ def create_mcp():
             "notebook edits, verification/review, symbol analysis, agentic planning, and conversion. "
             "For reading, use nb_overview for a map, nb_chapter for one section, nb_cell for precise "
             "line-numbered edit context, and show_doc when starting from a public symbol. "
-            "For edits, prefer update_cell for one guarded cell, write_nb for inserts/replacements, "
+            "For edits, prefer update_cell for one existing cell, write_nb for inserts/replacements, "
             "and batch_edit_nb for deterministic multi-cell or multi-notebook plans. "
             "Use exec_nb, diff_nb, and style_check for verification and review; use doctor with "
             "scopes='error', 'warning', 'style', or 'all' for diagnostics. Chkstyle output only appears "
@@ -1058,32 +1051,32 @@ def create_mcp():
     def write_nb_tool(
         path: str, cells: str = "", cells_file: str | None = None, before_id: str | None = None,
         after_id: str | None = None, chapter: str | None = None, replace: bool = False,
-        cell_type: str = "code", export: bool = True, run_test: bool = False,
+        cell_type: str = "code", run_test: bool = False,
         run_style: bool = False, style_strict: bool = False, validate_code: bool = True,
         old_str: str | None = None, new_str: str | None = None, dry_run: bool = False,
         show_cells: bool = False, detail: str = "summary",
     ) -> ToolResult:
         "Insert notebook cells or perform exact literal replacements across notebooks."
-        arguments = dict(path=path, cells=cells, cells_file=cells_file, before_id=before_id, after_id=after_id, chapter=chapter, replace=replace, cell_type=cell_type, export=export, run_test=run_test, run_style=run_style, style_strict=style_strict, validate_code=validate_code, old_str=old_str, new_str=new_str, dry_run=dry_run, show_cells=show_cells, detail=detail)
+        arguments = dict(path=path, cells=cells, cells_file=cells_file, before_id=before_id, after_id=after_id, chapter=chapter, replace=replace, cell_type=cell_type, run_test=run_test, run_style=run_style, style_strict=style_strict, validate_code=validate_code, old_str=old_str, new_str=new_str, dry_run=dry_run, show_cells=show_cells, detail=detail)
         full_output = capture_notebook_call(_write_nb, path, **{k: v for k, v in arguments.items() if k != "detail"})
         return mcp_tool_result("write_nb", arguments, full_output, detail=detail)
 
     @mcp.tool(**_mcp_tool_meta("update_cell"))
     def update_cell_tool(
         path: str, new: str = "", new_file: str | None = None, cell_id: str | None = None,
-        old_str: str | None = None, line_range: str | None = None, source_hash: str | None = None,
-        cell_type: str = "code", export: bool = True, run_test: bool = False,
+        old_str: str | None = None, line_range: str | None = None,
+        cell_type: str = "code", run_test: bool = False,
         validate_code: bool = True, dry_run: bool = False, detail: str = "summary",
     ) -> ToolResult:
         "Update one existing notebook cell; use line_range/old_str for partial edits, and only pass a single cell block for whole-cell replacement."
-        arguments = dict(path=path, new=new, new_file=new_file, cell_id=cell_id, old_str=old_str, line_range=line_range, source_hash=source_hash, cell_type=cell_type, export=export, run_test=run_test, validate_code=validate_code, dry_run=dry_run, detail=detail)
+        arguments = dict(path=path, new=new, new_file=new_file, cell_id=cell_id, old_str=old_str, line_range=line_range, cell_type=cell_type, run_test=run_test, validate_code=validate_code, dry_run=dry_run, detail=detail)
         full_output = capture_notebook_call(_update_cell, path, **{k: v for k, v in arguments.items() if k != "detail"})
         return mcp_tool_result("update_cell", arguments, full_output, detail=detail)
 
     @mcp.tool(**_mcp_tool_meta("batch_edit_nb"))
-    def batch_edit_nb_tool(plan: str = "", plan_file: str | None = None, path: str | None = None, dry_run: bool = True, export: bool = True, validate_code: bool = True, default_cell_type: str = "code", detail: str = "summary") -> ToolResult:
+    def batch_edit_nb_tool(plan: str = "", plan_file: str | None = None, path: str | None = None, dry_run: bool = True, validate_code: bool = True, default_cell_type: str = "code", detail: str = "summary") -> ToolResult:
         "Apply a JSON batch edit plan to one or more notebooks."
-        arguments = dict(plan=plan, plan_file=plan_file, path=path, dry_run=dry_run, export=export, validate_code=validate_code, default_cell_type=default_cell_type, detail=detail)
+        arguments = dict(plan=plan, plan_file=plan_file, path=path, dry_run=dry_run, validate_code=validate_code, default_cell_type=default_cell_type, detail=detail)
         full_output = capture_call(_batch_edit_nb, **{k: v for k, v in arguments.items() if k != "detail"})
         return mcp_tool_result("batch_edit_nb", arguments, full_output, detail=detail)
 
@@ -1114,18 +1107,18 @@ def create_mcp():
     def execute_plan_tool(
         plan: str, notebook: str | None = None, scope: str = "notebook",
         notebooks: str | None = None, model: str | None = None, max_steps: int = 20,
-        timeout: int = 30, export: bool = True, dry_run: bool | None = None,
+        timeout: int = 30, dry_run: bool | None = None,
         detail: str = "summary",
     ) -> ToolResult:
         "Run a bounded edit-interactive loop against one notebook or a project notebook set."
-        arguments = dict(plan=plan, notebook=notebook, scope=scope, notebooks=notebooks, model=model, max_steps=max_steps, timeout=timeout, export=export, dry_run=dry_run, detail=detail)
+        arguments = dict(plan=plan, notebook=notebook, scope=scope, notebooks=notebooks, model=model, max_steps=max_steps, timeout=timeout, dry_run=dry_run, detail=detail)
         mode = "project" if scope == "project" or notebooks else "notebook"
         if mode == "project":
-            project_args = dict(plan=plan, notebooks=notebooks, model=model, max_steps=max_steps, timeout=timeout, export=export, dry_run=True if dry_run is None else dry_run)
+            project_args = dict(plan=plan, notebooks=notebooks, model=model, max_steps=max_steps, timeout=timeout, dry_run=True if dry_run is None else dry_run)
             full_output = capture_call(_execute_project_plan, **project_args)
             return mcp_tool_result("execute_plan", arguments, full_output, detail=detail)
         if not notebook: raise ValueError("notebook is required when scope='notebook'")
-        notebook_args = dict(notebook=notebook, plan=plan, model=model, max_steps=max_steps, timeout=timeout, export=export, dry_run=False if dry_run is None else dry_run)
+        notebook_args = dict(notebook=notebook, plan=plan, model=model, max_steps=max_steps, timeout=timeout, dry_run=False if dry_run is None else dry_run)
         result = _execute_plan(**notebook_args)
         full_output = _plan_result_text(result)
         tool_result = mcp_tool_result("execute_plan", arguments, full_output, detail=detail)
@@ -1139,10 +1132,10 @@ def create_mcp():
     def agent_workbench_tool(
         goal: str, notebook: str | None = None, contract_file: str | None = None,
         execute: bool = False, max_steps: int = 8, timeout: int = 30,
-        export: bool = True, detail: str = "summary",
+        detail: str = "summary",
     ) -> ToolResult:
         "Prepare or execute a taste-aware small-diff workbench run."
-        arguments = dict(goal=goal, notebook=notebook, contract_file=contract_file, execute=execute, max_steps=max_steps, timeout=timeout, export=export, detail=detail)
+        arguments = dict(goal=goal, notebook=notebook, contract_file=contract_file, execute=execute, max_steps=max_steps, timeout=timeout, detail=detail)
         result = _agent_workbench(**{k: v for k, v in arguments.items() if k != "detail"})
         full_output = result.get("rendered_plan") or result.get("summary", "")
         tool_result = mcp_tool_result("agent_workbench", arguments, full_output, detail=detail)

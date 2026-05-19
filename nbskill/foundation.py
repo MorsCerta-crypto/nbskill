@@ -3,12 +3,11 @@
 # %% auto #0
 __all__ = ['remove_demo_path', 'demo_path', 'write_demo_notebook', 'cli_return', 'cli_error', 'install_nbdev_pre_commit_hooks',
            'tracked_call', 'parse_literal', 'none_if_string', 'is_definition_node', 'node_start_line',
-           'is_export_directive', 'cell_source', 'cell_hash', 'cell_metadata', 'notebook_metadata', 'file_hash',
-           'exported_py_path', 'stamp_export_metadata', 'parse_one_cell', 'cell_matches_hash', 'find_cell_by_id',
-           'find_cell_by_text', 'replace_cell', 'clear_outputs', 'load_cells_text', 'validate_code_cells',
-           'parse_cells', 'first_line', 'cell_prefix', 'matches_filter', 'is_exported_code_cell',
-           'stamp_notebook_metadata', 'cell_class_names', 'cell_matches_type', 'with_context', 'chapter_index_set',
-           'one_chapter']
+           'is_export_directive', 'cell_source', 'cell_metadata', 'notebook_metadata', 'file_hash', 'exported_py_path',
+           'stamp_export_metadata', 'parse_one_cell', 'find_cell_by_id', 'find_cell_by_text', 'replace_cell',
+           'clear_outputs', 'load_cells_text', 'validate_code_cells', 'parse_cells', 'first_line', 'cell_prefix',
+           'matches_filter', 'is_exported_code_cell', 'stamp_notebook_metadata', 'cell_class_names',
+           'cell_matches_type', 'with_context', 'chapter_index_set', 'one_chapter']
 
 # %% ../nbs/00_foundation.ipynb #2500639f
 import ast
@@ -102,7 +101,7 @@ def _bump_count(data, kind, tool):
 def _call_details(args, kwargs):
     details = {"cwd": str(Path.cwd())}
     if args and isinstance(args[0], (str, Path)): details["path"] = str(args[0])
-    for key in ("path", "cell_id", "chapter", "source_hash"):
+    for key in ("path", "cell_id", "chapter"):
         value = kwargs.get(key)
         if value is not None: details[key] = str(value)
     return details
@@ -162,7 +161,6 @@ def _record_tool_failure(event, exc):
             "path": event.get("path"),
             "cell_id": event.get("cell_id"),
             "chapter": event.get("chapter"),
-            "source_hash": event.get("source_hash"),
             "cwd": event.get("cwd"),
             "error_type": type(exc).__name__,
             "error": str(exc),
@@ -455,12 +453,6 @@ def cell_source(cell):
     if isinstance(source, list): return "".join(source)
     return str(source)
 
-# %% ../nbs/00_foundation.ipynb #336e83f8
-def cell_hash(cell_or_source, n=12):
-    source = cell_source(cell_or_source) if not isinstance(cell_or_source, str) else cell_or_source
-    digest = hashlib.sha256(source.encode("utf-8")).hexdigest()
-    return digest if n is None else digest[:n]
-
 # %% ../nbs/00_foundation.ipynb #nbskillmd
 _NBSKILL_METADATA_KEY = "nbskill"
 
@@ -547,7 +539,6 @@ def stamp_export_metadata(nb, py_path):
 def _fresh_semantic_metadata(cell):
     info = _nbskill_cell_metadata(cell, create=False)
     if not info: return None
-    if info.get("source_hash") != cell_hash(cell, n=None): return None
     if info.get("cell_type") != getattr(cell, "cell_type", None): return None
     types = info.get("semantic_types")
     if not isinstance(types, list): return None
@@ -565,11 +556,6 @@ def parse_one_cell(text, default_type="code"):
     if len(blocks) != 1:
         cli_error("update_cell expects exactly one replacement cell; remove standalone '---' separators or use write_nb/batch_edit_nb for multi-cell edits")
     return _cell_from_block(blocks[0], default_type)
-
-# %% ../nbs/00_foundation.ipynb #c10eb7ae
-def cell_matches_hash(cell, source_hash):
-    if source_hash is None: return True
-    return cell_hash(cell, n=None).startswith(str(source_hash).lower())
 
 # %% ../nbs/00_foundation.ipynb #e1fe2727
 def find_cell_by_id(cells, cell_id):
@@ -679,18 +665,14 @@ def first_line(source):
 
 # %% ../nbs/00_foundation.ipynb #f4e29752
 def cell_prefix(idx, cell, show_ids=False):
-    suffix = f" hash={cell_hash(cell)}" if show_ids else ""
-    classes = cell_class_names(cell)
-    class_suffix = f" classes={','.join(classes)}" if classes else ""
-    return f"Cell id={cell.id}{suffix}: {cell.cell_type}{class_suffix}"
+    return f"Cell id={cell.id}: {cell.cell_type}"
 
 # %% ../nbs/00_foundation.ipynb #45af5771
 def _format_chapter_spans(spans, cells, show_ids=False):
     lines = []
     for span in spans:
         cell = cells[span["start"]]
-        suffix = f" hash={cell_hash(cell)}" if show_ids else ""
-        lines.append(f"Chapter id={cell.id}{suffix}: ## {span['title']}")
+        lines.append(f"Chapter id={cell.id}: ## {span['title']}")
     return "\n".join(lines)
 
 # %% ../nbs/00_foundation.ipynb #a8d23e87
@@ -803,7 +785,7 @@ def _refresh_cell_metadata(cell):
     semantic_types = _computed_cell_class_names(cell)
     info["cell_type"] = getattr(cell, "cell_type", None)
     info["semantic_types"] = list(semantic_types)
-    info["source_hash"] = cell_hash(cell, n=None)
+    info.pop("source_hash", None)
     return cell
 
 

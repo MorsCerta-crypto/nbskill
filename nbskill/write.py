@@ -22,7 +22,7 @@ from nbdev.doclinks import nbdev_export
 from .execute import run_notebook_test
 from .review import style_check
 from nbskill.foundation import (
-    cell_hash, cell_matches_hash, cell_source, clear_outputs, cli_error,
+    cell_source, clear_outputs, cli_error,
     cli_return, find_cell_by_id, find_cell_by_text, load_cells_text,
     exported_py_path, one_chapter, parse_cells, parse_one_cell, replace_cell,
     stamp_export_metadata, stamp_notebook_metadata, tracked_call,
@@ -59,11 +59,13 @@ def _literal_cell_diff(before, after, limit=24):
     return "\n".join(lines)
 
 
-def _stamp_export_hash(nb, nb_path):
+def _export_notebook(nb, nb_path):
     py_path = exported_py_path(nb_path, nb)
-    if py_path is None or not py_path.exists(): return None
-    stamp_export_metadata(nb, py_path)
-    _write_nb(nb, nb_path)
+    if py_path is None: return None
+    nbdev_export(path=str(nb_path))
+    if py_path.exists():
+        stamp_export_metadata(nb, py_path)
+        _write_nb(nb, nb_path)
     return py_path
 
 
@@ -100,11 +102,12 @@ def _format_literal_replacement_details(changed):
     return "\n".join(lines)
 
 
-def _write_literal_replacements(path, old_str, new_str, export=True, run_test=False, validate_code=True, dry_run=False, show_cells=False):
+def _write_literal_replacements(path, old_str, new_str, run_test=False, validate_code=True, dry_run=False, show_cells=False):
     if old_str in {None, ""}: cli_error("Pass a non-empty old_str for literal replacements")
     if new_str is None: cli_error("Pass new_str for literal replacements")
     paths = _resolve_notebook_paths(path)
     changed = []
+    exported = False
     with notebook_locks(*paths):
         for nb_path in paths:
             nb = _read_nb(nb_path)
@@ -115,9 +118,7 @@ def _write_literal_replacements(path, old_str, new_str, export=True, run_test=Fa
             changed.append((nb_path, cells_changed, matches, details))
             if not dry_run:
                 _write_nb(nb, nb_path)
-                if export:
-                    nbdev_export(path=str(nb_path))
-                    _stamp_export_hash(nb, nb_path)
+                exported = _export_notebook(nb, nb_path) is not None or exported
                 if run_test: run_notebook_test(nb_path)
     total_matches = sum(matches for _, _, matches, _ in changed)
     total_cells = sum(cells for _, cells, _, _ in changed)
@@ -128,7 +129,7 @@ def _write_literal_replacements(path, old_str, new_str, export=True, run_test=Fa
         msg = f"{prefix} {total_matches} matches in {total_cells} cells across {len(changed)} notebook(s)"
         details = "; ".join(f"{nb_path}: {matches} matches/{cells} cells" for nb_path, cells, matches, _ in changed)
         msg += f" ({details})"
-        if export and not dry_run: msg += " and exported with nbdev"
+        if exported: msg += " and exported with nbdev"
         if show_cells: msg += f"\n{_format_literal_replacement_details(changed)}"
     print(msg)
     return cli_return([path for path, _, _, _ in changed])
@@ -145,7 +146,6 @@ def write_nb(
     chapter: str | None = None,  # Chapter title string or regex; missing chapters are created
     replace: bool = False,  # Replace the full notebook, or the selected chapter body
     cell_type: str = "code",  # Default type for cells without %% marker
-    export: bool = True,  # Run nbdev-export after writing
     run_test: bool = False,  # Execute the notebook with execnb after writing
     run_style: bool = False,  # Run chstyle after writing
     style_strict: bool = False,  # Fail when chstyle finds hints
@@ -158,8 +158,8 @@ def write_nb(
     "Write cells to a notebook, or replace literal text across notebooks."
     if _literal_replacement_mode(old_str, new_str):
         if cells or cells_file or before_id or after_id or chapter or replace:
-            cli_error("Literal replacement mode only accepts path, old_str, new_str, export, run_test, validate_code, dry_run, and show_cells")
-        return _write_literal_replacements(path, old_str, new_str, export=export, run_test=run_test, validate_code=validate_code, dry_run=dry_run, show_cells=show_cells)
+            cli_error("Literal replacement mode only accepts path, old_str, new_str, run_test, validate_code, dry_run, and show_cells")
+        return _write_literal_replacements(path, old_str, new_str, run_test=run_test, validate_code=validate_code, dry_run=dry_run, show_cells=show_cells)
     if show_cells: cli_error("show_cells is only supported with old_str/new_str literal replacement mode")
     if dry_run: cli_error("dry_run is only supported with old_str/new_str literal replacement mode")
     if before_id and after_id: cli_error("Use either before_id or after_id, not both")
@@ -192,15 +192,13 @@ def write_nb(
 
         stamp_notebook_metadata(nb)
         _write_nb(nb, path)
-        if export:
-            nbdev_export(path=str(path))
-            _stamp_export_hash(nb, path)
+        exported = _export_notebook(nb, path) is not None
         msg = f"Wrote {len(nb.cells)} cells to {path}"
         if replace: msg += " using replace"
         if chapter is not None: msg += f" in chapter {chapter!r}"
         if before_id: msg += f" before id={before_id}"
         if after_id: msg += f" after id={after_id}"
-        if export: msg += " and exported with nbdev"
+        if exported: msg += " and exported with nbdev"
         print(msg)
         if run_test: run_notebook_test(path)
         if run_style:
@@ -209,13 +207,11 @@ def write_nb(
     return cli_return(path)
 
 # %% ../nbs/02_write.ipynb #5ef9f86f
-def _save_nb(nb, path, export=True):
+def _save_nb(nb, path):
     with notebook_locks(path):
         stamp_notebook_metadata(nb)
         _write_nb(nb, path)
-        if export:
-            nbdev_export(path=str(path))
-            _stamp_export_hash(nb, path)
+        _export_notebook(nb, path)
 
 # %% ../nbs/02_write.ipynb #8637ca42
 def _parse_line_range(line_range, n_lines):
@@ -249,9 +245,7 @@ def update_cell(
     cell_id: str | None = None,  # Stable notebook cell id to update
     old_str: str | None = None,  # Text to replace, or text used to find the target cell
     line_range: str | None = None,  # 1-based inclusive lines to replace, e.g. 3 or 3:5
-    source_hash: str | None = None,  # Expected current source SHA256 prefix
     cell_type: str = "code",  # Default type for whole-cell replacements without %% marker
-    export: bool = True,  # Run nbdev-export after writing
     run_test: bool = False,  # Execute the notebook with execnb after writing
     validate_code: bool = True,  # Validate changed Python code before writing
     dry_run: bool = False,  # Show the update plan without writing
@@ -267,15 +261,10 @@ def update_cell(
         idx, cell = find_cell_by_id(nb.cells, cell_id) if cell_id else find_cell_by_text(nb.cells, old_str)
         if old_str is not None and old_str not in cell_source(cell):
             cli_error(f"old_str was not found in id={cell.id}")
-        if not cell_matches_hash(cell, source_hash):
-            actual = cell_hash(cell, n=None)
-            cli_error(f"Hash mismatch for id={cell.id}: expected {source_hash}, actual {actual[:12]}")
 
-        before_hash = cell_hash(cell)
         if line_range is not None:
             replacement = _replace_line_range(cell_source(cell), line_range, new)
             if validate_code and getattr(cell, "cell_type", None) == "code": validate_code_cells([mk_cell(replacement)])
-            after_hash = cell_hash(replacement)
             mode = f"lines {line_range}"
             if not dry_run:
                 cell.source = replacement
@@ -286,18 +275,16 @@ def update_cell(
             clear_outputs(new_cell)
             if not dry_run: replace_cell(nb, idx, new_cell)
             replacement = cell_source(new_cell)
-            after_hash = cell_hash(new_cell)
             mode = "cell"
         else:
             replacement = cell_source(cell).replace(old_str, new, 1)
             if validate_code and getattr(cell, "cell_type", None) == "code": validate_code_cells([mk_cell(replacement)])
-            after_hash = cell_hash(replacement)
             mode = "text"
             if not dry_run:
                 cell.source = replacement
                 clear_outputs(cell)
 
-        msg = f"{'Dry run: would update' if dry_run else 'Updated'} {mode} id={cell.id} hash={before_hash}->{after_hash}"
+        msg = f"{'Dry run: would update' if dry_run else 'Updated'} {mode} id={cell.id}"
         if dry_run:
             diff = _literal_cell_diff(cell_source(cell), replacement)
             if diff: msg += chr(10) + diff
@@ -305,9 +292,7 @@ def update_cell(
             return cli_return(path)
         stamp_notebook_metadata(nb)
         _write_nb(nb, path)
-        if export:
-            nbdev_export(path=str(path))
-            _stamp_export_hash(nb, path)
+        if _export_notebook(nb, path) is not None:
             msg += " and exported with nbdev"
         print(msg)
         if run_test: run_notebook_test(path)
@@ -341,16 +326,13 @@ def _op_cells(op, default_cell_type="code"):
     if "cells" in op: return parse_cells(str(op["cells"]), op.get("cell_type", default_cell_type))
     return [parse_one_cell(_op_source(op), op.get("cell_type", default_cell_type))]
 
-# %% ../nbs/02_write.ipynb #088fe741
-def _check_op_hash(cell, op):
-    expected = op.get("source_hash")
-    if not cell_matches_hash(cell, expected):
-        actual = cell_hash(cell, n=None)
-        cli_error(f"Hash mismatch for id={cell.id}: expected {expected}, actual {actual[:12]}")
-
 # %% ../nbs/02_write.ipynb #0bc1bf7f
-def _op_diff(before, after):
-    return _literal_cell_diff(before, after)
+def _op_diff(before, after, limit=24):
+    lines = list(difflib.unified_diff(
+        before.splitlines(), after.splitlines(), fromfile="before", tofile="after", lineterm="", n=2,
+    ))
+    if len(lines) > limit: lines = [*lines[:limit], "... diff truncated ..."]
+    return "\n".join(lines)
 
 # %% ../nbs/02_write.ipynb #fd6543d8
 def _batch_detail(op, path, cell_id="", before="", after=""):
@@ -367,7 +349,6 @@ def _apply_batch_op(nb, path, op, validate_code=True, default_cell_type="code"):
     kind = op.get("op")
     if kind in {"set_cell_source", "set_cell"}:
         _, cell = find_cell_by_id(nb.cells, op.get("cell_id"))
-        _check_op_hash(cell, op)
         before = cell_source(cell)
         source = _op_source(op)
         cell_type = op.get("cell_type")
@@ -392,7 +373,6 @@ def _apply_batch_op(nb, path, op, validate_code=True, default_cell_type="code"):
         }]
     if kind == "delete_cell_id":
         idx, cell = find_cell_by_id(nb.cells, op.get("cell_id"))
-        _check_op_hash(cell, op)
         before = cell_source(cell)
         del nb.cells[idx]
         return [_batch_detail(op, path, cell.id, before, "")]
@@ -427,15 +407,15 @@ def batch_edit_nb(
     plan_file: str | None = None,  # Read the JSON plan from a UTF-8 file
     path: str | None = None,  # Default notebook path for operations that omit path
     dry_run: bool = True,  # Show the plan and diffs without writing
-    export: bool = True,  # Run nbdev-export after writing changed notebooks
     validate_code: bool = True,  # Validate changed Python code before writing
     default_cell_type: str = "code",  # Default cell type for inserted cells without %% markers
 ):
-    "Apply a JSON batch edit plan to one or more notebooks with locks, source-hash guards, and diffs."
+    "Apply a JSON batch edit plan to one or more notebooks with locks and diffs."
     data = _load_batch_plan(plan, plan_file)
     ops = data["operations"]
     paths = sorted({_op_path(op, path) for op in ops}, key=str)
     details = []
+    exported = False
     with notebook_locks(*paths):
         notebooks = {nb_path: _read_nb(nb_path) for nb_path in paths}
         for op in ops:
@@ -445,12 +425,10 @@ def batch_edit_nb(
             for nb_path, nb in notebooks.items():
                 stamp_notebook_metadata(nb)
                 _write_nb(nb, nb_path)
-                if export:
-                    nbdev_export(path=str(nb_path))
-                    _stamp_export_hash(nb, nb_path)
+                exported = _export_notebook(nb, nb_path) is not None or exported
     prefix = "Dry run: would apply" if dry_run else "Applied"
     msg = f"{prefix} {len(ops)} batch operations across {len(paths)} notebook(s)"
-    if export and not dry_run: msg += " and exported with nbdev"
+    if exported: msg += " and exported with nbdev"
     if details: msg += "\n" + _format_batch_details(details)
     print(msg)
     return cli_return([str(path) for path in paths])
@@ -676,7 +654,6 @@ def split_nb_chapter(
     default_exp: str | None = None,  # Destination nbdev default_exp; defaults from dest path
     dry_run: bool = True,  # Show the split plan without writing notebooks
     force: bool = False,  # Overwrite dest if it already exists
-    export: bool = True,  # Run nbdev-export after writing both notebooks
     promote_private: bool = True,  # Promote referenced private source helpers by dropping the leading underscore
 ):
     "Split one ## chapter into a new nbdev notebook."
@@ -697,10 +674,7 @@ def split_nb_chapter(
         dest.parent.mkdir(parents=True, exist_ok=True)
         _write_nb(source_nb, path)
         _write_nb(dest_nb, dest)
-        if export:
-            nbdev_export(path=str(path))
-            _stamp_export_hash(source_nb, path)
-            nbdev_export(path=str(dest))
-            _stamp_export_hash(dest_nb, dest)
+        _export_notebook(source_nb, path)
+        _export_notebook(dest_nb, dest)
     return cli_return(plan)
 

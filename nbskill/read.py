@@ -14,7 +14,7 @@ from fastcore.nbio import read_nb as _read_nb
 from fastcore.script import call_parse
 
 from nbskill.foundation import (
-    cell_hash, cell_matches_type, cell_prefix, cell_source, chapter_index_set,
+    cell_matches_type, cell_prefix, cell_source, chapter_index_set,
     cli_return, find_cell_by_id, first_line, is_definition_node,
     is_export_directive, is_exported_code_cell, matches_filter, tracked_call,
     with_context,
@@ -516,7 +516,7 @@ def show_doc(
     symbol: str | None = None,  # Function, class, or Class.method to inspect
     context: int = 2,  # Nearby doc/example cells to include around the symbol
     source: bool = False,  # Include the full source cell
-    show_ids: bool = False,  # Include source hashes in output
+    show_ids: bool = False,  # Accepted for older callers; cell ids are always included
 ):
     "Show rationale/docs, exported code, and show-off examples for a notebook symbol."
     if symbol is None:

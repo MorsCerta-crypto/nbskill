@@ -47,13 +47,11 @@ reinstalling nbskill.
     line range. Use `line_range` for partial edits. For whole-cell
     replacement, pass exactly one cell block with no standalone `---`
     separators; use `write_nb` or `batch_edit_nb` for multi-cell edits.
-    Use `new_file` for multiline replacements and `source_hash` when
-    stale context should fail instead of overwriting newer work.
+    Use `new_file` for multiline replacements.
 6.  Use
     [`batch_edit_nb`](https://MorsCerta-crypto.github.io/nbskill/write.html#batch_edit_nb)
     for coordinated multi-cell or multi-notebook edits. Start with
-    `dry_run=True`, include source hashes for guarded cells, and inspect
-    the printed diffs before writing.
+    `dry_run=True` and inspect the printed diffs before writing.
 7.  Use `agent_workbench` before autonomous implementation when a task
     needs an explicit taste profile, task contract, focused context pack,
     patch budgets, and small-diff gates.
@@ -73,8 +71,7 @@ reinstalling nbskill.
     visible outputs and errors.
 
 Stay notebook-first: edit `nbs/*.ipynb` source notebooks, not generated
-`.py` files. Use stable cell ids and source hashes from `nb_cell` when
-an edit must be guarded against stale context.
+`.py` files. Use stable cell ids from `nb_cell` for targeted edits.
 Functions beginning with `_` are notebook-local unless deliberately
 promoted to a public helper.
 
@@ -88,11 +85,11 @@ uv run nbskill_status
 uv run nb_overview nbs/02_write.ipynb --include_docs
 uv run nb_chapter nbs/02_write.ipynb --name Writing
 uv run nb_cell nbs/02_write.ipynb --query 'contains="def write_nb"'
-uv run write_nb nbs/02_write.ipynb --after_id abc123 --cells_file /tmp/cells.txt --no-export
-uv run write_nb nbs --old_str old_name --new_str new_name --dry_run --show_cells --no-export
+uv run write_nb nbs/02_write.ipynb --after_id abc123 --cells_file /tmp/cells.txt
+uv run write_nb nbs --old_str old_name --new_str new_name --dry_run --show_cells
 uv run split_nb_chapter nbs/02_write.ipynb "Batch editing" nbs/write_batch.ipynb --default_exp write_batch
-uv run update_cell nbs/02_write.ipynb --cell_id abc123 --source_hash 7f3a91c0d422 --new_file /tmp/cell.txt --no-export
-uv run update_cell nbs/02_write.ipynb "replacement line" --cell_id abc123 --line_range 3 --source_hash 7f3a91c0d422 --dry_run --no-export
+uv run update_cell nbs/02_write.ipynb --cell_id abc123 --new_file /tmp/cell.txt
+uv run update_cell nbs/02_write.ipynb "replacement line" --cell_id abc123 --line_range 3 --dry_run
 uv run batch_edit_nb --plan_file /tmp/nbskill-plan.json --dry_run
 uv run agent_workbench "Make this parser stricter" --notebook nbs/02_write.ipynb
 uv run diff_nb nbs/02_write.ipynb

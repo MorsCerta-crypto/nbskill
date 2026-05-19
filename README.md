@@ -24,7 +24,7 @@ test, or a show-off example before they touch it.
 - [`write_nb`](https://MorsCerta-crypto.github.io/nbskill/write.html#write_nb)
   and
   [`update_cell`](https://MorsCerta-crypto.github.io/nbskill/write.html#update_cell)
-  edit cells by ids, chapters, text, and source hashes.
+  edit cells by ids, chapters, and text while exporting automatically.
 - [`exec_nb`](https://MorsCerta-crypto.github.io/nbskill/execute.html#exec_nb)
   runs notebooks with local project imports available and records
   visible outputs.
@@ -102,8 +102,7 @@ _ = nb_overview(str(demo_nb), include_docs=True)
 
 [`write_nb`](https://MorsCerta-crypto.github.io/nbskill/write.html#write_nb)
 accepts cell blocks separated by `---`. The `%%markdown` and `%%code`
-markers make each new cell explicit, while `export=False` keeps this
-temporary example from running nbdev export.
+markers make each new cell explicit, and writes export automatically when possible.
 
 This is useful when adding examples, tests, or explanatory sections. The
 caller describes notebook cells as cells, not JSON objects, so nbskill
@@ -122,34 +121,28 @@ tool. Pass `--no-dry_run` when the plan looks right.
 _ = write_nb(
     str(demo_nb),
     "%%markdown\n## Result\nThe next cell computes from the earlier value.\n---\n%%code\nanswer = x * 10\nanswer",
-    export=False,
 )
 _ = nb_chapter(str(demo_nb), name="Result")
 ```
 
-## Updating: use ids and hashes for precise edits
+## Updating: use ids for precise edits
 
 A notebook cell id tells
 [`update_cell`](https://MorsCerta-crypto.github.io/nbskill/write.html#update_cell)
-which cell to change. A source hash is an optional guard: if another
-edit changed the cell first, the update fails instead of overwriting
-stale content.
+which cell to change. Use `old_str` or `line_range` when only part of
+the cell should change, or pass exactly one replacement cell block for
+a whole-cell update.
 
-That guard is the main safety feature for collaborative notebook
-editing. An agent can read a cell, propose a narrow replacement, and
-prove it is still editing the same source it inspected rather than a
-newer version from another human or tool.
+Writes export automatically when the notebook has an nbdev export
+target, so generated Python stays in sync with the notebook source.
 
 ``` python
 answer_cell = next(cell for cell in _read_raw_nb(demo_nb).cells if "answer = x * 10" in cell.source)
-hash_before = cell_hash(answer_cell, n=None)
 
 _ = update_cell(
     str(demo_nb),
     "answer = x * 12\nanswer",
     cell_id=answer_cell.id,
-    source_hash=hash_before,
-    export=False,
 )
 _ = nb_cell(str(demo_nb), id=answer_cell.id)
 ```
@@ -232,17 +225,15 @@ nb_chapter(nb_path="nbs/02_write.ipynb", name="Updating")
 nb_cell(nb_path="nbs/02_write.ipynb", id="abc123")
 ```
 
-After inspecting the precise cell, carry its `source_hash` into the
-edit. That turns the update into a guarded write: if the cell changed
-after the read, nbskill refuses the stale edit instead of guessing.
+After inspecting the precise cell, edit by stable cell id or a narrow
+line range. Notebook writes export automatically when the notebook has
+an export target.
 
 ``` python
 update_cell(
     path="nbs/02_write.ipynb",
     cell_id="abc123",
-    source_hash="7f3a91c0d422",
     new="def target():\n    return 'updated'",
-    export=False,
 )
 ```
 
@@ -300,14 +291,11 @@ reinstalling nbskill.
 5.  Use
     [`update_cell`](https://MorsCerta-crypto.github.io/nbskill/write.html#update_cell)
     for precise edits to an existing cell by id, text replacement, or
-    line range. Use `new_file` for multiline replacements and
-    `source_hash` when stale context should fail instead of overwriting
-    newer work.
+    line range. Use `new_file` for multiline replacements.
 6.  Use
     [`batch_edit_nb`](https://MorsCerta-crypto.github.io/nbskill/write.html#batch_edit_nb)
     for coordinated multi-cell or multi-notebook edits. Start with
-    `dry_run=True`, include source hashes for guarded cells, and inspect
-    the printed diffs before writing.
+    `dry_run=True` and inspect the printed diffs before writing.
 7.  Use
     [`style_check`](https://MorsCerta-crypto.github.io/nbskill/review.html#style_check)
     as the main hygiene report for large cells, mixed semantic cells,
@@ -324,8 +312,7 @@ reinstalling nbskill.
     visible outputs and errors.
 
 Stay notebook-first: edit `nbs/*.ipynb` source notebooks, not generated
-`.py` files. Use stable cell ids and source hashes from `nb_cell` when
-an edit must be guarded against stale context.
+`.py` files. Use stable cell ids from `nb_cell` for targeted edits.
 Functions beginning with `_` are notebook-local unless deliberately
 promoted to a public helper.
 
@@ -339,11 +326,11 @@ uv run nbskill_status
 uv run nb_overview nbs/02_write.ipynb --include_docs
 uv run nb_chapter nbs/02_write.ipynb --name Writing
 uv run nb_cell nbs/02_write.ipynb --query 'contains="def write_nb"'
-uv run write_nb nbs/02_write.ipynb --after_id abc123 --cells_file /tmp/cells.txt --no-export
-uv run write_nb nbs --old_str old_name --new_str new_name --dry_run --show_cells --no-export
+uv run write_nb nbs/02_write.ipynb --after_id abc123 --cells_file /tmp/cells.txt
+uv run write_nb nbs --old_str old_name --new_str new_name --dry_run --show_cells
 uv run split_nb_chapter nbs/02_write.ipynb "Batch editing" nbs/write_batch.ipynb --default_exp write_batch
-uv run update_cell nbs/02_write.ipynb --cell_id abc123 --source_hash 7f3a91c0d422 --new_file /tmp/cell.txt --no-export
-uv run update_cell nbs/02_write.ipynb "replacement line" --cell_id abc123 --line_range 3 --source_hash 7f3a91c0d422 --dry_run --no-export
+uv run update_cell nbs/02_write.ipynb --cell_id abc123 --new_file /tmp/cell.txt
+uv run update_cell nbs/02_write.ipynb "replacement line" --cell_id abc123 --line_range 3 --dry_run
 uv run batch_edit_nb --plan_file /tmp/nbskill-plan.json --dry_run
 uv run diff_nb nbs/02_write.ipynb
 uv run style_check nbs --delete-after-output
@@ -448,8 +435,7 @@ client so it refreshes cached schemas.
 6.  Use
     [`update_cell`](https://MorsCerta-crypto.github.io/nbskill/write.html#update_cell)
     for precise edits to an existing cell by id, text replacement, or
-    line range. Use `source_hash` when stale context should fail instead
-    of overwriting newer work.
+    line range. Notebook writes export automatically after changes.
 7.  Use
     [`diff_nb`](https://MorsCerta-crypto.github.io/nbskill/review.html#diff_nb)
     to inspect code-cell diffs; use `git diff` for Markdown or
@@ -461,8 +447,7 @@ client so it refreshes cached schemas.
     visible outputs and errors.
 
 Stay notebook-first: edit `nbs/*.ipynb` source notebooks, not generated
-`.py` files. Use stable cell ids and source hashes from `nb_cell` when
-an edit must be guarded against stale context.
+`.py` files. Use stable cell ids from `nb_cell` for targeted edits.
 Functions beginning with `_` are notebook-local unless deliberately
 promoted to a public helper.
 
@@ -475,11 +460,11 @@ verification must run in the project environment:
 uv run nb_overview nbs/02_write.ipynb --include_docs
 uv run nb_chapter nbs/02_write.ipynb --name Writing
 uv run nb_cell nbs/02_write.ipynb --query 'contains="def write_nb"'
-uv run write_nb nbs/02_write.ipynb --after_id abc123 --cells_file nbs/data/cells.txt --no-export
-uv run write_nb nbs --old_str old_name --new_str new_name --dry_run --show_cells --no-export
+uv run write_nb nbs/02_write.ipynb --after_id abc123 --cells_file nbs/data/cells.txt
+uv run write_nb nbs --old_str old_name --new_str new_name --dry_run --show_cells
 uv run split_nb_chapter nbs/02_write.ipynb "Batch editing" nbs/write_batch.ipynb --default_exp write_batch
-uv run update_cell nbs/02_write.ipynb "replacement line" --cell_id abc123 --line_range 3 --source_hash 7f3a91c0d422 --no-export
-uv run update_cell nbs/02_write.ipynb "replacement line" --cell_id abc123 --line_range 3 --source_hash 7f3a91c0d422 --dry_run --no-export
+uv run update_cell nbs/02_write.ipynb "replacement line" --cell_id abc123 --line_range 3
+uv run update_cell nbs/02_write.ipynb "replacement line" --cell_id abc123 --line_range 3 --dry_run
 uv run batch_edit_nb --plan_file /tmp/nbskill-plan.json --dry_run
 uv run diff_nb nbs/02_write.ipynb
 uv run style_check nbs --delete-after-output

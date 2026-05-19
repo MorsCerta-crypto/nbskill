@@ -19,21 +19,20 @@ from nbdev.doclinks import nbdev_export
 
 from .execute import exec_nb as _exec_nb
 from nbskill.foundation import (
-    cell_class_names, cell_hash, cell_matches_hash, cell_source, clear_outputs,
-    parse_one_cell, stamp_notebook_metadata, validate_code_cells,
+    cell_source, clear_outputs, exported_py_path, parse_one_cell,
+    stamp_export_metadata, stamp_notebook_metadata, validate_code_cells,
 )
 from .parallel import notebook_locks
 from .review import diff_nb as _diff_nb
 
 # %% ../nbs/08_edit_interactive.ipynb #57c2fd65
-EDIT_INTERACTIVE_SYSTEM = """\
-You are nbskill edit-interactive. You edit exactly one notebook.
+EDIT_INTERACTIVE_SYSTEM = """You are nbskill edit-interactive. You edit exactly one notebook.
 
 You receive a plan and one notebook view. Use only the provided notebook tools.
-Prefer id-based edits with source_hash when the view gives one. Keep changes
-small and aligned with the plan. Run cells when that is needed to verify the
-work. Stop when the plan is complete. Your final message must summarize what
-you did and what you could not do.
+Prefer id-based edits when the view gives one. Keep changes small and aligned
+with the plan. Run cells when that is needed to verify the work. Stop when the
+plan is complete. Your final message must summarize what you did and what you
+could not do.
 """
 
 # %% ../nbs/08_edit_interactive.ipynb #155505b9
@@ -56,9 +55,7 @@ def notebook_view(path, revision=0):
         nb = _read_nb(path)
         lines = [f"Notebook: {path}", f"Revision: {revision}", ""]
         for idx, cell in enumerate(nb.cells):
-            classes = cell_class_names(cell)
-            class_text = f" classes={','.join(classes)}" if classes else ""
-            lines.append(f"CELL {idx} id={cell.id} type={cell.cell_type}{class_text} hash={cell_hash(cell)}")
+            lines.append(f"CELL {idx} id={cell.id} type={cell.cell_type}")
             lines.append("<<<SOURCE")
             lines.append(cell_source(cell).rstrip())
             lines.append("SOURCE")
@@ -71,7 +68,6 @@ class EditSession:
     "Mutable state for one edit-interactive notebook run."
     path: Path
     timeout: int = 30
-    export: bool = True
     revision: int = 0
     log: list[str] = field(default_factory=list)
     tool_log: list[str] = field(default_factory=list)
@@ -100,11 +96,21 @@ class EditSession:
         self.history.append(item)
 
 # %% ../nbs/08_edit_interactive.ipynb #eee248a5
-def _save_notebook(nb, path, export=True):
+def _export_notebook(nb, nb_path):
+    py_path = exported_py_path(nb_path, nb)
+    if py_path is None: return None
+    nbdev_export(path=str(nb_path))
+    if py_path.exists():
+        stamp_export_metadata(nb, py_path)
+        _write_nb(nb, nb_path)
+    return py_path
+
+
+def _save_notebook(nb, path):
     with notebook_locks(path):
         stamp_notebook_metadata(nb)
         _write_nb(nb, path)
-        if export: nbdev_export(path=str(path))
+        _export_notebook(nb, path)
 
 # %% ../nbs/08_edit_interactive.ipynb #7e5f19b2
 def _none_if_blank(value):
@@ -130,7 +136,7 @@ def _source_diff(before, after, label):
 
 # %% ../nbs/08_edit_interactive.ipynb #b0789b35
 def _finish_write(session, nb, message, diff):
-    _save_notebook(nb, session.path, export=session.export)
+    _save_notebook(nb, session.path)
     session.revision += 1
     session.record(message)
     session.refresh_view()
@@ -169,21 +175,16 @@ def make_edit_tools(session):
         id: str,  # Cell id to edit
         new_src: str,  # Replacement source, or substring replacement when old_src is set
         old_src: str | None = None,  # Optional exact text to replace inside the cell
-        source_hash: str | None = None,  # Optional expected source hash prefix
     ) -> str:
         "Edit one cell in the current notebook."
         with notebook_locks(session.path):
             nb = _read_nb(session.path)
             idx, cell = _edit_find_cell_by_id(nb.cells, id)
-            expected_hash = _none_if_blank(source_hash)
-            if not cell_matches_hash(cell, expected_hash):
-                actual = cell_hash(cell, n=None)
-                raise ValueError(f"Hash mismatch for id={id}: expected {expected_hash}, actual {actual[:12]}")
             before = cell_source(cell)
             old_src = _none_if_blank(old_src)
             session.record_tool(
                 "edit_cell",
-                f"id={id!r}, old_src={'yes' if old_src is not None else 'no'}, source_hash={expected_hash!r}",
+                f"id={id!r}, old_src={'yes' if old_src is not None else 'no'}",
             )
             if old_src is None:
                 new_cell = _validate_cell(parse_one_cell(new_src, cell.cell_type))
@@ -219,17 +220,12 @@ def make_edit_tools(session):
 
     def remove_cell(
         id: str,  # Cell id to remove
-        source_hash: str | None = None,  # Optional expected source hash prefix
     ) -> str:
         "Remove one cell from the current notebook."
         with notebook_locks(session.path):
             nb = _read_nb(session.path)
             idx, cell = _edit_find_cell_by_id(nb.cells, id)
-            expected_hash = _none_if_blank(source_hash)
-            if not cell_matches_hash(cell, expected_hash):
-                actual = cell_hash(cell, n=None)
-                raise ValueError(f"Hash mismatch for id={id}: expected {expected_hash}, actual {actual[:12]}")
-            session.record_tool("remove_cell", f"id={id!r}, source_hash={expected_hash!r}")
+            session.record_tool("remove_cell", f"id={id!r}")
             before = cell_source(cell)
             del nb.cells[idx]
             msg = f"Removed cell id={id}"
@@ -294,7 +290,6 @@ def execute_plan(
     model: str | None = None,  # Lisette/LiteLLM model; defaults via NBSKILL_AGENT then a Codex model
     max_steps: int = 20,  # Maximum Lisette tool-loop steps
     timeout: int = 30,  # Per-cell execution timeout for run_cell
-    export: bool = True,  # Run nbdev export after write tools
     dry_run: bool = False,  # Return proposal context without invoking the inner agent
 ) -> dict:
     "Execute `plan` against one notebook using a Lisette edit-interactive loop."
@@ -309,8 +304,6 @@ def execute_plan(
             f"Notebook: {path}",
             f"Model: {model}",
             f"Max steps: {max_steps}",
-            f"Export after writes: {export}",
-            "",
             "Plan:",
             plan,
             "",
@@ -318,7 +311,7 @@ def execute_plan(
             initial_view,
         ]).rstrip()
         return {"summary": "Dry run only; no agent was invoked and no notebook edits were made.", "history": [], "text": text}
-    session = EditSession(path=path, timeout=timeout, export=export)
+    session = EditSession(path=path, timeout=timeout)
     hist = [
         {"role": "user", "content": f"Plan:\n{plan}"},
         {"role": "user", "content": initial_view},
@@ -381,7 +374,6 @@ def execute_project_plan(
     model: str | None = None,  # Lisette/LiteLLM model
     max_steps: int = 20,  # Maximum steps per notebook
     timeout: int = 30,  # Per-cell execution timeout
-    export: bool = True,  # Run nbdev export after notebook writes
     dry_run: bool = True,  # Return per-notebook proposals without mutation by default
 ) -> str:
     "Coordinate a broad plan as notebook-scoped execute_plan calls."
@@ -395,7 +387,7 @@ def execute_project_plan(
         subplan = f"{plan}\n\nScope: edit only {notebook}."
         result = execute_plan(
             notebook=notebook, plan=subplan, model=model, max_steps=max_steps,
-            timeout=timeout, export=export, dry_run=dry_run,
+            timeout=timeout, dry_run=dry_run,
         )
         chunks.extend(["", f"## {notebook}", plan_result_text(result)])
     return "\n".join(chunks).rstrip()

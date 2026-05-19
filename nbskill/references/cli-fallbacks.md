@@ -45,20 +45,20 @@ Cell blocks are separated by a line containing only `---`. Prefix a block with `
 Use `update_cell` for precise replacements:
 
 ```bash
-uv run update_cell notebook.ipynb --cell_id abc123 --source_hash 7f3a91c0d422 --new_file /tmp/cell.txt
-uv run update_cell notebook.ipynb "new text" --cell_id abc123 --old_str "old text" --source_hash 7f3a91c0d422
-uv run update_cell notebook.ipynb "replacement line" --cell_id abc123 --line_range 3 --source_hash 7f3a91c0d422
-uv run update_cell notebook.ipynb "" --cell_id abc123 --line_range 3:5 --source_hash 7f3a91c0d422
-uv run update_cell notebook.ipynb "replacement line" --cell_id abc123 --line_range 3 --source_hash 7f3a91c0d422 --dry_run
-uv run update_cell notebook.ipynb "line 1\nline 2" --cell_id abc123 --old_str "old text" --source_hash 7f3a91c0d422
+uv run update_cell notebook.ipynb --cell_id abc123 --new_file /tmp/cell.txt
+uv run update_cell notebook.ipynb "new text" --cell_id abc123 --old_str "old text" 
+uv run update_cell notebook.ipynb "replacement line" --cell_id abc123 --line_range 3 
+uv run update_cell notebook.ipynb "" --cell_id abc123 --line_range 3:5 
+uv run update_cell notebook.ipynb "replacement line" --cell_id abc123 --line_range 3 --dry_run
+uv run update_cell notebook.ipynb "line 1\nline 2" --cell_id abc123 --old_str "old text" 
 ```
 
 For whole-cell replacement, the replacement text must describe exactly one cell block. Do not include a standalone `---` line in `--new_file`; that separator means multiple cells and belongs with `write_nb` or `batch_edit_nb`. For partial edits, prefer `--line_range` or `--old_str`.
 
 `--line_range` is 1-based and inclusive. A single number replaces one line; `START:END` replaces or deletes multiple lines; an empty replacement deletes the selected lines.
-Use `--dry_run` to print the target cell id, source-hash transition, and compact diff before writing.
+Use `--dry_run` to print the target cell id and compact diff before writing.
 
-Use `batch_edit_nb` when multiple guarded edits should be applied together:
+Use `batch_edit_nb` when multiple edits should be applied together:
 
 ```bash
 uv run batch_edit_nb --plan_file /tmp/nbskill-plan.json --dry_run

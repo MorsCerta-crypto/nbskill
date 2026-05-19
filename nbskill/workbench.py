@@ -20,7 +20,7 @@ from fastcore.nbio import read_nb as _read_nb
 from fastcore.script import call_parse, _in_call_parse
 
 from .edit_interactive import execute_plan as _execute_plan
-from .foundation import cell_class_names, cell_hash, cell_source, exported_py_path, tracked_call
+from .foundation import cell_class_names, cell_source, exported_py_path, tracked_call
 from .graph import notebook_order_problems, symbol_usage_summary
 from .read import nb_cell, nb_overview
 from .review import notebook_validation_problems, style_report
@@ -193,10 +193,10 @@ def _public_symbols_in_cell(cell):
     ]
 
 # %% ../nbs/11_agent_workbench.ipynb #449cea07
-def _notebook_cell_hashes(path):
+def _notebook_cell_sources(path):
     try: nb = _read_nb(path)
     except FileNotFoundError: return {}
-    return {getattr(cell, "id", f"idx-{idx}"): cell_hash(cell, n=None) for idx, cell in enumerate(nb.cells)}
+    return {getattr(cell, "id", f"idx-{idx}"): cell_source(cell) for idx, cell in enumerate(nb.cells)}
 
 # %% ../nbs/11_agent_workbench.ipynb #d2503c21
 def _notebook_public_symbols(path):
@@ -286,7 +286,7 @@ def capture_state(path=".") -> dict:
         "changed_paths": sorted(changed),
         "diff_stats": stats,
         "file_hashes": file_hashes,
-        "notebook_cell_hashes": {str(nb): _notebook_cell_hashes(nb) for nb in notebooks},
+        "notebook_cell_sources": {str(nb): _notebook_cell_sources(nb) for nb in notebooks},
         "public_symbols": {str(nb): _notebook_public_symbols(nb) for nb in notebooks},
         "validation_problem_count": len(notebook_validation_problems(path)),
         "order_problem_count": len(notebook_order_problems(path)),
@@ -330,8 +330,6 @@ def _cell_records(nb_path, tokens, limit=4):
                 "path": str(nb_path),
                 "idx": idx,
                 "id": getattr(cell, "id", ""),
-                "hash": cell_hash(cell),
-                "classes": classes,
                 "first_line": source.strip().splitlines()[0] if source.strip() else "",
                 "score": score,
             })
@@ -402,8 +400,8 @@ def _changed_files(baseline, current):
 # %% ../nbs/11_agent_workbench.ipynb #3245ca82
 def _changed_cells(baseline, current):
     changed = []
-    before_all = baseline.get("notebook_cell_hashes", {})
-    after_all = current.get("notebook_cell_hashes", {})
+    before_all = baseline.get("notebook_cell_sources", {})
+    after_all = current.get("notebook_cell_sources", {})
     for nb_path in sorted(set(before_all) | set(after_all)):
         before = before_all.get(nb_path, {})
         after = after_all.get(nb_path, {})
@@ -528,7 +526,7 @@ def _render_workbench_plan(contract, taste, context):
     lines.extend(f"- {item['path']} score={item['score']}" for item in context.get("selected_notebooks", []))
     lines.extend(["", "Evidence cells:"])
     lines.extend(
-        f"- {item['path']} id={item['id']} hash={item['hash']} classes={','.join(item['classes'])}"
+        f"- {item['path']} id={item['id']}"
         for item in context.get("evidence", [])
     )
     if context.get("symbol_summary"):
@@ -536,8 +534,8 @@ def _render_workbench_plan(contract, taste, context):
     lines.extend([
         "",
         "Workbench loop:",
-        "- Inspect one focused cell with nb_cell and keep its hash nearby.",
-        "- Edit one guarded cell, or use one batch_edit_nb plan when cells must move together.",
+        "- Inspect one focused cell with nb_cell and keep the context local.",
+        "- Edit one focused cell, or use one batch_edit_nb plan when cells must move together.",
         "- Run the narrowest exec_nb check with check_only=True whenever execution is needed.",
         "- Inspect diff_nb, then stop or repeat the loop once.",
         "",
@@ -566,7 +564,6 @@ def _agent_workbench_result(
     execute: bool = False,
     max_steps: int = 8,
     timeout: int = 30,
-    export: bool = True,
 ) -> dict:
     "Build the structured workbench result without CLI printing side effects."
     overrides = _load_contract_file(contract_file)
@@ -593,7 +590,7 @@ def _agent_workbench_result(
         if not notebook: raise ValueError("agent_workbench execute=True requires notebook")
         execution = _execute_plan(
             notebook=notebook, plan=rendered_plan, max_steps=max_steps,
-            timeout=timeout, export=export,
+            timeout=timeout,
         )
         result["execution"] = execution
         result["score"] = score_patch(baseline, contract, path=context_path)
@@ -610,12 +607,11 @@ def agent_workbench(
     execute: bool = False,  # Execute the rendered plan through execute_plan
     max_steps: int = 8,  # Maximum inner-agent steps when executing
     timeout: int = 30,  # Per-cell timeout for execute_plan
-    export: bool = True,  # Export after inner notebook writes
 ) -> dict:
     "Prepare or execute a taste-aware, small-diff agent workbench run."
     result = _agent_workbench_result(
         goal, notebook=notebook, contract_file=contract_file, execute=execute,
-        max_steps=max_steps, timeout=timeout, export=export,
+        max_steps=max_steps, timeout=timeout,
     )
     if _in_call_parse.get(): return _print_cli_result(result)
     return result

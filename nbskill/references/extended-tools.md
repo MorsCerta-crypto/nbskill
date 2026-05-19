@@ -17,8 +17,8 @@ The main `SKILL.md` intentionally stays focused on the core loop: MCP, focused n
 
 ## Batch Editing
 
-`batch_edit_nb(plan_file="/tmp/plan.json", dry_run=True)` applies deterministic JSON edit plans with source-hash guards and diffs. Use it when the target cells and operations are known and repeated `update_cell` calls would be fragile.
+`batch_edit_nb(plan_file="/tmp/plan.json", dry_run=True)` applies deterministic JSON edit plans with diffs. Use it when the target cells and operations are known and repeated `update_cell` calls would be fragile.
 
 ## Single-Notebook Agent Loop
 
-`execute_plan(scope="notebook", notebook=..., plan=..., max_steps=20, timeout=30, export=True)` runs a bounded edit loop against exactly one notebook. Use `scope="project"` with `notebooks=...` for project-level decomposition when direct calls to `write_nb` and `exec_nb` would be too verbose.
+`execute_plan(scope="notebook", notebook=..., plan=..., max_steps=20, timeout=30)` runs a bounded edit loop against exactly one notebook. Use `scope="project"` with `notebooks=...` for project-level decomposition when direct calls to `write_nb` and `exec_nb` would be too verbose.

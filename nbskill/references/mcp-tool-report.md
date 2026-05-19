@@ -8,7 +8,7 @@ The MCP server currently exposes 16 tools after merging the obvious advanced and
 | --- | --- | --- | --- |
 | Diagnostics | `healthcheck`, `doctor` | Core | `healthcheck` is a cheap liveness/schema probe; `doctor` now has `error`, `warning`, and `style` scopes. |
 | Focused reading | `nb_overview`, `nb_chapter`, `nb_cell`, `show_doc` | Core, except `show_doc` is situational | The three `nb_*` tools intentionally replace one broad reader with progressively richer context. |
-| Notebook editing | `write_nb`, `update_cell`, `batch_edit_nb` | Core | These should stay separate because insertion, guarded single-cell updates, and deterministic plans have different safe defaults. |
+| Notebook editing | `write_nb`, `update_cell`, `batch_edit_nb` | Core | These should stay separate because insertion, single-cell updates, and deterministic plans have different safe defaults. |
 | Verification and review | `exec_nb`, `diff_nb`, `style_check` | Core | Each answers a different post-edit question: behavior, changed code, and structural/private-symbol hygiene. |
 | Symbol analysis | `symbol_graph` | Situational | Useful for impact analysis around one public or private symbol. |
 | Agentic planning | `execute_plan` | Advanced | Covers both notebook and project plans via `scope`; project mode defaults to dry-run. |

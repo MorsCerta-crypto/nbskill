@@ -28,7 +28,7 @@ from .edit_interactive import execute_project_plan as _execute_project_plan
 from .edit_interactive import plan_result_text as _plan_result_text
 from .execute import exec_nb as _exec_nb
 from .workbench import agent_workbench as _agent_workbench
-from .foundation import _empty_failure_map, _failure_map_path, _load_failure_map
+from .foundation import _empty_failure_map, _failure_map_path, _load_failure_map, exported_py_path
 from .graph import notebook_order_problems as _notebook_order_problems
 from .graph import private_symbol_report as _private_symbol_report
 from .graph import symbol_graph as _symbol_graph
@@ -193,9 +193,47 @@ def _failure_data():
     except OSError: return _empty_failure_map()
 
 
-def _style_problem_warnings(root):
+def _resolve_diagnostic_scope(path, root, scope_path=None):
+    raw = path if scope_path in (None, "") else scope_path
+    if raw in (None, "", "."): return Path(root)
+    scoped = Path(raw).expanduser()
+    if not scoped.is_absolute(): scoped = Path(root) / scoped
+    return scoped
+
+
+def _is_project_scope(path, root):
+    try: return Path(path).resolve() == Path(root).resolve()
+    except OSError: return False
+
+
+def _scope_notebook_paths(path):
+    path = Path(path)
+    if path.suffix == ".ipynb": return [path]
+    if path.is_dir():
+        return sorted(
+            item for item in path.rglob("*.ipynb")
+            if ".ipynb_checkpoints" not in item.parts
+        )
+    return []
+
+
+def _generated_pairs_for_scope(root, path):
+    path = Path(path)
+    if _is_project_scope(path, root): return _generated_files(root)
+    if path.suffix == ".py":
+        owner = _generated_owner(path)
+        return [(path, owner)] if owner is not None else []
+    pairs = []
+    for nb_path in _scope_notebook_paths(path):
+        try: py_path = exported_py_path(nb_path)
+        except (FileNotFoundError, OSError): py_path = None
+        if py_path is not None and Path(py_path).exists(): pairs.append((Path(py_path), nb_path.resolve()))
+    return pairs
+
+
+def _style_problem_warnings(path, root):
     warnings = []
-    for problem in _notebook_size_problems(root):
+    for problem in _notebook_size_problems(path):
         code = problem.get("code")
         if code == "large-cell":
             cell = f" cell id={problem['cell_id']}" if problem.get("cell_id") else ""
@@ -267,9 +305,11 @@ def _filter_warnings_for_scope(warnings, root, scope_path=None, scope_cell_ids=N
 
 def _doctor_warnings(path=".", scope_path=None, scope_cell_ids=None):
     root = _git_root(path) or _git_base(path).resolve()
+    diagnostic_path = _resolve_diagnostic_scope(path, root, scope_path)
+    project_scope = _is_project_scope(diagnostic_path, root)
     changed = _git_changed_paths(root) if (root / ".git").exists() else set()
     warnings = []
-    for py_path, owner in _generated_files(root):
+    for py_path, owner in _generated_pairs_for_scope(root, diagnostic_path):
         py_rel = _rel_to_root(py_path, root)
         owner_rel = _rel_to_root(owner, root)
         if py_rel in changed and owner_rel not in changed:
@@ -286,7 +326,7 @@ def _doctor_warnings(path=".", scope_path=None, scope_cell_ids=None):
                 "Run export or use an nbskill write tool with export=True before shipping.",
                 path=owner_rel, generated=py_rel,
             ))
-    for problem in _notebook_validation_problems(root):
+    for problem in _notebook_validation_problems(diagnostic_path):
         if problem.get("code") != "exported-py-hash-mismatch": continue
         warnings.append(_warning(
             "exported_py_hash_mismatch",
@@ -294,18 +334,19 @@ def _doctor_warnings(path=".", scope_path=None, scope_cell_ids=None):
             "Run nbskill_validate or export the notebook through nbskill write tools.",
             path=problem.get("path"), generated=problem.get("exported_py_path"),
         ))
-    warnings.extend(_doc_script_warnings(root))
-    warnings.extend(_style_problem_warnings(root))
-    failures = _failure_data().get("events", [])[-10:]
-    recent_failures = [event for event in failures if event.get("kind") == "failure"]
-    if recent_failures:
-        last = recent_failures[-1]
-        warnings.append(_warning(
-            "recent_tool_failures",
-            f"Recent nbskill failure: {last.get('tool')} {last.get('summary') or last.get('error')}",
-            "Run doctor(detail='debug') or style_check(delete_after_output=True) after resolving it.",
-            tool=last.get("tool"),
-        ))
+    warnings.extend(_style_problem_warnings(diagnostic_path, root))
+    if project_scope:
+        warnings.extend(_doc_script_warnings(root))
+        failures = _failure_data().get("events", [])[-10:]
+        recent_failures = [event for event in failures if event.get("kind") == "failure"]
+        if recent_failures:
+            last = recent_failures[-1]
+            warnings.append(_warning(
+                "recent_tool_failures",
+                f"Recent nbskill failure: {last.get('tool')} {last.get('summary') or last.get('error')}",
+                "Run doctor(detail='debug') or style_check(delete_after_output=True) after resolving it.",
+                tool=last.get("tool"),
+            ))
     if scope_path is None: scope_path = path
     return _filter_warnings_for_scope(warnings, root, scope_path, scope_cell_ids)
 
@@ -329,16 +370,43 @@ def _doc_script_warnings(root):
     return warnings
 
 
+def _first_match(pattern, text, flags=0):
+    match = re.search(pattern, text or "", flags)
+    return match.group(1) if match else None
+
+
+def _line_cell_ids(text):
+    return set(re.findall(r"^Cell id=([^\s:]+)", text or "", re.MULTILINE))
+
+
 def _response_scope_cell_ids(tool, arguments, preview):
     text = preview.get("text", "")
-    ids = set(re.findall(r"(?:Cell|cell) id=([^\s:]+)", text))
-    ids.update(re.findall(r"\bid=([^\s:]+)", text))
-    ids.update(re.findall(r"--- code cell ([^\s]+) ---", text))
+    if tool == "nb_overview": return None
+    if tool == "nb_chapter": return _line_cell_ids(text) or None
+    if tool == "nb_cell":
+        if arguments.get("id"): return {str(arguments["id"])}
+        cell_id = _first_match(r"^Cell id=([^\s:]+)", text, re.MULTILINE)
+        return {cell_id} if cell_id else None
+    if tool == "show_doc":
+        cell_id = _first_match(r"^Location:.*?Cell id=([^\s:]+)", text, re.MULTILINE)
+        return {cell_id} if cell_id else None
+    if tool == "diff_nb":
+        ids = set(re.findall(r"--- code cell ([^\s]+) ---", text))
+        return ids if ids else set()
+    if tool == "update_cell":
+        cell_id = arguments.get("cell_id") or _first_match(r"Updated cell id=([^\s]+)", text)
+        return {str(cell_id)} if cell_id else None
+    if tool == "batch_edit_nb":
+        ids = set(re.findall(r"^\s*-\s+\w+: .*?\bid=([^\s:]+)", text, re.MULTILINE))
+        return ids or None
+    if tool == "exec_nb":
+        up2id = arguments.get("up2id")
+        if isinstance(up2id, str) and up2id and not up2id.isdigit(): return {up2id}
+        return _line_cell_ids(text) or None
     for key in ("id", "cell_id", "any_cell_id"):
         value = arguments.get(key)
-        if value: ids.add(str(value))
-    if tool == "diff_nb" and not ids: return set()
-    return ids or None
+        if value: return {str(value)}
+    return None
 
 
 def _unique_strings(items):
@@ -411,8 +479,6 @@ def _response_warnings(tool, arguments, preview):
         cell_ids = _response_scope_cell_ids(tool, arguments, preview)
         for path in _response_scope_paths(tool, arguments, preview):
             warnings.extend(_doctor_warnings(path, scope_path=path, scope_cell_ids=cell_ids))
-    elif tool == "healthcheck":
-        warnings.extend(_doctor_warnings(".")[:3])
     return _dedupe_warnings(warnings)[:3]
 
 

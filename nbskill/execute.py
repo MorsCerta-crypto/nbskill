@@ -4,6 +4,7 @@
 __all__ = ['exec_nb', 'run_notebook_test']
 
 # %% ../nbs/03_execute.ipynb #2a4844d2
+import ast
 import asyncio
 import base64
 import hashlib
@@ -549,6 +550,65 @@ def _print_nb_outputs(path, up2id=None):
     with notebook_locks(path):
         _print_outputs_from_nb(_read_nb(path), up2id=up2id)
 
+# %% ../nbs/03_execute.ipynb #97ed2a8c
+def _parse_executed_code_cell(cell):
+    if getattr(cell, "cell_type", None) != "code": return None
+    try: return ast.parse(getattr(cell, "source", ""))
+    except SyntaxError: return None
+
+# %% ../nbs/03_execute.ipynb #ea5a5b4a
+def _top_level_call_names(tree):
+    calls = set()
+
+    def visit(node):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)): return
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name): calls.add(node.func.id)
+        for child in ast.iter_child_nodes(node): visit(child)
+
+    for node in tree.body: visit(node)
+    return calls
+
+# %% ../nbs/03_execute.ipynb #d09da32b
+def _execution_warning_function(node):
+    if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)): return False
+    if node.decorator_list: return False
+    return node.name == "main" or not node.name.startswith("_")
+
+# %% ../nbs/03_execute.ipynb #b0a959a0
+def _execution_function_defs(nb, up2id=None):
+    defs = {}
+    for idx, cell in _executed_cells(nb, up2id=up2id):
+        tree = _parse_executed_code_cell(cell)
+        if tree is None: continue
+        for node in tree.body:
+            if _execution_warning_function(node):
+                defs.setdefault(node.name, {"cell_id": getattr(cell, "id", ""), "line": getattr(node, "lineno", None)})
+    return defs
+
+# %% ../nbs/03_execute.ipynb #24024c9e
+def _uncalled_function_warnings(nb, up2id=None):
+    called = set()
+    for idx, cell in _executed_cells(nb, up2id=up2id):
+        tree = _parse_executed_code_cell(cell)
+        if tree is not None: called.update(_top_level_call_names(tree))
+    warnings = []
+    for name, info in sorted(_execution_function_defs(nb, up2id=up2id).items()):
+        if name in called: continue
+        location = f"cell id={info['cell_id']}" if info.get("cell_id") else "an executed cell"
+        warnings.append(
+            f"function {name!r} defined in {location} was not called by executed cells; "
+            "add a focused test or example, or add a decorator if it is invoked externally."
+        )
+    return warnings
+
+# %% ../nbs/03_execute.ipynb #e0ce7b86
+def _print_uncalled_function_warnings(nb, up2id=None):
+    warnings = _uncalled_function_warnings(nb, up2id=up2id)
+    if not warnings: return []
+    print("Execution warnings:")
+    for warning in warnings: print(f"- {warning}")
+    return warnings
+
 # %% ../nbs/03_execute.ipynb #434c13b3
 @call_parse
 @tracked_call
@@ -597,6 +657,7 @@ def exec_nb(
     if show_output:
         if check_only: _print_outputs_from_nb(nb, up2id=up2id)
         else: _print_nb_outputs(dest, up2id=up2id)
+    _print_uncalled_function_warnings(nb, up2id=up2id)
     return cli_return(Path(path) if check_only else Path(dest))
 
 # %% ../nbs/03_execute.ipynb #e9c50752

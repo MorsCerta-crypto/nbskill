@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "preferences": [
+    "Prefer the smallest coherent diff.",
+    "Modify existing functions before adding abstractions.",
+    "Keep implementation direct and readable.",
+    "Ask only when ambiguity materially changes the patch."
+  ],
+  "aversions": [
+    "Backwards-compatibility scaffolding unless requested.",
+    "Generated-file edits without notebook source changes.",
+    "Output churn, broad refactors, noisy explanations, and speculative architecture."
+  ],
+  "defaults": {
+    "compatibility": "not_required",
+    "public_api": "forbidden",
+    "gate_style": "hybrid"
+  }
+}

@@ -52,17 +52,20 @@ reinstalling nbskill.
     for coordinated multi-cell or multi-notebook edits. Start with
     `dry_run=True`, include source hashes for guarded cells, and inspect
     the printed diffs before writing.
-7.  Use
+7.  Use `agent_workbench` before autonomous implementation when a task
+    needs an explicit taste profile, task contract, focused context pack,
+    patch budgets, and small-diff gates.
+8.  Use
     [`style_check`](https://MorsCerta-crypto.github.io/nbskill/review.html#style_check)
     as the main hygiene report for large cells, mixed semantic cells,
     private symbol leaks, duplicate imports, cell-order problems, and global tool
     usage/problems.
-8.  Use
+9.  Use
     [`diff_nb`](https://MorsCerta-crypto.github.io/nbskill/review.html#diff_nb)
     to inspect code-cell diffs; use `git diff` for Markdown or
     documentation changes. nbskill metadata-only changes are summarized
     instead of expanded.
-9.  Use
+10. Use
     [`exec_nb`](https://MorsCerta-crypto.github.io/nbskill/execute.html#exec_nb)
     to run a notebook, chapter, or cells up to an id, then inspect
     visible outputs and errors.
@@ -85,8 +88,10 @@ uv run nb_chapter nbs/02_write.ipynb --name Writing
 uv run nb_cell nbs/02_write.ipynb --query 'contains="def write_nb"'
 uv run write_nb nbs/02_write.ipynb --after_id abc123 --cells_file /tmp/cells.txt --no-export
 uv run write_nb nbs --old_str old_name --new_str new_name --dry_run --show_cells --no-export
+uv run split_nb_chapter nbs/02_write.ipynb "Batch editing" nbs/write_batch.ipynb --default_exp write_batch
 uv run update_cell nbs/02_write.ipynb --cell_id abc123 --source_hash 7f3a91c0d422 --new_file /tmp/cell.txt --no-export
 uv run batch_edit_nb --plan_file /tmp/nbskill-plan.json --dry_run
+uv run agent_workbench "Make this parser stricter" --notebook nbs/02_write.ipynb
 uv run diff_nb nbs/02_write.ipynb
 uv run style_check nbs --delete-after-output
 uv run exec_nb nbs/03_execute.ipynb --up2id abc123 --timeout 10

@@ -34,9 +34,12 @@ uv run write_nb notebook.ipynb --before_id abc123 --cells_file /tmp/doc.txt
 uv run write_nb notebook.ipynb --after_id abc123 --cells_file /tmp/example.txt
 uv run write_nb notebook.ipynb --chapter "Data loading" --cells_file /tmp/experiment.txt
 uv run write_nb notebook.ipynb --replace --cells_file /tmp/full_notebook.txt
+uv run split_nb_chapter notebook.ipynb "Data loading" nbs/data_loading.ipynb --default_exp data_loading
 ```
 
 Cell blocks are separated by a line containing only `---`. Prefix a block with `%%markdown`, `%%md`, `%%code`, or `%%raw` to choose its type.
+
+`split_nb_chapter` is CLI-only. It moves one `##` chapter to a new nbdev notebook, copies imports used by the moved code, imports still-needed source definitions, and promotes referenced private source helpers when possible. It dry-runs by default; pass `--no-dry_run` to write.
 
 Use `update_cell` for precise replacements:
 

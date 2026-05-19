@@ -21,6 +21,8 @@ The largest reason I used small Python scripts was that I needed to update sever
 
 The old TOML `apply_nb` workflow partly solved this, but it was unused and removed. The gap it leaves is real: agents need a safe batch edit interface that is not raw notebook JSON.
 
+Observed again while adding `agent_workbench`: passing JSON directly through `batch_edit_nb(plan=...)` from Python can be corrupted by CLI-style `\n` decoding when operation strings contain escaped newlines. `plan_file` was the reliable path.
+
 Improvements:
 
 - Add a supported batch edit tool, but make it notebook-native rather than TOML sidecar cleanup.

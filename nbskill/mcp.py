@@ -27,6 +27,7 @@ from .edit_interactive import execute_plan as _execute_plan
 from .edit_interactive import execute_project_plan as _execute_project_plan
 from .edit_interactive import plan_result_text as _plan_result_text
 from .execute import exec_nb as _exec_nb
+from .workbench import agent_workbench as _agent_workbench
 from .foundation import _empty_failure_map, _failure_map_path, _load_failure_map
 from .graph import notebook_order_problems as _notebook_order_problems
 from .graph import private_symbol_report as _private_symbol_report
@@ -37,6 +38,7 @@ from .read import nb_chapter as _nb_chapter
 from .read import nb_overview as _nb_overview
 from .read import show_doc as _show_doc
 from .review import _reset_global_usage_summary
+from .review import notebook_size_problems as _notebook_size_problems
 from .review import notebook_validation_problems as _notebook_validation_problems
 from .review import run_style_check as _run_style_check
 from .review import style_check as _style_check
@@ -191,6 +193,29 @@ def _failure_data():
     except OSError: return _empty_failure_map()
 
 
+def _style_problem_warnings(root):
+    warnings = []
+    for problem in _notebook_size_problems(root):
+        code = problem.get("code")
+        if code == "large-cell":
+            cell = f" cell id={problem['cell_id']}" if problem.get("cell_id") else ""
+            warnings.append(_warning(
+                "large_cell",
+                f"Notebook {_rel_to_root(problem.get('path'), root)}{cell} is large: {problem.get('detail')}.",
+                "Split the cell so it contains one idea before continuing.",
+                path=problem.get("path"), cell_id=problem.get("cell_id"), problem=problem,
+            ))
+        elif code == "large-generated-py":
+            generated = problem.get("exported_py_path")
+            warnings.append(_warning(
+                "large_generated_py",
+                f"Generated file {_rel_to_root(generated, root)} is getting large: {problem.get('detail')}.",
+                "Use the notebook split tool to split the source notebook/module.",
+                path=problem.get("path"), generated=generated, problem=problem,
+            ))
+    return warnings
+
+
 def _doctor_warnings(path="."):
     root = _git_root(path) or _git_base(path).resolve()
     changed = _git_changed_paths(root) if (root / ".git").exists() else set()
@@ -221,6 +246,7 @@ def _doctor_warnings(path="."):
             path=problem.get("path"), generated=problem.get("exported_py_path"),
         ))
     warnings.extend(_doc_script_warnings(root))
+    warnings.extend(_style_problem_warnings(root))
     failures = _failure_data().get("events", [])[-10:]
     recent_failures = [event for event in failures if event.get("kind") == "failure"]
     if recent_failures:
@@ -320,7 +346,7 @@ def _status_data():
     scripts = [
         "nb_overview", "nb_chapter", "nb_cell", "write_nb", "update_cell",
         "batch_edit_nb", "show_doc", "exec_nb", "diff_nb", "style_check",
-        "install_nbskill", "symbol_graph", "private_symbol_report", "nbskill_mcp",
+        "install_nbskill", "symbol_graph", "private_symbol_report", "agent_workbench", "nbskill_mcp",
     ]
     return {
         "version": _package_version(),
@@ -664,6 +690,14 @@ _MCP_TOOL_CATALOG = {
         "when_to_use": "Use scope='notebook' with notebook=... for one notebook, or scope='project' with notebooks=... for broad plans.",
         "combine_with": "Combined former execute_project_plan into this tool via scope.",
     },
+    "agent_workbench": {
+        "feature": "agentic_planning",
+        "usefulness": "advanced",
+        "tags": ("agent", "context", "taste", "contract", "review"),
+        "description": "Prepare or execute a taste-aware small-diff workbench run with context, budgets, and gates.",
+        "when_to_use": "Use before autonomous implementation when taste, scope, context, and patch budgets need to be explicit.",
+        "combine_with": "Sits above execute_plan; execute_plan remains the bounded notebook executor.",
+    },
     "symbol_graph": {
         "feature": "symbol_analysis",
         "usefulness": "situational",
@@ -878,6 +912,20 @@ def create_mcp():
             tool_result.structured_content["history"] = result.get("history", [])
             tool_result.structured_content["summary"] = result.get("summary", "")
             tool_result.structured_content["execute_plan"] = result
+        return tool_result
+
+    @mcp.tool(**_mcp_tool_meta("agent_workbench"))
+    def agent_workbench_tool(
+        goal: str, notebook: str | None = None, contract_file: str | None = None,
+        execute: bool = False, max_steps: int = 8, timeout: int = 30,
+        export: bool = True, detail: str = "summary",
+    ) -> ToolResult:
+        "Prepare or execute a taste-aware small-diff workbench run."
+        arguments = dict(goal=goal, notebook=notebook, contract_file=contract_file, execute=execute, max_steps=max_steps, timeout=timeout, export=export, detail=detail)
+        result = _agent_workbench(**{k: v for k, v in arguments.items() if k != "detail"})
+        full_output = result.get("rendered_plan") or result.get("summary", "")
+        tool_result = mcp_tool_result("agent_workbench", arguments, full_output, detail=detail)
+        if isinstance(result, dict): tool_result.structured_content["agent_workbench"] = result
         return tool_result
 
     @mcp.tool(**_mcp_tool_meta("symbol_graph"))

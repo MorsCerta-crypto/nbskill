@@ -35,6 +35,8 @@ test, or a show-off example before they touch it.
 - [`py2nb`](https://MorsCerta-crypto.github.io/nbskill/convert.html#py2nb)
   bootstraps notebooks from a Python file or folder when a project is
   moving toward nbdev.
+- `agent_workbench` turns taste, context, budgets, and gates into an
+  executor-ready plan before an autonomous edit.
 - `nbskill_mcp` exposes the same operations to Codex, Claude, or any MCP
   client.
 
@@ -58,6 +60,8 @@ The notebooks in `nbs/` are ordered like the toolchain itself:
     stay orderly.
 11. `10_graph.ipynb` builds a static symbol graph for definitions,
     callers, and private-helper reports.
+12. `11_agent_workbench.ipynb` compiles taste, context, budgets, and
+    gates into a small-diff agent workbench.
 
 ## A tiny notebook to work on
 
@@ -105,6 +109,14 @@ This is useful when adding examples, tests, or explanatory sections. The
 caller describes notebook cells as cells, not JSON objects, so nbskill
 can preserve notebook structure and clear stale execution state where
 needed.
+
+For larger notebook refactors, the CLI-only `split_nb_chapter` command
+moves one `##` chapter into a new nbdev notebook. It creates the new
+`#| default_exp`, copies imports used by the moved code, imports
+source-notebook definitions still needed by the split-out chapter, and
+promotes referenced private helpers in the source notebook when needed.
+Run it as a dry run first; it is intentionally not exposed as an MCP
+tool. Pass `--no-dry_run` when the plan looks right.
 
 ``` python
 _ = write_nb(
@@ -329,6 +341,7 @@ uv run nb_chapter nbs/02_write.ipynb --name Writing
 uv run nb_cell nbs/02_write.ipynb --query 'contains="def write_nb"'
 uv run write_nb nbs/02_write.ipynb --after_id abc123 --cells_file /tmp/cells.txt --no-export
 uv run write_nb nbs --old_str old_name --new_str new_name --dry_run --show_cells --no-export
+uv run split_nb_chapter nbs/02_write.ipynb "Batch editing" nbs/write_batch.ipynb --default_exp write_batch
 uv run update_cell nbs/02_write.ipynb --cell_id abc123 --source_hash 7f3a91c0d422 --new_file /tmp/cell.txt --no-export
 uv run batch_edit_nb --plan_file /tmp/nbskill-plan.json --dry_run
 uv run diff_nb nbs/02_write.ipynb
@@ -463,6 +476,7 @@ uv run nb_chapter nbs/02_write.ipynb --name Writing
 uv run nb_cell nbs/02_write.ipynb --query 'contains="def write_nb"'
 uv run write_nb nbs/02_write.ipynb --after_id abc123 --cells_file nbs/data/cells.txt --no-export
 uv run write_nb nbs --old_str old_name --new_str new_name --dry_run --show_cells --no-export
+uv run split_nb_chapter nbs/02_write.ipynb "Batch editing" nbs/write_batch.ipynb --default_exp write_batch
 uv run update_cell nbs/02_write.ipynb "replacement line" --cell_id abc123 --line_range 3 --source_hash 7f3a91c0d422 --no-export
 uv run diff_nb nbs/02_write.ipynb
 uv run style_check nbs --delete-after-output

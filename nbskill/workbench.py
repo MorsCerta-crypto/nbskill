@@ -535,6 +535,12 @@ def _render_workbench_plan(contract, taste, context):
         lines.extend(["", "Symbol consequences:", context["symbol_summary"]])
     lines.extend([
         "",
+        "Workbench loop:",
+        "- Inspect one focused cell with nb_cell and keep its hash nearby.",
+        "- Edit one guarded cell, or use one batch_edit_nb plan when cells must move together.",
+        "- Run the narrowest exec_nb check with check_only=True whenever execution is needed.",
+        "- Inspect diff_nb, then stop or repeat the loop once.",
+        "",
         "Stop rules:",
         "- Prefer the smallest valid diff over a broad complete rewrite.",
         "- Modify existing code before adding helpers.",

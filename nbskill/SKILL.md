@@ -92,17 +92,20 @@ uv run write_nb nbs/02_write.ipynb --after_id abc123 --cells_file /tmp/cells.txt
 uv run write_nb nbs --old_str old_name --new_str new_name --dry_run --show_cells --no-export
 uv run split_nb_chapter nbs/02_write.ipynb "Batch editing" nbs/write_batch.ipynb --default_exp write_batch
 uv run update_cell nbs/02_write.ipynb --cell_id abc123 --source_hash 7f3a91c0d422 --new_file /tmp/cell.txt --no-export
+uv run update_cell nbs/02_write.ipynb "replacement line" --cell_id abc123 --line_range 3 --source_hash 7f3a91c0d422 --dry_run --no-export
 uv run batch_edit_nb --plan_file /tmp/nbskill-plan.json --dry_run
 uv run agent_workbench "Make this parser stricter" --notebook nbs/02_write.ipynb
 uv run diff_nb nbs/02_write.ipynb
 uv run style_check nbs --delete-after-output
-uv run exec_nb nbs/03_execute.ipynb --up2id abc123 --timeout 10
+uv run exec_nb nbs/03_execute.ipynb --up2id abc123 --timeout 10 --check_only
 ```
 
 Cell blocks for
 [`write_nb`](https://MorsCerta-crypto.github.io/nbskill/write.html#write_nb)
 are separated by a line containing only `---`; start blocks with
 `%%markdown`, `%%md`, `%%code`, or `%%raw` when the cell type matters.
+Use `cells_file`, `new_file`, stdin (`-`), or literal `\n` only for
+small replacements when multiline shell quoting would be fragile.
 
 ## References
 

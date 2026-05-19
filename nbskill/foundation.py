@@ -186,6 +186,8 @@ def _track_tool(tool, details=None):
 # %% ../nbs/00_foundation.ipynb #3e3e40f8
 _NBSKILL_HOOKS_MARKER_START = "# nbskill nbdev hooks:start"
 _NBSKILL_HOOKS_MARKER_END = "# nbskill nbdev hooks:end"
+_NBSKILL_HOOKS_INSTALLED_SENTINEL = "nbskill-hooks-installed"
+_NBSKILL_HOOKS_DISABLED_SENTINEL = "nbskill-hooks-disabled"
 _NBSKILL_HOOK_ROOTS = set()
 
 
@@ -233,21 +235,45 @@ def _replace_marked_block(text, block):
     return f"{prefix}\n\n{block}\n"
 
 
+def _hook_state_paths(root):
+    info = Path(root) / ".git" / "info"
+    return info / _NBSKILL_HOOKS_INSTALLED_SENTINEL, info / _NBSKILL_HOOKS_DISABLED_SENTINEL
+
+
+def _has_nbskill_hook_block(pre_commit):
+    if not pre_commit.exists(): return False
+    text = pre_commit.read_text(encoding="utf-8", errors="ignore")
+    return _NBSKILL_HOOKS_MARKER_START in text and _NBSKILL_HOOKS_MARKER_END in text
+
+
+def _hooks_removed_by_user(root, pre_commit):
+    installed, disabled = _hook_state_paths(root)
+    if disabled.exists(): return True
+    if installed.exists() and not _has_nbskill_hook_block(pre_commit):
+        disabled.write_text("nbskill hooks were removed; not reinstalling automatically\n", encoding="utf-8")
+        return True
+    return False
+
+
 def install_nbdev_pre_commit_hooks(path=".", run_nbdev_install_hooks=True):
     "Install nbdev-clean and nbdev-test pre-commit hooks in a git-backed nbdev project."
     root = _git_root(path)
     if root is None: return {"installed": False, "reason": "not-a-git-repo"}
     if not _looks_like_nbdev_project(root): return {"installed": False, "reason": "not-an-nbdev-project", "root": str(root)}
+    hooks = root / ".git" / "hooks"
+    pre_commit = hooks / "pre-commit"
+    if _hooks_removed_by_user(root, pre_commit): return {"installed": False, "reason": "hooks-removed-by-user", "root": str(root)}
     if run_nbdev_install_hooks:
         cmd = ["nbdev-install-hooks"] if shutil.which("nbdev-install-hooks") else None
         if cmd is None and shutil.which("uv"): cmd = ["uv", "run", "nbdev-install-hooks"]
         if cmd is not None: subprocess.run(cmd, cwd=root, text=True, capture_output=True)
-    hooks = root / ".git" / "hooks"
     hooks.mkdir(parents=True, exist_ok=True)
-    pre_commit = hooks / "pre-commit"
     text = pre_commit.read_text(encoding="utf-8", errors="ignore") if pre_commit.exists() else ""
     pre_commit.write_text(_replace_marked_block(text, _nbdev_hook_block()), encoding="utf-8")
     pre_commit.chmod(pre_commit.stat().st_mode | 0o111)
+    installed, _ = _hook_state_paths(root)
+    installed.parent.mkdir(parents=True, exist_ok=True)
+    installed.write_text("nbskill hooks installed once\n", encoding="utf-8")
     return {"installed": True, "root": str(root), "hook": str(pre_commit)}
 
 

@@ -285,6 +285,7 @@ def update_cell(
             if validate_code: validate_code_cells([new_cell])
             clear_outputs(new_cell)
             if not dry_run: replace_cell(nb, idx, new_cell)
+            replacement = cell_source(new_cell)
             after_hash = cell_hash(new_cell)
             mode = "cell"
         else:
@@ -298,6 +299,8 @@ def update_cell(
 
         msg = f"{'Dry run: would update' if dry_run else 'Updated'} {mode} id={cell.id} hash={before_hash}->{after_hash}"
         if dry_run:
+            diff = _literal_cell_diff(cell_source(cell), replacement)
+            if diff: msg += chr(10) + diff
             print(msg)
             return cli_return(path)
         stamp_notebook_metadata(nb)

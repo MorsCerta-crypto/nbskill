@@ -306,6 +306,7 @@ def _doctor_warnings(path=".", scope_path=None, scope_cell_ids=None):
             "Run doctor(detail='debug') or style_check(delete_after_output=True) after resolving it.",
             tool=last.get("tool"),
         ))
+    if scope_path is None: scope_path = path
     return _filter_warnings_for_scope(warnings, root, scope_path, scope_cell_ids)
 
 
@@ -330,13 +331,60 @@ def _doc_script_warnings(root):
 
 def _response_scope_cell_ids(tool, arguments, preview):
     text = preview.get("text", "")
-    ids = set(re.findall(r"Cell id=([^\s:]+)", text))
+    ids = set(re.findall(r"(?:Cell|cell) id=([^\s:]+)", text))
+    ids.update(re.findall(r"\bid=([^\s:]+)", text))
     ids.update(re.findall(r"--- code cell ([^\s]+) ---", text))
     for key in ("id", "cell_id", "any_cell_id"):
         value = arguments.get(key)
         if value: ids.add(str(value))
     if tool == "diff_nb" and not ids: return set()
     return ids or None
+
+
+def _unique_strings(items):
+    seen, result = set(), []
+    for item in items:
+        if item in seen: continue
+        seen.add(item)
+        result.append(item)
+    return result
+
+
+def _notebook_paths_from_text(text):
+    return _unique_strings(re.findall(r"(?<![\w.-])(?:[~./A-Za-z0-9_-]+\.ipynb)", text or ""))
+
+
+def _batch_plan_scope_paths(arguments):
+    default = arguments.get("path")
+    text = arguments.get("plan") or ""
+    if not str(text).strip() and arguments.get("plan_file"):
+        try: text = Path(arguments["plan_file"]).read_text(encoding="utf-8")
+        except OSError: text = ""
+    try: data = json.loads(text) if str(text).strip() else []
+    except json.JSONDecodeError: data = []
+    ops = data if isinstance(data, list) else data.get("operations", []) if isinstance(data, dict) else []
+    return _unique_strings(str(op.get("path") or default) for op in ops if isinstance(op, dict) and (op.get("path") or default))
+
+
+def _response_scope_paths(tool, arguments, preview):
+    text_paths = _notebook_paths_from_text(preview.get("text", ""))
+    if tool == "batch_edit_nb":
+        return _unique_strings([*_batch_plan_scope_paths(arguments), *text_paths])
+    if tool == "write_nb" and text_paths:
+        return text_paths
+    path = arguments.get("path") or arguments.get("nb_path")
+    return [str(path)] if path else []
+
+
+def _dedupe_warnings(warnings):
+    seen, result = set(), []
+    for item in warnings:
+        key = json.dumps(item, sort_keys=True, default=str)
+        if key in seen: continue
+        seen.add(key)
+        result.append(item)
+    return result
+
 
 def _response_warnings(tool, arguments, preview):
     warnings = []
@@ -354,15 +402,18 @@ def _response_warnings(tool, arguments, preview):
             path=arguments.get("path"), cell_id=arguments.get("cell_id"),
         ))
     context_tools = {"nb_overview", "nb_chapter", "nb_cell", "show_doc", "diff_nb"}
-    project_tools = {"healthcheck", "write_nb", "update_cell", "batch_edit_nb", "exec_nb"}
+    scoped_project_tools = {"write_nb", "update_cell", "batch_edit_nb", "exec_nb"}
     if tool in context_tools:
         path = arguments.get("path") or arguments.get("nb_path") or "."
         cell_ids = _response_scope_cell_ids(tool, arguments, preview)
         warnings.extend(_doctor_warnings(path, scope_path=path, scope_cell_ids=cell_ids)[:3])
-    elif tool in project_tools:
-        path = arguments.get("path") or arguments.get("nb_path") or "."
-        warnings.extend(_doctor_warnings(path)[:3])
-    return warnings
+    elif tool in scoped_project_tools:
+        cell_ids = _response_scope_cell_ids(tool, arguments, preview)
+        for path in _response_scope_paths(tool, arguments, preview):
+            warnings.extend(_doctor_warnings(path, scope_path=path, scope_cell_ids=cell_ids))
+    elif tool == "healthcheck":
+        warnings.extend(_doctor_warnings(".")[:3])
+    return _dedupe_warnings(warnings)[:3]
 
 
 def _brief_call(tool, arguments, preview):

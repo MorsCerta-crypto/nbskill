@@ -89,10 +89,11 @@ exec_nb(
     cache_dir: str | None = None,
     cache_domains: str | None = None,
     allow_new: bool = False,
+    check_only: bool = False,
 ) -> str
 ```
 
-In safe mode, IPython magics and `!` shell commands are rejected, destructive filesystem and subprocess calls are blocked by `safepyrun`, and live `httpx` calls fail. With `cache_httpx=True`, cache hits from `cachy.jsonl`-compatible data are returned and cache misses still fail.
+In safe mode, IPython magics and `!` shell commands are rejected, destructive filesystem and subprocess calls are blocked by `safepyrun`, and live `httpx` calls fail. With `check_only=True`, execution reports outputs and failures without writing notebook outputs or metadata. With `cache_httpx=True`, cache hits from `cachy.jsonl`-compatible data are returned and cache misses still fail.
 
 ## `execute_plan`
 

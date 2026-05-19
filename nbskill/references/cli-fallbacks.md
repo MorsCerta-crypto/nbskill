@@ -50,6 +50,8 @@ uv run update_cell notebook.ipynb "replacement line" --cell_id abc123 --line_ran
 uv run update_cell notebook.ipynb "" --cell_id abc123 --line_range 3:5 --source_hash 7f3a91c0d422
 ```
 
+For whole-cell replacement, the replacement text must describe exactly one cell block. Do not include a standalone `---` line in `--new_file`; that separator means multiple cells and belongs with `write_nb` or `batch_edit_nb`. For partial edits, prefer `--line_range` or `--old_str`.
+
 `--line_range` is 1-based and inclusive. A single number replaces one line; `START:END` replaces or deletes multiple lines; an empty replacement deletes the selected lines.
 
 Use `batch_edit_nb` when multiple guarded edits should be applied together:

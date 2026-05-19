@@ -1,0 +1,27 @@
+website:
+  sidebar:
+    contents:
+      - index.ipynb
+      - 00_foundation.ipynb
+      - 01_read.ipynb
+      - 02_write.ipynb
+      - 03_execute.ipynb
+      - 04_review.ipynb
+      - 05_convert.ipynb
+      - 06_skill.ipynb
+      - 07_mcp.ipynb
+      - 08_edit_interactive.ipynb
+      - 09_parallel.ipynb
+      - 10_graph.ipynb
+      - 11_agent_workbench.ipynb
+      - section: data
+        contents:
+          - data/07_mcp_sample.ipynb
+          - data/test_nbskill.ipynb
+          - section: readme-demo
+            contents:
+              - data/readme-demo/demo.ipynb
+              - data/readme-demo/sample_tool.ipynb
+          - section: test_nbskill_contract
+            contents:
+              - data/test_nbskill_contract/demo.ipynb

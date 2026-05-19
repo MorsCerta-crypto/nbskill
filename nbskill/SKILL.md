@@ -44,9 +44,11 @@ reinstalling nbskill.
 5.  Use
     [`update_cell`](https://MorsCerta-crypto.github.io/nbskill/write.html#update_cell)
     for precise edits to an existing cell by id, text replacement, or
-    line range. Use `new_file` for multiline replacements and
-    `source_hash` when stale context should fail instead of overwriting
-    newer work.
+    line range. Use `line_range` for partial edits. For whole-cell
+    replacement, pass exactly one cell block with no standalone `---`
+    separators; use `write_nb` or `batch_edit_nb` for multi-cell edits.
+    Use `new_file` for multiline replacements and `source_hash` when
+    stale context should fail instead of overwriting newer work.
 6.  Use
     [`batch_edit_nb`](https://MorsCerta-crypto.github.io/nbskill/write.html#batch_edit_nb)
     for coordinated multi-cell or multi-notebook edits. Start with

@@ -531,9 +531,14 @@ def _fresh_semantic_metadata(cell):
 
 # %% ../nbs/00_foundation.ipynb #8d32aa50
 def parse_one_cell(text, default_type="code"):
-    cells = parse_cells(text, default_type)
-    if len(cells) != 1: cli_error("update_cell expects exactly one replacement cell")
-    return cells[0]
+    if isinstance(text, (list, tuple)):
+        if len(text) != 1:
+            cli_error("update_cell expects exactly one replacement cell; use write_nb or batch_edit_nb for multi-cell edits")
+        return _coerce_cell(text[0], default_type)
+    blocks = _split_blocks(text)
+    if len(blocks) != 1:
+        cli_error("update_cell expects exactly one replacement cell; remove standalone '---' separators or use write_nb/batch_edit_nb for multi-cell edits")
+    return _cell_from_block(blocks[0], default_type)
 
 # %% ../nbs/00_foundation.ipynb #c10eb7ae
 def cell_matches_hash(cell, source_hash):
@@ -620,21 +625,23 @@ def validate_code_cells(cells):
             raise ValueError(msg) from err
 
 # %% ../nbs/00_foundation.ipynb #c60b2541
+def _cell_from_block(block, default_type="code"):
+    lines = block.splitlines()
+    marker = lines[0].strip().lower() if lines else ""
+    cell_type = default_type
+    if marker in {"%%markdown", "%%md"}:
+        cell_type, lines = "markdown", lines[1:]
+    elif marker == "%%code":
+        cell_type, lines = "code", lines[1:]
+    elif marker == "%%raw":
+        cell_type, lines = "raw", lines[1:]
+    return mk_cell("\n".join(lines), cell_type=cell_type)
+
+
 def parse_cells(cells, default_type="code"):
     if isinstance(cells, (list, tuple)): return _split_symbol_cells([_coerce_cell(o, default_type) for o in cells])
 
-    parsed = []
-    for block in _split_blocks(cells):
-        lines = block.splitlines()
-        marker = lines[0].strip().lower() if lines else ""
-        cell_type = default_type
-        if marker in {"%%markdown", "%%md"}:
-            cell_type, lines = "markdown", lines[1:]
-        elif marker == "%%code":
-            cell_type, lines = "code", lines[1:]
-        elif marker == "%%raw":
-            cell_type, lines = "raw", lines[1:]
-        parsed.append(mk_cell("\n".join(lines), cell_type=cell_type))
+    parsed = [_cell_from_block(block, default_type) for block in _split_blocks(cells)]
     return _split_symbol_cells(parsed)
 
 # %% ../nbs/00_foundation.ipynb #0cce84e1

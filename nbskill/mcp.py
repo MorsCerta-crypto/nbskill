@@ -27,7 +27,7 @@ from .edit_interactive import execute_plan as _execute_plan
 from .edit_interactive import execute_project_plan as _execute_project_plan
 from .edit_interactive import plan_result_text as _plan_result_text
 from .execute import exec_nb as _exec_nb
-from .workbench import agent_workbench as _agent_workbench
+from .workbench import _agent_workbench_result
 from .foundation import _empty_failure_map, _failure_map_path, _load_failure_map
 from .graph import notebook_order_problems as _notebook_order_problems
 from .graph import private_symbol_report as _private_symbol_report
@@ -654,9 +654,9 @@ _MCP_TOOL_CATALOG = {
         "feature": "notebook_edit",
         "usefulness": "core",
         "tags": ("edit", "notebook", "guarded", "cell"),
-        "description": "Update one existing cell by id, old text, or line range, with optional source-hash guarding, export, and validation.",
-        "when_to_use": "Use for precise single-cell edits after nb_cell gives the id, line numbers, and source hash.",
-        "combine_with": "Keep separate from write_nb because guarded single-cell updates are the safest common edit path.",
+        "description": "Update one existing cell by id, old text, or line range, with optional source-hash guarding, export, and validation; whole-cell replacements must be one cell block with no standalone --- separators.",
+        "when_to_use": "Use after nb_cell gives the id, line numbers, and source hash. Prefer line_range for partial edits, whole-cell replacement for one cell source block, and write_nb/batch_edit_nb for adding or replacing multiple cells.",
+        "combine_with": "Keep separate from write_nb because guarded single-cell updates are the safest common edit path; do not use it for multi-cell blocks.",
     },
     "batch_edit_nb": {
         "feature": "notebook_edit",
@@ -854,7 +854,7 @@ def create_mcp():
         cell_type: str = "code", export: bool = True, run_test: bool = False,
         validate_code: bool = True, dry_run: bool = False, detail: str = "summary",
     ) -> ToolResult:
-        "Update one existing notebook cell by id, old text, or line range."
+        "Update one existing notebook cell; use line_range/old_str for partial edits, and only pass a single cell block for whole-cell replacement."
         arguments = dict(path=path, new=new, new_file=new_file, cell_id=cell_id, old_str=old_str, line_range=line_range, source_hash=source_hash, cell_type=cell_type, export=export, run_test=run_test, validate_code=validate_code, dry_run=dry_run, detail=detail)
         full_output = capture_notebook_call(_update_cell, path, **{k: v for k, v in arguments.items() if k != "detail"})
         return mcp_tool_result("update_cell", arguments, full_output, detail=detail)
@@ -922,7 +922,7 @@ def create_mcp():
     ) -> ToolResult:
         "Prepare or execute a taste-aware small-diff workbench run."
         arguments = dict(goal=goal, notebook=notebook, contract_file=contract_file, execute=execute, max_steps=max_steps, timeout=timeout, export=export, detail=detail)
-        result = _agent_workbench(**{k: v for k, v in arguments.items() if k != "detail"})
+        result = _agent_workbench_result(**{k: v for k, v in arguments.items() if k != "detail"})
         full_output = result.get("rendered_plan") or result.get("summary", "")
         tool_result = mcp_tool_result("agent_workbench", arguments, full_output, detail=detail)
         if isinstance(result, dict): tool_result.structured_content["agent_workbench"] = result

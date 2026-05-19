@@ -12,7 +12,7 @@ uv run nbskill_status
 
 ```bash
 uv run nb_overview notebook.ipynb
-uv run nb_overview notebook.ipynb --include_markdown
+uv run nb_overview notebook.ipynb --include_docs
 uv run nb_chapter notebook.ipynb --name "Data loading"
 uv run nb_chapter notebook.ipynb --any_cell_id abc123
 uv run nb_cell notebook.ipynb --id abc123
@@ -22,7 +22,7 @@ uv run show_doc notebook.ipynb symbol --source --show_ids
 
 Reader behavior:
 
-- `nb_overview`: section headers and exported definitions/docstrings; no line numbers.
+- `nb_overview`: Markdown headings, imports, signatures, and docstrings; no line numbers.
 - `nb_chapter`: notebook head plus one selected chapter; no line numbers.
 - `nb_cell`: one selected cell with previous docs, examples/tests, usage context, and line numbers.
 

@@ -27,7 +27,7 @@ See `references/mcp-tool-report.md` for the current usefulness review and reduct
 ## Tool Loop
 
 1. `healthcheck` confirms the server is alive and reports concurrency behavior.
-2. `nb_overview` gives a compact map of section headers and exported definitions.
+2. `nb_overview` gives a compact map of Markdown headings, imports, signatures, and docstrings.
 3. `nb_chapter` shows the notebook head plus one selected chapter.
 4. `nb_cell` shows one selected cell with line-numbered source, previous docs, examples/tests, and usage context.
 5. `show_doc` focuses on one exported symbol and its surrounding notebook story.

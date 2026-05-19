@@ -29,12 +29,14 @@ def _format_overview(items, show_ids=False):
     return "\n".join(lines)
 
 # %% ../nbs/01_read.ipynb #975e37c5
-def _markdown_overview(cell):
-    lines = []
-    for line in cell.source.splitlines():
+def _markdown_overview(cell, include_docs=False):
+    source = cell_source(cell).strip()
+    headings = []
+    for line in source.splitlines():
         text = line.strip()
-        if re.match(r"^#{1,6}\s+", text): lines.append(text)
-    return lines
+        if re.match(r"^#{1,6}\s+", text): headings.append(text)
+    if headings: return headings
+    return source.splitlines() if include_docs and source else []
 
 
 def _definition_lines(node, indent=""):
@@ -61,10 +63,10 @@ def _function_overview(node, indent=""):
 
 def _class_overview(node):
     lines = [*_definition_lines(node), *_docstring_lines(node)]
-    init = next((child for child in node.body if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)) and child.name == "__init__"), None)
-    if init:
-        if lines: lines.append("")
-        lines += _function_overview(init, indent="    ")
+    methods = [child for child in node.body if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef))]
+    for method in methods:
+        if lines and lines[-1] != "": lines.append("")
+        lines += _function_overview(method, indent="    ")
     return lines
 
 
@@ -73,19 +75,18 @@ def _code_overview(cell):
     except SyntaxError: return []
     lines = []
     for node in tree.body:
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)): lines += _function_overview(node)
+        if isinstance(node, (ast.Import, ast.ImportFrom)): lines.append(ast.unparse(node))
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)): lines += _function_overview(node)
         elif isinstance(node, ast.ClassDef): lines += _class_overview(node)
         if lines and lines[-1] != "": lines.append("")
     if lines and lines[-1] == "": lines.pop()
     return lines
 
 
-def _format_headers(items, include_markdown=False):
+def _format_headers(items, include_docs=False):
     chunks = []
     for idx, cell in items:
-        if cell.cell_type == "markdown":
-            if not include_markdown: continue
-            lines = _markdown_overview(cell)
+        if cell.cell_type == "markdown": lines = _markdown_overview(cell, include_docs=include_docs)
         elif cell.cell_type == "code": lines = _code_overview(cell)
         else: lines = []
         if lines: chunks.append(f"{cell_prefix(idx, cell, True)}\n" + "\n".join(lines))
@@ -285,12 +286,13 @@ def _selected_cell_item(nb, query=None, id=None):
 @tracked_call
 def nb_overview(
     nb_path: str,  # Notebook path
-    include_markdown: bool = False,  # Include markdown section headings
+    include_docs: bool = False,  # Include Markdown cells without headings
+    verbose: bool = True,  # Print the overview; pass False to only return it
 ):
-    "Print a focused notebook map of section headings and definitions."
+    "Print a focused notebook map of headings, imports, signatures, and docstrings."
     nb = _read_nb(nb_path)
-    text = _format_headers(list(enumerate(nb.cells)), include_markdown=include_markdown)
-    if text: print(text)
+    text = _format_headers(list(enumerate(nb.cells)), include_docs=include_docs)
+    if verbose and text: print(text)
     return cli_return(text)
 
 

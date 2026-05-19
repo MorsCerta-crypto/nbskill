@@ -79,10 +79,11 @@ print(demo_nb)
 
 ## Reading: start with a compact map
 
-`nb_overview` is the first tool to reach for. It shows section headers
-plus exported functions/classes and their docstrings; pass
-`include_markdown=True` when headings and Markdown context should be
-visible too.
+`nb_overview` is the first tool to reach for. It always shows Markdown
+headings, imports, function/class/method signatures, and docstrings;
+pass `include_docs=True` when ordinary Markdown cells without headings
+should be visible too. For CLI/Python use, `verbose=False` returns the
+same text without printing it; MCP tools keep that print control hidden.
 
 When you know the area, `nb_chapter` shows the notebook head plus one
 selected section. Use `nb_cell` for the precise, line-numbered view
@@ -90,7 +91,7 @@ around a single cell, including previous docs, examples/tests, and local
 caller/callee context.
 
 ``` python
-_ = nb_overview(str(demo_nb), include_markdown=True)
+_ = nb_overview(str(demo_nb), include_docs=True)
 ```
 
 ## Writing: add cells without raw notebook JSON
@@ -214,7 +215,7 @@ the current question.
 
 ``` python
 healthcheck()
-nb_overview(nb_path="nbs/02_write.ipynb", include_markdown=True)
+nb_overview(nb_path="nbs/02_write.ipynb", include_docs=True)
 nb_chapter(nb_path="nbs/02_write.ipynb", name="Updating")
 nb_cell(nb_path="nbs/02_write.ipynb", id="abc123")
 ```
@@ -273,9 +274,9 @@ reinstalling nbskill.
 
 ## Core Workflow
 
-1.  Use `nb_overview` for a compact map of section headers and exported
-    definitions. Pass `include_markdown=True` when Markdown headings
-    should be shown.
+1.  Use `nb_overview` for a compact map of Markdown headings, imports,
+    signatures, and docstrings. Pass `include_docs=True` when ordinary
+    Markdown cells without headings should be shown.
 2.  Use `nb_chapter` when you know the relevant section and need the
     notebook head plus that chapter.
 3.  Use `nb_cell` when you need precise, line-numbered source for one
@@ -323,7 +324,7 @@ verification must run in the project environment:
 
 ``` bash
 uv run nbskill_status
-uv run nb_overview nbs/02_write.ipynb --include_markdown
+uv run nb_overview nbs/02_write.ipynb --include_docs
 uv run nb_chapter nbs/02_write.ipynb --name Writing
 uv run nb_cell nbs/02_write.ipynb --query 'contains="def write_nb"'
 uv run write_nb nbs/02_write.ipynb --after_id abc123 --cells_file /tmp/cells.txt --no-export
@@ -415,9 +416,9 @@ client so it refreshes cached schemas.
 
 ## Core Workflow
 
-1.  Use `nb_overview` for a compact map of section headers and exported
-    definitions. Pass `include_markdown=True` when Markdown headings
-    should be shown.
+1.  Use `nb_overview` for a compact map of Markdown headings, imports,
+    signatures, and docstrings. Pass `include_docs=True` when ordinary
+    Markdown cells without headings should be shown.
 2.  Use `nb_chapter` when you know the relevant section and need the
     notebook head plus that chapter.
 3.  Use `nb_cell` when you need precise, line-numbered source for one
@@ -457,7 +458,7 @@ Use CLI commands only when MCP tools are unavailable or final
 verification must run in the project environment:
 
 ``` bash
-uv run nb_overview nbs/02_write.ipynb --include_markdown
+uv run nb_overview nbs/02_write.ipynb --include_docs
 uv run nb_chapter nbs/02_write.ipynb --name Writing
 uv run nb_cell nbs/02_write.ipynb --query 'contains="def write_nb"'
 uv run write_nb nbs/02_write.ipynb --after_id abc123 --cells_file nbs/data/cells.txt --no-export

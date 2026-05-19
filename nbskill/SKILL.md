@@ -30,9 +30,9 @@ reinstalling nbskill.
 
 ## Core Workflow
 
-1.  Use `nb_overview` for a compact map of section headers and exported
-    definitions. Pass `include_markdown=True` when Markdown headings
-    should be shown.
+1.  Use `nb_overview` for a compact map of Markdown headings, imports,
+    signatures, and docstrings. Pass `include_docs=True` when ordinary
+    Markdown cells without headings should be shown.
 2.  Use `nb_chapter` when you know the relevant section and need the
     notebook head plus that chapter.
 3.  Use `nb_cell` when you need precise, line-numbered source for one
@@ -80,7 +80,7 @@ verification must run in the project environment:
 
 ``` bash
 uv run nbskill_status
-uv run nb_overview nbs/02_write.ipynb --include_markdown
+uv run nb_overview nbs/02_write.ipynb --include_docs
 uv run nb_chapter nbs/02_write.ipynb --name Writing
 uv run nb_cell nbs/02_write.ipynb --query 'contains="def write_nb"'
 uv run write_nb nbs/02_write.ipynb --after_id abc123 --cells_file /tmp/cells.txt --no-export

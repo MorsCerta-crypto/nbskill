@@ -588,7 +588,7 @@ _MCP_TOOL_CATALOG = {
         "feature": "read_context",
         "usefulness": "core",
         "tags": ("read", "notebook", "orientation"),
-        "description": "Compact notebook map showing section headers plus exported functions/classes and their docstrings; markdown is optional.",
+        "description": "Compact notebook map showing Markdown headings, imports, function/class/method signatures, and docstrings; ordinary Markdown docs are optional.",
         "when_to_use": "Start here when opening a notebook or choosing which chapter or cell to inspect next.",
         "combine_with": "Do not merge back into a broad reader; this intentionally stays small and scannable.",
     },
@@ -772,10 +772,10 @@ def create_mcp():
         )
 
     @mcp.tool(**_mcp_tool_meta("nb_overview"))
-    def nb_overview_tool(nb_path: str, include_markdown: bool = False, detail: str = "summary") -> ToolResult:
-        "Show section headings and function/class signatures with docstrings."
-        arguments = dict(nb_path=nb_path, include_markdown=include_markdown, detail=detail)
-        full_output = capture_notebook_call(_nb_overview, nb_path, nb_path=nb_path, include_markdown=include_markdown)
+    def nb_overview_tool(nb_path: str, include_docs: bool = False, detail: str = "summary") -> ToolResult:
+        "Show headings, imports, signatures, and docstrings, optionally with non-heading Markdown docs."
+        arguments = dict(nb_path=nb_path, include_docs=include_docs, detail=detail)
+        full_output = capture_notebook_call(_nb_overview, nb_path, nb_path=nb_path, include_docs=include_docs, verbose=True)
         return mcp_tool_result("nb_overview", arguments, full_output, detail=detail)
 
     @mcp.tool(**_mcp_tool_meta("nb_chapter"))

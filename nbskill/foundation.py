@@ -531,9 +531,9 @@ def _fresh_semantic_metadata(cell):
 
 # %% ../nbs/00_foundation.ipynb #8d32aa50
 def parse_one_cell(text, default_type="code"):
-    blocks = _split_blocks(text)
-    if len(blocks) != 1: cli_error("update_cell expects exactly one replacement cell")
-    return _coerce_cell(blocks[0], default_type)
+    cells = parse_cells(text, default_type)
+    if len(cells) != 1: cli_error("update_cell expects exactly one replacement cell")
+    return cells[0]
 
 # %% ../nbs/00_foundation.ipynb #c10eb7ae
 def cell_matches_hash(cell, source_hash):

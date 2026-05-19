@@ -173,7 +173,10 @@ def notebook_validation_problems(path="."):
     "Return invalid nbskill metadata problems for notebooks under `path`."
     problems = []
     for nb_path in _notebook_paths(path):
-        nb = _read_nb(nb_path)
+        try:
+            nb = _read_nb(nb_path)
+        except FileNotFoundError:
+            continue
         problems.extend(_notebook_export_hash_problems(nb_path, nb))
         for cell in nb.cells:
             problems.extend(_cell_metadata_validation_problems(nb_path, cell))

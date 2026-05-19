@@ -29,11 +29,27 @@ from nbskill.foundation import (
 )
 
 # %% ../nbs/04_review.ipynb #43d8201b
+skip_style_paths = "_proc __pycache__ src assets examples tests archive".split(" ")
+
+
+def _style_skip_paths(skip_path=None):
+    paths = list(skip_style_paths)
+    if skip_path is None: return paths
+    if isinstance(skip_path, (list, tuple, set)): paths += [str(item) for item in skip_path]
+    else: paths.append(str(skip_path))
+    return paths
+
+
+def _style_root_is_skipped(path, skip_paths):
+    parts = Path("." if path is None else path).expanduser().parts
+    return any(part in skip_paths for part in parts)
+
+
 def _style_check_argv(path=".", skip_folder_re=None, skip_path=None):
     path = "." if path is None else str(path)
     argv = ["style_check", path]
-    if skip_folder_re: argv += ["--skip-folder-re", str(skip_folder_re)]
-    if skip_path: argv += ["--skip-path", str(skip_path)]
+    if skip_folder_re: argv += ["--skip-path-re", str(skip_folder_re)]
+    for item in _style_skip_paths(skip_path): argv += ["--skip-path", item]
     return argv
 
 
@@ -168,13 +184,11 @@ def _notebook_export_hash_problems(nb_path, nb):
         return [_validation_problem("exported-py-hash-mismatch", nb_path, detail=detail, exported_py_path=str(py_path))]
     return []
 
-skip_style_paths = "_proc __pycache__ src assets examples tests archive".split(" ")
-
 def notebook_validation_problems(path="."):
     "Return invalid nbskill metadata problems for notebooks under `path`."
     problems = []
     for nb_path in _notebook_paths(path):
-        if any(x in nb_path.parts for x in skip_style_paths): continue
+        if _style_root_is_skipped(nb_path, skip_style_paths): continue
         try: nb = _read_nb(nb_path)
         except FileNotFoundError: continue
         problems.extend(_notebook_export_hash_problems(nb_path, nb))
@@ -186,6 +200,7 @@ def _notebook_style_problems(path="."):
     problems = notebook_validation_problems(path)
     duplicate_imports = {}
     for nb_path in _notebook_paths(path):
+        if _style_root_is_skipped(nb_path, skip_style_paths): continue
         nb = _read_nb(nb_path)
         imports_by_scope = {"exported": {}, "internal": {}}
         for cell in nb.cells:
@@ -218,7 +233,10 @@ def _notebook_style_problems(path="."):
             problems.append(_problem("duplicate-import", nb_path, scope=scope, import_key=key, cells=ids))
     if _notebook_paths(path):
         from nbskill.graph import notebook_order_problems
-        problems.extend(notebook_order_problems(path))
+        problems.extend(
+            problem for problem in notebook_order_problems(path)
+            if not _style_root_is_skipped(problem["path"], skip_style_paths)
+        )
     return problems
 
 
@@ -389,6 +407,9 @@ def style_report(
 
 # %% ../nbs/04_review.ipynb #bc59a7ff
 def run_style_check(path=".", skip_folder_re=None, skip_path=None, strict=False, max_output_chars=None):
+    skip_paths = _style_skip_paths(skip_path)
+    if _style_root_is_skipped(path, skip_paths):
+        return {"status": 0, "output": "", "text": "", "truncated": False, "chars": 0, "omitted_chars": 0}
     out, err = StringIO(), StringIO()
     with redirect_stdout(out), redirect_stderr(err):
         status = _chkstyle_main(_style_check_argv(path, skip_folder_re, skip_path))

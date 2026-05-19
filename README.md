@@ -18,10 +18,9 @@ test, or a show-off example before they touch it.
 
 `nbskill` turns that into a safer workflow:
 
-- [`read_nb`](https://MorsCerta-crypto.github.io/nbskill/read.html#read_nb)
-  and
+- `nb_overview`, `nb_chapter`, `nb_cell`, and
   [`show_doc`](https://MorsCerta-crypto.github.io/nbskill/read.html#show_doc)
-  expose compact notebook views.
+  expose focused notebook views.
 - [`write_nb`](https://MorsCerta-crypto.github.io/nbskill/write.html#write_nb)
   and
   [`update_cell`](https://MorsCerta-crypto.github.io/nbskill/write.html#update_cell)
@@ -82,18 +81,18 @@ print(demo_nb)
 
 ## Reading: start with a compact map
 
-[`read_nb`](https://MorsCerta-crypto.github.io/nbskill/read.html#read_nb)
-is the first tool to reach for. It shows cell ids, semantic cell
-classes, and short source previews so an editor can decide where to
-operate before asking for full source.
+`nb_overview` is the first tool to reach for. It shows section headers
+plus exported functions/classes and their docstrings; pass
+`include_markdown=True` when headings and Markdown context should be
+visible too.
 
-This is needed because raw notebook JSON answers the wrong question
-first: it shows serialization details before intent. The compact map
-lets an agent find the cell that matters, notice nearby tests or docs,
-and copy the exact id or hash needed for a later guarded edit.
+When you know the area, `nb_chapter` shows the notebook head plus one
+selected section. Use `nb_cell` for the precise, line-numbered view
+around a single cell, including previous docs, examples/tests, and local
+caller/callee context.
 
 ``` python
-_ = read_nb(str(demo_nb), context="overview", show_ids=True)
+_ = nb_overview(str(demo_nb), include_markdown=True)
 ```
 
 ## Writing: add cells without raw notebook JSON
@@ -114,7 +113,7 @@ _ = write_nb(
     "%%markdown\n## Result\nThe next cell computes from the earlier value.\n---\n%%code\nanswer = x * 10\nanswer",
     export=False,
 )
-_ = read_nb(str(demo_nb), context="overview", show_ids=True)
+_ = nb_chapter(str(demo_nb), name="Result")
 ```
 
 ## Updating: use ids and hashes for precise edits
@@ -131,7 +130,7 @@ prove it is still editing the same source it inspected rather than a
 newer version from another human or tool.
 
 ``` python
-answer_cell = next(cell for cell in _read_nb(demo_nb).cells if "answer = x * 10" in cell.source)
+answer_cell = next(cell for cell in _read_raw_nb(demo_nb).cells if "answer = x * 10" in cell.source)
 hash_before = cell_hash(answer_cell, n=None)
 
 _ = update_cell(
@@ -141,7 +140,7 @@ _ = update_cell(
     source_hash=hash_before,
     export=False,
 )
-_ = read_nb(str(demo_nb), cell_id=answer_cell.id, context="precise", show_ids=True)
+_ = nb_cell(str(demo_nb), id=answer_cell.id)
 ```
 
 ## Executing: run the notebook as a notebook
@@ -194,7 +193,7 @@ sample_py.write_text("def double(x):\n    return x * 2\n", encoding="utf-8")
 converted_nb = workspace / "sample_tool.ipynb"
 
 _ = py2nb(str(sample_py), dest=str(converted_nb))
-_ = read_nb(str(converted_nb), context="overview", show_ids=True)
+_ = nb_overview(str(converted_nb))
 ```
 
 ## Serving the workflow through MCP
@@ -212,13 +211,14 @@ type(mcp).__name__
 ## A realistic agent workflow
 
 A typical agent session should be small and reversible. First check that
-the MCP server is connected, then read the notebook at overview level
-before selecting one precise cell to edit.
+the MCP server is connected, then use the smallest reader that answers
+the current question.
 
 ``` python
 healthcheck()
-read_nb(path="nbs/02_write.ipynb", context="overview", show_ids=True)
-read_nb(path="nbs/02_write.ipynb", cell_id="abc123", context="precise", show_ids=True)
+nb_overview(nb_path="nbs/02_write.ipynb", include_markdown=True)
+nb_chapter(nb_path="nbs/02_write.ipynb", name="Updating")
+nb_cell(nb_path="nbs/02_write.ipynb", id="abc123")
 ```
 
 After inspecting the precise cell, carry its `source_hash` into the
@@ -275,45 +275,46 @@ reinstalling nbskill.
 
 ## Core Workflow
 
-1.  Use
-    [`read_nb`](https://MorsCerta-crypto.github.io/nbskill/read.html#read_nb)
-    to inspect notebooks without raw JSON. Start with
-    `context="overview"` and use `context="precise"` when you need
-    numbered source for a selected cell. Quote query values with spaces,
-    such as `query='contains="def write_nb"'`.
-2.  Use
+1.  Use `nb_overview` for a compact map of section headers and exported
+    definitions. Pass `include_markdown=True` when Markdown headings
+    should be shown.
+2.  Use `nb_chapter` when you know the relevant section and need the
+    notebook head plus that chapter.
+3.  Use `nb_cell` when you need precise, line-numbered source for one
+    cell plus previous docs, examples/tests, and caller/callee context.
+4.  Use
     [`write_nb`](https://MorsCerta-crypto.github.io/nbskill/write.html#write_nb)
     to add notebook cells by cell id, chapter, or full-notebook
     replacement. Use `cells_file` for multiline additions.
-3.  Use
+5.  Use
     [`update_cell`](https://MorsCerta-crypto.github.io/nbskill/write.html#update_cell)
     for precise edits to an existing cell by id, text replacement, or
     line range. Use `new_file` for multiline replacements and
     `source_hash` when stale context should fail instead of overwriting
     newer work.
-4.  Use
+6.  Use
     [`batch_edit_nb`](https://MorsCerta-crypto.github.io/nbskill/write.html#batch_edit_nb)
     for coordinated multi-cell or multi-notebook edits. Start with
     `dry_run=True`, include source hashes for guarded cells, and inspect
     the printed diffs before writing.
-5.  Use
+7.  Use
     [`style_check`](https://MorsCerta-crypto.github.io/nbskill/review.html#style_check)
     as the main hygiene report for large cells, mixed semantic cells,
     duplicate imports, cell-order problems, and global tool
     usage/problems.
-6.  Use
+8.  Use
     [`diff_nb`](https://MorsCerta-crypto.github.io/nbskill/review.html#diff_nb)
     to inspect code-cell diffs; use `git diff` for Markdown or
     documentation changes. nbskill metadata-only changes are summarized
     instead of expanded.
-7.  Use
+9.  Use
     [`exec_nb`](https://MorsCerta-crypto.github.io/nbskill/execute.html#exec_nb)
     to run a notebook, chapter, or cells up to an id, then inspect
     visible outputs and errors.
 
 Stay notebook-first: edit `nbs/*.ipynb` source notebooks, not generated
-`.py` files. Use stable cell ids and source hashes from
-`read_nb --show_ids` when an edit must be guarded against stale context.
+`.py` files. Use stable cell ids and source hashes from `nb_cell` when
+an edit must be guarded against stale context.
 Functions beginning with `_` are notebook-local unless deliberately
 promoted to a public helper.
 
@@ -324,8 +325,9 @@ verification must run in the project environment:
 
 ``` bash
 uv run nbskill_status
-uv run read_nb nbs/02_write.ipynb --context overview --show_ids
-uv run read_nb nbs/02_write.ipynb --context precise --query 'contains="def write_nb"'
+uv run nb_overview nbs/02_write.ipynb --include_markdown
+uv run nb_chapter nbs/02_write.ipynb --name Writing
+uv run nb_cell nbs/02_write.ipynb --query 'contains="def write_nb"'
 uv run write_nb nbs/02_write.ipynb --after_id abc123 --cells_file /tmp/cells.txt --no-export
 uv run write_nb nbs --old_str old_name --new_str new_name --dry_run --show_cells --no-export
 uv run update_cell nbs/02_write.ipynb --cell_id abc123 --source_hash 7f3a91c0d422 --new_file /tmp/cell.txt --no-export
@@ -355,12 +357,11 @@ Open references only when the core workflow is not enough:
 
 ## Sugar features and notebook policy
 
-[`read_nb`](https://MorsCerta-crypto.github.io/nbskill/read.html#read_nb)
-prints numbered source when a query resolves to one cell, even in
-overview mode. Semantic cell information is persisted in
-`metadata["nbskill"]`, including the notebook cell type, semantic types
-such as `exported_code` or `test_cell`, and the source hash that keeps
-the metadata honest. Quote query values that contain spaces, for example
+`nb_overview` prints a compact map without line numbers. `nb_chapter`
+prints the notebook head and a selected section, also without line
+numbers. `nb_cell` is the precise reader: it prints line-numbered source
+for one selected cell with previous Markdown, examples/tests, and usage
+context. Quote query values that contain spaces, for example
 `query='contains="def target"'`; semicolons separate multiple
 selections.
 
@@ -416,38 +417,39 @@ client so it refreshes cached schemas.
 
 ## Core Workflow
 
-1.  Use
-    [`read_nb`](https://MorsCerta-crypto.github.io/nbskill/read.html#read_nb)
-    to inspect notebooks without raw JSON. Start with
-    `context="overview"` and use `context="precise"` when you need
-    numbered source for a selected cell. Quote query values with spaces,
-    such as `query='contains="def write_nb"'`.
-2.  Use
+1.  Use `nb_overview` for a compact map of section headers and exported
+    definitions. Pass `include_markdown=True` when Markdown headings
+    should be shown.
+2.  Use `nb_chapter` when you know the relevant section and need the
+    notebook head plus that chapter.
+3.  Use `nb_cell` when you need precise, line-numbered source for one
+    cell plus previous docs, examples/tests, and caller/callee context.
+4.  Use
     [`write_nb`](https://MorsCerta-crypto.github.io/nbskill/write.html#write_nb)
     to add notebook cells by cell id, chapter, or full-notebook
     replacement. Use `cells_file` for multiline additions.
-3.  Use
+5.  Use
     `write_nb(path, old_str="old", new_str="new", dry_run=True, show_cells=True)`
     to preview exact literal replacements with touched cell ids and
     compact diffs before writing.
-4.  Use
+6.  Use
     [`update_cell`](https://MorsCerta-crypto.github.io/nbskill/write.html#update_cell)
     for precise edits to an existing cell by id, text replacement, or
     line range. Use `source_hash` when stale context should fail instead
     of overwriting newer work.
-5.  Use
+7.  Use
     [`diff_nb`](https://MorsCerta-crypto.github.io/nbskill/review.html#diff_nb)
     to inspect code-cell diffs; use `git diff` for Markdown or
     documentation changes. nbskill metadata-only changes are summarized
     instead of expanded.
-6.  Use
+8.  Use
     [`exec_nb`](https://MorsCerta-crypto.github.io/nbskill/execute.html#exec_nb)
     to run a notebook, chapter, or cells up to an id, then inspect
     visible outputs and errors.
 
 Stay notebook-first: edit `nbs/*.ipynb` source notebooks, not generated
-`.py` files. Use stable cell ids and source hashes from
-`read_nb --show_ids` when an edit must be guarded against stale context.
+`.py` files. Use stable cell ids and source hashes from `nb_cell` when
+an edit must be guarded against stale context.
 Functions beginning with `_` are notebook-local unless deliberately
 promoted to a public helper.
 
@@ -457,8 +459,9 @@ Use CLI commands only when MCP tools are unavailable or final
 verification must run in the project environment:
 
 ``` bash
-uv run read_nb nbs/02_write.ipynb --context overview --show_ids
-uv run read_nb nbs/02_write.ipynb --context precise --query 'contains="def write_nb"'
+uv run nb_overview nbs/02_write.ipynb --include_markdown
+uv run nb_chapter nbs/02_write.ipynb --name Writing
+uv run nb_cell nbs/02_write.ipynb --query 'contains="def write_nb"'
 uv run write_nb nbs/02_write.ipynb --after_id abc123 --cells_file nbs/data/cells.txt --no-export
 uv run write_nb nbs --old_str old_name --new_str new_name --dry_run --show_cells --no-export
 uv run update_cell nbs/02_write.ipynb "replacement line" --cell_id abc123 --line_range 3 --source_hash 7f3a91c0d422 --no-export

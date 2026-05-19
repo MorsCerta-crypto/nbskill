@@ -4,7 +4,7 @@ This is a candid list of what would make `nbskill` easier and safer for coding a
 
 ## 1. Make The MCP Server The Default Happy Path
 
-I often used standard shell/file tools (`sed`, `rg`, small Python JSON scripts, `apply_patch`) instead of the nbskill MCP server or CLI because the MCP server was not available as a callable tool in this session. I had the `jupyter-notebooks` skill instructions, but not direct `read_nb`, `write_nb`, `update_cell`, or `exec_nb` MCP tool bindings.
+I often used standard shell/file tools (`sed`, `rg`, small Python JSON scripts, `apply_patch`) instead of the nbskill MCP server or CLI because the MCP server was not available as a callable tool in this session. I had the `jupyter-notebooks` skill instructions, but not direct `nb_overview`, `nb_chapter`, `nb_cell`, `write_nb`, `update_cell`, or `exec_nb` MCP tool bindings.
 
 When the MCP server is not already connected, the CLI becomes the fallback. That worked for reads and execution, but editing via CLI was still awkward for large, coordinated notebook changes.
 
@@ -100,8 +100,8 @@ Short version: because they were the most reliable tools available in the sessio
 
 More specifically:
 
-- Direct MCP tools were not exposed to me as callable functions, so I could not call `read_nb`/`write_nb`/`update_cell` through MCP.
-- CLI `read_nb` was useful for inspection, but CLI editing large cells via shell arguments is fragile.
+- Direct MCP tools were not exposed to me as callable functions, so I could not call `nb_overview`/`nb_chapter`/`nb_cell`/`write_nb`/`update_cell` through MCP.
+- CLI notebook readers were useful for inspection, but CLI editing large cells via shell arguments is fragile.
 - Repeated `update_cell` CLI calls would have been slower and riskier than one explicit script when many cells across several notebooks needed updates.
 - `apply_patch` is the required safe editing tool in this environment for normal files, and small temporary scripts let me make structured notebook JSON edits without hand-editing raw JSON by eye.
 - `uv run` repeatedly needed escalation because uv’s cache lives outside the workspace sandbox, adding friction to CLI-first workflows.

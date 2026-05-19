@@ -1,11 +1,11 @@
 # Extended Tool Reference
 
-The main `SKILL.md` intentionally stays focused on the core loop: MCP, `read_nb`, `write_nb`, `batch_edit_nb`, and `exec_nb`. Use this reference when a task needs supporting tools.
+The main `SKILL.md` intentionally stays focused on the core loop: MCP, focused notebook readers, `write_nb`, `batch_edit_nb`, and `exec_nb`. Use this reference when a task needs supporting tools.
 
 ## Reading More Context
 
 - `show_doc(notebook, symbol, source=False, show_ids=False)` collects the Markdown before a symbol, its exported definition, examples after it, and usage data when available.
-- `read_nb(..., context="full")` includes neighboring explanatory Markdown and non-export example cells around a match.
+- `nb_cell(notebook, id=...)` includes neighboring explanatory Markdown, examples/tests, and usage context around a selected cell.
 
 ## Review And Analysis
 

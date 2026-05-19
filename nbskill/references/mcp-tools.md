@@ -5,14 +5,16 @@ The MCP server is started with `nbskill_mcp`. It is intended to be the normal in
 ## Tool Loop
 
 1. `healthcheck` confirms the server is alive and reports concurrency behavior.
-2. `read_nb` gives compact or precise notebook context. Use `context="overview"` for summaries, `context="precise"` for matched source, and `context="full"` when you also need contiguous markdown before and non-export code after matches.
-3. `show_doc` focuses on one exported symbol and its surrounding notebook story.
-4. `write_nb` inserts new cells or replaces a selected chapter/full notebook. Prefer `cells_file` for multiline additions.
-5. `update_cell` changes one existing cell by id, source text, or line range. Prefer `new_file` for multiline replacements.
-6. `batch_edit_nb` applies JSON edit plans with dry-run diffs, source-hash guards, and multi-notebook locks.
-7. `style_check` reports notebook hygiene, cell-order warnings, duplicate imports, and global tool usage/problems.
-8. `exec_nb` runs a notebook, a chapter, or cells up to an id. It is safe by default: fresh or changed cells are denied until they have either been run by the user or stamped by a prior nbskill execution. Pass `allow_new=True` only after explicit approval, and use `safe=False` only for deliberate legacy execution.
-9. `diff_nb` reviews notebook changes in a text form.
+2. `nb_overview` gives a compact map of section headers and exported definitions.
+3. `nb_chapter` shows the notebook head plus one selected chapter.
+4. `nb_cell` shows one selected cell with line-numbered source, previous docs, examples/tests, and usage context.
+5. `show_doc` focuses on one exported symbol and its surrounding notebook story.
+6. `write_nb` inserts new cells or replaces a selected chapter/full notebook. Prefer `cells_file` for multiline additions.
+7. `update_cell` changes one existing cell by id, source text, or line range. Prefer `new_file` for multiline replacements.
+8. `batch_edit_nb` applies JSON edit plans with dry-run diffs, source-hash guards, and multi-notebook locks.
+9. `style_check` reports notebook hygiene, cell-order warnings, duplicate imports, and global tool usage/problems.
+10. `exec_nb` runs a notebook, a chapter, or cells up to an id. It is safe by default: fresh or changed cells are denied until they have either been run by the user or stamped by a prior nbskill execution. Pass `allow_new=True` only after explicit approval, and use `safe=False` only for deliberate legacy execution.
+11. `diff_nb` reviews notebook changes in a text form.
 
 Use `execute_plan` when a bounded single-notebook plan should be delegated to the edit-interactive agent loop. Use `batch_edit_nb` when the operations are already known and should be applied deterministically from a JSON plan.
 
@@ -24,7 +26,7 @@ The locks are local to one MCP server process. If multiple independent MCP serve
 
 ## Editing Safely
 
-Prefer text anchors or cell ids over numeric positions. When an edit is risky or concurrent, pass `source_hash` from `read_nb --show_ids` or the MCP `read_nb` result so stale edits fail instead of overwriting newer work.
+Prefer text anchors or cell ids over numeric positions. When an edit is risky or concurrent, pass `source_hash` from `nb_cell` so stale edits fail instead of overwriting newer work.
 
 For nbdev projects, exported code belongs in notebook cells marked with nbdev directives such as `#| export`. After notebook edits, use export or verification tools rather than editing generated Python directly.
 

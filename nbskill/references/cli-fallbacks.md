@@ -11,19 +11,20 @@ uv run nbskill_status
 ## Reading
 
 ```bash
-uv run read_nb notebook.ipynb
-uv run read_nb notebook.ipynb --context precise --cell_id abc123 --show_ids
-uv run read_nb notebook.ipynb --context full --contains "def train"
-uv run read_nb notebook.ipynb --query "cell_type=exported_code contains=train; cell_type=test_cell" --context overview
-uv run read_nb notebook.ipynb --query '[{"cell_type":"exported_code","contains":"Model"},{"regex":"def train|class Model"}]' --context precise
+uv run nb_overview notebook.ipynb
+uv run nb_overview notebook.ipynb --include_markdown
+uv run nb_chapter notebook.ipynb --name "Data loading"
+uv run nb_chapter notebook.ipynb --any_cell_id abc123
+uv run nb_cell notebook.ipynb --id abc123
+uv run nb_cell notebook.ipynb --query 'contains="def train"'
 uv run show_doc notebook.ipynb symbol --source --show_ids
 ```
 
-Context levels:
+Reader behavior:
 
-- `overview`: compact one-line summaries for exactly matched cells.
-- `precise`: numbered source for exactly matched cells.
-- `full`: numbered source for matched cells plus contiguous markdown before and non-export code after each match.
+- `nb_overview`: section headers and exported definitions/docstrings; no line numbers.
+- `nb_chapter`: notebook head plus one selected chapter; no line numbers.
+- `nb_cell`: one selected cell with previous docs, examples/tests, usage context, and line numbers.
 
 ## Writing
 

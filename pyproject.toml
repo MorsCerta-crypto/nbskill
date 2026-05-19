@@ -30,7 +30,9 @@ Repository = "https://github.com/MorsCerta-crypto/nbskill"
 Documentation = "https://MorsCerta-crypto.github.io/nbskill/"
 
 [project.scripts]
-read_nb = "nbskill.read:read_nb"
+nb_overview = "nbskill.read:nb_overview"
+nb_chapter = "nbskill.read:nb_chapter"
+nb_cell = "nbskill.read:nb_cell"
 write_nb = "nbskill.write:write_nb"
 update_cell = "nbskill.write:update_cell"
 batch_edit_nb = "nbskill.write:batch_edit_nb"

@@ -32,7 +32,9 @@ from .foundation import _empty_failure_map, _failure_map_path, _load_failure_map
 from .graph import private_symbol_report as _private_symbol_report
 from .graph import symbol_graph as _symbol_graph
 from .parallel import notebook_locks
-from .read import read_nb as _read_nb
+from .read import nb_cell as _nb_cell
+from .read import nb_chapter as _nb_chapter
+from .read import nb_overview as _nb_overview
 from .read import show_doc as _show_doc
 from .review import _reset_global_usage_summary
 from .review import notebook_validation_problems as _notebook_validation_problems
@@ -262,18 +264,18 @@ def _response_warnings(tool, arguments, preview):
         warnings.append(_warning(
             "missing_source_hash",
             "update_cell is writing by cell id without a source_hash guard.",
-            "Use read_nb(show_ids=True) and pass the source_hash for concurrent or risky edits.",
+            "Use nb_cell(id=...) and pass the source_hash for concurrent or risky edits.",
             path=arguments.get("path"), cell_id=arguments.get("cell_id"),
         ))
-    if tool in {"healthcheck", "read_nb", "write_nb", "update_cell", "batch_edit_nb", "exec_nb", "diff_nb"}:
-        path = arguments.get("path") or "."
+    if tool in {"healthcheck", "nb_overview", "nb_chapter", "nb_cell", "write_nb", "update_cell", "batch_edit_nb", "exec_nb", "diff_nb"}:
+        path = arguments.get("path") or arguments.get("nb_path") or "."
         warnings.extend(_doctor_warnings(path)[:3])
     return warnings
 
 
 def _brief_call(tool, arguments, preview):
     lines = [f"{tool} completed"]
-    for key in ("path", "cell_id", "chapter", "symbol"):
+    for key in ("path", "nb_path", "cell_id", "id", "chapter", "name", "any_cell_id", "symbol"):
         if arguments.get(key) not in (None, ""):
             lines.append(f"{key}={arguments[key]}")
     if arguments.get("dry_run") is True: lines.append("dry_run=True")
@@ -315,9 +317,9 @@ def mcp_tool_result(tool, arguments, full_output, max_output_chars=12000, detail
 
 def _status_data():
     scripts = [
-        "read_nb", "write_nb", "update_cell", "batch_edit_nb", "show_doc",
-        "exec_nb", "diff_nb", "style_check", "install_nbskill",
-        "symbol_graph", "private_symbol_report", "nbskill_mcp",
+        "nb_overview", "nb_chapter", "nb_cell", "write_nb", "update_cell",
+        "batch_edit_nb", "show_doc", "exec_nb", "diff_nb", "style_check",
+        "install_nbskill", "symbol_graph", "private_symbol_report", "nbskill_mcp",
     ]
     return {
         "version": _package_version(),
@@ -366,7 +368,7 @@ def _doctor_report(path=".", detail="summary", fix=False, reset=False, capabilit
     if reset: _reset_global_usage_summary()
     hints = [
         "Use detail='debug' for raw recent events, changed paths, generated owner pairs, and full status data.",
-        "Use read_nb/show_doc, then update_cell or batch_edit_nb with source hashes for notebook edits.",
+        "Use nb_overview/nb_chapter/nb_cell/show_doc, then update_cell or batch_edit_nb with source hashes for notebook edits.",
     ]
     changed = sorted(_git_changed_paths(root)) if (root / ".git").exists() else []
     generated = [
@@ -406,14 +408,16 @@ def nbskill_status(json_output: bool = False):  # Print JSON instead of text
 def create_mcp():
     "Create the nbskill FastMCP server."
     capabilities = (
-        "healthcheck,doctor,read_nb,show_doc,write_nb,update_cell,batch_edit_nb,exec_nb,diff_nb,"
-        "execute_plan,execute_project_plan,symbol_graph,private_symbol_report,style_check,py2nb,py2nbs,py2nbdev"
+        "healthcheck,doctor,nb_overview,nb_chapter,nb_cell,show_doc,"
+        "write_nb,update_cell,batch_edit_nb,exec_nb,diff_nb,execute_plan,execute_project_plan,"
+        "symbol_graph,private_symbol_report,style_check,py2nb,py2nbs,py2nbdev"
     )
     mcp = FastMCP(
         "nbskill",
         instructions=(
-            "Work notebook-first in nbdev projects. Prefer read_nb/show_doc for context, "
-            "write_nb/update_cell/batch_edit_nb for edits, exec_nb for safe visible notebook execution, "
+            "Work notebook-first in nbdev projects. Prefer nb_overview for a map, "
+            "nb_chapter for a selected section, and nb_cell for precise numbered source. "
+            "Use write_nb/update_cell/batch_edit_nb for edits, exec_nb for safe visible notebook execution, "
             "and doctor for setup, drift, and failure diagnostics. "
             "Normal tool output is concise; use detail='debug' only when troubleshooting. "
             "Notebook operations are concurrency-safe: calls touching the same notebook are serialized, "
@@ -450,14 +454,26 @@ def create_mcp():
             warnings=report["warnings"], hints=report["hints"], doctor=report,
         )
 
-    @mcp.tool(name="read_nb")
-    def read_nb_tool(path: str, query: str | None = None, cell_id: str | None = None, chapter: str | None = None, cell_type: str | None = None, contains: str | None = None, context: str = "overview", show_ids: bool = False, show_owner: bool = False, detail: str = "summary") -> ToolResult:
-        "Read notebook source without exposing raw JSON; optionally map generated Python to its notebook owner."
-        arguments = dict(path=path, query=query, cell_id=cell_id, chapter=chapter, cell_type=cell_type, contains=contains, context=context, show_ids=show_ids, show_owner=show_owner, detail=detail)
-        if show_owner and Path(path).suffix == ".py":
-            return mcp_tool_result("read_nb", arguments, _owner_output(path), detail=detail)
-        full_output = capture_notebook_call(_read_nb, path, path=path, query=query, cell_id=cell_id, chapter=chapter, cell_type=cell_type, contains=contains, context=context, show_ids=show_ids)
-        return mcp_tool_result("read_nb", arguments, full_output, detail=detail)
+    @mcp.tool(name="nb_overview")
+    def nb_overview_tool(nb_path: str, include_markdown: bool = False, detail: str = "summary") -> ToolResult:
+        "Show section headings and function/class signatures with docstrings."
+        arguments = dict(nb_path=nb_path, include_markdown=include_markdown, detail=detail)
+        full_output = capture_notebook_call(_nb_overview, nb_path, nb_path=nb_path, include_markdown=include_markdown)
+        return mcp_tool_result("nb_overview", arguments, full_output, detail=detail)
+
+    @mcp.tool(name="nb_chapter")
+    def nb_chapter_tool(nb_path: str, query: str | None = None, name: str | None = None, any_cell_id: str | None = None, detail: str = "summary") -> ToolResult:
+        "Show the notebook head plus one selected chapter."
+        arguments = dict(nb_path=nb_path, query=query, name=name, any_cell_id=any_cell_id, detail=detail)
+        full_output = capture_notebook_call(_nb_chapter, nb_path, nb_path=nb_path, query=query, name=name, any_cell_id=any_cell_id)
+        return mcp_tool_result("nb_chapter", arguments, full_output, detail=detail)
+
+    @mcp.tool(name="nb_cell")
+    def nb_cell_tool(nb_path: str, query: str | None = None, id: str | None = None, detail: str = "summary") -> ToolResult:
+        "Show one cell with previous docs, examples/tests, and caller/callee usage."
+        arguments = dict(nb_path=nb_path, query=query, id=id, detail=detail)
+        full_output = capture_notebook_call(_nb_cell, nb_path, nb_path=nb_path, query=query, id=id)
+        return mcp_tool_result("nb_cell", arguments, full_output, detail=detail)
 
     @mcp.tool(name="show_doc")
     def show_doc_tool(path: str, symbol: str, context: int = 2, source: bool = False, show_ids: bool = False, detail: str = "summary") -> ToolResult:

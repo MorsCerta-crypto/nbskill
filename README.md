@@ -149,6 +149,10 @@ which cell to change. Use `old_str` or `line_range` when only part of
 the cell should change, or pass exactly one replacement cell block for a
 whole-cell update.
 
+Use `split_before="def next_function"` to split an existing cell before
+a matching line, or `split=True` with `---` cell blocks to replace one
+large cell with several smaller cells.
+
 Writes export automatically when the notebook has an nbdev export
 target, so generated Python stays in sync with the notebook source.
 

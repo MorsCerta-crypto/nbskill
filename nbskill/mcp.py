@@ -15,6 +15,7 @@ from contextlib import redirect_stdout, redirect_stderr
 from importlib.metadata import PackageNotFoundError, version
 from io import StringIO
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 
 from fastcore.script import Param, call_parse, _in_call_parse
 from fastmcp import FastMCP
@@ -89,6 +90,21 @@ def capture_notebook_call(func, *paths, **kwargs):
     "Capture a call while holding per-notebook locks for `paths`."
     with notebook_locks(*paths):
         return capture_call(func, **kwargs)
+
+
+def _capture_write_nb_call(path, arguments):
+    call_args = {key: value for key, value in arguments.items() if key != "detail"}
+    if call_args.get("cells") and not call_args.get("cells_file"):
+        with NamedTemporaryFile("w", encoding="utf-8", suffix=".cells", delete=False) as handle:
+            handle.write(call_args["cells"])
+            cells_path = handle.name
+        try:
+            call_args["cells"] = ""
+            call_args["cells_file"] = cells_path
+            return capture_notebook_call(_write_nb, path, **call_args, dry_run=False)
+        finally:
+            Path(cells_path).unlink(missing_ok=True)
+    return capture_notebook_call(_write_nb, path, **call_args, dry_run=False)
 
 
 def _json_preview(value, limit=1200):
@@ -861,15 +877,15 @@ _MCP_TOOL_CATALOG = {
         "usefulness": "core",
         "tags": ("edit", "notebook", "insert", "replace"),
         "description": "Insert notebook cells, replace a chapter/full notebook, or perform exact literal replacements with validation and automatic export.",
-        "when_to_use": "Use for adding new cells or exact text replacements; prefer cells_file for multiline content.",
+        "when_to_use": "Use for adding new cells or exact text replacements; inline multiline cells are routed through cells_file automatically.",
         "combine_with": "Do not merge with update_cell now; separate insert and update tools keep schemas simpler.",
     },
     "update_cell": {
         "feature": "notebook_edit",
         "usefulness": "core",
         "tags": ("edit", "notebook", "cell"),
-        "description": "Update one existing cell by id, old text, or line range, with validation and automatic export; whole-cell replacements must be one cell block with no standalone --- separators.",
-        "when_to_use": "Use after nb_cell gives the id and line numbers. Prefer line_range for partial edits, whole-cell replacement for one cell source block, and write_nb/batch_edit_nb for adding or replacing multiple cells.",
+        "description": "Update one existing cell by id, old text, or line range, split it into smaller cells, with validation and automatic export; whole-cell replacements must be one cell block unless split=True is passed.",
+        "when_to_use": "Use after nb_cell gives the id and line numbers. Prefer line_range for partial edits, split_before or split=True for breaking up large cells, whole-cell replacement for one cell source block, and write_nb/batch_edit_nb for adding or replacing multiple cells.",
         "combine_with": "Keep separate from write_nb because single-cell updates are the safest common edit path; do not use it for multi-cell blocks.",
     },
     "batch_edit_nb": {
@@ -1058,18 +1074,19 @@ def create_mcp():
     ) -> ToolResult:
         "Insert notebook cells or perform exact literal replacements across notebooks."
         arguments = dict(path=path, cells=cells, cells_file=cells_file, before_id=before_id, after_id=after_id, chapter=chapter, replace=replace, cell_type=cell_type, run_test=run_test, run_style=run_style, style_strict=style_strict, validate_code=validate_code, old_str=old_str, new_str=new_str, show_cells=show_cells, detail=detail)
-        full_output = capture_notebook_call(_write_nb, path, **{k: v for k, v in arguments.items() if k != "detail"}, dry_run=False)
+        full_output = _capture_write_nb_call(path, arguments)
         return mcp_tool_result("write_nb", arguments, full_output, detail=detail)
 
     @mcp.tool(**_mcp_tool_meta("update_cell"))
     def update_cell_tool(
         path: str, new: str = "", new_file: str | None = None, cell_id: str | None = None,
         old_str: str | None = None, line_range: str | None = None,
+        split: bool = False, split_before: str | None = None,
         cell_type: str = "code", run_test: bool = False,
         validate_code: bool = True, detail: str = "summary",
     ) -> ToolResult:
-        "Update one existing notebook cell; use line_range/old_str for partial edits, and only pass a single cell block for whole-cell replacement."
-        arguments = dict(path=path, new=new, new_file=new_file, cell_id=cell_id, old_str=old_str, line_range=line_range, cell_type=cell_type, run_test=run_test, validate_code=validate_code, detail=detail)
+        "Update one existing notebook cell; use line_range/old_str for partial edits, split_before or split=True for splitting cells, and single blocks for normal whole-cell replacements."
+        arguments = dict(path=path, new=new, new_file=new_file, cell_id=cell_id, old_str=old_str, line_range=line_range, split=split, split_before=split_before, cell_type=cell_type, run_test=run_test, validate_code=validate_code, detail=detail)
         full_output = capture_notebook_call(_update_cell, path, **{k: v for k, v in arguments.items() if k != "detail"}, dry_run=False)
         return mcp_tool_result("update_cell", arguments, full_output, detail=detail)
 

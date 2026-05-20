@@ -51,11 +51,14 @@ uv run update_cell notebook.ipynb "replacement line" --cell_id abc123 --line_ran
 uv run update_cell notebook.ipynb "" --cell_id abc123 --line_range 3:5 
 uv run update_cell notebook.ipynb "replacement line" --cell_id abc123 --line_range 3 --dry_run
 uv run update_cell notebook.ipynb "line 1\nline 2" --cell_id abc123 --old_str "old text" 
+uv run update_cell notebook.ipynb --cell_id abc123 --split_before "def next_function"
+uv run update_cell notebook.ipynb --cell_id abc123 --new_file /tmp/split-cells.txt --split
 ```
 
-For whole-cell replacement, the replacement text must describe exactly one cell block. Do not include a standalone `---` line in `--new_file`; that separator means multiple cells and belongs with `write_nb` or `batch_edit_nb`. For partial edits, prefer `--line_range` or `--old_str`.
+For whole-cell replacement, the replacement text must describe exactly one cell block unless `--split` is set. With `--split`, standalone `---` separators replace the target cell with multiple cells while preserving the original id on the first replacement cell. For partial edits, prefer `--line_range` or `--old_str`.
 
 `--line_range` is 1-based and inclusive. A single number replaces one line; `START:END` replaces or deletes multiple lines; an empty replacement deletes the selected lines.
+`--split_before TEXT` splits the existing cell before the first line containing `TEXT`, or matching it as a regular expression when no literal line match exists.
 Use `--dry_run` to print the target cell id and compact diff before writing.
 
 Use `batch_edit_nb` when multiple edits should be applied together:

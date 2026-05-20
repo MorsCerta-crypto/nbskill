@@ -31,8 +31,8 @@ See `references/mcp-tool-report.md` for the current usefulness review and reduct
 3. `nb_chapter` shows the notebook head plus one selected chapter.
 4. `nb_cell` shows one selected cell with line-numbered source, previous docs, examples/tests, and usage context.
 5. `show_doc` focuses on one exported symbol and its surrounding notebook story.
-6. `write_nb` inserts new cells or replaces a selected chapter/full notebook. Prefer `cells_file` for multiline additions.
-7. `update_cell` changes one existing cell by id, source text, or line range. Prefer `line_range` for partial edits. For whole-cell replacement, pass one cell block only: optional `%%code`/`%%markdown`/`%%raw` marker plus source, with no standalone `---` separators. Use `write_nb` or `batch_edit_nb` for multi-cell edits.
+6. `write_nb` inserts new cells or replaces a selected chapter/full notebook. Inline multiline MCP cell text is routed through a temporary `cells_file` so backslash escapes inside code are preserved.
+7. `update_cell` changes one existing cell by id, source text, or line range. Prefer `line_range` for partial edits. Use `split_before="def name"` to split an existing cell before a matching line, or `split=True` with `---` cell blocks to replace one cell with several smaller cells.
 8. `batch_edit_nb` applies JSON edit plans with compact operation details and multi-notebook locks.
 9. `style_check` reports chkstyle output, notebook hygiene, private symbol warnings, duplicate imports, and global tool usage/problems.
 10. `exec_nb` runs a notebook, a chapter, or cells up to an id. It is safe by default: fresh or changed cells are denied until they have either been run by the user or stamped by a prior nbskill execution. Pass `allow_new=True` only after explicit approval, and use `safe=False` only for deliberate legacy execution.

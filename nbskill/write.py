@@ -236,6 +236,34 @@ def _replace_line_range(source, line_range, new):
     return "\n".join([*lines[:start], *replacement, *lines[end:]])
 
 
+def _split_before_index(source, split_before):
+    lines = source.splitlines()
+    marker = str(split_before or "").strip()
+    if not marker: cli_error("split_before must be a non-empty string")
+    for idx, line in enumerate(lines):
+        if marker in line: return idx
+    try:
+        for idx, line in enumerate(lines):
+            if re.search(marker, line): return idx
+    except re.error:
+        pass
+    cli_error(f"split_before did not match any line: {split_before!r}")
+
+
+def _split_cell_sources_before(source, split_before):
+    lines = source.splitlines()
+    idx = _split_before_index(source, split_before)
+    if idx <= 0 or idx >= len(lines):
+        cli_error("split_before must leave non-empty source on both sides")
+    return "\n".join(lines[:idx]).strip("\n"), "\n".join(lines[idx:]).strip("\n")
+
+
+def _replace_cell_with_cells(nb, idx, cells):
+    old_id = getattr(nb.cells[idx], "id", None)
+    if old_id is not None and cells: cells[0].id = old_id
+    nb.cells[idx:idx + 1] = cells
+
+
 @call_parse
 @tracked_call
 def update_cell(
@@ -245,14 +273,25 @@ def update_cell(
     cell_id: str | None = None,  # Stable notebook cell id to update
     old_str: str | None = None,  # Text to replace, or text used to find the target cell
     line_range: str | None = None,  # 1-based inclusive lines to replace, e.g. 3 or 3:5
+    split: bool = False,  # Allow a whole-cell replacement containing --- to replace this cell with multiple cells
+    split_before: str | None = None,  # Split the existing cell before the first line containing or matching this text
     cell_type: str = "code",  # Default type for whole-cell replacements without %% marker
     run_test: bool = False,  # Execute the notebook with execnb after writing
     validate_code: bool = True,  # Validate changed Python code before writing
     dry_run: bool = False,  # Show the update plan without writing
 ):
-    "Update one notebook cell by id, replace old_str, or replace a 1-based line range."
+    "Update one notebook cell by id, replace text/ranges, or split one cell."
     if cell_id is None and old_str is None: cli_error("Pass --cell_id, --old_str, or both")
     if line_range is not None and cell_id is None: cli_error("Pass --cell_id with --line_range")
+    if split and split_before is not None: cli_error("Use either split=True or split_before, not both")
+    if split_before is not None:
+        if cell_id is None: cli_error("Pass --cell_id with --split_before")
+        if new or new_file or old_str is not None or line_range is not None:
+            cli_error("split_before only accepts path, cell_id, run_test, validate_code, and dry_run")
+    if split:
+        if cell_id is None: cli_error("Pass --cell_id with --split")
+        if old_str is not None or line_range is not None:
+            cli_error("split=True only supports whole-cell replacement by cell_id")
     path = Path(path)
     new = load_cells_text(new, new_file)
 
@@ -262,7 +301,25 @@ def update_cell(
         if old_str is not None and old_str not in cell_source(cell):
             cli_error(f"old_str was not found in id={cell.id}")
 
-        if line_range is not None:
+        if split_before is not None:
+            first, second = _split_cell_sources_before(cell_source(cell), split_before)
+            new_cells = [mk_cell(first, cell_type=cell.cell_type), mk_cell(second, cell_type=cell.cell_type)]
+            if validate_code: validate_code_cells(new_cells)
+            replacement = "\n---\n".join(cell_source(item) for item in new_cells)
+            mode = f"split before {split_before!r}"
+            if not dry_run:
+                for item in new_cells: clear_outputs(item)
+                _replace_cell_with_cells(nb, idx, new_cells)
+        elif split:
+            new_cells = parse_cells(new, cell_type)
+            if len(new_cells) <= 1: cli_error("split=True needs a replacement with multiple cells, usually separated by ---")
+            if validate_code: validate_code_cells(new_cells)
+            replacement = "\n---\n".join(cell_source(item) for item in new_cells)
+            mode = f"split into {len(new_cells)} cells"
+            if not dry_run:
+                for item in new_cells: clear_outputs(item)
+                _replace_cell_with_cells(nb, idx, new_cells)
+        elif line_range is not None:
             replacement = _replace_line_range(cell_source(cell), line_range, new)
             if validate_code and getattr(cell, "cell_type", None) == "code": validate_code_cells([mk_cell(replacement)])
             mode = f"lines {line_range}"
@@ -297,6 +354,7 @@ def update_cell(
         print(msg)
         if run_test: run_notebook_test(path)
     return cli_return(path)
+
 
 # %% ../nbs/02_write.ipynb #a6b661e1
 def _load_batch_plan(plan="", plan_file=None):

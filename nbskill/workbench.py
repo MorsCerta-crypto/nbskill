@@ -16,10 +16,10 @@ from copy import deepcopy
 from io import StringIO
 from pathlib import Path
 
-from fastcore.nbio import read_nb as _read_nb
+from fastcore.nbio import read_nb
 from fastcore.script import call_parse, _in_call_parse
 
-from .edit_interactive import execute_plan as _execute_plan
+from .edit_interactive import execute_plan
 from .foundation import cell_class_names, cell_source, exported_py_path, tracked_call
 from .graph import notebook_order_problems, symbol_usage_summary
 from .read import nb_cell, nb_overview
@@ -197,13 +197,13 @@ def _public_symbols_in_cell(cell):
 
 # %% ../nbs/11_agent_workbench.ipynb #449cea07
 def _notebook_cell_sources(path):
-    try: nb = _read_nb(path)
+    try: nb = read_nb(path)
     except FileNotFoundError: return {}
     return {getattr(cell, "id", f"idx-{idx}"): cell_source(cell) for idx, cell in enumerate(nb.cells)}
 
 # %% ../nbs/11_agent_workbench.ipynb #d2503c21
 def _notebook_public_symbols(path):
-    try: nb = _read_nb(path)
+    try: nb = read_nb(path)
     except FileNotFoundError: return []
     symbols = []
     for cell in nb.cells:
@@ -322,7 +322,7 @@ def _cap_text(text, limit=2000):
 
 # %% ../nbs/11_agent_workbench.ipynb #34e8b756
 def _cell_records(nb_path, tokens, limit=4):
-    nb = _read_nb(nb_path)
+    nb = read_nb(nb_path)
     records = []
     for idx, cell in enumerate(nb.cells):
         source = cell_source(cell)
@@ -341,7 +341,7 @@ def _cell_records(nb_path, tokens, limit=4):
 # %% ../nbs/11_agent_workbench.ipynb #887d4f2d
 def _symbol_candidates(nb_path, tokens):
     names = []
-    try: nb = _read_nb(nb_path)
+    try: nb = read_nb(nb_path)
     except FileNotFoundError: return []
     for cell in nb.cells:
         for name in _public_symbols_in_cell(cell):
@@ -612,7 +612,7 @@ def _agent_workbench_result(
     }
     if execute:
         if not notebook: raise ValueError("agent_workbench execute=True requires notebook")
-        execution = _execute_plan(
+        execution = execute_plan(
             notebook=notebook, plan=rendered_plan, max_steps=max_steps,
             timeout=timeout,
         )

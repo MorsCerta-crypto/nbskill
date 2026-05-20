@@ -32,6 +32,24 @@ enabled_tools = [
   "agent_workbench",
 ]
 
+[mcp_servers.nbskill.tools.healthcheck]
+approval_mode = "approve"
+
+[mcp_servers.nbskill.tools.doctor]
+approval_mode = "approve"
+
+[mcp_servers.nbskill.tools.style_check]
+approval_mode = "approve"
+
+[mcp_servers.nbskill.tools.nb_overview]
+approval_mode = "approve"
+
+[mcp_servers.nbskill.tools.nb_cell]
+approval_mode = "approve"
+
+[mcp_servers.nbskill.tools.exec_nb]
+approval_mode = "approve"
+
 # If you have other MCP servers in your user config, disable them here by name.
 # Uncomment and adapt these examples if they exist in your setup.
 #

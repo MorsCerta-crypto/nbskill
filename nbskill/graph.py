@@ -2,7 +2,7 @@
 
 # %% auto #0
 __all__ = ['notebook_order_problems', 'notebook_order_problem_lines', 'symbol_usage_summary', 'symbol_graph',
-           'private_symbol_report']
+           'private_symbol_report', 'symbol_connection']
 
 # %% ../nbs/10_graph.ipynb #09416808
 import ast
@@ -11,10 +11,10 @@ import glob
 import json
 from pathlib import Path
 
-from fastcore.nbio import read_nb as _read_nb
+from fastcore.nbio import read_nb
 from fastcore.script import call_parse
 
-from .foundation import cell_source, cli_error, cli_return, is_export_directive, tracked_call
+from .foundation import cell_source, cli_error, cli_return, is_export_directive, path_candidates, tracked_call
 
 # %% ../nbs/10_graph.ipynb #aa9c8b2a
 def _source_without_directives(source):
@@ -26,25 +26,33 @@ def _is_notebook_path(path):
     return path.suffix == ".ipynb" and ".ipynb_checkpoints" not in path.parts
 
 
-def _notebook_paths(path="nbs"):
-    raw = str(path)
-    pth = Path(raw).expanduser()
+def _matching_notebook_paths(pth, raw):
+    pattern = str(pth) if pth != Path(raw).expanduser() else raw
     if any(char in raw for char in "*?[]"):
-        candidates = [Path(item) for item in glob.glob(raw, recursive=True)]
+        candidates = [Path(item) for item in glob.glob(pattern, recursive=True)]
     elif pth.is_dir():
         candidates = list(pth.rglob("*.ipynb"))
     elif pth.is_file():
         candidates = [pth]
     else:
         candidates = []
-    paths = sorted({path for path in candidates if _is_notebook_path(path)})
-    if not paths: cli_error(f"No notebooks matched {path!r}")
-    return paths
+    return sorted({path for path in candidates if _is_notebook_path(path)})
+
+
+def _notebook_paths(path="nbs"):
+    raw = str(path)
+    for pth in path_candidates(path):
+        paths = _matching_notebook_paths(pth, raw)
+        if paths: return paths
+    cli_error(f"No notebooks matched {path!r}")
 
 
 def _graph_scope(path):
-    pth = Path(str(path)).expanduser()
-    return pth.parent if pth.is_file() else path
+    for pth in path_candidates(path):
+        if _matching_notebook_paths(pth, str(path)):
+            return pth.parent if pth.is_file() else pth
+    pth = path_candidates(path)[-1]
+    return pth.parent if pth.is_file() else pth
 
 # %% ../nbs/10_graph.ipynb #4ef400b7
 def _parse_cell(cell):
@@ -167,7 +175,7 @@ def _notebook_module_name(path, nb):
 def _collect_graph(path="nbs"):
     definitions, callers, imports = [], [], []
     for nb_path in _notebook_paths(path):
-        nb = _read_nb(nb_path)
+        nb = read_nb(nb_path)
         module = _notebook_module_name(nb_path, nb)
         for idx, cell in enumerate(nb.cells):
             definitions.extend(_cell_definition_records(nb_path, module, idx, cell))
@@ -314,7 +322,7 @@ def _cell_order_data(path):
     data = []
     for nb_path in _notebook_paths(path):
         try:
-            nb = _read_nb(nb_path)
+            nb = read_nb(nb_path)
         except FileNotFoundError:
             continue
         cells = []
@@ -433,6 +441,84 @@ def _locations(records):
 def _callee_locations(graph, symbol):
     return _locations(_definitions_for_symbol(graph, symbol))
 
+# %% ../nbs/10_graph.ipynb #c9c730f6
+def _definition_location(record):
+    return {
+        "symbol": record["symbol"],
+        "kind": record.get("kind"),
+        "module": record.get("module"),
+        "path": record["path"],
+        "cell_id": record["cell_id"],
+        "cell_idx": record["cell_idx"],
+    }
+
+# %% ../nbs/10_graph.ipynb #dd8332e5
+def _symbol_start_nodes(graph, symbol):
+    return sorted({record["symbol"] for record in _definitions_for_symbol(graph, symbol)})
+
+# %% ../nbs/10_graph.ipynb #185c0a82
+def _symbol_edge_records(graph, symbol):
+    edges, seen = [], set()
+    for record in _definitions_for_symbol(graph, symbol):
+        for call in record.get("calls", ()):
+            for callee in _resolve_callees(graph, [call]):
+                if callee == record["symbol"]: continue
+                key = (record["symbol"], callee, record["path"], record["cell_id"], call)
+                if key in seen: continue
+                seen.add(key)
+                edges.append({
+                    "from": record["symbol"],
+                    "to": callee,
+                    "call": call,
+                    "from_location": _definition_location(record),
+                })
+    return edges
+
+# %% ../nbs/10_graph.ipynb #d072efa9
+def _connection_symbols(start, chain):
+    symbols = [chain[0]["from"]] if chain else [start]
+    for edge in chain: symbols.append(edge["to"])
+    return symbols
+
+# %% ../nbs/10_graph.ipynb #6cd80923
+def _symbol_connection_result(start, end, found, max_depth, symbols, chain, graph, reason=None):
+    data = {
+        "start": start,
+        "end": end,
+        "found": found,
+        "max_depth": max_depth,
+        "symbols": symbols,
+        "chain": chain,
+        "graph": graph,
+    }
+    if reason is not None: data["reason"] = reason
+    return data
+
+# %% ../nbs/10_graph.ipynb #f78eed72
+def _symbol_connection_data(path, start, end, max_depth=6):
+    graph = _collect_graph(_graph_scope(path))
+    max_depth = max(0, int(max_depth))
+    starts = _symbol_start_nodes(graph, start)
+    if not starts:
+        return _symbol_connection_result(start, end, False, max_depth, [], [], graph, reason="start symbol not found")
+    queue = [(symbol, []) for symbol in starts]
+    visited = set(starts)
+    for symbol, chain in queue:
+        if _call_matches_symbol(symbol, end):
+            symbols = _connection_symbols(symbol, chain)
+            return _symbol_connection_result(start, end, True, max_depth, symbols, chain, graph)
+        if len(chain) >= max_depth: continue
+        for edge in _symbol_edge_records(graph, symbol):
+            callee = edge["to"]
+            next_chain = [*chain, edge]
+            if _call_matches_symbol(callee, end):
+                symbols = _connection_symbols(symbol, next_chain)
+                return _symbol_connection_result(start, end, True, max_depth, symbols, next_chain, graph)
+            if callee in visited: continue
+            visited.add(callee)
+            queue.append((callee, next_chain))
+    return _symbol_connection_result(start, end, False, max_depth, starts, [], graph, reason="no connection found")
+
 # %% ../nbs/10_graph.ipynb #1bdc80a1
 def _symbol_graph_data(path, symbol):
     graph = _collect_graph(_graph_scope(path))
@@ -527,6 +613,33 @@ def symbol_usage_summary(path, symbols):
             chunks.extend(caller_usage)
     return "\n".join(chunks)
 
+# %% ../nbs/10_graph.ipynb #df8eac1b
+def _symbol_connection_public_data(data):
+    return {
+        key: data[key]
+        for key in ("start", "end", "found", "max_depth", "symbols", "chain", "reason")
+        if key in data
+    }
+
+# %% ../nbs/10_graph.ipynb #4ec15d08
+def _format_symbol_connection_data(data):
+    lines = [f"Symbol connection {data['start']} -> {data['end']}"]
+    if not data["found"]:
+        reason = data.get("reason", "no connection found")
+        lines.append(f"No connection found within {data['max_depth']} edge(s): {reason}.")
+        if data["symbols"]: lines.append("Matched starts: " + ", ".join(data["symbols"]))
+        return "\n".join(lines)
+    lines.append("Symbols: " + " -> ".join(data["symbols"]))
+    lines.append("Chain:")
+    for edge in data["chain"]:
+        loc = edge["from_location"]
+        lines.append(
+            f"- {edge['from']} -> {edge['to']}: "
+            f"{loc['path']} id={loc['cell_id']} calls {edge['call']}"
+        )
+    if not data["chain"]: lines.append("- start and end matched the same symbol")
+    return "\n".join(lines)
+
 # %% ../nbs/10_graph.ipynb #27b349df
 @call_parse
 @tracked_call
@@ -571,5 +684,27 @@ def private_symbol_report(
             )
     if len(lines) == 1: lines.append("No cross-notebook private symbol calls found.")
     text = "\n".join(dict.fromkeys(lines))
+    print(text)
+    return cli_return(text)
+
+# %% ../nbs/10_graph.ipynb #7fcb0f27
+@call_parse
+@tracked_call
+def symbol_connection(
+    path: str = "nbs",  # Notebook file, directory, or glob to scan
+    start: str = "",  # Symbol where traversal starts
+    end: str = "",  # Symbol to find by following callees
+    max_depth: int = 6,  # Maximum number of edges to follow
+    json_output: bool = False,  # Print complete structured JSON instead of compact text
+):
+    "Print the shortest static callee chain connecting two notebook symbols."
+    if not start or not end: cli_error("Pass --start and --end to connect symbols")
+    data = _symbol_connection_data(path, start, end, max_depth=max_depth)
+    if json_output:
+        result = _symbol_connection_public_data(data)
+        text = json.dumps(result, indent=2, sort_keys=True)
+        print(text)
+        return cli_return(result)
+    text = _format_symbol_connection_data(data)
     print(text)
     return cli_return(text)

@@ -328,7 +328,10 @@ to the MCP workflow.
     [`update_cell`](https://MorsCerta-crypto.github.io/nbskill/write.html#update_cell),
     or
     [`batch_edit_nb`](https://MorsCerta-crypto.github.io/nbskill/write.html#batch_edit_nb)
-    for notebook edits; MCP tools apply requested changes directly.
+    for notebook edits; MCP tools apply requested changes directly. Use
+    `split_before` or `split=True` on
+    [`update_cell`](https://MorsCerta-crypto.github.io/nbskill/write.html#update_cell)
+    when breaking a large cell into focused smaller cells.
 6.  Use
     [`exec_nb`](https://MorsCerta-crypto.github.io/nbskill/execute.html#exec_nb)
     for the narrowest behavior check, preferably with `check_only=True`

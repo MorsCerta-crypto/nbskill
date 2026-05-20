@@ -4,7 +4,7 @@
 __all__ = ['as_text', 'capture_call', 'capture_notebook_call', 'mcp_tool_result', 'nbskill_status', 'create_mcp', 'main']
 
 # %% ../nbs/07_mcp.ipynb #13ea08ef
-import os,json
+import hashlib,json,os
 import re
 import shutil
 import subprocess
@@ -15,42 +15,48 @@ from contextlib import redirect_stdout, redirect_stderr
 from importlib.metadata import PackageNotFoundError, version
 from io import StringIO
 from pathlib import Path
-from tempfile import NamedTemporaryFile
 
 from fastcore.nbio import read_nb as _read_raw_nb
-from fastcore.nbio import write_nb as _write_raw_nb
 from fastcore.script import Param, call_parse, _in_call_parse
 from fastmcp import FastMCP
 from fastmcp.tools import ToolResult
 from mcp.types import TextContent
 
-from .convert import py2nb as _py2nb
-from .convert import py2nbdev as _py2nbdev
-from .edit_interactive import execute_plan as _execute_plan
-from .edit_interactive import execute_project_plan as _execute_project_plan
-from .edit_interactive import plan_result_text as _plan_result_text
-from .execute import exec_nb as _exec_nb
-from .workbench import agent_workbench as _agent_workbench
-from .foundation import _empty_failure_map, _failure_map_path, _load_failure_map, cell_source, exported_py_path
-from .graph import notebook_order_problems as _notebook_order_problems
-from .graph import private_symbol_report as _private_symbol_report
+from .convert import new_nbdev_notebook
+from .convert import py2nb
+from .convert import py2nbdev
+from .edit_interactive import execute_plan
+from .edit_interactive import execute_project_plan
+from .edit_interactive import plan_result_text
+from .execute import exec_nb
+from .workbench import _agent_workbench_result
+from .foundation import _empty_failure_map, _failure_map_path, _load_failure_map
+from .foundation import cell_source, exported_py_path, path_candidates
+from .graph import notebook_order_problems
+from .graph import private_symbol_report
 from .graph import _symbol_graph_data, _symbol_graph_public_data
-from .graph import symbol_graph as _symbol_graph
+from .graph import symbol_graph
+from .knowledge import add_behaviour_steering
+from .knowledge import get_knowledge
+from .knowledge import store_knowledge
 from .parallel import notebook_locks
-from .read import nb_cell as _nb_cell
-from .read import nb_chapter as _nb_chapter
-from .read import nb_overview as _nb_overview
-from .read import show_doc as _show_doc
+from .read import nb_cell
+from .read import nb_chapter
+from .read import nb_overview
+from .read import show_doc
 from .review import _reset_global_usage_summary
-from .review import notebook_size_problems as _notebook_size_problems
-from .review import notebook_validation_problems as _notebook_validation_problems
-from .review import run_style_check as _run_style_check
-from .review import style_check as _style_check
-from .review import style_report as _style_report
-from .review import diff_nb as _diff_nb
-from .write import batch_edit_nb as _batch_edit_nb
-from .write import update_cell as _update_cell
-from .write import write_nb as _write_nb
+from .review import notebook_size_problems
+from .review import notebook_validation_problems
+from .review import run_style_check
+from .review import style_check
+from .review import style_report
+from .review import diff_nb
+from .write import apply_notebook_edit
+from .write import insert_notebook_cells
+from .write import replace_notebook_cell
+from .write import replace_notebook_range
+from .write import should_run_cell_feedback
+from .write import source_lines_cells
 
 # %% ../nbs/07_mcp.ipynb #3b1a669a
 def as_text(value):
@@ -58,7 +64,7 @@ def as_text(value):
 
 
 _CAPTURE_LOCK = threading.RLock()
-_REDACT_KEYS = {"new", "new_lines", "cells", "plan", "source", "old_str", "new_str"}
+_REDACT_KEYS = {"new", "new_lines", "source_lines", "replacement_lines", "cells", "edits", "operations", "source", "old_str", "new_str"}
 _REMOVED_SCRIPT_NAMES = (
     "nbskill-mcp", "read-nb", "write-nb", "update-cell", "batch-edit-nb",
     "show-doc", "exec-nb", "diff-nb", "style-check", "symbol-graph", "private-symbol-report",
@@ -95,6 +101,32 @@ def capture_notebook_call(func, *paths, **kwargs):
         return capture_call(func, **kwargs)
 
 
+def _mcp_find_cell(path, cell_id):
+    nb = _read_raw_nb(path)
+    for cell in nb.cells:
+        if getattr(cell, "id", None) == cell_id: return cell
+    raise ValueError(f"Cell id {cell_id!r} was not found in {path}")
+
+
+def _mcp_source_hash(source):
+    return hashlib.sha256(str(source).encode("utf-8")).hexdigest()[:12]
+
+
+def _mcp_cell_source_hash(path, cell_id):
+    return _mcp_source_hash(cell_source(_mcp_find_cell(path, cell_id)))
+
+
+def _mcp_expected_hash_warning(path, cell_id, expected_hash):
+    if not expected_hash: return None
+    actual = _mcp_cell_source_hash(path, cell_id)
+    if actual == expected_hash: return None
+    return _warning(
+        "expected_hash_mismatch",
+        f"Skipped edit for {path} id={cell_id}: expected hash {expected_hash}, found {actual}.",
+        "Refresh nb_cell context and retry with the current source.",
+        path=str(path), cell_id=cell_id, expected_hash=expected_hash, actual_hash=actual,
+    )
+
 def _capture_exec_nb_cli_call(arguments):
     call_args = {key: value for key, value in arguments.items() if key != "detail"}
     script = "; ".join([
@@ -115,22 +147,63 @@ def _capture_exec_nb_cli_call(arguments):
         raise RuntimeError(output or f"exec_nb subprocess failed with exit code {proc.returncode}")
     return output
 
-
-def _capture_write_nb_call(path, arguments):
-    call_args = {key: value for key, value in arguments.items() if key != "detail"}
-    if call_args.get("cells") and not call_args.get("cells_file"):
-        with NamedTemporaryFile("w", encoding="utf-8", suffix=".cells", delete=False) as handle:
-            handle.write(call_args["cells"])
-            cells_path = handle.name
-        try:
-            call_args["cells"] = ""
-            call_args["cells_file"] = cells_path
-            return capture_notebook_call(_write_nb, path, **call_args, dry_run=False)
-        finally:
-            Path(cells_path).unlink(missing_ok=True)
-    return capture_notebook_call(_write_nb, path, **call_args, dry_run=False)
+def _mcp_cell_index(path, cell_id):
+    nb = _read_raw_nb(path)
+    for index, cell in enumerate(nb.cells):
+        if getattr(cell, "id", None) == cell_id: return index
+    raise ValueError(f"Cell id {cell_id!r} was not found in {path}")
 
 
+def _mcp_cell_ids_from_index(path, start, count):
+    if start is None or count <= 0: return []
+    nb = _read_raw_nb(path)
+    return [
+        getattr(cell, "id", None) for cell in nb.cells[start:start + count]
+        if getattr(cell, "id", None)
+    ]
+
+
+def _mcp_structured_cell_count(cells, default_cell_type="code"):
+    return sum(len(source_lines_cells(cell, default_cell_type)) for cell in (cells or []))
+
+
+def _mcp_feedback_location(path, edit, default_cell_type="code"):
+    edit_path = str(edit.get("path") or path)
+    op = edit.get("op")
+    if op == "replace_cell":
+        cell_id = edit.get("cell_id")
+        return edit_path, _mcp_cell_index(edit_path, cell_id), _mcp_structured_cell_count([edit], default_cell_type)
+    if op == "replace_range":
+        return edit_path, _mcp_cell_index(edit_path, edit.get("cell_id")), 1
+    if op in {"insert_before", "insert_after"}:
+        anchor_id = edit.get("anchor_id") or edit.get("cell_id")
+        anchor_index = _mcp_cell_index(edit_path, anchor_id)
+        start = anchor_index if op == "insert_before" else anchor_index + 1
+        return edit_path, start, _mcp_structured_cell_count(edit.get("cells") or [edit], default_cell_type)
+    return edit_path, None, 0
+
+
+def _mcp_feedback_output(path, cell_ids, auto_feedback=True, feedback_timeout=10, feedback_safe=True):
+    if not auto_feedback: return ""
+    nb = _read_raw_nb(path)
+    cells_by_id = {getattr(cell, "id", None): cell for cell in nb.cells}
+    target_id = None
+    for cell_id in cell_ids:
+        cell = cells_by_id.get(cell_id)
+        if cell is not None and should_run_cell_feedback(cell): target_id = cell_id
+    if target_id is None: return ""
+    output = _capture_exec_nb_cli_call(dict(
+        path=str(path), dest=None, exc_stop=False, up2id=target_id, chapter=None,
+        timeout=feedback_timeout, show_output=True, verbose=False, safe=feedback_safe,
+        allow=None, ok_dests=None, cache_httpx=False, cache_dir=None,
+        cache_domains=None, allow_new=True, check_only=True,
+    ))
+    return f"Auto feedback (up to id={target_id}):\n{output}".rstrip()
+
+
+def _append_mcp_feedback(message, path, cell_ids, auto_feedback=True, feedback_timeout=10, feedback_safe=True):
+    feedback = _mcp_feedback_output(path, cell_ids, auto_feedback, feedback_timeout, feedback_safe)
+    return "\n\n".join(chunk for chunk in [message.rstrip(), feedback] if chunk)
 def _json_preview(value, limit=1200):
     text = json.dumps(value, indent=2, sort_keys=True, default=str)
     if len(text) <= limit: return text
@@ -171,20 +244,40 @@ def _warning(code, message, next_action=None, **extra):
     return item
 
 
+def _path_without_cwd_prefix(path):
+    return path_candidates(path)[-1]
+
+
 def _git_base(path="."):
-    base = Path(path)
+    base = _path_without_cwd_prefix(path)
     if (base.exists() and not base.is_dir()) or (not base.exists() and base.suffix):
         return base.parent
     return base
 
 
 def _git_root(path="."):
-    proc = subprocess.run(["git", "-C", str(_git_base(path)), "rev-parse", "--show-toplevel"], text=True, capture_output=True)
-    return Path(proc.stdout.strip()) if proc.returncode == 0 and proc.stdout.strip() else None
+    for base in dict.fromkeys([_git_base(path), Path(".")]):
+        proc = subprocess.run(["git", "-C", str(base), "rev-parse", "--show-toplevel"], text=True, capture_output=True)
+        if proc.returncode == 0 and proc.stdout.strip(): return Path(proc.stdout.strip())
+    return None
+
+
+def _rooted_path(path, root):
+    raw = Path(str(path)).expanduser()
+    pth = _path_without_cwd_prefix(path)
+    candidates = [pth]
+    if root is not None and not raw.is_absolute():
+        candidates = [Path(root) / raw, Path(root) / pth, *candidates]
+    for candidate in candidates:
+        try:
+            if candidate.exists(): return candidate.resolve()
+        except OSError:
+            continue
+    return pth.resolve()
 
 
 def _rel_to_root(path, root):
-    try: return Path(path).resolve().relative_to(Path(root).resolve()).as_posix()
+    try: return _rooted_path(path, root).relative_to(Path(root).resolve()).as_posix()
     except (OSError, ValueError): return str(path)
 
 
@@ -313,7 +406,7 @@ def _notebook_export_relevant_change(owner, root):
 
 def _style_problem_warnings(path, root):
     warnings = []
-    for problem in _notebook_size_problems(path):
+    for problem in notebook_size_problems(path):
         code = problem.get("code")
         if code == "large-cell":
             cell = f" cell id={problem['cell_id']}" if problem.get("cell_id") else ""
@@ -407,7 +500,7 @@ def _doctor_warnings(path=".", scope_path=None, scope_cell_ids=None):
                     "Run export or use an nbskill write tool before shipping.",
                     path=owner_rel, generated=py_rel,
                 ))
-    for problem in _notebook_validation_problems(diagnostic_path):
+    for problem in notebook_validation_problems(diagnostic_path):
         if problem.get("code") != "exported-py-hash-mismatch": continue
         warnings.append(_warning(
             "exported_py_hash_mismatch",
@@ -474,11 +567,14 @@ def _response_scope_cell_ids(tool, arguments, preview):
     if tool == "diff_nb":
         ids = set(re.findall(r"--- code cell ([^\s]+) ---", text))
         return ids if ids else set()
-    if tool == "update_cell":
-        cell_id = arguments.get("cell_id") or _first_match(r"Updated cell id=([^\s]+)", text)
+    if tool in {"edit_cell", "edit_cell_range"}:
+        cell_id = arguments.get("cell_id") or _first_match(r"Updated .* id=([^\s]+)", text)
         return {str(cell_id)} if cell_id else None
-    if tool == "batch_edit_nb":
-        ids = set(re.findall(r"^\s*-\s+\w+: .*?\bid=([^\s:]+)", text, re.MULTILINE))
+    if tool == "insert_cells":
+        anchor_id = arguments.get("anchor_id")
+        return {str(anchor_id)} if anchor_id else None
+    if tool == "apply_notebook_edits":
+        ids = {str(item.get("cell_id") or item.get("anchor_id")) for item in arguments.get("edits", []) if isinstance(item, dict) and (item.get("cell_id") or item.get("anchor_id"))}
         return ids or None
     if tool == "exec_nb":
         up2id = arguments.get("up2id")
@@ -503,23 +599,19 @@ def _notebook_paths_from_text(text):
     return _unique_strings(re.findall(r"(?<![\w.-])(?:[~./A-Za-z0-9_-]+\.ipynb)", text or ""))
 
 
-def _batch_plan_scope_paths(arguments):
+def _edit_scope_paths(arguments):
     default = arguments.get("path")
-    text = arguments.get("plan") or ""
-    if not str(text).strip() and arguments.get("plan_file"):
-        try: text = Path(arguments["plan_file"]).read_text(encoding="utf-8")
-        except OSError: text = ""
-    try: data = json.loads(text) if str(text).strip() else []
-    except json.JSONDecodeError: data = []
-    ops = data if isinstance(data, list) else data.get("operations", []) if isinstance(data, dict) else []
-    return _unique_strings(str(op.get("path") or default) for op in ops if isinstance(op, dict) and (op.get("path") or default))
+    edits = arguments.get("edits") or []
+    paths = [default] if default else []
+    paths += [item.get("path") for item in edits if isinstance(item, dict) and item.get("path")]
+    return _unique_strings(str(item) for item in paths if item)
 
 
 def _response_scope_paths(tool, arguments, preview):
     text_paths = _notebook_paths_from_text(preview.get("text", ""))
-    if tool == "batch_edit_nb":
-        return _unique_strings([*_batch_plan_scope_paths(arguments), *text_paths])
-    if tool == "write_nb" and text_paths:
+    if tool == "apply_notebook_edits":
+        return _unique_strings([*_edit_scope_paths(arguments), *text_paths])
+    if tool in {"edit_cell", "edit_cell_range", "insert_cells"} and text_paths:
         return text_paths
     path = arguments.get("path") or arguments.get("nb_path")
     return [str(path)] if path else []
@@ -544,7 +636,7 @@ def _response_warnings(tool, arguments, preview):
             "Repeat with a narrower query or detail='debug' if you need full context.",
         ))
     context_tools = {"nb_overview", "nb_chapter", "nb_cell", "show_doc", "diff_nb"}
-    scoped_project_tools = {"write_nb", "update_cell", "batch_edit_nb", "exec_nb"}
+    scoped_project_tools = {"edit_cell", "edit_cell_range", "insert_cells", "apply_notebook_edits", "exec_nb"}
     if tool in context_tools:
         path = arguments.get("path") or arguments.get("nb_path") or "."
         cell_ids = _response_scope_cell_ids(tool, arguments, preview)
@@ -602,7 +694,9 @@ def _status_data():
     scripts = [
         "nb_overview", "nb_chapter", "nb_cell", "write_nb", "update_cell",
         "batch_edit_nb", "show_doc", "exec_nb", "diff_nb", "style_check",
-        "install_nbskill", "symbol_graph", "private_symbol_report", "agent_workbench", "nbskill_mcp",
+        "install_nbskill", "symbol_graph", "private_symbol_report", "agent_workbench",
+        "new_nbdev_notebook", "add_behaviour_steering", "store_knowledge", "get_knowledge",
+        "nbskill_mcp",
     ]
     return {
         "version": _package_version(),
@@ -663,7 +757,7 @@ def _doctor_report(
     hints = [
         "Use scopes='error,warning,style' or scopes='all' for the full doctor report.",
         "Use scopes='style' to include chkstyle output; chkstyle is omitted from error/warning scopes.",
-        "Use nb_overview/nb_chapter/nb_cell/show_doc, then update_cell or batch_edit_nb for notebook edits.",
+        "Use nb_overview/nb_chapter/nb_cell/show_doc, then edit_cell, edit_cell_range, insert_cells, or apply_notebook_edits.",
     ]
     changed = sorted(_git_changed_paths(root)) if (root / ".git").exists() else []
     generated = [
@@ -742,7 +836,7 @@ def _problem_message(problem):
 
 def _doctor_validation_errors(path):
     errors = []
-    for problem in _notebook_validation_problems(path):
+    for problem in notebook_validation_problems(path):
         errors.append(_warning(
             problem.get("code", "notebook-validation"),
             _problem_message(problem),
@@ -755,7 +849,7 @@ def _doctor_validation_errors(path):
 def _doctor_order_errors(path):
     errors = []
     try:
-        problems = _notebook_order_problems(path)
+        problems = notebook_order_problems(path)
     except FileNotFoundError as exc:
         return [_warning(
             "notebook_order_missing_file",
@@ -804,7 +898,7 @@ def _doctor_error_items(path, status):
 
 
 def _private_symbol_report_text(path):
-    return capture_call(_private_symbol_report, path=str(path))
+    return capture_call(private_symbol_report, path=str(path))
 
 
 def _private_symbol_warnings(path):
@@ -845,9 +939,9 @@ def _doctor_warning_items(path):
 
 
 def _doctor_style_report(path, skip_folder_re=None, skip_path=None, max_output_chars=12000, max_diagnostics=200):
-    chkstyle = _run_style_check(path, skip_folder_re, skip_path, strict=False, max_output_chars=max_output_chars)
+    chkstyle = run_style_check(path, skip_folder_re, skip_path, strict=False, max_output_chars=max_output_chars)
     try:
-        return _style_report(path, chkstyle=chkstyle, max_output_chars=max_output_chars, max_diagnostics=max_diagnostics)
+        return style_report(path, chkstyle=chkstyle, max_output_chars=max_output_chars, max_diagnostics=max_diagnostics)
     except FileNotFoundError as exc:
         message = f"Style scan found a missing notebook: {exc.filename or exc}"
         diagnostic = {
@@ -925,7 +1019,7 @@ _MCP_TOOL_CATALOG = {
         "feature": "read_context",
         "usefulness": "core",
         "tags": ("read", "notebook", "cell", "line-numbers"),
-        "description": "Precise line-numbered cell context with previous markdown, examples/tests, and caller/callee usage.",
+        "description": "Precise line-numbered cell view; query lookups include previous markdown, examples/tests, and caller/callee usage.",
         "when_to_use": "Use before editing one cell, especially when line numbers, examples, or usage context matter.",
         "combine_with": "Keep separate because it is the only reader that should expose line numbers and edit-local context.",
     },
@@ -937,29 +1031,38 @@ _MCP_TOOL_CATALOG = {
         "when_to_use": "Use when the task starts from a public symbol and needs API-level context; use nb_cell for line-numbered edit context.",
         "combine_with": "Could be covered by nb_cell plus symbol search, but it remains useful as a compact API documentation view.",
     },
-    "write_nb": {
+    "edit_cell": {
         "feature": "notebook_edit",
         "usefulness": "core",
-        "tags": ("edit", "notebook", "insert", "replace"),
-        "description": "Insert notebook cells, replace a chapter/full notebook, or perform exact literal replacements with validation and automatic export.",
-        "when_to_use": "Use for adding new cells or exact text replacements; inline multiline cells are routed through cells_file automatically.",
-        "combine_with": "Do not merge with update_cell now; separate insert and update tools keep schemas simpler.",
+        "tags": ("edit", "notebook", "cell", "source-lines"),
+        "description": "Replace one existing notebook cell from source_lines with validation, optional expected_hash, optional split_lines on empty lines, automatic export, and default-on feedback for exploratory/test cells.",
+        "when_to_use": "Use after nb_cell gives the id. Send source_lines directly; pass split_lines only for empty separator lines. Leave auto_feedback=True unless a speculative edit must not execute.",
+        "combine_with": "Use edit_cell_range for small line edits, insert_cells for new cells, and apply_notebook_edits for coordinated multi-step edits.",
     },
-    "update_cell": {
+    "edit_cell_range": {
         "feature": "notebook_edit",
         "usefulness": "core",
-        "tags": ("edit", "notebook", "cell"),
-        "description": "Update one existing cell by id, old text, or line range, split it into smaller cells, with validation and automatic export; MCP callers can pass new_lines for exact source without temporary files or CLI newline decoding.",
-        "when_to_use": "Use after nb_cell gives the id and line numbers. Prefer line_range for partial edits, split_before or split=True for breaking up large cells, new_lines for exact multiline source through MCP, and write_nb/batch_edit_nb for adding or replacing multiple cells.",
-        "combine_with": "Keep separate from write_nb because single-cell updates are the safest common edit path; do not use it for multi-cell blocks.",
+        "tags": ("edit", "notebook", "cell", "line-range"),
+        "description": "Replace a 1-based inclusive line range in one existing notebook cell from replacement_lines, with default-on feedback when the edited cell is exploratory or a test.",
+        "when_to_use": "Use for focused edits inside a large cell when preserving the rest of the cell matters.",
+        "combine_with": "Use edit_cell when replacing the entire cell.",
     },
-    "batch_edit_nb": {
+    "insert_cells": {
         "feature": "notebook_edit",
         "usefulness": "core",
-        "tags": ("edit", "notebook", "batch", "plan"),
-        "description": "Apply a deterministic JSON edit plan across one or more notebooks with locks, validation, export, and read-back verification hashes for every operation.",
-        "when_to_use": "Use when the intended operations are already known and should be applied atomically or across files; inspect returned per-operation hashes when trust matters.",
-        "combine_with": "Could absorb write/update operations, but that would make the main edit schema broader and less discoverable.",
+        "tags": ("edit", "notebook", "insert", "source-lines"),
+        "description": "Insert one or more notebook cells before or after an anchor id from structured cell objects with source_lines, optional split_lines, and default-on feedback for exploratory/test cells.",
+        "when_to_use": "Use when adding notebook material. Each cell may include cell_type, source_lines, and split_lines.",
+        "combine_with": "Use apply_notebook_edits when inserts must be coordinated with replacements.",
+    },
+    "apply_notebook_edits": {
+        "feature": "notebook_edit",
+        "usefulness": "core",
+        "tags": ("edit", "notebook", "batch", "source-lines"),
+        "description": "Apply structured notebook edit operations directly; operations use source_lines/replacement_lines and optional split_lines, never JSON plan text or plan files. Feedback runs by default only for exploratory/test cells.",
+        "when_to_use": "Use for coordinated edits across one or more notebooks when a single tool call is clearer than several direct edit calls.",
+        "combine_with": "This replaces the MCP-facing batch edit plan surface; CLI batch editing remains separate.",
+        "combine_with": "This replaces the MCP-facing batch edit plan surface; CLI batch editing remains separate.",
     },
     "exec_nb": {
         "feature": "verification",
@@ -1005,9 +1108,33 @@ _MCP_TOOL_CATALOG = {
         "feature": "review",
         "usefulness": "core",
         "tags": ("review", "style", "hygiene", "privacy"),
-        "description": "Notebook hygiene and style report including chkstyle output, private symbol warnings, duplicate imports, and order issues.",
-        "when_to_use": "Use after substantial edits or when a notebook feels structurally messy.",
+        "description": "Notebook hygiene and style report including chkstyle output, private symbol warnings, duplicate imports, stored knowledge warnings, and order issues.",
+        "when_to_use": "Use after substantial edits or when a notebook feels structurally messy; stored behaviour steering regexes are included as warnings.",
         "combine_with": "Doctor can include style diagnostics with scopes='style'; standalone style_check remains the explicit review tool.",
+    },
+    "store_knowledge": {
+        "feature": "knowledge",
+        "usefulness": "core",
+        "tags": ("knowledge", "memory", "style", "regex"),
+        "description": "Store or update one behaviour steering regex and note in the nbskill JSON memory file.",
+        "when_to_use": "Use after translating a remembered good or bad practice into a regex that should warn in future style checks.",
+        "combine_with": "add_behaviour_steering is a shorter regex-only helper; get_knowledge reads stored rules.",
+    },
+    "add_behaviour_steering": {
+        "feature": "knowledge",
+        "usefulness": "situational",
+        "tags": ("knowledge", "memory", "regex"),
+        "description": "Add a behaviour steering regex with a generic note.",
+        "when_to_use": "Use when the regex itself is enough context, or prefer store_knowledge when a human-readable note matters.",
+        "combine_with": "store_knowledge is the richer form and style_check applies both kinds of stored rules.",
+    },
+    "get_knowledge": {
+        "feature": "knowledge",
+        "usefulness": "core",
+        "tags": ("knowledge", "memory", "lookup"),
+        "description": "Return stored behaviour steering rules, optionally filtered by regex.",
+        "when_to_use": "Use before adding a similar rule, or when inspecting why style_check emitted a stored knowledge warning.",
+        "combine_with": "Use store_knowledge to add or update rules.",
     },
     "py2nb": {
         "feature": "conversion",
@@ -1024,6 +1151,14 @@ _MCP_TOOL_CATALOG = {
         "description": "Create a pragmatic nbdev project from a pure-Python package or project tree.",
         "when_to_use": "Use when bootstrapping a whole nbdev project rather than converting one module or folder.",
         "combine_with": "Keep separate from py2nb because it creates project structure, not only notebooks.",
+    },
+    "new_nbdev_notebook": {
+        "feature": "conversion",
+        "usefulness": "situational",
+        "tags": ("create", "notebook", "nbdev"),
+        "description": "Create a minimal nbdev source notebook and exported module.",
+        "when_to_use": "Use when adding a new nbdev notebook/module to a project.",
+        "combine_with": "Use py2nb when converting existing Python source instead of starting a blank notebook.",
     },
 }
 
@@ -1054,12 +1189,13 @@ def create_mcp():
             "notebook edits, verification/review, symbol analysis, agentic planning, and conversion. "
             "For reading, use nb_overview for a map, nb_chapter for one section, nb_cell for precise "
             "line-numbered edit context, and show_doc when starting from a public symbol. "
-            "For edits, prefer update_cell for one existing cell, write_nb for inserts/replacements, "
-            "and batch_edit_nb for deterministic multi-cell or multi-notebook plans. "
+            "For edits, prefer edit_cell for one existing cell, edit_cell_range for partial cell edits, "
+            "insert_cells for adding cells, and apply_notebook_edits for coordinated structured edits. Use split_lines only to split at empty source lines. "
+            "Edit tools default to auto_feedback=True, which runs only exploratory or test cells in check-only mode and returns their output/errors. "
             "Use exec_nb, diff_nb, and style_check for verification and review; use doctor with "
             "scopes='error', 'warning', 'style', or 'all' for diagnostics. Chkstyle output only appears "
             "when doctor includes the style scope. Reserve execute_plan for agentic notebook/project edits "
-            "and py2nb/py2nbdev for migration or bootstrap work. "
+            "Use store_knowledge/get_knowledge for behaviour steering memory; style_check applies stored regex rules as warnings. "
             "Normal tool output is concise; use detail='debug' only when troubleshooting. "
             "Notebook operations are concurrency-safe: calls touching the same notebook are serialized, "
             "calls touching different notebooks can run in parallel, and execution uses a global semaphore. "
@@ -1104,69 +1240,108 @@ def create_mcp():
     def nb_overview_tool(nb_path: str, include_docs: bool = False, detail: str = "summary") -> ToolResult:
         "Show headings, imports, signatures, and docstrings, optionally with non-heading Markdown docs."
         arguments = dict(nb_path=nb_path, include_docs=include_docs, detail=detail)
-        full_output = capture_notebook_call(_nb_overview, nb_path, nb_path=nb_path, include_docs=include_docs, verbose=True)
+        full_output = capture_notebook_call(nb_overview, nb_path, nb_path=nb_path, include_docs=include_docs, verbose=True)
         return mcp_tool_result("nb_overview", arguments, full_output, detail=detail)
 
     @mcp.tool(**_mcp_tool_meta("nb_chapter"))
     def nb_chapter_tool(nb_path: str, query: str | None = None, name: str | None = None, any_cell_id: str | None = None, detail: str = "summary") -> ToolResult:
         "Show the notebook head plus one selected chapter."
         arguments = dict(nb_path=nb_path, query=query, name=name, any_cell_id=any_cell_id, detail=detail)
-        full_output = capture_notebook_call(_nb_chapter, nb_path, nb_path=nb_path, query=query, name=name, any_cell_id=any_cell_id)
+        full_output = capture_notebook_call(nb_chapter, nb_path, nb_path=nb_path, query=query, name=name, any_cell_id=any_cell_id)
         return mcp_tool_result("nb_chapter", arguments, full_output, detail=detail)
 
     @mcp.tool(**_mcp_tool_meta("nb_cell"))
     def nb_cell_tool(nb_path: str, query: str | None = None, id: str | None = None, detail: str = "summary") -> ToolResult:
-        "Show one cell with previous docs, examples/tests, and caller/callee usage."
+        "Show one selected cell; query lookups include previous docs, examples/tests, and caller/callee usage."
         arguments = dict(nb_path=nb_path, query=query, id=id, detail=detail)
-        full_output = capture_notebook_call(_nb_cell, nb_path, nb_path=nb_path, query=query, id=id)
+        full_output = capture_notebook_call(nb_cell, nb_path, nb_path=nb_path, query=query, id=id)
         return mcp_tool_result("nb_cell", arguments, full_output, detail=detail)
 
     @mcp.tool(**_mcp_tool_meta("show_doc"))
     def show_doc_tool(path: str, symbol: str, context: int = 2, source: bool = False, show_ids: bool = False, detail: str = "summary") -> ToolResult:
         "Show a compact symbol card with location, docs, definition, optional source/examples, and grouped usage."
         arguments = dict(path=path, symbol=symbol, context=context, source=source, show_ids=show_ids, detail=detail)
-        full_output = capture_notebook_call(_show_doc, path, path=path, symbol=symbol, context=context, source=source, show_ids=show_ids)
+        full_output = capture_notebook_call(show_doc, path, path=path, symbol=symbol, context=context, source=source, show_ids=show_ids)
         return mcp_tool_result("show_doc", arguments, full_output, detail=detail)
 
-    @mcp.tool(**_mcp_tool_meta("write_nb"))
-    def write_nb_tool(
-        path: str, cells: str = "", cells_file: str | None = None, before_id: str | None = None,
-        after_id: str | None = None, chapter: str | None = None, replace: bool = False,
-        cell_type: str = "code", run_test: bool = False,
-        run_style: bool = False, style_strict: bool = False, validate_code: bool = True,
-        old_str: str | None = None, new_str: str | None = None,
-        show_cells: bool = False, detail: str = "summary",
+    @mcp.tool(**_mcp_tool_meta("edit_cell"))
+    def edit_cell_tool(
+        path: str, cell_id: str, source_lines: list[str], cell_type: str = "code",
+        split_lines: list[int] | None = None, validate_code: bool = True,
+        expected_hash: str | None = None, auto_feedback: bool = True,
+        feedback_timeout: int = 10, feedback_safe: bool = True, detail: str = "summary",
     ) -> ToolResult:
-        "Insert notebook cells or perform exact literal replacements across notebooks."
-        arguments = dict(path=path, cells=cells, cells_file=cells_file, before_id=before_id, after_id=after_id, chapter=chapter, replace=replace, cell_type=cell_type, run_test=run_test, run_style=run_style, style_strict=style_strict, validate_code=validate_code, old_str=old_str, new_str=new_str, show_cells=show_cells, detail=detail)
-        full_output = _capture_write_nb_call(path, arguments)
-        return mcp_tool_result("write_nb", arguments, full_output, detail=detail)
+        "Replace one existing notebook cell from source_lines."
+        arguments = dict(path=path, cell_id=cell_id, source_lines=source_lines, cell_type=cell_type, split_lines=split_lines, validate_code=validate_code, expected_hash=expected_hash, auto_feedback=auto_feedback, feedback_timeout=feedback_timeout, feedback_safe=feedback_safe, detail=detail)
+        if warning := _mcp_expected_hash_warning(path, cell_id, expected_hash):
+            return mcp_tool_result("edit_cell", arguments, warning["message"], detail=detail, warnings=[warning], ok=False)
+        start = _mcp_cell_index(path, cell_id)
+        cell_count = _mcp_structured_cell_count([dict(source_lines=source_lines, cell_type=cell_type, split_lines=split_lines)], cell_type)
+        full_output = replace_notebook_cell(path, cell_id, source_lines, cell_type=cell_type, split_lines=split_lines, validate_code=validate_code, auto_feedback=False)
+        cell_ids = _mcp_cell_ids_from_index(path, start, cell_count)
+        full_output = _append_mcp_feedback(full_output, path, cell_ids, auto_feedback, feedback_timeout, feedback_safe)
+        return mcp_tool_result("edit_cell", arguments, full_output, detail=detail, ok=True, after_hash=_mcp_cell_source_hash(path, cell_id))
 
-    @mcp.tool(**_mcp_tool_meta("update_cell"))
-    def update_cell_tool(
-        path: str, new: str = "", new_lines: list[str] | None = None,
-        new_file: str | None = None, decode_newlines: bool = False,
-        cell_id: str | None = None, old_str: str | None = None,
-        line_range: str | None = None, split: bool = False, split_before: str | None = None,
-        cell_type: str = "code", run_test: bool = False,
-        validate_code: bool = True, detail: str = "summary",
+    @mcp.tool(**_mcp_tool_meta("edit_cell_range"))
+    def edit_cell_range_tool(
+        path: str, cell_id: str, start_line: int, end_line: int,
+        replacement_lines: list[str], validate_code: bool = True,
+        expected_hash: str | None = None, auto_feedback: bool = True,
+        feedback_timeout: int = 10, feedback_safe: bool = True, detail: str = "summary",
     ) -> ToolResult:
-        "Update one existing notebook cell; use new_lines for exact multiline source through MCP without temporary files."
-        if new_lines is not None:
-            if new or new_file: raise ValueError("Use either new_lines, new, or new_file")
-            new = chr(10).join(new_lines)
-            decode_newlines = False
-        arguments = dict(path=path, new=new, new_lines=new_lines, new_file=new_file, decode_newlines=decode_newlines, cell_id=cell_id, old_str=old_str, line_range=line_range, split=split, split_before=split_before, cell_type=cell_type, run_test=run_test, validate_code=validate_code, detail=detail)
-        call_args = {k: v for k, v in arguments.items() if k not in {"detail", "new_lines"}}
-        full_output = capture_notebook_call(_update_cell, path, **call_args, dry_run=False)
-        return mcp_tool_result("update_cell", arguments, full_output, detail=detail)
+        "Replace a 1-based inclusive line range in one existing notebook cell."
+        arguments = dict(path=path, cell_id=cell_id, start_line=start_line, end_line=end_line, replacement_lines=replacement_lines, validate_code=validate_code, expected_hash=expected_hash, auto_feedback=auto_feedback, feedback_timeout=feedback_timeout, feedback_safe=feedback_safe, detail=detail)
+        if warning := _mcp_expected_hash_warning(path, cell_id, expected_hash):
+            return mcp_tool_result("edit_cell_range", arguments, warning["message"], detail=detail, warnings=[warning], ok=False)
+        full_output = replace_notebook_range(path, cell_id, start_line, end_line, replacement_lines, validate_code=validate_code, auto_feedback=False)
+        full_output = _append_mcp_feedback(full_output, path, [cell_id], auto_feedback, feedback_timeout, feedback_safe)
+        return mcp_tool_result("edit_cell_range", arguments, full_output, detail=detail, ok=True, after_hash=_mcp_cell_source_hash(path, cell_id))
 
-    @mcp.tool(**_mcp_tool_meta("batch_edit_nb"))
-    def batch_edit_nb_tool(plan: str = "", plan_file: str | None = None, path: str | None = None, validate_code: bool = True, default_cell_type: str = "code", detail: str = "summary") -> ToolResult:
-        "Apply a JSON batch edit plan to one or more notebooks."
-        arguments = dict(plan=plan, plan_file=plan_file, path=path, validate_code=validate_code, default_cell_type=default_cell_type, detail=detail)
-        full_output = capture_call(_batch_edit_nb, **{k: v for k, v in arguments.items() if k != "detail"}, dry_run=False)
-        return mcp_tool_result("batch_edit_nb", arguments, full_output, detail=detail)
+    @mcp.tool(**_mcp_tool_meta("insert_cells"))
+    def insert_cells_tool(
+        path: str, anchor_id: str, where: str = "after", cells: list[dict] | None = None,
+        split_lines: list[int] | None = None, validate_code: bool = True,
+        default_cell_type: str = "code", auto_feedback: bool = True,
+        feedback_timeout: int = 10, feedback_safe: bool = True, detail: str = "summary",
+    ) -> ToolResult:
+        "Insert structured notebook cells before or after an anchor id."
+        if where not in {"before", "after"}: raise ValueError("where must be 'before' or 'after'")
+        if split_lines is not None:
+            if len(cells or []) != 1: raise ValueError("top-level split_lines requires exactly one cell")
+            cells = [dict(cells[0], split_lines=split_lines)]
+        arguments = dict(path=path, anchor_id=anchor_id, where=where, cells=cells, split_lines=split_lines, validate_code=validate_code, default_cell_type=default_cell_type, auto_feedback=auto_feedback, feedback_timeout=feedback_timeout, feedback_safe=feedback_safe, detail=detail)
+        anchor_index = _mcp_cell_index(path, anchor_id)
+        start = anchor_index if where == "before" else anchor_index + 1
+        cell_count = _mcp_structured_cell_count(cells, default_cell_type)
+        full_output = insert_notebook_cells(path, anchor_id, where, cells, validate_code=validate_code, default_cell_type=default_cell_type, auto_feedback=False)
+        cell_ids = _mcp_cell_ids_from_index(path, start, cell_count)
+        full_output = _append_mcp_feedback(full_output, path, cell_ids, auto_feedback, feedback_timeout, feedback_safe)
+        return mcp_tool_result("insert_cells", arguments, full_output, detail=detail, ok=True)
+
+    @mcp.tool(**_mcp_tool_meta("apply_notebook_edits"))
+    def apply_notebook_edits_tool(
+        path: str, edits: list[dict], validate_code: bool = True,
+        default_cell_type: str = "code", auto_feedback: bool = True,
+        feedback_timeout: int = 10, feedback_safe: bool = True, detail: str = "summary",
+    ) -> ToolResult:
+        "Apply structured notebook edit operations without JSON plan text."
+        if not edits: raise ValueError("Pass at least one edit")
+        arguments = dict(path=path, edits=edits, validate_code=validate_code, default_cell_type=default_cell_type, auto_feedback=auto_feedback, feedback_timeout=feedback_timeout, feedback_safe=feedback_safe, detail=detail)
+        warnings = [
+            warning for edit in edits
+            if (warning := _mcp_expected_hash_warning(str(edit.get("path") or path), edit.get("cell_id"), edit.get("expected_hash")))
+        ]
+        if warnings:
+            return mcp_tool_result("apply_notebook_edits", arguments, "Skipped apply_notebook_edits because one or more expected_hash checks failed.", detail=detail, warnings=warnings, ok=False)
+        chunks = []
+        for index, edit in enumerate(edits, 1):
+            edit_path, start, cell_count = _mcp_feedback_location(path, edit, default_cell_type)
+            output = apply_notebook_edit(edit, path, validate_code=validate_code, default_cell_type=default_cell_type, auto_feedback=False)
+            cell_ids = _mcp_cell_ids_from_index(edit_path, start, cell_count)
+            output = _append_mcp_feedback(output, edit_path, cell_ids, auto_feedback, feedback_timeout, feedback_safe)
+            chunks.append(f"#{index} {edit.get('op')}\n{output}".rstrip())
+        return mcp_tool_result("apply_notebook_edits", arguments, "\n\n".join(chunks), detail=detail, ok=True)
+        return mcp_tool_result("apply_notebook_edits", arguments, "\n\n".join(chunks), detail=detail, ok=True)
 
     @mcp.tool(**_mcp_tool_meta("exec_nb"))
     def exec_nb_tool(
@@ -1180,18 +1355,25 @@ def create_mcp():
         "Execute a notebook and return visible outputs/errors. Use check_only=True to avoid writing outputs."
         arguments = dict(path=path, dest=dest, exc_stop=exc_stop, up2id=up2id, chapter=chapter, timeout=timeout, show_output=show_output, verbose=verbose, safe=safe, allow=allow, ok_dests=ok_dests, cache_httpx=cache_httpx, cache_dir=cache_dir, cache_domains=cache_domains, allow_new=allow_new, check_only=check_only, detail=detail)
         if safe:
-            full_output = capture_notebook_call(_exec_nb, path, dest or path, **{k: v for k, v in arguments.items() if k != "detail"})
+            full_output = capture_notebook_call(exec_nb, path, dest or path, **{k: v for k, v in arguments.items() if k != "detail"})
         else:
             full_output = _capture_exec_nb_cli_call(arguments)
-        return mcp_tool_result("exec_nb", arguments, full_output, detail=detail)
+        warnings = []
+        if safe and "PermissionError: Audit:" in full_output:
+            warnings.append(_warning(
+                "safe-exec-audit-block",
+                "Safe execution blocked an audited operation.",
+                "For trusted notebooks, rerun with safe=False.",
+            ))
+        return mcp_tool_result("exec_nb", arguments, full_output, detail=detail, warnings=warnings)
 
     @mcp.tool(**_mcp_tool_meta("diff_nb"))
-    def diff_nb_tool(path: str, ref_a: str | None = "HEAD", ref_b: str | None = None, adds: bool = True, changes: bool = True, dels: bool = False, show_owner: bool = False, detail: str = "summary") -> ToolResult:
-        "Diff notebook code cells without expanding raw notebook JSON; optionally map generated Python to its owner."
-        arguments = dict(path=path, ref_a=ref_a, ref_b=ref_b, adds=adds, changes=changes, dels=dels, show_owner=show_owner, detail=detail)
+    def diff_nb_tool(path: str, ref_a: str | None = "HEAD", ref_b: str | None = None, adds: bool = True, changes: bool = True, dels: bool = False, cell_id: str | None = None, after_id: str | None = None, show_owner: bool = False, detail: str = "summary") -> ToolResult:
+        "Diff notebook code cells without expanding raw notebook JSON; optionally filter by cell id or map generated Python to its owner."
+        arguments = dict(path=path, ref_a=ref_a, ref_b=ref_b, adds=adds, changes=changes, dels=dels, cell_id=cell_id, after_id=after_id, show_owner=show_owner, detail=detail)
         if show_owner and Path(path).suffix == ".py":
             return mcp_tool_result("diff_nb", arguments, _owner_output(path), detail=detail)
-        full_output = capture_notebook_call(_diff_nb, path, **{k: v for k, v in arguments.items() if k not in {"show_owner", "detail"}})
+        full_output = capture_notebook_call(diff_nb, path, **{k: v for k, v in arguments.items() if k not in {"show_owner", "detail"}})
         return mcp_tool_result("diff_nb", arguments, full_output, detail=detail)
 
     @mcp.tool(**_mcp_tool_meta("execute_plan"))
@@ -1206,12 +1388,12 @@ def create_mcp():
         mode = "project" if scope == "project" or notebooks else "notebook"
         if mode == "project":
             project_args = dict(plan=plan, notebooks=notebooks, model=model, max_steps=max_steps, timeout=timeout, dry_run=False)
-            full_output = capture_call(_execute_project_plan, **project_args)
+            full_output = capture_call(execute_project_plan, **project_args)
             return mcp_tool_result("execute_plan", arguments, full_output, detail=detail)
         if not notebook: raise ValueError("notebook is required when scope='notebook'")
         notebook_args = dict(notebook=notebook, plan=plan, model=model, max_steps=max_steps, timeout=timeout, dry_run=False)
-        result = _execute_plan(**notebook_args)
-        full_output = _plan_result_text(result)
+        result = execute_plan(**notebook_args)
+        full_output = plan_result_text(result)
         tool_result = mcp_tool_result("execute_plan", arguments, full_output, detail=detail)
         if isinstance(result, dict):
             tool_result.structured_content["history"] = result.get("history", [])
@@ -1227,7 +1409,10 @@ def create_mcp():
     ) -> ToolResult:
         "Prepare or execute a taste-aware small-diff workbench run."
         arguments = dict(goal=goal, notebook=notebook, contract_file=contract_file, execute=execute, max_steps=max_steps, timeout=timeout, detail=detail)
-        result = _agent_workbench(**{k: v for k, v in arguments.items() if k != "detail"})
+        result = _agent_workbench_result(
+            goal, notebook=notebook, contract_file=contract_file, execute=execute,
+            max_steps=max_steps, timeout=timeout,
+        )
         full_output = result.get("rendered_plan") or result.get("summary", "")
         tool_result = mcp_tool_result("agent_workbench", arguments, full_output, detail=detail)
         if isinstance(result, dict): tool_result.structured_content["agent_workbench"] = result
@@ -1237,7 +1422,7 @@ def create_mcp():
     def symbol_graph_tool(path: str = "nbs", symbol: str = "", json_output: bool = False, detail: str = "summary") -> ToolResult:
         "Show definitions, callers, and callees for one notebook symbol."
         arguments = dict(path=path, symbol=symbol, json_output=json_output, detail=detail)
-        full_output = capture_call(_symbol_graph, path=path, symbol=symbol, json_output=json_output)
+        full_output = capture_call(symbol_graph, path=path, symbol=symbol, json_output=json_output)
         result = mcp_tool_result("symbol_graph", arguments, full_output, detail=detail)
         if symbol:
             result.structured_content["symbol_graph"] = _symbol_graph_public_data(_symbol_graph_data(path, symbol))
@@ -1248,16 +1433,38 @@ def create_mcp():
         path: str = ".", skip_folder_re: str | None = None, skip_path: str | None = None,
         strict: bool = False, delete_after_output: bool = False,
         max_output_chars: int = 12000, max_diagnostics: int = 200, fix: bool = False,
+        changed_only: bool = False, ref_a: str | None = "HEAD", ref_b: str | None = None,
         detail: str = "summary",
     ) -> ToolResult:
         "Print capped chkstyle output, notebook hygiene warnings, private symbol warnings, and global tool usage."
-        arguments = dict(path=path, skip_folder_re=skip_folder_re, skip_path=skip_path, strict=strict, delete_after_output=delete_after_output, max_output_chars=max_output_chars, max_diagnostics=max_diagnostics, fix=fix, detail=detail)
-        style_output = capture_call(_style_check, **{k: v for k, v in arguments.items() if k != "detail"})
+        arguments = dict(path=path, skip_folder_re=skip_folder_re, skip_path=skip_path, strict=strict, delete_after_output=delete_after_output, max_output_chars=max_output_chars, max_diagnostics=max_diagnostics, fix=fix, changed_only=changed_only, ref_a=ref_a, ref_b=ref_b, detail=detail)
+        style_output = capture_call(style_check, **{k: v for k, v in arguments.items() if k != "detail"})
         private_output = _private_symbol_report_text(path)
         full_output = "\n\n".join(chunk for chunk in [private_output, style_output] if chunk)
-        report = _style_report(path, max_output_chars=max_output_chars, max_diagnostics=max_diagnostics)
+        report = style_report(path, max_output_chars=max_output_chars, max_diagnostics=max_diagnostics, changed_only=changed_only, ref_a=ref_a, ref_b=ref_b)
         report["private_symbol_report"] = private_output
         return mcp_tool_result("style_check", arguments, full_output, max_output_chars=max_output_chars, detail=detail, style_report=report)
+
+    @mcp.tool(**_mcp_tool_meta("store_knowledge"))
+    def store_knowledge_tool(apply_regex: str, note: str, path: str | None = None, detail: str = "summary") -> ToolResult:
+        "Store or update one behaviour steering regex and note."
+        arguments = dict(apply_regex=apply_regex, note=note, path=path, detail=detail)
+        full_output = capture_call(store_knowledge, apply_regex=apply_regex, note=note, path=path)
+        return mcp_tool_result("store_knowledge", arguments, full_output, detail=detail)
+
+    @mcp.tool(**_mcp_tool_meta("add_behaviour_steering"))
+    def add_behaviour_steering_tool(regex: str, path: str | None = None, detail: str = "summary") -> ToolResult:
+        "Add a behaviour steering regex with a generic note."
+        arguments = dict(regex=regex, path=path, detail=detail)
+        full_output = capture_call(add_behaviour_steering, regex=regex, path=path)
+        return mcp_tool_result("add_behaviour_steering", arguments, full_output, detail=detail)
+
+    @mcp.tool(**_mcp_tool_meta("get_knowledge"))
+    def get_knowledge_tool(regex: str | None = None, path: str | None = None, detail: str = "summary") -> ToolResult:
+        "Return stored behaviour steering rules, optionally filtered by regex."
+        arguments = dict(regex=regex, path=path, detail=detail)
+        full_output = capture_call(get_knowledge, regex=regex, path=path)
+        return mcp_tool_result("get_knowledge", arguments, full_output, detail=detail)
 
     @mcp.tool(**_mcp_tool_meta("py2nb"))
     def py2nb_tool(
@@ -1269,15 +1476,25 @@ def create_mcp():
     ) -> ToolResult:
         "Convert one Python file or a folder of Python files into nbdev notebook source."
         arguments = dict(path=path, nbs_path=nbs_path, dest=dest, recursive=recursive, maxdepth=maxdepth, preserve_tree=preserve_tree, class_lines=class_lines, method_lines=method_lines, package=package, include=include, exclude=exclude, skip_init=skip_init, include_tests=include_tests, force=force, detail=detail)
-        full_output = capture_call(_py2nb, **{k: v for k, v in arguments.items() if k != "detail"}, dry_run=False)
+        full_output = capture_call(py2nb, **{k: v for k, v in arguments.items() if k != "detail"}, dry_run=False)
         return mcp_tool_result("py2nb", arguments, full_output, detail=detail)
 
     @mcp.tool(**_mcp_tool_meta("py2nbdev"))
     def py2nbdev_tool(source: str, dest: str, package: str | None = None, nbs_path: str = "nbs", force: bool = False, run_validation: bool = True, detail: str = "summary") -> ToolResult:
         "Create a pragmatic nbdev project from a pure-Python package."
         arguments = dict(source=source, dest=dest, package=package, nbs_path=nbs_path, force=force, run_validation=run_validation, detail=detail)
-        full_output = capture_call(_py2nbdev, **{k: v for k, v in arguments.items() if k != "detail"}, dry_run=False)
+        full_output = capture_call(py2nbdev, **{k: v for k, v in arguments.items() if k != "detail"}, dry_run=False)
         return mcp_tool_result("py2nbdev", arguments, full_output, detail=detail)
+
+    @mcp.tool(**_mcp_tool_meta("new_nbdev_notebook"))
+    def new_nbdev_notebook_tool(
+        name: str, default_exp: str | None = None, title: str | None = None,
+        nbs_path: str = "nbs", force: bool = False, detail: str = "summary",
+    ) -> ToolResult:
+        "Create a minimal nbdev source notebook and exported module."
+        arguments = dict(name=name, default_exp=default_exp, title=title, nbs_path=nbs_path, force=force, detail=detail)
+        full_output = capture_call(new_nbdev_notebook, **{k: v for k, v in arguments.items() if k != "detail"}, dry_run=False)
+        return mcp_tool_result("new_nbdev_notebook", arguments, full_output, detail=detail)
 
     return mcp
 

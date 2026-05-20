@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pyskills
 from execnb.shell import CaptureShell
-from fastcore.nbio import read_nb as _read_nb
+from fastcore.nbio import read_nb
 from fastcore.nbio import write_nb as _write_nb
 from fastcore.script import call_parse
 from safepyrun import RunPython
@@ -498,7 +498,7 @@ def _execute_nb(
 ):
     with notebook_locks(path, dest):
         with execution_slot():
-            nb = _read_nb(path)
+            nb = read_nb(path)
             first_exc = None
             with _temporary_allow_registry():
                 shell = _exec_shell(
@@ -575,7 +575,7 @@ def _print_outputs_from_nb(nb, up2id=None):
 
 def _print_nb_outputs(path, up2id=None):
     with notebook_locks(path):
-        _print_outputs_from_nb(_read_nb(path), up2id=up2id)
+        _print_outputs_from_nb(read_nb(path), up2id=up2id)
 
 # %% ../nbs/03_execute.ipynb #97ed2a8c
 def _parse_executed_code_cell(cell):
@@ -636,6 +636,18 @@ def _print_uncalled_function_warnings(nb, up2id=None):
     for warning in warnings: print(f"- {warning}")
     return warnings
 
+# %% ../nbs/03_execute.ipynb #bb9714ea
+def _safe_mode_audit_blocked(nb, up2id=None):
+    for cell in _executed_cells(nb, up2id=up2id):
+        for output in getattr(cell, "outputs", ()):
+            if "PermissionError: Audit:" in _output_text(output): return True
+    return False
+
+# %% ../nbs/03_execute.ipynb #26e1ea68
+def _safe_mode_hint(nb, up2id=None):
+    if not _safe_mode_audit_blocked(nb, up2id=up2id): return ""
+    return "Safe execution hint: safepyrun blocked an audited operation. For trusted notebooks, rerun with safe=False or --no-safe."
+
 # %% ../nbs/03_execute.ipynb #434c13b3
 @call_parse
 @tracked_call
@@ -663,7 +675,7 @@ def exec_nb(
     if chapter is not None:
         if up2id is not None: raise ValueError("Use either chapter or up2id, not both")
         with notebook_locks(path):
-            nb = _read_nb(path)
+            nb = read_nb(path)
             span = one_chapter(nb.cells, chapter)
         up2id, chapter_title = span["end"], span["title"]
     preproc, postproc = _exec_limiters(up2id)
@@ -684,13 +696,14 @@ def exec_nb(
     if show_output:
         if check_only: _print_outputs_from_nb(nb, up2id=up2id)
         else: _print_nb_outputs(dest, up2id=up2id)
+    if safe and (hint := _safe_mode_hint(nb, up2id=up2id)): print(hint)
     _print_uncalled_function_warnings(nb, up2id=up2id)
     return cli_return(Path(path) if check_only else Path(dest))
 
 # %% ../nbs/03_execute.ipynb #e9c50752
 def _notebook_error_summaries(path, up2id=None):
     with notebook_locks(path):
-        nb = _read_nb(path)
+        nb = read_nb(path)
         errors = []
         for idx, cell in _executed_cells(nb, up2id=up2id):
             for output in cell.get("outputs", []):

@@ -18,7 +18,7 @@ from io import StringIO
 from pathlib import Path
 
 from chkstyle.core import main as _chkstyle_main
-from fastcore.nbio import read_nb as _read_nb
+from fastcore.nbio import read_nb
 from fastcore.script import Param, call_parse
 from nbdev.diff import nbs_pair, source_diff
 
@@ -27,6 +27,7 @@ from nbskill.foundation import (
     cell_source, cli_error, cli_return, exported_py_path, file_hash,
     is_export_directive, is_exported_code_cell, none_if_string, tracked_call,
 )
+from .knowledge import knowledge_style_problems
 
 # %% ../nbs/04_review.ipynb #43d8201b
 skip_style_paths = "_proc __pycache__ src assets examples tests archive".split(" ")
@@ -100,6 +101,36 @@ def _test_function_count(tree):
     )
 
 
+def _public_functions(tree):
+    return [
+        node for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and not node.name.startswith("_")
+        and not node.name.startswith("test_")
+    ]
+
+
+def _docstring_line_count(node):
+    doc = ast.get_docstring(node, clean=False)
+    if doc is None: return 0
+    return len(doc.splitlines())
+
+
+def _public_function_docstring_problems(nb_path, cell, tree):
+    if not is_exported_code_cell(cell): return []
+    problems = []
+    for node in _public_functions(tree):
+        line_count = _docstring_line_count(node)
+        if line_count == 1: continue
+        if line_count == 0:
+            detail = f"public function {node.name!r} needs a one-line docstring for nb_overview"
+        else:
+            detail = f"public function {node.name!r} has {line_count} docstring lines; keep it to one line for nb_overview"
+        problems.append(_problem(
+            "public-function-docstring", nb_path, cell, detail,
+            symbol=node.name, line=getattr(node, "lineno", None), docstring_lines=line_count,
+        ))
+    return problems
 def _import_keys(tree):
     keys = []
     for node in tree.body:
@@ -170,12 +201,13 @@ def _format_problem(problem):
     fields = []
     for key in (
         "scope", "symbol", "import_key", "cells", "semantic_types", "confidence", "hint",
-        "exported_py_path", "line_count", "function_count",
+        "exported_py_path", "line_count", "function_count", "docstring_lines",
+        "regex", "note", "match",
     ):
         if key in problem:
             value = problem[key]
             if isinstance(value, list): value = ", ".join(map(str, value))
-            fields.append(f"{key}={value!r}" if key in {"symbol", "import_key", "exported_py_path"} else f"{key}={value}")
+            fields.append(f"{key}={value!r}" if key in {"symbol", "import_key", "exported_py_path", "regex", "note", "match"} else f"{key}={value}")
     suffix = " ".join(fields + ([problem.get("detail", "")] if problem.get("detail") else []))
     return f"- {problem['code']}: {problem['path']}{cell}{line} {suffix}".rstrip()
 
@@ -225,7 +257,7 @@ def notebook_validation_problems(path="."):
     problems = []
     for nb_path in _notebook_paths(path):
         if _style_root_is_skipped(nb_path, skip_style_paths): continue
-        try: nb = _read_nb(nb_path)
+        try: nb = read_nb(nb_path)
         except FileNotFoundError: continue
         problems.extend(_notebook_export_hash_problems(nb_path, nb))
         for cell in nb.cells: problems.extend(_cell_metadata_validation_problems(nb_path, cell))
@@ -245,7 +277,7 @@ def notebook_size_problems(path="."):
     problems = []
     for nb_path in _notebook_paths(path):
         if _style_root_is_skipped(nb_path, skip_style_paths): continue
-        try: nb = _read_nb(nb_path)
+        try: nb = read_nb(nb_path)
         except FileNotFoundError: continue
         problems.extend(_notebook_size_problems_for_nb(nb_path, nb))
     return problems
@@ -257,7 +289,7 @@ def _notebook_style_problems(path="."):
     for nb_path in _notebook_paths(path):
         if _style_root_is_skipped(nb_path, skip_style_paths): continue
         try:
-            nb = _read_nb(nb_path)
+            nb = read_nb(nb_path)
         except FileNotFoundError:
             continue
         problems.extend(_notebook_size_problems_for_nb(nb_path, nb))
@@ -269,6 +301,7 @@ def _notebook_style_problems(path="."):
                 problems.append(_problem("unclean-cell", nb_path, cell, semantic_types=visible))
             tree = _parse_code_cell(cell)
             if tree is None: continue
+            problems.extend(_public_function_docstring_problems(nb_path, cell, tree))
             if "test_cell" in classes:
                 problem_count = _assert_count(tree) + _test_function_count(tree)
                 if problem_count > 3:
@@ -283,6 +316,7 @@ def _notebook_style_problems(path="."):
     for nb_path, items in duplicate_imports.items():
         for scope, key, ids in items:
             problems.append(_problem("duplicate-import", nb_path, scope=scope, import_key=key, cells=ids))
+    problems.extend(knowledge_style_problems(path))
     if _notebook_paths(path):
         from nbskill.graph import notebook_order_problems
         problems.extend(
@@ -423,6 +457,9 @@ def style_report(
     chkstyle: dict | None = None,  # Captured chkstyle result to include
     max_output_chars: int = 12000,  # Maximum raw chkstyle text to keep in report
     max_diagnostics: int = 200,  # Maximum parsed chkstyle diagnostics
+    changed_only: bool = False,  # Report only diagnostics for changed code cells
+    ref_a: str | None = "HEAD",  # First git ref for changed_only filtering
+    ref_b: str | None = None,  # Second git ref; defaults to working tree
 ):
     "Return structured style diagnostics, problem chart, and global nbskill usage data."
     notebook_problems = _notebook_style_problems(path)
@@ -433,10 +470,17 @@ def style_report(
         *(_chkstyle_diagnostics(chkstyle.get("output", ""), max_diagnostics=max_diagnostics)),
         *notebook_problems,
     ]
+    changed_cell_ids = _changed_code_cell_ids(path, ref_a=ref_a, ref_b=ref_b) if changed_only else None
+    if changed_cell_ids is not None:
+        diagnostics = [item for item in diagnostics if item.get("cell_id") in changed_cell_ids]
+        notebook_problems = [item for item in notebook_problems if item.get("cell_id") in changed_cell_ids]
     notebook_text = _format_notebook_style_report(path)
     usage_text = _format_global_usage_summary(usage)
     chkstyle_text = capped["text"].strip()
-    text = "\n\n".join(chunk for chunk in [chkstyle_text, notebook_text, usage_text] if chunk)
+    if changed_cell_ids is not None:
+        text = _format_style_delta_report(path, diagnostics, changed_cell_ids, usage_text)
+    else:
+        text = "\n\n".join(chunk for chunk in [chkstyle_text, notebook_text, usage_text] if chunk)
     return {
         "path": str(path),
         "summary": {
@@ -447,6 +491,8 @@ def style_report(
             "output_truncated": capped["truncated"],
             "output_chars": capped["chars"],
             "omitted_chars": capped["omitted_chars"],
+            "changed_only": changed_only,
+            "changed_cell_count": len(changed_cell_ids or []),
         },
         "diagnostics": diagnostics[:max_diagnostics] if max_diagnostics else diagnostics,
         "problem_chart": _problem_chart(diagnostics),
@@ -459,6 +505,7 @@ def style_report(
 
 # %% ../nbs/04_review.ipynb #bc59a7ff
 def run_style_check(path=".", skip_folder_re=None, skip_path=None, strict=False, max_output_chars=None):
+    "Run chkstyle with nbskill's default skip paths and capped output."
     skip_paths = _style_skip_paths(skip_path)
     if _style_root_is_skipped(path, skip_paths):
         return {"status": 0, "output": "", "text": "", "truncated": False, "chars": 0, "omitted_chars": 0}
@@ -494,10 +541,13 @@ def style_check(
     max_diagnostics: int = 200,  # Cap returned diagnostics
     fix: bool = False,  # Show conservative fix suggestions
     dry_run: bool = True,  # Keep fix mode non-mutating by default
+    changed_only: bool = False,  # Report only diagnostics for changed code cells
+    ref_a: str | None = "HEAD",  # First git ref for changed_only filtering
+    ref_b: str | None = None,  # Second git ref; defaults to working tree
 ):
     "Print capped fast.ai style hints, notebook hygiene warnings, and global tool usage."
     chkstyle = run_style_check(path, skip_folder_re, skip_path, strict=False, max_output_chars=max_output_chars)
-    report = style_report(path, chkstyle=chkstyle, max_output_chars=max_output_chars, max_diagnostics=max_diagnostics)
+    report = style_report(path, chkstyle=chkstyle, max_output_chars=max_output_chars, max_diagnostics=max_diagnostics, changed_only=changed_only, ref_a=ref_a, ref_b=ref_b)
     print(report["text"])
     if fix:
         print("\nFix suggestions:")
@@ -530,7 +580,9 @@ def validate_nbs(
     return cli_return(int(bool(problems)))
 
 
-def code_source(cell): return cell.source if cell.cell_type == "code" else None
+def code_source(cell):
+    "Return source for code cells; ignore markdown and raw cells."
+    return cell.source if cell.cell_type == "code" else None
 
 # %% ../nbs/04_review.ipynb #655e3ccd
 def _git_ref_path_error(path, ref):
@@ -607,6 +659,42 @@ def _metadata_summary(count):
     return f"Ignored nbskill metadata changes in {count} {noun}."
 
 
+def _changed_code_cell_ids(path, ref_a="HEAD", ref_b=None):
+    ref_a, ref_b = none_if_string(ref_a), none_if_string(ref_b)
+    try:
+        old, new = nbs_pair(path, ref_a=ref_a, ref_b=ref_b, f=code_source)
+    except Exception:
+        return set()
+    old = {cid: src for cid, src in old.items() if src is not None}
+    new = {cid: src for cid, src in new.items() if src is not None}
+    return {cid for cid in set(old) | set(new) if old.get(cid) != new.get(cid)}
+
+
+def _diff_filter_ids(path, ref_b=None, cell_id=None, after_id=None):
+    if not cell_id and not after_id: return None
+    nb_json = _notebook_json_at_ref(path, none_if_string(ref_b))
+    cells = (nb_json or {}).get("cells", [])
+    ids = [cell.get("id", str(idx)) for idx, cell in enumerate(cells)]
+    selected = set(ids)
+    if cell_id: selected &= set(str(cell_id).replace(",", " ").split())
+    if after_id:
+        if after_id not in ids: return selected & set()
+        selected &= set(ids[ids.index(after_id) + 1:])
+    return selected
+
+
+def _format_style_delta_report(path, diagnostics, changed_cell_ids, usage_text):
+    header = f"Style delta for changed code cells in {path}: {len(diagnostics)} diagnostic(s) across {len(changed_cell_ids)} changed cell(s)"
+    if not diagnostics: return "\n\n".join([header, usage_text])
+    lines = [header]
+    for item in diagnostics:
+        cell = f" id={item['cell_id']}" if item.get("cell_id") else ""
+        line = f" line={item['line']}" if item.get("line") else ""
+        detail = item.get("detail") or item.get("code", "")
+        lines.append(f"- {item.get('source', 'nbskill')}: {item.get('path', path)}{cell}{line} {detail}".rstrip())
+    return "\n\n".join(["\n".join(lines), usage_text])
+
+
 @call_parse
 @tracked_call
 def diff_nb(
@@ -616,6 +704,8 @@ def diff_nb(
     adds: bool = True,  # Include code cells added in ref_b
     changes: bool = True,  # Include changed code cells
     dels: bool = False,  # Include deleted code cells
+    cell_id: str | None = None,  # Limit output to comma/space-separated cell ids
+    after_id: str | None = None,  # Limit output to cells after this id in ref_b/the working tree
 ):
     "Print nbdev-style diffs for code cells only; summarize nbskill metadata-only changes."
     ref_a, ref_b = none_if_string(ref_a), none_if_string(ref_b)
@@ -638,6 +728,8 @@ def diff_nb(
     if adds:    blocks += [(cid, source_diff("", new[cid])) for cid in new if cid not in old]
     if changes: blocks += [(cid, source_diff(old[cid], new[cid])) for cid in new if cid in old and new[cid] != old[cid]]
     if dels:    blocks += [(cid, source_diff(old[cid], "")) for cid in old if cid not in new]
+    selected = _diff_filter_ids(path, ref_b=ref_b, cell_id=cell_id, after_id=after_id)
+    if selected is not None: blocks = [(cid, diff) for cid, diff in blocks if cid in selected]
     text = "\n\n".join(f"--- code cell {cid} ---\n{diff}" for cid, diff in blocks if diff.strip())
     metadata_summary = _metadata_summary(_nbskill_metadata_change_count(path, ref_a, ref_b))
     if text and metadata_summary: report = f"{text}\n\n{metadata_summary}"

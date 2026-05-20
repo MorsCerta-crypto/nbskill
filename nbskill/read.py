@@ -10,7 +10,7 @@ import json
 import re
 import shlex
 
-from fastcore.nbio import read_nb as _read_nb
+from fastcore.nbio import read_nb
 from fastcore.script import call_parse
 
 from nbskill.foundation import (
@@ -53,8 +53,10 @@ def _definition_lines(node, indent=""):
 def _docstring_lines(node, indent="    "):
     doc = ast.get_docstring(node)
     if not doc: return []
-    quote = indent + chr(34) * 3
-    return [quote, *[f"{indent}{line}" for line in doc.splitlines()], quote]
+    lines = doc.splitlines()
+    quote = chr(34) * 3
+    if len(lines) == 1: return [f"{indent}{quote}{lines[0]}{quote}"]
+    return [indent + quote, *[f"{indent}{line}" for line in lines], indent + quote]
 
 
 def _function_overview(node, indent=""):
@@ -188,23 +190,32 @@ def _cell_defined_symbols(cell):
     return symbols
 
 
-def _format_usage_for_items(path, items):
+def _format_usage_for_items(path, items, max_symbols=4):
     symbols = []
     for _, cell in items: symbols.extend(_cell_defined_symbols(cell))
+    symbols = list(dict.fromkeys(symbols))
     if not symbols: return ""
+    shown = symbols[:max_symbols]
     try:
         from nbskill.graph import symbol_usage_summary
-        return symbol_usage_summary(path, symbols)
+        text = symbol_usage_summary(path, shown)
     except Exception as exc:
         return f"Usage unavailable: {type(exc).__name__}: {exc}"
+    if len(symbols) > len(shown):
+        text = f"{text}\n... {len(symbols) - len(shown)} more symbols omitted ..."
+    return text
 
 # %% ../nbs/01_read.ipynb #e09b2650
 def _chapter_title_from_cell(cell):
     if getattr(cell, "cell_type", None) != "markdown": return None
     for line in cell_source(cell).splitlines():
-        match = re.match(r"^##\s+(.+?)\s*$", line.strip())
+        match = re.match(r"^#{1,6}\s+(.+?)\s*$", line.strip())
         if match: return match.group(1).strip()
     return None
+
+
+def _normalize_chapter_title(value):
+    return re.sub(r"\s+", " ", str(value).strip().lower())
 
 
 def _chapter_spans_for_nb(cells):
@@ -232,12 +243,21 @@ def _chapter_span_for_index(cells, idx):
     raise ValueError(f"Cell index {idx} is outside the notebook")
 
 
+def _chapter_matches(span, name):
+    title = span["title"]
+    if matches_filter(title, name): return True
+    wanted, candidate = _normalize_chapter_title(name), _normalize_chapter_title(title)
+    return bool(wanted and (wanted in candidate or candidate in wanted))
+
+
 def _one_chapter_span(cells, name):
-    matches = [span for span in _chapter_spans_for_nb(cells) if matches_filter(span["title"], name)]
+    spans = _chapter_spans_for_nb(cells)
+    matches = [span for span in spans if _chapter_matches(span, name)]
     if len(matches) == 1: return matches[0]
-    if not matches: raise ValueError(f"No chapter matches {name!r}")
-    titles = ", ".join(span["title"] for span in matches)
-    raise ValueError(f"Chapter {name!r} matches multiple chapters: {titles}")
+    titles = ", ".join(span["title"] for span in spans[:8]) or "none"
+    if not matches: raise ValueError(f"No chapter matches {name!r}. Available chapters: {titles}")
+    matched = ", ".join(span["title"] for span in matches)
+    raise ValueError(f"Chapter {name!r} matches multiple chapters: {matched}")
 
 
 def _query_items(nb, query):
@@ -290,7 +310,7 @@ def nb_overview(
     verbose: bool = True,  # Print the overview; pass False to only return it
 ):
     "Print a focused notebook map of headings, imports, signatures, and docstrings."
-    nb = _read_nb(nb_path)
+    nb = read_nb(nb_path)
     text = _format_headers(list(enumerate(nb.cells)), include_docs=include_docs)
     if verbose and text: print(text)
     return cli_return(text)
@@ -305,7 +325,7 @@ def nb_chapter(
     any_cell_id: str | None = None,  # Any cell id inside the chapter
 ):
     "Print the notebook head plus one selected chapter."
-    nb = _read_nb(nb_path)
+    nb = read_nb(nb_path)
     span = _selected_chapter_span(nb, query=query, name=name, any_cell_id=any_cell_id)
     text = _format_full(_chapter_items(nb, span), show_ids=True, line_numbers=False)
     if text: print(text)
@@ -319,12 +339,13 @@ def nb_cell(
     query: str | None = None,  # Query that resolves to exactly one cell
     id: str | None = None,  # Stable notebook cell id
 ):
-    "Print one cell with editing context and caller/callee usage."
-    nb = _read_nb(nb_path)
+    "Print one selected cell; query lookups include editing context and usage."
+    nb = read_nb(nb_path)
     idx, cell = _selected_cell_item(nb, query=query, id=id)
-    items = with_context(nb.cells, [(idx, cell)], include=True)
+    selected = [(idx, cell)]
+    items = selected if id is not None else with_context(nb.cells, selected, include=True)
     text = _format_full(items, show_ids=True, line_numbers=True)
-    if usage := _format_usage_for_items(nb_path, [(idx, cell)]):
+    if id is None and (usage := _format_usage_for_items(nb_path, [(idx, cell)])):
         text = f"{text}\n\nUsage:\n{usage}" if text else f"Usage:\n{usage}"
     if text: print(text)
     return cli_return(text)
@@ -524,7 +545,7 @@ def show_doc(
             from nbdev.showdoc import show_doc as _nbdev_show_doc
             return _nbdev_show_doc(path)
         raise ValueError("Pass symbol when path is a notebook")
-    nb = _read_nb(path)
+    nb = read_nb(path)
     text = _format_symbol_doc(path, nb, symbol, context=context, source=source, show_ids=show_ids)
     print(text)
     return cli_return(text)

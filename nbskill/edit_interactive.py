@@ -13,17 +13,17 @@ from io import StringIO
 from pathlib import Path
 
 from fastcore.nbio import mk_cell
-from fastcore.nbio import read_nb as _read_nb
-from fastcore.nbio import write_nb as _write_nb
+from fastcore.nbio import read_nb
+from fastcore.nbio import write_nb
 from nbdev.doclinks import nbdev_export as _run_nb_export
 
-from .execute import exec_nb as _exec_nb
+from .execute import exec_nb
 from nbskill.foundation import (
     cell_source, clear_outputs, exported_py_path, parse_one_cell,
     stamp_export_metadata, stamp_notebook_metadata, validate_code_cells,
 )
 from .parallel import notebook_locks
-from .review import diff_nb as _diff_nb
+from .review import diff_nb
 
 # %% ../nbs/08_edit_interactive.ipynb #57c2fd65
 EDIT_INTERACTIVE_SYSTEM = """You are nbskill edit-interactive. You edit exactly one notebook.
@@ -52,7 +52,7 @@ def notebook_view(path, revision=0):
     "Render one notebook as a compact, stable text view."
     path = Path(path)
     with notebook_locks(path):
-        nb = _read_nb(path)
+        nb = read_nb(path)
         lines = [f"Notebook: {path}", f"Revision: {revision}", ""]
         for idx, cell in enumerate(nb.cells):
             lines.append(f"CELL {idx} id={cell.id} type={cell.cell_type}")
@@ -102,14 +102,14 @@ def _export_notebook(nb, nb_path):
     _run_nb_export(path=str(nb_path))
     if py_path.exists():
         stamp_export_metadata(nb, py_path)
-        _write_nb(nb, nb_path)
+        write_nb(nb, nb_path)
     return py_path
 
 
 def _save_notebook(nb, path):
     with notebook_locks(path):
         stamp_notebook_metadata(nb)
-        _write_nb(nb, path)
+        write_nb(nb, path)
         _export_notebook(nb, path)
 
 # %% ../nbs/08_edit_interactive.ipynb #7e5f19b2
@@ -157,7 +157,7 @@ def make_edit_tools(session):
     ) -> str:
         "Add one cell to the current notebook."
         with notebook_locks(session.path):
-            nb = _read_nb(session.path)
+            nb = read_nb(session.path)
             new_cell = _validate_cell(parse_one_cell(content, "code"))
             anchor = _none_if_blank(after_id)
             target = len(nb.cells)
@@ -178,7 +178,7 @@ def make_edit_tools(session):
     ) -> str:
         "Edit one cell in the current notebook."
         with notebook_locks(session.path):
-            nb = _read_nb(session.path)
+            nb = read_nb(session.path)
             idx, cell = _edit_find_cell_by_id(nb.cells, id)
             before = cell_source(cell)
             old_src = _none_if_blank(old_src)
@@ -208,10 +208,10 @@ def make_edit_tools(session):
     ) -> str:
         "Run notebook cells up to and including this cell id."
         with notebook_locks(session.path):
-            _edit_find_cell_by_id(_read_nb(session.path).cells, id)
+            _edit_find_cell_by_id(read_nb(session.path).cells, id)
             session.record_tool("run_cell", f"id={id!r}")
             text = capture_call_text(
-                _exec_nb, path=str(session.path), dest=str(session.path), up2id=str(id),
+                exec_nb, path=str(session.path), dest=str(session.path), up2id=str(id),
                 timeout=session.timeout, show_output=True, verbose=False,
             )
             status = "error" if "Traceback (most recent call last)" in text else "ok"
@@ -223,7 +223,7 @@ def make_edit_tools(session):
     ) -> str:
         "Remove one cell from the current notebook."
         with notebook_locks(session.path):
-            nb = _read_nb(session.path)
+            nb = read_nb(session.path)
             idx, cell = _edit_find_cell_by_id(nb.cells, id)
             session.record_tool("remove_cell", f"id={id!r}")
             before = cell_source(cell)
@@ -273,7 +273,7 @@ def final_diff(path):
     "Return a nbdev code-cell diff, or a clear unavailable message."
     try:
         with notebook_locks(path):
-            return capture_call_text(_diff_nb, path=str(path))
+            return capture_call_text(diff_nb, path=str(path))
     except BaseException as exc:
         detail = str(exc)
         if "Could not find notebook" in detail or "No git repository found" in detail:

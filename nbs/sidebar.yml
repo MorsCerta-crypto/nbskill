@@ -14,6 +14,7 @@ website:
       - 09_parallel.ipynb
       - 10_graph.ipynb
       - 11_agent_workbench.ipynb
+      - 12_knowledge.ipynb
       - section: data
         contents:
           - data/07_mcp_sample.ipynb

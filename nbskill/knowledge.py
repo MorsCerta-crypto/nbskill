@@ -13,7 +13,7 @@ from fastcore.script import call_parse
 
 from .foundation import cell_source, cli_return, tracked_call
 
-# %% ../nbs/12_knowledge.ipynb #0e70336e
+# %% ../nbs/12_knowledge.ipynb #knowdefaults1
 _DEFAULT_BEHAVIOURS = [
     {
         "id": "avoid-aliased-function-imports",
@@ -33,6 +33,11 @@ _DEFAULT_BEHAVIOURS = [
         "note": "Avoid shell=True unless shell behavior is explicitly required.",
         "source": "default",
     },
+]
+
+
+# %% ../nbs/12_knowledge.ipynb #knowdefaults2
+_DEFAULT_BEHAVIOURS += [
     {
         "id": "avoid-eval-exec",
         "regex": r"\b(eval|exec)\s*\(",
@@ -48,9 +53,11 @@ _DEFAULT_BEHAVIOURS = [
 ]
 
 
+# %% ../nbs/12_knowledge.ipynb #0e70336e
 def default_knowledge():
     "Return built-in behaviour steering examples."
     return {"version": 1, "behaviours": [dict(item) for item in _DEFAULT_BEHAVIOURS]}
+
 
 # %% ../nbs/12_knowledge.ipynb #eec52384
 def knowledge_path(path=None):

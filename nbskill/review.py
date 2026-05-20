@@ -29,13 +29,24 @@ from nbskill.foundation import (
 )
 from .knowledge import knowledge_style_problems
 
-# %% ../nbs/04_review.ipynb #43d8201b
+# %% ../nbs/04_review.ipynb #8077f190
 skip_style_paths = "_proc __pycache__ src assets examples tests archive".split(" ")
-_LARGE_CELL_LINE_LIMIT = 20
+
+
+# %% ../nbs/04_review.ipynb #9d09a4cd
+_LARGE_CODE_CELL_LINE_LIMIT = 30
+_LARGE_MARKDOWN_CELL_LINE_LIMIT = 20
+
+
+# %% ../nbs/04_review.ipynb #cd0e6f4f
 _LARGE_CELL_FUNCTION_LIMIT = 2
-_LARGE_GENERATED_PY_LINE_LIMIT = 500
 
 
+# %% ../nbs/04_review.ipynb #d3ec7a69
+_LARGE_GENERATED_PY_LINE_LIMIT = 1000
+
+
+# %% ../nbs/04_review.ipynb #fe42eab2
 def _style_skip_paths(skip_path=None):
     paths = list(skip_style_paths)
     if skip_path is None: return paths
@@ -44,11 +55,13 @@ def _style_skip_paths(skip_path=None):
     return paths
 
 
+# %% ../nbs/04_review.ipynb #66451add
 def _style_root_is_skipped(path, skip_paths):
     parts = Path("." if path is None else path).expanduser().parts
     return any(part in skip_paths for part in parts)
 
 
+# %% ../nbs/04_review.ipynb #fa2a6012
 def _style_check_argv(path=".", skip_folder_re=None, skip_path=None):
     path = "." if path is None else str(path)
     argv = ["style_check", path]
@@ -57,11 +70,13 @@ def _style_check_argv(path=".", skip_folder_re=None, skip_path=None):
     return argv
 
 
+# %% ../nbs/04_review.ipynb #8bab4e6f
 def _is_notebook_path(path):
     path = Path(path)
     return path.suffix == ".ipynb" and ".ipynb_checkpoints" not in path.parts
 
 
+# %% ../nbs/04_review.ipynb #beccebff
 def _notebook_paths(path="."):
     raw = str(path)
     pth = Path(raw).expanduser()
@@ -76,24 +91,29 @@ def _notebook_paths(path="."):
     return sorted({candidate for candidate in candidates if _is_notebook_path(candidate)})
 
 
+# %% ../nbs/04_review.ipynb #7a2c77ab
 def _source_without_directives(source):
     return "\n".join(line for line in source.splitlines() if not is_export_directive(line))
 
 
+# %% ../nbs/04_review.ipynb #14593fb3
 def _parse_code_cell(cell):
     if getattr(cell, "cell_type", None) != "code": return None
     try: return ast.parse(_source_without_directives(cell_source(cell)))
     except SyntaxError: return None
 
 
+# %% ../nbs/04_review.ipynb #e67245c1
 def _top_level_function_count(tree):
     return sum(isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) for node in tree.body)
 
 
+# %% ../nbs/04_review.ipynb #2ce5bab7
 def _assert_count(tree):
     return sum(isinstance(node, ast.Assert) for node in ast.walk(tree))
 
 
+# %% ../nbs/04_review.ipynb #1e9b3b0c
 def _test_function_count(tree):
     return sum(
         isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("test_")
@@ -101,6 +121,7 @@ def _test_function_count(tree):
     )
 
 
+# %% ../nbs/04_review.ipynb #aa771abe
 def _public_functions(tree):
     return [
         node for node in tree.body
@@ -110,12 +131,14 @@ def _public_functions(tree):
     ]
 
 
+# %% ../nbs/04_review.ipynb #cbba1fcd
 def _docstring_line_count(node):
     doc = ast.get_docstring(node, clean=False)
     if doc is None: return 0
     return len(doc.splitlines())
 
 
+# %% ../nbs/04_review.ipynb #0bb953c7
 def _public_function_docstring_problems(nb_path, cell, tree):
     if not is_exported_code_cell(cell): return []
     problems = []
@@ -131,6 +154,9 @@ def _public_function_docstring_problems(nb_path, cell, tree):
             symbol=node.name, line=getattr(node, "lineno", None), docstring_lines=line_count,
         ))
     return problems
+
+
+# %% ../nbs/04_review.ipynb #ead51f24
 def _import_keys(tree):
     keys = []
     for node in tree.body:
@@ -146,20 +172,29 @@ def _import_keys(tree):
     return keys
 
 
+# %% ../nbs/04_review.ipynb #c6da3c2f
 def _cell_content_line_count(cell):
     source = cell_source(cell)
     if getattr(cell, "cell_type", None) == "code": source = _source_without_directives(source)
     return len([line for line in source.splitlines() if line.strip()])
 
 
-def _large_cell_problems(nb_path, cell, line_limit=_LARGE_CELL_LINE_LIMIT, function_limit=_LARGE_CELL_FUNCTION_LIMIT):
+# %% ../nbs/04_review.ipynb #59cd00f0
+def _single_top_level_function_cell(tree):
+    return len(tree.body) == 1 and isinstance(tree.body[0], (ast.FunctionDef, ast.AsyncFunctionDef))
+
+
+def _large_cell_problems(nb_path, cell, function_limit=_LARGE_CELL_FUNCTION_LIMIT):
     problems = []
     line_count = _cell_content_line_count(cell)
-    if line_count > line_limit:
-        cell_type = getattr(cell, "cell_type", "cell")
+    cell_type = getattr(cell, "cell_type", "cell")
+    tree = _parse_code_cell(cell)
+    code_cell = cell_type == "code" and tree is not None
+    line_limit = _LARGE_CODE_CELL_LINE_LIMIT if code_cell else _LARGE_MARKDOWN_CELL_LINE_LIMIT
+    allow_long_cell = code_cell and _single_top_level_function_cell(tree)
+    if line_count > line_limit and not allow_long_cell:
         detail = f"{line_count} {cell_type} content lines; keep one idea per cell"
         problems.append(_problem("large-cell", nb_path, cell, detail, line_count=line_count))
-    tree = _parse_code_cell(cell)
     if tree is None: return problems
     function_count = _top_level_function_count(tree)
     if function_count > function_limit:
@@ -168,11 +203,13 @@ def _large_cell_problems(nb_path, cell, line_limit=_LARGE_CELL_LINE_LIMIT, funct
     return problems
 
 
+# %% ../nbs/04_review.ipynb #d9bb552b
 def _generated_py_line_count(path):
     try: return len(Path(path).read_text(encoding="utf-8", errors="ignore").splitlines())
     except OSError: return 0
 
 
+# %% ../nbs/04_review.ipynb #e22b0a5c
 def _generated_py_size_problem(nb_path, nb, line_limit=_LARGE_GENERATED_PY_LINE_LIMIT):
     py_path = exported_py_path(nb_path, nb)
     if py_path is None or not py_path.exists(): return None
@@ -180,6 +217,7 @@ def _generated_py_size_problem(nb_path, nb, line_limit=_LARGE_GENERATED_PY_LINE_
     if line_count <= line_limit: return None
     detail = f"{line_count} generated Python lines; split this notebook/module with the split tool"
     return _problem("large-generated-py", nb_path, detail=detail, exported_py_path=str(py_path), line_count=line_count)
+
 
 # %% ../nbs/04_review.ipynb #d1103da4
 def _problem(code, path, cell=None, detail="", severity="warning", source="nbskill", **kwargs):
@@ -326,7 +364,10 @@ def _notebook_style_problems(path="."):
     for nb_path, items in duplicate_imports.items():
         for scope, key, ids in items:
             problems.append(_problem("duplicate-import", nb_path, scope=scope, import_key=key, cells=ids))
-    problems.extend(knowledge_style_problems(path))
+    problems.extend(
+        problem for problem in knowledge_style_problems(path)
+        if not _style_root_is_skipped(problem["path"], skip_style_paths)
+    )
     if _notebook_paths(path):
         from nbskill.graph import notebook_order_problems
         problems.extend(

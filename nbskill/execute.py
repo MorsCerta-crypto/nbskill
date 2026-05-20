@@ -67,9 +67,11 @@ def _local_import_paths(path):
     if src.exists(): paths.append(src)
     return [p for i, p in enumerate(paths) if p.exists() and p not in paths[:i]]
 
-# %% ../nbs/03_execute.ipynb #8fde5f5d
+# %% ../nbs/03_execute.ipynb #827d4e40
 _SAFE_SENTINEL = "__nbskill_safe_exec__"
 
+
+# %% ../nbs/03_execute.ipynb #54c66726
 _DEFAULT_CACHE_DOMAINS = (
     "chatgpt.com", "api.openai.com", "api.anthropic.com",
     "generativelanguage.googleapis.com", "api.deepseek.com",
@@ -77,6 +79,8 @@ _DEFAULT_CACHE_DOMAINS = (
     "api.together.xyz", "api.mistral.ai", "api.x.ai", "api.moonshot.ai",
 )
 
+
+# %% ../nbs/03_execute.ipynb #72b761ac
 _CACHY_NORM_PATS = [
     (re.compile(r"/ipykernel_\d+/\d+\.py"), "/ipykernel_N/X.py"),
     (re.compile(r"<ipython-input-\d+-\w+>"), "<ipython-input>"),
@@ -88,6 +92,7 @@ _CACHY_NORM_PATS = [
 ]
 
 
+# %% ../nbs/03_execute.ipynb #d0ce1962
 def _parse_str_list(value, default=None):
     value = parse_literal(value)
     if value is None: return list(default or [])
@@ -96,6 +101,7 @@ def _parse_str_list(value, default=None):
     return [str(value)]
 
 
+# %% ../nbs/03_execute.ipynb #207594eb
 def _project_env_site_paths(path):
     root = _project_root_for_notebook(path)
     candidates = []
@@ -109,12 +115,14 @@ def _project_env_site_paths(path):
     return [path for i, path in enumerate(candidates) if path.exists() and path not in candidates[:i]]
 
 
+# %% ../nbs/03_execute.ipynb #d44d86d7
 def _prepend_sys_path(path):
     path = str(Path(path))
     if path in sys.path: sys.path.remove(path)
     sys.path.insert(0, path)
 
 
+# %% ../nbs/03_execute.ipynb #e1836ca6
 @contextmanager
 def _temporary_sys_path(paths):
     old_path = list(sys.path)
@@ -130,6 +138,7 @@ def _temporary_sys_path(paths):
     finally: sys.path[:] = old_path
 
 
+# %% ../nbs/03_execute.ipynb #3e309b2d
 @contextmanager
 def _temporary_allow_registry():
     snapshot = {key: set(value) for key, value in pyskills.__pytools__.items()}
@@ -139,6 +148,7 @@ def _temporary_allow_registry():
         for key, value in snapshot.items(): pyskills.__pytools__[key].update(value)
 
 
+# %% ../nbs/03_execute.ipynb #a5f41631
 def _resolve_allowed_name(name, namespace):
     if name in namespace: return namespace[name]
     parts = str(name).split(".")
@@ -154,11 +164,13 @@ def _resolve_allowed_name(name, namespace):
     raise ValueError(f"Could not resolve allow entry {name!r}")
 
 
+# %% ../nbs/03_execute.ipynb #bd8f211c
 def _register_allowed(allow, namespace):
     for name in _parse_str_list(allow):
         _safepyrun_allow(_resolve_allowed_name(name, namespace))
 
 
+# %% ../nbs/03_execute.ipynb #9a6cabac
 def _cachy_content(request):
     if not hasattr(request, "_content"): request.read()
     content_type = request.headers.get("Content-Type", "").encode()
@@ -171,12 +183,14 @@ def _cachy_content(request):
     return request.content.replace(boundary, b"cachy-boundary") if boundary else request.content
 
 
+# %% ../nbs/03_execute.ipynb #3b4ea2e6
 def _cachy_normalize(data):
     text = data.decode("utf-8", errors="replace")
     for pattern, replacement in _CACHY_NORM_PATS: text = pattern.sub(replacement, text)
     return text.encode("utf-8")
 
 
+# %% ../nbs/03_execute.ipynb #136af1fc
 def _cachy_norm_content(request):
     content = _cachy_content(request)
     if "json" in request.headers.get("content-type", "").lower():
@@ -185,17 +199,20 @@ def _cachy_norm_content(request):
     return content
 
 
+# %% ../nbs/03_execute.ipynb #fee5f556
 def _cachy_key(request, is_stream=False):
     url = request.url.copy_remove_param("key")
     data = f"{url}{bool(is_stream)}".encode() + _cachy_normalize(_cachy_norm_content(request))
     return hashlib.sha256(data).hexdigest()[:8]
 
 
+# %% ../nbs/03_execute.ipynb #23de26a6
 def _cache_path_for_notebook(path, cache_dir=None):
     base = Path(cache_dir) if cache_dir else _project_root_for_notebook(path)
     return base / "cachy.jsonl"
 
 
+# %% ../nbs/03_execute.ipynb #6e9a5e24
 def _cached_response(key, cache_path, request):
     if not cache_path.exists(): return None
     import httpx
@@ -215,10 +232,12 @@ def _cached_response(key, cache_path, request):
     return None
 
 
+# %% ../nbs/03_execute.ipynb #a8a26468
 def _url_allowed(url, domains):
     return any(domain in str(url) for domain in domains)
 
 
+# %% ../nbs/03_execute.ipynb #081998f7
 @contextmanager
 def _httpx_guard(path, cache_httpx=False, cache_dir=None, cache_domains=None):
     try: import httpx
@@ -278,6 +297,7 @@ def _httpx_guard(path, cache_httpx=False, cache_dir=None, cache_domains=None):
         for name, func in original_funcs.items(): setattr(httpx, name, func)
 
 
+# %% ../nbs/03_execute.ipynb #47148cae
 def _run_async(coro):
     try: asyncio.get_running_loop()
     except RuntimeError: return asyncio.run(coro)
@@ -292,11 +312,13 @@ def _run_async(coro):
     return box.get("result")
 
 
+# %% ../nbs/03_execute.ipynb #b06b0cf7
 def _stream_output(name, text):
     if not text: return None
     return {"output_type": "stream", "name": name, "text": text}
 
 
+# %% ../nbs/03_execute.ipynb #98afc896
 def _result_output(value):
     return {
         "output_type": "execute_result",
@@ -306,11 +328,13 @@ def _result_output(value):
     }
 
 
+# %% ../nbs/03_execute.ipynb #e4a72f41
 def _error_output(exc):
     tb = traceback.format_exception(type(exc), exc, exc.__traceback__)
     return {"output_type": "error", "ename": type(exc).__name__, "evalue": str(exc), "traceback": tb}
 
 
+# %% ../nbs/03_execute.ipynb #042c46fe
 def _magic_error(source):
     for line in source.splitlines():
         stripped = line.lstrip()
@@ -319,6 +343,7 @@ def _magic_error(source):
     return None
 
 
+# %% ../nbs/03_execute.ipynb #170861e4
 class _SafeShell:
     def __init__(self, path, extra_paths=None, allow=None, ok_dests=None, cache_httpx=False, cache_dir=None, cache_domains=None):
         self.path = Path(path)
@@ -364,6 +389,7 @@ class _SafeShell:
         return outputs
 
 
+# %% ../nbs/03_execute.ipynb #25c5b5a7
 def _exec_shell(
     path,
     extra_paths=None,
@@ -385,6 +411,7 @@ def _exec_shell(
         shell.set_path(pth)
     return shell
 
+
 # %% ../nbs/03_execute.ipynb #78d2789f
 _TIMEOUT_HASH_KEY = "nbskill_timeout_hash"
 
@@ -400,18 +427,21 @@ def _source_hash(source):
 # %% ../nbs/03_execute.ipynb #94178ce7
 # _cell_metadata is imported from nbskill.foundation.
 
-# %% ../nbs/03_execute.ipynb #972f0090
+# %% ../nbs/03_execute.ipynb #131a6131
 def _cell_source_hash(cell): return _source_hash(cell.get("source", ""))
 
 
+# %% ../nbs/03_execute.ipynb #65a44288
 class _ExecutionApprovalRequired(RuntimeError): pass
 
 
+# %% ../nbs/03_execute.ipynb #5a60da1d
 def _cell_has_execution_approval(cell):
     if getattr(cell, "execution_count", None) not in (None, 0): return True
     return cell_metadata(cell).get(_EXECUTED_HASH_KEY) == _cell_source_hash(cell)
 
 
+# %% ../nbs/03_execute.ipynb #3a9a06d4
 def _approval_required_error(cell):
     msg = (
         f"nbskill: refusing to execute unapproved cell id={cell.id}. "
@@ -420,8 +450,10 @@ def _approval_required_error(cell):
     return _ExecutionApprovalRequired(msg)
 
 
+# %% ../nbs/03_execute.ipynb #7691adbc
 def _mark_executed(cell):
     if cell.cell_type == "code": cell_metadata(cell)[_EXECUTED_HASH_KEY] = _cell_source_hash(cell)
+
 
 # %% ../nbs/03_execute.ipynb #7e35b99b
 def _timeout_stream(text):
@@ -523,13 +555,14 @@ def _execute_nb(
             if first_exc: raise first_exc
             return nb
 
-# %% ../nbs/03_execute.ipynb #1e0af2c5
+# %% ../nbs/03_execute.ipynb #114ae0b1
 def _text_output(value):
     if value is None: return ""
     if isinstance(value, list): return "".join(map(str, value))
     return str(value)
 
 
+# %% ../nbs/03_execute.ipynb #ef2b7483
 def _output_text(output):
     otype = output.get("output_type")
     if otype == "stream": return _text_output(output.get("text"))
@@ -544,12 +577,14 @@ def _output_text(output):
     return ""
 
 
+# %% ../nbs/03_execute.ipynb #03e0f4fd
 def _is_rich_traceback_stream(output):
     if output.get("output_type") != "stream": return False
     text = _text_output(output.get("text"))
     return "Traceback" in text and "\x1b[" in text
 
 
+# %% ../nbs/03_execute.ipynb #54a480b2
 def _executed_cells(nb, up2id=None):
     up2id = parse_literal(up2id)
     if up2id is None: return list(enumerate(nb.cells))
@@ -561,6 +596,7 @@ def _executed_cells(nb, up2id=None):
     return items
 
 
+# %% ../nbs/03_execute.ipynb #555caac2
 def _print_outputs_from_nb(nb, up2id=None):
     for idx, cell in _executed_cells(nb, up2id):
         outputs = getattr(cell, "outputs", None) or []
@@ -573,9 +609,11 @@ def _print_outputs_from_nb(nb, up2id=None):
             print(text, end="" if text.endswith("\n") else "\n")
 
 
+# %% ../nbs/03_execute.ipynb #034fc24a
 def _print_nb_outputs(path, up2id=None):
     with notebook_locks(path):
         _print_outputs_from_nb(read_nb(path), up2id=up2id)
+
 
 # %% ../nbs/03_execute.ipynb #97ed2a8c
 def _parse_executed_code_cell(cell):

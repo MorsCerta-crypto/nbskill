@@ -610,6 +610,8 @@ def _fresh_semantic_metadata(cell):
     if not isinstance(types, list): return None
     normalized = tuple("example_cell" if str(item) == "exploration_cell" else str(item) for item in types)
     if getattr(cell, "cell_type", None) != "code" and "unclean_cell" in normalized: return None
+    semantic = tuple(name for name in normalized if name not in {"exported_code", "unclean_cell"})
+    if "unclean_cell" in normalized and len(semantic) <= 1: return None
     return normalized
 
 
@@ -840,7 +842,7 @@ def _cell_base_class_names(cell):
 
 # %% ../nbs/00_foundation.ipynb #25ecba70
 def _semantic_code_class_names(cell):
-    semantic = {"import_cell", "example_cell", "test_cell", "private_code", "exported_code"}
+    semantic = {"import_cell", "example_cell", "test_cell", "private_code"}
     return tuple(name for name in _cell_base_class_names(cell) if name in semantic)
 
 

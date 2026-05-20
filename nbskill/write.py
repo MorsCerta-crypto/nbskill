@@ -706,7 +706,7 @@ def _apply_batch_op(nb, path, op, validate_code=True, default_cell_type="code"):
         ]
     cli_error(f"Unknown batch operation {kind!r}")
 
-# %% ../nbs/02_write.ipynb #ee67d2d7
+# %% ../nbs/02_write.ipynb #71622b02
 def _detail_cell_matches(nb, detail):
     try:
         _, cell = find_cell_by_id(nb.cells, detail.get("cell_id"))
@@ -715,6 +715,7 @@ def _detail_cell_matches(nb, detail):
     return not detail.get("after_hash") or _cell_source_hash(cell) == detail.get("after_hash")
 
 
+# %% ../nbs/02_write.ipynb #ae0e2774
 def _detail_insert_matches(nb, detail):
     for item in detail.get("inserted", []):
         try:
@@ -725,6 +726,7 @@ def _detail_insert_matches(nb, detail):
     return True
 
 
+# %% ../nbs/02_write.ipynb #607730b3
 def _verify_batch_details(details):
     by_path = {}
     for detail in details:
@@ -752,6 +754,7 @@ def _verify_batch_details(details):
     return failed
 
 
+# %% ../nbs/02_write.ipynb #d790c1d4
 def _format_batch_details(details):
     lines = []
     for item in details:
@@ -767,6 +770,7 @@ def _format_batch_details(details):
         if item.get("diff"):
             lines.extend(f"    {line}" for line in item["diff"].splitlines())
     return "\n".join(lines)
+
 
 # %% ../nbs/02_write.ipynb #04a5744e
 @call_parse

@@ -70,22 +70,25 @@ def _class_without_methods(lines, cls, methods):
 def _export_cell(source):
     return mk_cell(f"#| export\n{source.strip()}")
 
-# %% ../nbs/05_convert.ipynb #f6472ba5
+# %% ../nbs/05_convert.ipynb #1c8e3469
 def _stable_cell_id(default_exp, idx, source):
     raw = f"{default_exp}:{idx}:{source}".encode("utf-8")
     return f"py2nb-{hashlib.sha1(raw).hexdigest()[:8]}"
 
 
+# %% ../nbs/05_convert.ipynb #5084a272
 def _stabilize_cells(cells, default_exp):
     for idx, cell in enumerate(cells):
         cell.id = _stable_cell_id(default_exp, idx, getattr(cell, "source", ""))
     return cells
 
 
+# %% ../nbs/05_convert.ipynb #81965703
 def _is_module_docstring(node):
     return isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str)
 
 
+# %% ../nbs/05_convert.ipynb #3f76d7df
 def _py2nb_cells(source, default_exp, class_lines=100, method_lines=10):
     tree = ast.parse(source)
     lines = source.splitlines()
@@ -126,6 +129,7 @@ def _py2nb_cells(source, default_exp, class_lines=100, method_lines=10):
     flush_imports()
     if needs_patch: cells.insert(1, _export_cell("from fastcore.basics import patch"))
     return _stabilize_cells(cells, default_exp)
+
 
 # %% ../nbs/05_convert.ipynb #f73ec284
 def _module_name_for_path(path, module_base=None):

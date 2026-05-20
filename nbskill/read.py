@@ -28,7 +28,7 @@ def _format_overview(items, show_ids=False):
         lines.append(f"{cell_prefix(idx, cell, show_ids)} | {summary}")
     return "\n".join(lines)
 
-# %% ../nbs/01_read.ipynb #975e37c5
+# %% ../nbs/01_read.ipynb #b4caabe8
 def _markdown_overview(cell, include_docs=False):
     source = cell_source(cell).strip()
     headings = []
@@ -39,6 +39,7 @@ def _markdown_overview(cell, include_docs=False):
     return source.splitlines() if include_docs and source else []
 
 
+# %% ../nbs/01_read.ipynb #2bf5140a
 def _definition_lines(node, indent=""):
     tmp = copy.deepcopy(node)
     tmp.body = [ast.Pass()]
@@ -50,6 +51,7 @@ def _definition_lines(node, indent=""):
     return lines
 
 
+# %% ../nbs/01_read.ipynb #f18e8160
 def _docstring_lines(node, indent="    "):
     doc = ast.get_docstring(node)
     if not doc: return []
@@ -59,10 +61,12 @@ def _docstring_lines(node, indent="    "):
     return [indent + quote, *[f"{indent}{line}" for line in lines], indent + quote]
 
 
+# %% ../nbs/01_read.ipynb #1479f1ce
 def _function_overview(node, indent=""):
     return [*_definition_lines(node, indent=indent), *_docstring_lines(node, indent=indent + "    ")]
 
 
+# %% ../nbs/01_read.ipynb #0bf698d9
 def _class_overview(node):
     lines = [*_definition_lines(node), *_docstring_lines(node)]
     methods = [child for child in node.body if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef))]
@@ -72,6 +76,7 @@ def _class_overview(node):
     return lines
 
 
+# %% ../nbs/01_read.ipynb #ef1608ad
 def _code_overview(cell):
     try: tree = ast.parse(cell.source)
     except SyntaxError: return []
@@ -85,6 +90,7 @@ def _code_overview(cell):
     return lines
 
 
+# %% ../nbs/01_read.ipynb #8d5cdcf7
 def _format_headers(items, include_docs=False):
     chunks = []
     for idx, cell in items:
@@ -93,6 +99,7 @@ def _format_headers(items, include_docs=False):
         else: lines = []
         if lines: chunks.append(f"{cell_prefix(idx, cell, True)}\n" + "\n".join(lines))
     return "\n\n".join(chunks)
+
 
 # %% ../nbs/01_read.ipynb #f204f489
 def _format_source(source, line_numbers=False):
@@ -107,7 +114,7 @@ def _format_full(items, show_ids=False, line_numbers=False):
         chunks.append(f"{cell_prefix(idx, cell, show_ids)}\n{_format_source(cell_source(cell), line_numbers=line_numbers)}")
     return "\n\n".join(chunks)
 
-# %% ../nbs/01_read.ipynb #98fc4d1a
+# %% ../nbs/01_read.ipynb #b1526aff
 _QUERY_KEY_ALIASES = {
     "id": "cell_id",
     "cell": "cell_id",
@@ -123,6 +130,7 @@ _QUERY_KEY_ALIASES = {
 }
 
 
+# %% ../nbs/01_read.ipynb #4f3e6dfd
 def _normalize_query_key(key):
     name = _QUERY_KEY_ALIASES.get(str(key).strip().lower())
     if name is None:
@@ -131,10 +139,12 @@ def _normalize_query_key(key):
     return name
 
 
+# %% ../nbs/01_read.ipynb #e3f7da55
 def _normalize_query_dict(spec):
     return {_normalize_query_key(key): None if value is None else str(value) for key, value in dict(spec).items()}
 
 
+# %% ../nbs/01_read.ipynb #5b09a9e8
 def _parse_query_terms(text):
     spec, bare = {}, []
     for term in shlex.split(str(text)):
@@ -148,6 +158,7 @@ def _parse_query_terms(text):
     return spec
 
 
+# %% ../nbs/01_read.ipynb #82b26f15
 def _parse_query(query):
     if query is None: return [{}]
     if isinstance(query, dict): return [_normalize_query_dict(query)]
@@ -164,7 +175,7 @@ def _parse_query(query):
     return _parse_query(parsed)
 
 
-
+# %% ../nbs/01_read.ipynb #643079c0
 def _select_query_items(nb, spec):
     items = [find_cell_by_id(nb.cells, spec["cell_id"])] if spec.get("cell_id") else list(enumerate(nb.cells))
     if spec.get("chapter") is not None:
@@ -176,7 +187,7 @@ def _select_query_items(nb, spec):
     return items
 
 
-
+# %% ../nbs/01_read.ipynb #5a2f23bf
 def _cell_defined_symbols(cell):
     if getattr(cell, "cell_type", None) != "code": return []
     try: tree = ast.parse(_source_without_directives(cell_source(cell)))
@@ -190,6 +201,7 @@ def _cell_defined_symbols(cell):
     return symbols
 
 
+# %% ../nbs/01_read.ipynb #aaa009d2
 def _format_usage_for_items(path, items, max_symbols=4):
     symbols = []
     for _, cell in items: symbols.extend(_cell_defined_symbols(cell))
@@ -204,6 +216,7 @@ def _format_usage_for_items(path, items, max_symbols=4):
     if len(symbols) > len(shown):
         text = f"{text}\n... {len(symbols) - len(shown)} more symbols omitted ..."
     return text
+
 
 # %% ../nbs/01_read.ipynb #76e0d320
 def _chapter_title_from_cell(cell):
@@ -454,7 +467,7 @@ def _symbol_signature_text(cell, symbol):
     if isinstance(node, ast.ClassDef): return _class_overview(node)
     return _function_overview(node)
 
-# %% ../nbs/01_read.ipynb #f21fcefb
+# %% ../nbs/01_read.ipynb #b209907e
 def _usage_group_locations(raw_locations):
     raw = str(raw_locations or "").strip()
     if not raw or raw == "none": return [], 0
@@ -466,6 +479,7 @@ def _usage_group_locations(raw_locations):
     return list(grouped.items()), sum(len(ids) for ids in grouped.values())
 
 
+# %% ../nbs/01_read.ipynb #ae0338fd
 def _format_usage_locations(label, raw_locations, max_paths=4, max_ids=4):
     groups, total = _usage_group_locations(raw_locations)
     if not total: return [f"{label}: none"]
@@ -481,12 +495,14 @@ def _format_usage_locations(label, raw_locations, max_paths=4, max_ids=4):
     return lines
 
 
+# %% ../nbs/01_read.ipynb #5b0a93f6
 def _raw_caller_usage_lines(raw_lines):
     if "Caller usages:" not in raw_lines: return []
     start = raw_lines.index("Caller usages:") + 1
     return [line for line in raw_lines[start:] if line.startswith("- ")]
 
 
+# %% ../nbs/01_read.ipynb #9d424218
 def _format_symbol_usage(path, symbol):
     try:
         from nbskill.graph import symbol_usage_summary
@@ -509,6 +525,7 @@ def _format_symbol_usage(path, symbol):
     return lines
 
 
+# %% ../nbs/01_read.ipynb #2cb657b6
 def _format_symbol_doc(path, nb, symbol, context=2, source=False, show_ids=False):
     idx = _find_symbol_cell(nb, symbol)
     cell = nb.cells[idx]
@@ -542,6 +559,7 @@ def _format_symbol_doc(path, nb, symbol, context=2, source=False, show_ids=False
         lines.append("Usage")
         lines.extend(usage)
     return "\n".join(lines)
+
 
 # %% ../nbs/01_read.ipynb #1584953f
 @call_parse

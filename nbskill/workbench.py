@@ -29,35 +29,35 @@ from .review import notebook_validation_problems, style_report
 BUILTIN_TASTE_PROFILE = {
     "version": 1,
     "preferences": [
-        "Prefer the smallest coherent diff.",
-        "Modify existing functions before adding abstractions.",
-        "Keep implementation direct and readable.",
-        "Ask only when ambiguity materially changes the patch.",
+        "Prefer the smallest coherent diff and ask only when ambiguity materially changes it.",
+        "Use nbskill MCP tools for normal notebook reads, edits, execution, review, and diagnostics.",
+        "Write notebooks as a story: rationale, implementation, visible example, focused test.",
+        "Keep cells small, explain why the shape exists, and cross-reference downstream uses.",
     ],
     "aversions": [
         "Backwards-compatibility scaffolding unless requested.",
         "Generated-file edits without notebook source changes.",
-        "Output churn, broad refactors, noisy explanations, and speculative architecture.",
+        "Raw notebook JSON edits, large cells, missing docs, hidden outputs, and speculative architecture.",
     ],
     "defaults": {
         "compatibility": "not_required",
         "public_api": "forbidden",
-        "gate_style": "hybrid",
+        "gate_style": "soft",
     },
 }
 
-
+# %% ../nbs/11_agent_workbench.ipynb #63de5b2c
 DEFAULT_BUDGETS = {
     "max_files": 2,
     "max_cells": 3,
     "max_added_lines": 80,
 }
 
-
+# %% ../nbs/11_agent_workbench.ipynb #a9b968ec
 DEFAULT_VERIFICATION = [
     "Run the narrowest notebook execution possible, using check_only=True when available.",
     "Review code-cell changes with diff_nb.",
-    "Run doctor(scopes='error,warning') and inspect style deltas for touched areas.",
+    "Run doctor(scopes='error,warning,style') or style_check on touched notebooks.",
 ]
 
 # %% ../nbs/11_agent_workbench.ipynb #36a5fe49
@@ -74,7 +74,10 @@ def _deep_merge(base, override):
 def _read_json(path):
     path = Path(path).expanduser()
     if not path.exists(): return {}
-    return json.loads(path.read_text(encoding="utf-8"))
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if data is None: return {}
+    if not isinstance(data, dict): raise ValueError(f"{path} must contain a JSON object")
+    return data
 
 # %% ../nbs/11_agent_workbench.ipynb #a9effd31
 def _project_taste_path(project_path):
@@ -499,11 +502,21 @@ def _load_contract_file(contract_file):
 def _render_list(items):
     return "\n".join(f"- {item}" for item in items) if items else "- (none)"
 
-# %% ../nbs/11_agent_workbench.ipynb #d359c484
-def _render_workbench_plan(contract, taste, context):
-    "Render the executor-facing plan with taste, budgets, context, and stop rules."
+# %% ../nbs/11_agent_workbench.ipynb #dfbc8a3b
+def _render_budget_lines(contract):
     budgets = contract.get("budgets", {})
-    lines = [
+    return [
+        "Budgets:",
+        f"- max_files={budgets.get('max_files')}",
+        f"- max_cells={budgets.get('max_cells')}",
+        f"- max_added_lines={budgets.get('max_added_lines')}",
+        f"- compatibility={contract.get('compatibility')}",
+        f"- public_api={contract.get('public_api')}",
+    ]
+
+# %% ../nbs/11_agent_workbench.ipynb #a1b091c5
+def _render_workbench_header(contract, taste):
+    return [
         "Agent workbench task",
         "",
         f"Goal: {contract['goal']}",
@@ -514,30 +527,41 @@ def _render_workbench_plan(contract, taste, context):
         "Aversions:",
         _render_list(taste.get("aversions", [])),
         "",
-        "Budgets:",
-        f"- max_files={budgets.get('max_files')}",
-        f"- max_cells={budgets.get('max_cells')}",
-        f"- max_added_lines={budgets.get('max_added_lines')}",
-        f"- compatibility={contract.get('compatibility')}",
-        f"- public_api={contract.get('public_api')}",
-        "",
-        "Relevant notebooks:",
+        *_render_budget_lines(contract),
     ]
-    lines.extend(f"- {item['path']} score={item['score']}" for item in context.get("selected_notebooks", []))
-    lines.extend(["", "Evidence cells:"])
+
+# %% ../nbs/11_agent_workbench.ipynb #dd85b0c4
+def _render_context_lines(context):
+    lines = ["", "Relevant notebooks:"]
     lines.extend(
-        f"- {item['path']} id={item['id']}"
-        for item in context.get("evidence", [])
+        f"- {item['path']} score={item['score']}"
+        for item in context.get("selected_notebooks", [])
     )
+    lines.extend(["", "Evidence cells:"])
+    lines.extend(f"- {item['path']} id={item['id']}" for item in context.get("evidence", []))
     if context.get("symbol_summary"):
         lines.extend(["", "Symbol consequences:", context["symbol_summary"]])
-    lines.extend([
-        "",
-        "Workbench loop:",
-        "- Inspect one focused cell with nb_cell and keep the context local.",
-        "- Edit one focused cell, or use one batch_edit_nb plan when cells must move together.",
-        "- Run the narrowest exec_nb check with check_only=True whenever execution is needed.",
-        "- Inspect diff_nb, then stop or repeat the loop once.",
+    return lines
+
+# %% ../nbs/11_agent_workbench.ipynb #0a8507b3
+def _render_notebook_craft_lines():
+    body = """
+Notebook craft:
+- Keep notebooks coherent: small markdown and code cells, one idea at a time.
+- Add descriptions before code, examples with visible outputs, and small tests near the behavior they protect.
+- Explain rationale: why the shape solves the problem, what tradeoffs it rejects, and why nearby alternatives do not fit.
+- Add cross-references for exported symbols: where the code is used later, and why that reuse matters.
+- End with diff_nb plus doctor(scopes='error,warning,style') or style_check, and resolve new notebook smells before stopping.
+"""
+    return ["", *body.strip().splitlines()]
+
+# %% ../nbs/11_agent_workbench.ipynb #d359c484
+def _render_workbench_plan(contract, taste, context):
+    "Render the executor-facing plan with taste, budgets, context, and stop rules."
+    lines = [
+        *_render_workbench_header(contract, taste),
+        *_render_context_lines(context),
+        *_render_notebook_craft_lines(),
         "",
         "Stop rules:",
         "- Prefer the smallest valid diff over a broad complete rewrite.",
@@ -547,7 +571,7 @@ def _render_workbench_plan(contract, taste, context):
         "",
         "Verification:",
         _render_list(contract.get("verification", [])),
-    ])
+    ]
     return "\n".join(lines).rstrip()
 
 # %% ../nbs/11_agent_workbench.ipynb #0277eaf9

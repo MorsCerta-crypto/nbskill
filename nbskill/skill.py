@@ -20,15 +20,17 @@ name: jupyter-notebooks
 description: Work notebook-first in nbdev projects with nbskill MCP tools for reading, writing, updating, and executing notebooks without raw JSON.
 ---"""
 
-
+# %% ../nbs/06_skill.ipynb #797561b0
 def _marked_readme_section(text, start=_SKILL_START, end=_SKILL_END):
-    try:
-        body = text.split(start, 1)[1].split(end, 1)[0]
-    except IndexError as exc:
-        raise ValueError(f"README is missing {start!r} and {end!r} markers") from exc
-    return body.strip()
+    start_count = text.count(start)
+    end_count = text.count(end)
+    if start_count != 1 or end_count != 1:
+        raise ValueError(f"README must contain exactly one {start!r} and one {end!r} marker")
+    if text.index(start) > text.index(end):
+        raise ValueError(f"README marker {start!r} must appear before {end!r}")
+    return text.split(start, 1)[1].split(end, 1)[0].strip()
 
-
+# %% ../nbs/06_skill.ipynb #edda3691
 def _skill_frontmatter(out_path):
     path = Path(out_path)
     if path.exists():
@@ -38,7 +40,7 @@ def _skill_frontmatter(out_path):
             if len(parts) == 2: return f"---{parts[0][3:]}\n---"
     return _SKILL_FRONTMATTER
 
-
+# %% ../nbs/06_skill.ipynb #8226e202
 @call_parse
 @tracked_call
 def build_skill_from_readme(

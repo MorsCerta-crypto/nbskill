@@ -2,18 +2,21 @@
   "version": 1,
   "preferences": [
     "Prefer the smallest coherent diff.",
-    "Modify existing functions before adding abstractions.",
-    "Keep implementation direct and readable.",
+    "Use nbskill MCP tools for normal notebook reads, edits, execution, review, and diagnostics.",
+    "Write notebooks as a story: rationale, implementation, visible example, focused test.",
+    "Keep cells small, semantic, direct, and readable.",
+    "Explain why the code has this shape and cross-reference downstream uses.",
     "Ask only when ambiguity materially changes the patch."
   ],
   "aversions": [
     "Backwards-compatibility scaffolding unless requested.",
     "Generated-file edits without notebook source changes.",
-    "Output churn, broad refactors, noisy explanations, and speculative architecture."
+    "Raw notebook JSON edits when an nbskill MCP tool can do the job.",
+    "Large cells, missing docs, hidden outputs, broad refactors, noisy explanations, and speculative architecture."
   ],
   "defaults": {
     "compatibility": "not_required",
     "public_api": "forbidden",
-    "gate_style": "hybrid"
+    "gate_style": "soft"
   }
 }

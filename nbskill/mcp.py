@@ -876,7 +876,7 @@ _MCP_TOOL_CATALOG = {
         "feature": "notebook_edit",
         "usefulness": "core",
         "tags": ("edit", "notebook", "batch", "plan"),
-        "description": "Apply a deterministic JSON edit plan across one or more notebooks with dry-run diffs, locks, validation, and export.",
+        "description": "Apply a deterministic JSON edit plan across one or more notebooks with compact operation details, locks, validation, and export.",
         "when_to_use": "Use when the intended operations are already known and should be applied atomically or across files.",
         "combine_with": "Could absorb write/update operations, but that would make the main edit schema broader and less discoverable.",
     },
@@ -1053,12 +1053,12 @@ def create_mcp():
         after_id: str | None = None, chapter: str | None = None, replace: bool = False,
         cell_type: str = "code", run_test: bool = False,
         run_style: bool = False, style_strict: bool = False, validate_code: bool = True,
-        old_str: str | None = None, new_str: str | None = None, dry_run: bool = False,
+        old_str: str | None = None, new_str: str | None = None,
         show_cells: bool = False, detail: str = "summary",
     ) -> ToolResult:
         "Insert notebook cells or perform exact literal replacements across notebooks."
-        arguments = dict(path=path, cells=cells, cells_file=cells_file, before_id=before_id, after_id=after_id, chapter=chapter, replace=replace, cell_type=cell_type, run_test=run_test, run_style=run_style, style_strict=style_strict, validate_code=validate_code, old_str=old_str, new_str=new_str, dry_run=dry_run, show_cells=show_cells, detail=detail)
-        full_output = capture_notebook_call(_write_nb, path, **{k: v for k, v in arguments.items() if k != "detail"})
+        arguments = dict(path=path, cells=cells, cells_file=cells_file, before_id=before_id, after_id=after_id, chapter=chapter, replace=replace, cell_type=cell_type, run_test=run_test, run_style=run_style, style_strict=style_strict, validate_code=validate_code, old_str=old_str, new_str=new_str, show_cells=show_cells, detail=detail)
+        full_output = capture_notebook_call(_write_nb, path, **{k: v for k, v in arguments.items() if k != "detail"}, dry_run=False)
         return mcp_tool_result("write_nb", arguments, full_output, detail=detail)
 
     @mcp.tool(**_mcp_tool_meta("update_cell"))
@@ -1066,18 +1066,18 @@ def create_mcp():
         path: str, new: str = "", new_file: str | None = None, cell_id: str | None = None,
         old_str: str | None = None, line_range: str | None = None,
         cell_type: str = "code", run_test: bool = False,
-        validate_code: bool = True, dry_run: bool = False, detail: str = "summary",
+        validate_code: bool = True, detail: str = "summary",
     ) -> ToolResult:
         "Update one existing notebook cell; use line_range/old_str for partial edits, and only pass a single cell block for whole-cell replacement."
-        arguments = dict(path=path, new=new, new_file=new_file, cell_id=cell_id, old_str=old_str, line_range=line_range, cell_type=cell_type, run_test=run_test, validate_code=validate_code, dry_run=dry_run, detail=detail)
-        full_output = capture_notebook_call(_update_cell, path, **{k: v for k, v in arguments.items() if k != "detail"})
+        arguments = dict(path=path, new=new, new_file=new_file, cell_id=cell_id, old_str=old_str, line_range=line_range, cell_type=cell_type, run_test=run_test, validate_code=validate_code, detail=detail)
+        full_output = capture_notebook_call(_update_cell, path, **{k: v for k, v in arguments.items() if k != "detail"}, dry_run=False)
         return mcp_tool_result("update_cell", arguments, full_output, detail=detail)
 
     @mcp.tool(**_mcp_tool_meta("batch_edit_nb"))
-    def batch_edit_nb_tool(plan: str = "", plan_file: str | None = None, path: str | None = None, dry_run: bool = True, validate_code: bool = True, default_cell_type: str = "code", detail: str = "summary") -> ToolResult:
+    def batch_edit_nb_tool(plan: str = "", plan_file: str | None = None, path: str | None = None, validate_code: bool = True, default_cell_type: str = "code", detail: str = "summary") -> ToolResult:
         "Apply a JSON batch edit plan to one or more notebooks."
-        arguments = dict(plan=plan, plan_file=plan_file, path=path, dry_run=dry_run, validate_code=validate_code, default_cell_type=default_cell_type, detail=detail)
-        full_output = capture_call(_batch_edit_nb, **{k: v for k, v in arguments.items() if k != "detail"})
+        arguments = dict(plan=plan, plan_file=plan_file, path=path, validate_code=validate_code, default_cell_type=default_cell_type, detail=detail)
+        full_output = capture_call(_batch_edit_nb, **{k: v for k, v in arguments.items() if k != "detail"}, dry_run=False)
         return mcp_tool_result("batch_edit_nb", arguments, full_output, detail=detail)
 
     @mcp.tool(**_mcp_tool_meta("exec_nb"))
@@ -1107,18 +1107,18 @@ def create_mcp():
     def execute_plan_tool(
         plan: str, notebook: str | None = None, scope: str = "notebook",
         notebooks: str | None = None, model: str | None = None, max_steps: int = 20,
-        timeout: int = 30, dry_run: bool | None = None,
+        timeout: int = 30,
         detail: str = "summary",
     ) -> ToolResult:
         "Run a bounded edit-interactive loop against one notebook or a project notebook set."
-        arguments = dict(plan=plan, notebook=notebook, scope=scope, notebooks=notebooks, model=model, max_steps=max_steps, timeout=timeout, dry_run=dry_run, detail=detail)
+        arguments = dict(plan=plan, notebook=notebook, scope=scope, notebooks=notebooks, model=model, max_steps=max_steps, timeout=timeout, detail=detail)
         mode = "project" if scope == "project" or notebooks else "notebook"
         if mode == "project":
-            project_args = dict(plan=plan, notebooks=notebooks, model=model, max_steps=max_steps, timeout=timeout, dry_run=True if dry_run is None else dry_run)
+            project_args = dict(plan=plan, notebooks=notebooks, model=model, max_steps=max_steps, timeout=timeout, dry_run=False)
             full_output = capture_call(_execute_project_plan, **project_args)
             return mcp_tool_result("execute_plan", arguments, full_output, detail=detail)
         if not notebook: raise ValueError("notebook is required when scope='notebook'")
-        notebook_args = dict(notebook=notebook, plan=plan, model=model, max_steps=max_steps, timeout=timeout, dry_run=False if dry_run is None else dry_run)
+        notebook_args = dict(notebook=notebook, plan=plan, model=model, max_steps=max_steps, timeout=timeout, dry_run=False)
         result = _execute_plan(**notebook_args)
         full_output = _plan_result_text(result)
         tool_result = mcp_tool_result("execute_plan", arguments, full_output, detail=detail)
@@ -1154,10 +1154,10 @@ def create_mcp():
         path: str = ".", skip_folder_re: str | None = None, skip_path: str | None = None,
         strict: bool = False, delete_after_output: bool = False,
         max_output_chars: int = 12000, max_diagnostics: int = 200, fix: bool = False,
-        dry_run: bool = True, detail: str = "summary",
+        detail: str = "summary",
     ) -> ToolResult:
         "Print capped chkstyle output, notebook hygiene warnings, private symbol warnings, and global tool usage."
-        arguments = dict(path=path, skip_folder_re=skip_folder_re, skip_path=skip_path, strict=strict, delete_after_output=delete_after_output, max_output_chars=max_output_chars, max_diagnostics=max_diagnostics, fix=fix, dry_run=dry_run, detail=detail)
+        arguments = dict(path=path, skip_folder_re=skip_folder_re, skip_path=skip_path, strict=strict, delete_after_output=delete_after_output, max_output_chars=max_output_chars, max_diagnostics=max_diagnostics, fix=fix, detail=detail)
         style_output = capture_call(_style_check, **{k: v for k, v in arguments.items() if k != "detail"})
         private_output = _private_symbol_report_text(path)
         full_output = "\n\n".join(chunk for chunk in [private_output, style_output] if chunk)
@@ -1171,18 +1171,18 @@ def create_mcp():
         maxdepth: int | None = None, preserve_tree: bool = True, class_lines: int = 100,
         method_lines: int = 10, package: str | None = None, include: str | None = None,
         exclude: str | None = None, skip_init: bool = True, include_tests: bool = False,
-        dry_run: bool = False, force: bool = True, detail: str = "summary",
+        force: bool = True, detail: str = "summary",
     ) -> ToolResult:
         "Convert one Python file or a folder of Python files into nbdev notebook source."
-        arguments = dict(path=path, nbs_path=nbs_path, dest=dest, recursive=recursive, maxdepth=maxdepth, preserve_tree=preserve_tree, class_lines=class_lines, method_lines=method_lines, package=package, include=include, exclude=exclude, skip_init=skip_init, include_tests=include_tests, dry_run=dry_run, force=force, detail=detail)
-        full_output = capture_call(_py2nb, **{k: v for k, v in arguments.items() if k != "detail"})
+        arguments = dict(path=path, nbs_path=nbs_path, dest=dest, recursive=recursive, maxdepth=maxdepth, preserve_tree=preserve_tree, class_lines=class_lines, method_lines=method_lines, package=package, include=include, exclude=exclude, skip_init=skip_init, include_tests=include_tests, force=force, detail=detail)
+        full_output = capture_call(_py2nb, **{k: v for k, v in arguments.items() if k != "detail"}, dry_run=False)
         return mcp_tool_result("py2nb", arguments, full_output, detail=detail)
 
     @mcp.tool(**_mcp_tool_meta("py2nbdev"))
-    def py2nbdev_tool(source: str, dest: str, package: str | None = None, nbs_path: str = "nbs", dry_run: bool = True, force: bool = False, run_validation: bool = True, detail: str = "summary") -> ToolResult:
+    def py2nbdev_tool(source: str, dest: str, package: str | None = None, nbs_path: str = "nbs", force: bool = False, run_validation: bool = True, detail: str = "summary") -> ToolResult:
         "Create a pragmatic nbdev project from a pure-Python package."
-        arguments = dict(source=source, dest=dest, package=package, nbs_path=nbs_path, dry_run=dry_run, force=force, run_validation=run_validation, detail=detail)
-        full_output = capture_call(_py2nbdev, **{k: v for k, v in arguments.items() if k != "detail"})
+        arguments = dict(source=source, dest=dest, package=package, nbs_path=nbs_path, force=force, run_validation=run_validation, detail=detail)
+        full_output = capture_call(_py2nbdev, **{k: v for k, v in arguments.items() if k != "detail"}, dry_run=False)
         return mcp_tool_result("py2nbdev", arguments, full_output, detail=detail)
 
     return mcp

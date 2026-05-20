@@ -56,7 +56,7 @@ def build_skill_from_readme(
     print(f"Built {out} from {readme_path}")
     return cli_return(out)
 
-# %% ../nbs/06_skill.ipynb #18227be1
+# %% ../nbs/06_skill.ipynb #e2009808
 def _nbskill_mcp_pids():
     proc = subprocess.run(["ps", "-eo", "pid=,command="], text=True, capture_output=True)
     if proc.returncode != 0: return []
@@ -72,6 +72,7 @@ def _nbskill_mcp_pids():
     return pids
 
 
+# %% ../nbs/06_skill.ipynb #c0d2e39e
 def nbskill_mcp_restart_notice():
     "Return restart guidance for running nbskill MCP server processes without stopping them."
     running = _nbskill_mcp_pids()
@@ -85,6 +86,7 @@ def nbskill_mcp_restart_notice():
     return {"running": True, "processes": running, "message": message}
 
 
+# %% ../nbs/06_skill.ipynb #dab79c19
 @call_parse
 @tracked_call
 def install_nbskill(
@@ -132,3 +134,4 @@ def install_nbskill(
         for proc in mcp_notice.get("processes", []):
             print(f"- pid={proc['pid']} command={proc['command']}")
     return cli_return({"installed": installed, "hooks": hooks, "mcp_restart": mcp_notice})
+

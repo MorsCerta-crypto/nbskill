@@ -2,7 +2,7 @@
 
 # %% auto #0
 __all__ = ['BUILTIN_TASTE_PROFILE', 'DEFAULT_BUDGETS', 'DEFAULT_VERIFICATION', 'load_taste_profile', 'make_task_contract',
-           'capture_state', 'compile_context', 'score_patch', 'agent_workbench']
+           'capture_state', 'compile_context', 'score_patch', 'agent_workbench_result', 'agent_workbench']
 
 # %% ../nbs/11_agent_workbench.ipynb #ebfdb211
 import ast
@@ -581,7 +581,7 @@ def _print_cli_result(result):
     return None
 
 # %% ../nbs/11_agent_workbench.ipynb #7131526e
-def _agent_workbench_result(
+def agent_workbench_result(
     goal: str,
     notebook: str | None = None,
     contract_file: str | None = None,
@@ -633,7 +633,7 @@ def agent_workbench(
     timeout: int = 30,  # Per-cell timeout for execute_plan
 ) -> dict:
     "Prepare or execute a taste-aware, small-diff agent workbench run."
-    result = _agent_workbench_result(
+    result = agent_workbench_result(
         goal, notebook=notebook, contract_file=contract_file, execute=execute,
         max_steps=max_steps, timeout=timeout,
     )

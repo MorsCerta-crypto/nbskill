@@ -2,11 +2,12 @@
 
 # %% auto #0
 __all__ = ['remove_demo_path', 'demo_path', 'path_candidates', 'is_valid_ipynb', 'write_demo_notebook', 'cli_return', 'cli_error',
-           'install_nbdev_pre_commit_hooks', 'tracked_call', 'parse_literal', 'none_if_string', 'is_definition_node',
-           'node_start_line', 'is_export_directive', 'cell_source', 'cell_metadata', 'notebook_metadata', 'file_hash',
-           'exported_py_path', 'stamp_export_metadata', 'parse_one_cell', 'find_cell_by_id', 'find_cell_by_text',
-           'replace_cell', 'clear_outputs', 'load_cells_text', 'validate_code_cells', 'parse_cells', 'first_line',
-           'cell_prefix', 'matches_filter', 'is_exported_code_cell', 'stamp_notebook_metadata', 'cell_class_names',
+           'failure_map_path', 'empty_failure_map', 'load_failure_map', 'install_nbdev_pre_commit_hooks',
+           'tracked_call', 'parse_literal', 'none_if_string', 'is_definition_node', 'node_start_line',
+           'is_export_directive', 'cell_source', 'cell_metadata', 'notebook_metadata', 'file_hash', 'exported_py_path',
+           'stamp_export_metadata', 'parse_one_cell', 'find_cell_by_id', 'find_cell_by_text', 'replace_cell',
+           'clear_outputs', 'load_cells_text', 'validate_code_cells', 'parse_cells', 'first_line', 'cell_prefix',
+           'matches_filter', 'is_exported_code_cell', 'stamp_notebook_metadata', 'cell_class_names',
            'cell_matches_type', 'with_context', 'chapter_index_set', 'one_chapter']
 
 # %% ../nbs/00_foundation.ipynb #2500639f
@@ -101,22 +102,22 @@ def cli_error(msg):
     raise ValueError(msg)
 
 # %% ../nbs/00_foundation.ipynb #b4c433a6
-def _failure_map_path():
+def failure_map_path():
     default = Path.home() / ".nbskill-errors.json"
     return Path(os.environ.get("NBSKILL_FAILURE_MAP", default)).expanduser()
 
 
 # %% ../nbs/00_foundation.ipynb #70d94ccb
-def _empty_failure_map():
+def empty_failure_map():
     return {"version": 1, "events": [], "counts": {}, "last_call": None}
 
 
 # %% ../nbs/00_foundation.ipynb #2f80149c
-def _load_failure_map(path):
+def load_failure_map(path):
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (FileNotFoundError, json.JSONDecodeError, OSError):
-        data = _empty_failure_map()
+        data = empty_failure_map()
     data.setdefault("version", 1)
     data.setdefault("events", [])
     data.setdefault("counts", {})
@@ -146,12 +147,12 @@ def _write_failure_map(path, data):
 
 # %% ../nbs/00_foundation.ipynb #ab846f37
 def _record_tool_start(tool, details=None):
-    path = _failure_map_path()
+    path = failure_map_path()
     now = time.time()
     details = details or {}
     event = {"tool": tool, "ts": now, **details}
     try:
-        data = _load_failure_map(path)
+        data = load_failure_map(path)
         _bump_count(data, "usage", tool)
         last = data.get("last_call")
         if last:
@@ -181,9 +182,9 @@ def _record_tool_start(tool, details=None):
 
 # %% ../nbs/00_foundation.ipynb #963e84e1
 def _record_tool_failure(event, exc):
-    path = _failure_map_path()
+    path = failure_map_path()
     try:
-        data = _load_failure_map(path)
+        data = load_failure_map(path)
         tool = event["tool"]
         summary = "".join(traceback.format_exception_only(type(exc), exc)).strip()
         _bump_count(data, "failures", tool)
@@ -213,19 +214,33 @@ def _track_tool(tool, details=None):
         _record_tool_failure(event, exc)
         raise
 
-# %% ../nbs/00_foundation.ipynb #3e3e40f8
+# %% ../nbs/00_foundation.ipynb #48374f0e
 _NBSKILL_HOOKS_MARKER_START = "# nbskill nbdev hooks:start"
+
+
+# %% ../nbs/00_foundation.ipynb #eab28b52
 _NBSKILL_HOOKS_MARKER_END = "# nbskill nbdev hooks:end"
+
+
+# %% ../nbs/00_foundation.ipynb #67a3c225
 _NBSKILL_HOOKS_INSTALLED_SENTINEL = "nbskill-hooks-installed"
+
+
+# %% ../nbs/00_foundation.ipynb #10840497
 _NBSKILL_HOOKS_DISABLED_SENTINEL = "nbskill-hooks-disabled"
+
+
+# %% ../nbs/00_foundation.ipynb #3ab06271
 _NBSKILL_HOOK_ROOTS = set()
 
 
+# %% ../nbs/00_foundation.ipynb #8f029a46
 def _git_root(path="."):
     proc = subprocess.run(["git", "-C", str(path), "rev-parse", "--show-toplevel"], text=True, capture_output=True)
     return Path(proc.stdout.strip()) if proc.returncode == 0 and proc.stdout.strip() else None
 
 
+# %% ../nbs/00_foundation.ipynb #035dbb05
 def _looks_like_nbdev_project(root):
     root = Path(root)
     pyproject = root / "pyproject.toml"
@@ -233,6 +248,7 @@ def _looks_like_nbdev_project(root):
     return pyproject.exists() and "[tool.nbdev]" in pyproject.read_text(encoding="utf-8", errors="ignore")
 
 
+# %% ../nbs/00_foundation.ipynb #6eca46ec
 def _nbdev_hook_block():
     return f"""{_NBSKILL_HOOKS_MARKER_START}
 run_nbdev_cmd() {{
@@ -256,6 +272,7 @@ run_nbdev_cmd nbdev-test
 """
 
 
+# %% ../nbs/00_foundation.ipynb #7f521a35
 def _replace_marked_block(text, block):
     if _NBSKILL_HOOKS_MARKER_START in text and _NBSKILL_HOOKS_MARKER_END in text:
         before = text.split(_NBSKILL_HOOKS_MARKER_START, 1)[0].rstrip()
@@ -265,17 +282,20 @@ def _replace_marked_block(text, block):
     return f"{prefix}\n\n{block}\n"
 
 
+# %% ../nbs/00_foundation.ipynb #61d4b0b9
 def _hook_state_paths(root):
     info = Path(root) / ".git" / "info"
     return info / _NBSKILL_HOOKS_INSTALLED_SENTINEL, info / _NBSKILL_HOOKS_DISABLED_SENTINEL
 
 
+# %% ../nbs/00_foundation.ipynb #4f06478e
 def _has_nbskill_hook_block(pre_commit):
     if not pre_commit.exists(): return False
     text = pre_commit.read_text(encoding="utf-8", errors="ignore")
     return _NBSKILL_HOOKS_MARKER_START in text and _NBSKILL_HOOKS_MARKER_END in text
 
 
+# %% ../nbs/00_foundation.ipynb #fe5dd49f
 def _hooks_removed_by_user(root, pre_commit):
     installed, disabled = _hook_state_paths(root)
     if disabled.exists(): return True
@@ -285,6 +305,7 @@ def _hooks_removed_by_user(root, pre_commit):
     return False
 
 
+# %% ../nbs/00_foundation.ipynb #94da0ea4
 def install_nbdev_pre_commit_hooks(path=".", run_nbdev_install_hooks=True):
     "Install nbdev-clean and nbdev-test pre-commit hooks in a git-backed nbdev project."
     root = _git_root(path)
@@ -307,6 +328,7 @@ def install_nbdev_pre_commit_hooks(path=".", run_nbdev_install_hooks=True):
     return {"installed": True, "root": str(root), "hook": str(pre_commit)}
 
 
+# %% ../nbs/00_foundation.ipynb #396ae822
 def _ensure_nbdev_pre_commit_hooks(path="."):
     if os.environ.get("NBSKILL_NO_INSTALL_HOOKS"): return None
     root = _git_root(path)
@@ -316,6 +338,7 @@ def _ensure_nbdev_pre_commit_hooks(path="."):
     except BaseException: return None
 
 
+# %% ../nbs/00_foundation.ipynb #f91401a4
 def tracked_call(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
@@ -323,6 +346,7 @@ def tracked_call(func):
         with _track_tool(func.__name__, details=_call_details(args, kwargs)):
             return func(*args, **kwargs)
     return wrapper
+
 
 # %% ../nbs/00_foundation.ipynb #41efc12d
 def parse_literal(value):
@@ -485,10 +509,11 @@ def cell_source(cell):
     if isinstance(source, list): return "".join(source)
     return str(source)
 
-# %% ../nbs/00_foundation.ipynb #nbskillmd
+# %% ../nbs/00_foundation.ipynb #c41f3416
 _NBSKILL_METADATA_KEY = "nbskill"
 
 
+# %% ../nbs/00_foundation.ipynb #b7ccbc8a
 def cell_metadata(cell):
     meta = cell.get("metadata", None) if isinstance(cell, dict) else getattr(cell, "metadata", None)
     if meta is None:
@@ -498,6 +523,7 @@ def cell_metadata(cell):
     return meta
 
 
+# %% ../nbs/00_foundation.ipynb #7a0fb55d
 def notebook_metadata(nb):
     meta = nb.get("metadata", None) if isinstance(nb, dict) else getattr(nb, "metadata", None)
     if meta is None:
@@ -507,6 +533,7 @@ def notebook_metadata(nb):
     return meta
 
 
+# %% ../nbs/00_foundation.ipynb #5b39bc0b
 def _nbskill_cell_metadata(cell, create=True):
     meta = cell_metadata(cell) if create else (cell.get("metadata", {}) if isinstance(cell, dict) else getattr(cell, "metadata", {}) or {})
     info = meta.get(_NBSKILL_METADATA_KEY) if isinstance(meta, dict) else None
@@ -517,6 +544,7 @@ def _nbskill_cell_metadata(cell, create=True):
     return info
 
 
+# %% ../nbs/00_foundation.ipynb #32cd2265
 def _nbskill_notebook_metadata(nb, create=True):
     meta = notebook_metadata(nb) if create else (nb.get("metadata", {}) if isinstance(nb, dict) else getattr(nb, "metadata", {}) or {})
     info = meta.get(_NBSKILL_METADATA_KEY) if isinstance(meta, dict) else None
@@ -527,16 +555,19 @@ def _nbskill_notebook_metadata(nb, create=True):
     return info
 
 
+# %% ../nbs/00_foundation.ipynb #1f2cf6ab
 def file_hash(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
+# %% ../nbs/00_foundation.ipynb #bbc398e6
 def _metadata_path(path):
     path = Path(path)
     try: return path.resolve().relative_to(Path.cwd().resolve()).as_posix()
     except (OSError, ValueError): return path.as_posix()
 
 
+# %% ../nbs/00_foundation.ipynb #273cd7f5
 def _default_exp_from_notebook(nb):
     for cell in getattr(nb, "cells", []):
         for line in cell_source(cell).splitlines():
@@ -545,6 +576,7 @@ def _default_exp_from_notebook(nb):
     return None
 
 
+# %% ../nbs/00_foundation.ipynb #a07dc611
 def exported_py_path(nb_path, nb=None):
     "Return the generated Python file path for an nbdev notebook, if it has one."
     nb_path = Path(nb_path)
@@ -561,6 +593,7 @@ def exported_py_path(nb_path, nb=None):
     return lib_path / (default_exp.replace(".", "/") + ".py")
 
 
+# %% ../nbs/00_foundation.ipynb #2cdea176
 def stamp_export_metadata(nb, py_path):
     info = _nbskill_notebook_metadata(nb)
     info["exported_py_path"] = _metadata_path(py_path)
@@ -568,6 +601,7 @@ def stamp_export_metadata(nb, py_path):
     return nb
 
 
+# %% ../nbs/00_foundation.ipynb #79b42816
 def _fresh_semantic_metadata(cell):
     info = _nbskill_cell_metadata(cell, create=False)
     if not info: return None
@@ -577,6 +611,7 @@ def _fresh_semantic_metadata(cell):
     normalized = tuple("example_cell" if str(item) == "exploration_cell" else str(item) for item in types)
     if getattr(cell, "cell_type", None) != "code" and "unclean_cell" in normalized: return None
     return normalized
+
 
 # %% ../nbs/00_foundation.ipynb #8d32aa50
 def parse_one_cell(text, default_type="code"):
@@ -617,7 +652,7 @@ def clear_outputs(cell):
         cell.execution_count = None
     return cell
 
-# %% ../nbs/00_foundation.ipynb #da743abe
+# %% ../nbs/00_foundation.ipynb #742730cb
 def _looks_like_multiline_cli_text(text):
     if not isinstance(text, str) or "\\n" not in text: return False
     stripped = text.lstrip().lower()
@@ -626,10 +661,12 @@ def _looks_like_multiline_cli_text(text):
     return "\\n    " in text or "\\n\t" in text
 
 
+# %% ../nbs/00_foundation.ipynb #4c0c9e06
 def _decode_cli_newlines(text):
     return text.replace("\\n", "\n") if _looks_like_multiline_cli_text(text) else text
 
 
+# %% ../nbs/00_foundation.ipynb #f5e716d7
 def load_cells_text(cells="", cells_file=None, decode_newlines=True):
     if cells_file:
         if cells: raise ValueError("Use either cells or cells_file, not both")
@@ -668,7 +705,7 @@ def validate_code_cells(cells):
             if _in_call_parse.get(): raise SystemExit(msg)
             raise ValueError(msg) from err
 
-# %% ../nbs/00_foundation.ipynb #c60b2541
+# %% ../nbs/00_foundation.ipynb #0eae6c06
 def _cell_from_block(block, default_type="code"):
     lines = block.splitlines()
     marker = lines[0].strip().lower() if lines else ""
@@ -679,11 +716,13 @@ def _cell_from_block(block, default_type="code"):
     return mk_cell("\n".join(lines), cell_type=cell_type)
 
 
+# %% ../nbs/00_foundation.ipynb #b4c65eba
 def parse_cells(cells, default_type="code"):
     if isinstance(cells, (list, tuple)): return _split_symbol_cells([_coerce_cell(o, default_type) for o in cells])
 
     parsed = [_cell_from_block(block, default_type) for block in _split_blocks(cells)]
     return _split_symbol_cells(parsed)
+
 
 # %% ../nbs/00_foundation.ipynb #0cce84e1
 def first_line(source):
@@ -710,27 +749,40 @@ def matches_filter(source, pattern):
     try: return re.search(pattern, source, flags=re.MULTILINE) is not None
     except re.error: return False
 
-# %% ../nbs/00_foundation.ipynb #01f6c74e
+# %% ../nbs/00_foundation.ipynb #ca503024
 def is_exported_code_cell(cell):
     if getattr(cell, "cell_type", None) != "code": return False
     return any(is_export_directive(line) for line in cell_source(cell).splitlines())
 
+
+# %% ../nbs/00_foundation.ipynb #8eb94e18
 def _cell_outputs(cell): return list(getattr(cell, "outputs", []) or [])
+
+
+# %% ../nbs/00_foundation.ipynb #603d7e97
 def _has_cell_output(cell): return bool(_cell_outputs(cell))
 
+
+# %% ../nbs/00_foundation.ipynb #bcf08c27
 def _code_tree(cell):
     try: return ast.parse(cell_source(cell))
     except SyntaxError: return None
 
+
+# %% ../nbs/00_foundation.ipynb #9d4d88c7
 def _code_body(cell):
     tree = _code_tree(cell)
     return [] if tree is None else list(tree.body)
 
+
+# %% ../nbs/00_foundation.ipynb #820aaed2
 def _is_import_cell(cell):
     if getattr(cell, "cell_type", None) != "code": return False
     body = _code_body(cell)
     return bool(body) and all(isinstance(node, (ast.Import, ast.ImportFrom)) for node in body)
 
+
+# %% ../nbs/00_foundation.ipynb #25f5ec85
 def _has_private_function(cell):
     if getattr(cell, "cell_type", None) != "code": return False
     tree = _code_tree(cell)
@@ -739,6 +791,8 @@ def _has_private_function(cell):
         isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("_")
         for node in tree.body)
 
+
+# %% ../nbs/00_foundation.ipynb #59be7578
 def _has_test_marker(cell):
     source = cell_source(cell)
     tree = _code_tree(cell)
@@ -748,20 +802,30 @@ def _has_test_marker(cell):
         isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("test_")
         for node in tree.body)
 
+
+# %% ../nbs/00_foundation.ipynb #c94ee726
 def _is_test_cell(cell):
     return getattr(cell, "cell_type", None) == "code" and not _has_cell_output(cell) and _has_test_marker(cell)
 
+
+# %% ../nbs/00_foundation.ipynb #72618bad
 def _is_example_cell(cell):
     return getattr(cell, "cell_type", None) == "code" and _has_cell_output(cell)
 
+
+# %% ../nbs/00_foundation.ipynb #d2452926
 def _is_section_header(cell):
     if getattr(cell, "cell_type", None) != "markdown": return False
     return any(re.match(r"^#{1,2}\s+", line.strip()) for line in cell_source(cell).splitlines())
 
+
+# %% ../nbs/00_foundation.ipynb #4f7b5870
 def _is_docs_cell(cell):
     if getattr(cell, "cell_type", None) != "markdown": return False
     return any(line.strip() and not re.match(r"^#{1,2}\s+", line.strip()) for line in cell_source(cell).splitlines())
 
+
+# %% ../nbs/00_foundation.ipynb #52405ac0
 def _cell_base_class_names(cell):
     names = []
     if _is_import_cell(cell): names.append("import_cell")
@@ -773,20 +837,28 @@ def _cell_base_class_names(cell):
     if _is_section_header(cell): names.append("section_header")
     return tuple(names)
 
+
+# %% ../nbs/00_foundation.ipynb #25ecba70
 def _semantic_code_class_names(cell):
     semantic = {"import_cell", "example_cell", "test_cell", "private_code", "exported_code"}
     return tuple(name for name in _cell_base_class_names(cell) if name in semantic)
 
+
+# %% ../nbs/00_foundation.ipynb #86869843
 def _fallback_cell_class_name(cell):
     cell_type = getattr(cell, "cell_type", None)
     return f"{cell_type}_cell" if cell_type else "unknown_cell"
 
+
+# %% ../nbs/00_foundation.ipynb #ad24a972
 def _computed_cell_class_names(cell):
     names = _cell_base_class_names(cell)
     if getattr(cell, "cell_type", None) == "code" and len(_semantic_code_class_names(cell)) > 1:
         return (*names, "unclean_cell")
     return names or (_fallback_cell_class_name(cell),)
 
+
+# %% ../nbs/00_foundation.ipynb #452e85f7
 def _refresh_cell_metadata(cell):
     info = _nbskill_cell_metadata(cell)
     semantic_types = _computed_cell_class_names(cell)
@@ -795,14 +867,19 @@ def _refresh_cell_metadata(cell):
     info.pop("source_hash", None)
     return cell
 
+
+# %% ../nbs/00_foundation.ipynb #a65ca453
 def stamp_notebook_metadata(nb, exported_py_path=None):
     for cell in getattr(nb, "cells", []): _refresh_cell_metadata(cell)
     if exported_py_path is not None: stamp_export_metadata(nb, exported_py_path)
     return nb
 
+
+# %% ../nbs/00_foundation.ipynb #0d74a9ef
 def cell_class_names(cell): return _fresh_semantic_metadata(cell) or _computed_cell_class_names(cell)
 
-# %% ../nbs/00_foundation.ipynb #917c7bb6
+
+# %% ../nbs/00_foundation.ipynb #4541deaa
 def _normalize_cell_type_filter(value):
     if value is None: return None
     aliases = {
@@ -850,6 +927,7 @@ def _normalize_cell_type_filter(value):
     return normalized or None
 
 
+# %% ../nbs/00_foundation.ipynb #414b7ba6
 def cell_matches_type(cell, cell_type):
     wanted = _normalize_cell_type_filter(cell_type)
     if wanted is None: return True
@@ -857,6 +935,7 @@ def cell_matches_type(cell, cell_type):
     return bool(set(cell_class_names(cell)) & wanted)
 
 
+# %% ../nbs/00_foundation.ipynb #ca412834
 def with_context(cells, items, include=False):
     if not include: return items
 

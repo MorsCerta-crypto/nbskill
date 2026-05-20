@@ -36,15 +36,17 @@ from nbskill.foundation import (
 )
 from .parallel import notebook_locks
 
-# %% ../nbs/02_write.ipynb #e14e4a46
+# %% ../nbs/02_write.ipynb #c1e8be42
 def _literal_replacement_mode(old_str, new_str):
     return old_str is not None or new_str is not None
 
 
+# %% ../nbs/02_write.ipynb #12538d69
 def _source_hash(source):
     return hashlib.sha256(str(source).encode("utf-8")).hexdigest()[:12]
 
 
+# %% ../nbs/02_write.ipynb #94630199
 def _resolve_notebook_paths(path):
     raw = str(path)
     pth = Path(raw).expanduser()
@@ -61,6 +63,7 @@ def _resolve_notebook_paths(path):
     return paths
 
 
+# %% ../nbs/02_write.ipynb #84889675
 def _literal_cell_diff(before, after, limit=24):
     lines = list(difflib.unified_diff(
         before.splitlines(), after.splitlines(), fromfile="before", tofile="after", lineterm="", n=2,
@@ -69,6 +72,7 @@ def _literal_cell_diff(before, after, limit=24):
     return "\n".join(lines)
 
 
+# %% ../nbs/02_write.ipynb #49c794d0
 def _export_notebook(nb, nb_path):
     py_path = exported_py_path(nb_path, nb)
     if py_path is None: return None
@@ -79,6 +83,7 @@ def _export_notebook(nb, nb_path):
     return py_path
 
 
+# %% ../nbs/02_write.ipynb #10cef51d
 def _replace_literal_in_notebook(nb, old_str, new_str, validate_code=True, collect_details=False):
     changed_cells, matches, details = 0, 0, []
     for cell in nb.cells:
@@ -104,6 +109,7 @@ def _replace_literal_in_notebook(nb, old_str, new_str, validate_code=True, colle
     return changed_cells, matches, details
 
 
+# %% ../nbs/02_write.ipynb #9fbee110
 def _format_literal_replacement_details(changed):
     lines = ["Changed cells:"]
     for nb_path, _, _, details in changed:
@@ -114,6 +120,7 @@ def _format_literal_replacement_details(changed):
     return "\n".join(lines)
 
 
+# %% ../nbs/02_write.ipynb #68e4c08a
 def _write_literal_replacements(path, old_str, new_str, run_test=False, validate_code=True, dry_run=False, show_cells=False):
     if old_str in {None, ""}: cli_error("Pass a non-empty old_str for literal replacements")
     if new_str is None: cli_error("Pass new_str for literal replacements")
@@ -147,6 +154,7 @@ def _write_literal_replacements(path, old_str, new_str, run_test=False, validate
     return cli_return([path for path, _, _, _ in changed])
 
 
+# %% ../nbs/02_write.ipynb #0f2f63da
 @call_parse
 @tracked_call
 def write_nb(
@@ -218,6 +226,7 @@ def write_nb(
             style_check(path, strict=style_strict)
     return cli_return(path)
 
+
 # %% ../nbs/02_write.ipynb #5ef9f86f
 def _save_nb(nb, path):
     with notebook_locks(path):
@@ -225,7 +234,7 @@ def _save_nb(nb, path):
         _write_nb(nb, path)
         _export_notebook(nb, path)
 
-# %% ../nbs/02_write.ipynb #8637ca42
+# %% ../nbs/02_write.ipynb #f7ce9319
 def _parse_line_range(line_range, n_lines):
     if line_range is None: return None
     value = str(line_range).strip()
@@ -241,6 +250,7 @@ def _parse_line_range(line_range, n_lines):
     return start - 1, end
 
 
+# %% ../nbs/02_write.ipynb #5f97283b
 def _replace_line_range(source, line_range, new):
     lines = source.splitlines()
     start, end = _parse_line_range(line_range, len(lines) or 1)
@@ -248,6 +258,7 @@ def _replace_line_range(source, line_range, new):
     return "\n".join([*lines[:start], *replacement, *lines[end:]])
 
 
+# %% ../nbs/02_write.ipynb #2b9e4bd7
 def _split_before_index(source, split_before):
     lines = source.splitlines()
     marker = str(split_before or "").strip()
@@ -262,6 +273,7 @@ def _split_before_index(source, split_before):
     cli_error(f"split_before did not match any line: {split_before!r}")
 
 
+# %% ../nbs/02_write.ipynb #7f39a64b
 def _split_cell_sources_before(source, split_before):
     lines = source.splitlines()
     idx = _split_before_index(source, split_before)
@@ -270,12 +282,14 @@ def _split_cell_sources_before(source, split_before):
     return "\n".join(lines[:idx]).strip("\n"), "\n".join(lines[idx:]).strip("\n")
 
 
+# %% ../nbs/02_write.ipynb #3749f0f1
 def _replace_cell_with_cells(nb, idx, cells):
     old_id = getattr(nb.cells[idx], "id", None)
     if old_id is not None and cells: cells[0].id = old_id
     nb.cells[idx:idx + 1] = cells
 
 
+# %% ../nbs/02_write.ipynb #ba6abded
 @call_parse
 @tracked_call
 def update_cell(
@@ -803,12 +817,13 @@ def batch_edit_nb(
     print(msg)
     return cli_return({"paths": [str(path) for path in paths], "details": details})
 
-# %% ../nbs/02_write.ipynb #splitcode
+# %% ../nbs/02_write.ipynb #8e5f6d2d
 def _cell_lines(cell):
     source = cell_source(cell)
     return source.splitlines()
 
 
+# %% ../nbs/02_write.ipynb #a179770a
 def _default_exp_from_cells(cells):
     for cell in cells:
         for line in _cell_lines(cell):
@@ -817,6 +832,7 @@ def _default_exp_from_cells(cells):
     return None
 
 
+# %% ../nbs/02_write.ipynb #fc95bb7f
 def _default_exp_for_dest(dest):
     dest = Path(dest)
     try:
@@ -829,6 +845,7 @@ def _default_exp_for_dest(dest):
         return dest.stem
 
 
+# %% ../nbs/02_write.ipynb #0456933c
 def _module_for_default_exp(default_exp, path=None):
     if not default_exp: return None
     try:
@@ -842,16 +859,19 @@ def _module_for_default_exp(default_exp, path=None):
     return str(default_exp)
 
 
+# %% ../nbs/02_write.ipynb #7f55becc
 def _is_default_exp_cell(cell):
     return any(re.match(r"^\s*#\|\s*default_exp\s+", line) for line in _cell_lines(cell))
 
 
+# %% ../nbs/02_write.ipynb #30173626
 def _code_ast(cell):
     if getattr(cell, "cell_type", None) != "code": return None
     try: return ast.parse(cell_source(cell))
     except SyntaxError: return None
 
 
+# %% ../nbs/02_write.ipynb #99b9c8be
 def _import_bound_names(node):
     if isinstance(node, ast.Import):
         return [alias.asname or alias.name.split(".", 1)[0] for alias in node.names]
@@ -860,12 +880,14 @@ def _import_bound_names(node):
     return []
 
 
+# %% ../nbs/02_write.ipynb #217953fe
 def _node_source_from_cell(cell, node):
     lines = cell_source(cell).splitlines()
     start = min([node.lineno, *[d.lineno for d in getattr(node, "decorator_list", [])]]) - 1
     return "\n".join(lines[start:node.end_lineno]).strip("\n")
 
 
+# %% ../nbs/02_write.ipynb #8dcb822b
 def _definition_names(cells):
     names = {}
     for idx, cell in enumerate(cells):
@@ -877,6 +899,7 @@ def _definition_names(cells):
     return names
 
 
+# %% ../nbs/02_write.ipynb #8430f3e8
 def _bound_names(cells):
     names = set()
     for cell in cells:
@@ -891,6 +914,7 @@ def _bound_names(cells):
     return names
 
 
+# %% ../nbs/02_write.ipynb #49693e0b
 def _loaded_names(cells):
     names = set()
     for cell in cells:
@@ -901,6 +925,7 @@ def _loaded_names(cells):
     return names - _bound_names(cells) - set(dir(builtins))
 
 
+# %% ../nbs/02_write.ipynb #2d66f9ac
 def _import_lines_for_names(cells, names):
     lines, seen = [], set()
     for cell in cells:
@@ -916,16 +941,19 @@ def _import_lines_for_names(cells, names):
     return lines
 
 
+# %% ../nbs/02_write.ipynb #e7e30caf
 def _symbol_replacements(promotions):
     return {old: new for old, new in promotions}
 
 
+# %% ../nbs/02_write.ipynb #55070d8c
 def _replace_symbol_refs(source, promotions):
     for old, new in _symbol_replacements(promotions).items():
         source = re.sub(rf"(?<![\w.]){re.escape(old)}(?![\w])", new, source)
     return source
 
 
+# %% ../nbs/02_write.ipynb #0b580bca
 def _apply_promotions(cells, promotions):
     if not promotions: return
     for cell in cells:
@@ -934,6 +962,7 @@ def _apply_promotions(cells, promotions):
             clear_outputs(cell)
 
 
+# %% ../nbs/02_write.ipynb #7669c85b
 def _insert_import_cell(cells, lines):
     lines = [line for line in lines if line]
     if not lines: return
@@ -942,6 +971,7 @@ def _insert_import_cell(cells, lines):
     cells.insert(insert_at, mk_cell(source, cell_type="code"))
 
 
+# %% ../nbs/02_write.ipynb #9a8e680f
 def _split_chapter_plan(nb, chapter, dest, default_exp=None, promote_private=True):
     span = one_chapter(nb.cells, chapter)
     moved = [copy.deepcopy(cell) for cell in nb.cells[span["start"]:span["end"]]]
@@ -999,6 +1029,7 @@ def _split_chapter_plan(nb, chapter, dest, default_exp=None, promote_private=Tru
     }
 
 
+# %% ../nbs/02_write.ipynb #0b146597
 def _format_split_plan(path, dest, chapter, plan, dry_run=False):
     prefix = "Dry run: would split" if dry_run else "Split"
     lines = [f"{prefix} chapter {chapter!r} from {path} -> {dest}"]
@@ -1015,6 +1046,7 @@ def _format_split_plan(path, dest, chapter, plan, dry_run=False):
     return "\n".join(lines)
 
 
+# %% ../nbs/02_write.ipynb #948a5600
 @call_parse
 @tracked_call
 def split_nb_chapter(

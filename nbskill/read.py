@@ -205,7 +205,7 @@ def _format_usage_for_items(path, items, max_symbols=4):
         text = f"{text}\n... {len(symbols) - len(shown)} more symbols omitted ..."
     return text
 
-# %% ../nbs/01_read.ipynb #e09b2650
+# %% ../nbs/01_read.ipynb #76e0d320
 def _chapter_title_from_cell(cell):
     if getattr(cell, "cell_type", None) != "markdown": return None
     for line in cell_source(cell).splitlines():
@@ -214,10 +214,12 @@ def _chapter_title_from_cell(cell):
     return None
 
 
+# %% ../nbs/01_read.ipynb #37ae8575
 def _normalize_chapter_title(value):
     return re.sub(r"\s+", " ", str(value).strip().lower())
 
 
+# %% ../nbs/01_read.ipynb #411b4891
 def _chapter_spans_for_nb(cells):
     starts = [(idx, title) for idx, cell in enumerate(cells) if (title := _chapter_title_from_cell(cell))]
     if not starts: return [dict(title="Notebook", start=0, end=len(cells))]
@@ -228,12 +230,14 @@ def _chapter_spans_for_nb(cells):
     return spans
 
 
+# %% ../nbs/01_read.ipynb #fa91bd16
 def _notebook_head_items(cells):
     spans = _chapter_spans_for_nb(cells)
     head_end = spans[0]["start"] if spans else len(cells)
     return [(idx, cells[idx]) for idx in range(head_end)]
 
 
+# %% ../nbs/01_read.ipynb #c8ed9b2e
 def _chapter_span_for_index(cells, idx):
     spans = _chapter_spans_for_nb(cells)
     if spans and idx < spans[0]["start"]:
@@ -243,6 +247,7 @@ def _chapter_span_for_index(cells, idx):
     raise ValueError(f"Cell index {idx} is outside the notebook")
 
 
+# %% ../nbs/01_read.ipynb #27e44c97
 def _chapter_matches(span, name):
     title = span["title"]
     if matches_filter(title, name): return True
@@ -250,6 +255,7 @@ def _chapter_matches(span, name):
     return bool(wanted and (wanted in candidate or candidate in wanted))
 
 
+# %% ../nbs/01_read.ipynb #8cbbb8bd
 def _one_chapter_span(cells, name):
     spans = _chapter_spans_for_nb(cells)
     matches = [span for span in spans if _chapter_matches(span, name)]
@@ -260,6 +266,7 @@ def _one_chapter_span(cells, name):
     raise ValueError(f"Chapter {name!r} matches multiple chapters: {matched}")
 
 
+# %% ../nbs/01_read.ipynb #c605990b
 def _query_items(nb, query):
     items, seen = [], set()
     for spec in _parse_query(query):
@@ -270,6 +277,7 @@ def _query_items(nb, query):
     return items
 
 
+# %% ../nbs/01_read.ipynb #50593287
 def _selected_chapter_span(nb, query=None, name=None, any_cell_id=None):
     selectors = [value is not None for value in (query, name, any_cell_id)]
     if sum(selectors) != 1: raise ValueError("Pass exactly one of query, name, or any_cell_id")
@@ -282,6 +290,7 @@ def _selected_chapter_span(nb, query=None, name=None, any_cell_id=None):
     return _chapter_span_for_index(nb.cells, items[0][0])
 
 
+# %% ../nbs/01_read.ipynb #de4022bc
 def _chapter_items(nb, span):
     idxs = set()
     items = []
@@ -292,6 +301,7 @@ def _chapter_items(nb, span):
     return items
 
 
+# %% ../nbs/01_read.ipynb #675786ce
 def _selected_cell_item(nb, query=None, id=None):
     if (query is None) == (id is None): raise ValueError("Pass exactly one of query or id")
     if id is not None: return find_cell_by_id(nb.cells, id)
@@ -302,6 +312,7 @@ def _selected_cell_item(nb, query=None, id=None):
     raise ValueError(f"Query {query!r} matched {len(items)} cells; narrow it or pass id.\n{preview}")
 
 
+# %% ../nbs/01_read.ipynb #b4784010
 @call_parse
 @tracked_call
 def nb_overview(
@@ -316,6 +327,7 @@ def nb_overview(
     return cli_return(text)
 
 
+# %% ../nbs/01_read.ipynb #e17a74d9
 @call_parse
 @tracked_call
 def nb_chapter(
@@ -332,6 +344,7 @@ def nb_chapter(
     return cli_return(text)
 
 
+# %% ../nbs/01_read.ipynb #32506359
 @call_parse
 @tracked_call
 def nb_cell(
@@ -349,6 +362,7 @@ def nb_cell(
         text = f"{text}\n\nUsage:\n{usage}" if text else f"Usage:\n{usage}"
     if text: print(text)
     return cli_return(text)
+
 
 # %% ../nbs/01_read.ipynb #4b23b7ed
 def _source_without_directives(source):

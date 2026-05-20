@@ -127,7 +127,7 @@ def _py2nb_cells(source, default_exp, class_lines=100, method_lines=10):
     if needs_patch: cells.insert(1, _export_cell("from fastcore.basics import patch"))
     return _stabilize_cells(cells, default_exp)
 
-# %% ../nbs/05_convert.ipynb #68d4958b
+# %% ../nbs/05_convert.ipynb #f73ec284
 def _module_name_for_path(path, module_base=None):
     pth = Path(path)
     if module_base is None: return pth.stem
@@ -135,6 +135,7 @@ def _module_name_for_path(path, module_base=None):
     return ".".join(rel.parts)
 
 
+# %% ../nbs/05_convert.ipynb #e95674c4
 def _py2nb_file(path, nbs_path="nbs", dest=None, class_lines=100, method_lines=10, default_exp=None, dry_run=False, force=True):
     pth = Path(path)
     source = pth.read_text(encoding="utf-8")
@@ -155,11 +156,13 @@ def _py2nb_file(path, nbs_path="nbs", dest=None, class_lines=100, method_lines=1
     }
 
 
+# %% ../nbs/05_convert.ipynb #a4e2b7ed
 def _new_notebook_path(name, nbs_path="nbs"):
     pth = Path(name)
     return pth if pth.suffix == ".ipynb" else Path(nbs_path) / f"{str(name).removesuffix('.ipynb')}.ipynb"
 
 
+# %% ../nbs/05_convert.ipynb #a90e5c89
 def _export_new_notebook(nb, nb_path):
     py_path = exported_py_path(nb_path, nb)
     if py_path is None: return None
@@ -170,6 +173,7 @@ def _export_new_notebook(nb, nb_path):
     return py_path
 
 
+# %% ../nbs/05_convert.ipynb #e32d15d9
 @call_parse
 @tracked_call
 def new_nbdev_notebook(
@@ -199,27 +203,37 @@ def new_nbdev_notebook(
     print(json.dumps(report, indent=2, sort_keys=True))
     return cli_return(report)
 
-# %% ../nbs/05_convert.ipynb #49a4e465
+
+# %% ../nbs/05_convert.ipynb #080f32b3
 _DEFAULT_IGNORE_DIRS = {
     "__pycache__", ".git", ".hg", ".mypy_cache", ".pytest_cache", ".ruff_cache",
     ".tox", ".venv", "venv", "env", "build", "dist", ".ipynb_checkpoints",
     "node_modules",
 }
+
+
+# %% ../nbs/05_convert.ipynb #4a43a8d7
 _DEFAULT_IGNORE_FILES = {"__init__.py"}
+
+
+# %% ../nbs/05_convert.ipynb #7f45b67f
 _TEST_DIRS = {"test", "tests", "testing"}
 
 
+# %% ../nbs/05_convert.ipynb #69a53c8f
 def _patterns(value):
     if not value: return []
     if isinstance(value, (list, tuple, set)): return [str(item) for item in value if str(item)]
     return [item.strip() for item in str(value).split(",") if item.strip()]
 
 
+# %% ../nbs/05_convert.ipynb #c5b04416
 def _matches_any(path, patterns):
     text = path.as_posix()
     return any(fnmatch.fnmatch(text, pat) or fnmatch.fnmatch(path.name, pat) for pat in patterns)
 
 
+# %% ../nbs/05_convert.ipynb #c4012c0c
 def _package_dirs(root):
     return sorted(
         path for path in root.iterdir()
@@ -227,6 +241,7 @@ def _package_dirs(root):
     )
 
 
+# %% ../nbs/05_convert.ipynb #2cfe0312
 def _resolve_source_tree(path, package=None):
     root = Path(path)
     if root.is_file(): return root, root.parent, root.parent
@@ -246,6 +261,7 @@ def _resolve_source_tree(path, package=None):
     return root, root, root
 
 
+# %% ../nbs/05_convert.ipynb #5615073d
 def _is_ignored_py(path, rel, include=None, exclude=None, skip_init=True, include_tests=False):
     if any(part in _DEFAULT_IGNORE_DIRS or part.startswith(".") for part in rel.parts[:-1]): return True
     if skip_init and path.name in _DEFAULT_IGNORE_FILES: return True
@@ -255,6 +271,7 @@ def _is_ignored_py(path, rel, include=None, exclude=None, skip_init=True, includ
     return False
 
 
+# %% ../nbs/05_convert.ipynb #634578df
 def _python_files(scan_root, recursive=True, maxdepth=None):
     files = scan_root.rglob("*.py") if recursive else scan_root.glob("*.py")
     for path in sorted(files):
@@ -263,11 +280,13 @@ def _python_files(scan_root, recursive=True, maxdepth=None):
         yield path
 
 
+# %% ../nbs/05_convert.ipynb #777bde95
 def _dest_for_module(nbs_path, default_exp, preserve_tree):
     name = f"{default_exp.replace('.', '/')}.ipynb" if preserve_tree else f"{default_exp.rsplit('.', 1)[-1]}.ipynb"
     return Path(nbs_path) / name
 
 
+# %% ../nbs/05_convert.ipynb #b61029df
 def _py2nbs_folder(
     path, nbs_path="nbs", recursive=True, maxdepth=None, preserve_tree=True,
     class_lines=100, method_lines=10, package=None, include=None, exclude=None,
@@ -309,6 +328,7 @@ def _py2nbs_folder(
     return report
 
 
+# %% ../nbs/05_convert.ipynb #e6439330
 @call_parse
 @tracked_call
 def py2nb(
@@ -347,6 +367,7 @@ def py2nb(
     )
     print(f"{'Would write' if dry_run else 'Wrote'} {report['cell_count']} cells to {report['notebook']}")
     return cli_return(report)
+
 
 # %% ../nbs/05_convert.ipynb #35c804b1
 @call_parse

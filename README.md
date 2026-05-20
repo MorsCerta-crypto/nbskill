@@ -67,6 +67,39 @@ The notebooks in `nbs/` are ordered like the toolchain itself:
 12. `11_agent_workbench.ipynb` compiles taste, context, budgets, and
     gates into a small-diff agent workbench.
 
+## Production readiness
+
+Production readiness starts with contracts, then behavior, then cleanup.
+The repository treats notebooks as source, so every public feature needs
+a small executable contract before cells are split or code is moved.
+
+The production core is intentionally narrow:
+
+| Area | CLI | MCP | Public API | Status |
+|----|----|----|----|----|
+| Reading | [`nb_overview`](https://MorsCerta-crypto.github.io/nbskill/read.html#nb_overview), [`nb_chapter`](https://MorsCerta-crypto.github.io/nbskill/read.html#nb_chapter), [`nb_cell`](https://MorsCerta-crypto.github.io/nbskill/read.html#nb_cell), [`show_doc`](https://MorsCerta-crypto.github.io/nbskill/read.html#show_doc) | yes | yes | core |
+| Editing | [`write_nb`](https://MorsCerta-crypto.github.io/nbskill/write.html#write_nb), [`update_cell`](https://MorsCerta-crypto.github.io/nbskill/write.html#update_cell), [`batch_edit_nb`](https://MorsCerta-crypto.github.io/nbskill/write.html#batch_edit_nb) | structured edit tools | yes | core |
+| Execution | [`exec_nb`](https://MorsCerta-crypto.github.io/nbskill/execute.html#exec_nb), [`run_notebook_test`](https://MorsCerta-crypto.github.io/nbskill/execute.html#run_notebook_test) | [`exec_nb`](https://MorsCerta-crypto.github.io/nbskill/execute.html#exec_nb) | yes | core |
+| Review | [`diff_nb`](https://MorsCerta-crypto.github.io/nbskill/review.html#diff_nb), [`style_check`](https://MorsCerta-crypto.github.io/nbskill/review.html#style_check), `nbskill_validate` | [`diff_nb`](https://MorsCerta-crypto.github.io/nbskill/review.html#diff_nb), [`style_check`](https://MorsCerta-crypto.github.io/nbskill/review.html#style_check), `doctor` | yes | core |
+| Concurrency | n/a | internal locks | yes | core infrastructure |
+| Conversion | [`py2nb`](https://MorsCerta-crypto.github.io/nbskill/convert.html#py2nb), [`py2nbdev`](https://MorsCerta-crypto.github.io/nbskill/convert.html#py2nbdev), [`new_nbdev_notebook`](https://MorsCerta-crypto.github.io/nbskill/convert.html#new_nbdev_notebook) | optional | yes | CLI-first |
+| Skill install | [`install_nbskill`](https://MorsCerta-crypto.github.io/nbskill/skill.html#install_nbskill), `build_nbskill_skill` | no | yes | CLI-first |
+| Agentic edit loops | [`execute_plan`](https://MorsCerta-crypto.github.io/nbskill/edit_interactive.html#execute_plan), [`agent_workbench`](https://MorsCerta-crypto.github.io/nbskill/agent_workbench.html#agent_workbench) | experimental only | provisional | experimental |
+| Graph and knowledge tools | graph reports, behaviour steering | optional | provisional | experimental |
+
+The production workflow is:
+
+1.  Edit the source notebook, not generated Python.
+2.  Keep the intended behavior covered by a contract cell or
+    behavior-test notebook.
+3.  Export generated modules through the notebook-aware write path.
+4.  Run `uv run nbskill_validate nbs`.
+5.  Run focused execution checks with
+    `uv run exec_nb <notebook> --check_only`.
+6.  Run `uv run style_check nbs --changed_only --max_diagnostics 80`.
+7.  Only promote strict style gates after the current warning backlog
+    has been paid down.
+
 ## A tiny notebook to work on
 
 The examples below create a temporary notebook, then use the same public

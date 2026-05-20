@@ -618,12 +618,12 @@ def _decode_cli_newlines(text):
     return text.replace("\\n", "\n") if _looks_like_multiline_cli_text(text) else text
 
 
-def load_cells_text(cells="", cells_file=None):
+def load_cells_text(cells="", cells_file=None, decode_newlines=True):
     if cells_file:
         if cells: raise ValueError("Use either cells or cells_file, not both")
         return Path(cells_file).expanduser().read_text(encoding="utf-8")
     if cells == "-": return sys.stdin.read()
-    return _decode_cli_newlines(cells)
+    return _decode_cli_newlines(cells) if decode_newlines else cells
 
 
 # %% ../nbs/00_foundation.ipynb #079cbcac

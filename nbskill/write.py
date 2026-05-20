@@ -9,6 +9,7 @@ import builtins
 import copy
 import difflib
 import glob
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -17,7 +18,7 @@ from fastcore.nbio import mk_cell, new_nb
 from fastcore.nbio import read_nb as _read_nb
 from fastcore.nbio import write_nb as _write_nb
 from fastcore.script import Param, call_parse, _in_call_parse
-from nbdev.doclinks import nbdev_export
+from nbdev.doclinks import nbdev_export as _run_nb_export
 
 from .execute import run_notebook_test
 from .review import style_check
@@ -33,6 +34,10 @@ from .parallel import notebook_locks
 # %% ../nbs/02_write.ipynb #e14e4a46
 def _literal_replacement_mode(old_str, new_str):
     return old_str is not None or new_str is not None
+
+
+def _source_hash(source):
+    return hashlib.sha256(str(source).encode("utf-8")).hexdigest()[:12]
 
 
 def _resolve_notebook_paths(path):
@@ -62,7 +67,7 @@ def _literal_cell_diff(before, after, limit=24):
 def _export_notebook(nb, nb_path):
     py_path = exported_py_path(nb_path, nb)
     if py_path is None: return None
-    nbdev_export(path=str(nb_path))
+    _run_nb_export(path=str(nb_path))
     if py_path.exists():
         stamp_export_metadata(nb, py_path)
         _write_nb(nb, nb_path)
@@ -82,6 +87,8 @@ def _replace_literal_in_notebook(nb, old_str, new_str, validate_code=True, colle
                 "cell_id": getattr(cell, "id", ""),
                 "cell_type": getattr(cell, "cell_type", ""),
                 "matches": count,
+                "before_hash": _source_hash(before),
+                "after_hash": _source_hash(after),
                 "diff": _literal_cell_diff(before, after),
             })
         cell.source = after
@@ -270,6 +277,7 @@ def update_cell(
     path: str,  # Notebook path
     new: Param("Replacement cell source, replacement text, or line-range replacement", str, opt=False, nargs="?") = "",
     new_file: str | None = None,  # Read replacement text from a UTF-8 file
+    decode_newlines: bool = True,  # Decode CLI-style literal \\n escapes in new text
     cell_id: str | None = None,  # Stable notebook cell id to update
     old_str: str | None = None,  # Text to replace, or text used to find the target cell
     line_range: str | None = None,  # 1-based inclusive lines to replace, e.g. 3 or 3:5
@@ -293,7 +301,7 @@ def update_cell(
         if old_str is not None or line_range is not None:
             cli_error("split=True only supports whole-cell replacement by cell_id")
     path = Path(path)
-    new = load_cells_text(new, new_file)
+    new = load_cells_text(new, new_file, decode_newlines=decode_newlines)
 
     with notebook_locks(path):
         nb = _read_nb(path)
@@ -393,11 +401,18 @@ def _op_diff(before, after, limit=24):
     return "\n".join(lines)
 
 # %% ../nbs/02_write.ipynb #fd6543d8
+def _cell_source_hash(cell):
+    return _source_hash(cell_source(cell))
+
+
 def _batch_detail(op, path, cell_id="", before="", after=""):
     detail = {
         "op": op.get("op"),
         "path": str(path),
         "cell_id": cell_id,
+        "before_hash": _source_hash(before) if before else "",
+        "after_hash": _source_hash(after) if after else "",
+        "status": "planned",
         "diff": _op_diff(before, after) if before != after else "",
     }
     return detail
@@ -420,13 +435,18 @@ def _apply_batch_op(nb, path, op, validate_code=True, default_cell_type="code"):
         new_cells = _op_cells(op, default_cell_type=default_cell_type)
         if validate_code: validate_code_cells(new_cells)
         target = idx + 1 if kind == "insert_after_id" else idx
+        inserted = []
         for offset, cell in enumerate(new_cells):
+            clear_outputs(cell)
             nb.cells.insert(target + offset, cell)
+            inserted.append({"cell_id": getattr(cell, "id", ""), "after_hash": _cell_source_hash(cell)})
         where = "after" if kind == "insert_after_id" else "before"
         return [{
             "op": kind,
             "path": str(path),
             "cell_id": getattr(anchor, "id", ""),
+            "inserted": inserted,
+            "status": "planned",
             "diff": f"inserted {len(new_cells)} cell(s) {where} id={getattr(anchor, 'id', '')}",
         }]
     if kind == "delete_cell_id":
@@ -442,17 +462,77 @@ def _apply_batch_op(nb, path, op, validate_code=True, default_cell_type="code"):
         _, matches, details = _replace_literal_in_notebook(nb, str(old), str(new), validate_code=validate_code, collect_details=True)
         if not matches: cli_error(f"No matches for {old!r} in {path}")
         return [
-            {"op": kind, "path": str(path), "cell_id": item["cell_id"], "diff": item["diff"]}
+            {
+                "op": kind,
+                "path": str(path),
+                "cell_id": item["cell_id"],
+                "before_hash": item.get("before_hash", ""),
+                "after_hash": item.get("after_hash", ""),
+                "status": "planned",
+                "diff": item["diff"],
+            }
             for item in details
         ]
     cli_error(f"Unknown batch operation {kind!r}")
 
 # %% ../nbs/02_write.ipynb #ee67d2d7
+def _detail_cell_matches(nb, detail):
+    try:
+        _, cell = find_cell_by_id(nb.cells, detail.get("cell_id"))
+    except ValueError:
+        return False
+    return not detail.get("after_hash") or _cell_source_hash(cell) == detail.get("after_hash")
+
+
+def _detail_insert_matches(nb, detail):
+    for item in detail.get("inserted", []):
+        try:
+            _, cell = find_cell_by_id(nb.cells, item.get("cell_id"))
+        except ValueError:
+            return False
+        if _cell_source_hash(cell) != item.get("after_hash"): return False
+    return True
+
+
+def _verify_batch_details(details):
+    by_path = {}
+    for detail in details:
+        by_path.setdefault(Path(detail["path"]), []).append(detail)
+    failed = []
+    for path, path_details in by_path.items():
+        nb = _read_nb(path)
+        for detail in path_details:
+            op = detail.get("op")
+            ok = True
+            if op == "delete_cell_id":
+                try:
+                    find_cell_by_id(nb.cells, detail.get("cell_id"))
+                    ok = False
+                except ValueError:
+                    ok = True
+            elif op in {"insert_after_id", "insert_before_id"}:
+                ok = _detail_insert_matches(nb, detail)
+            else:
+                ok = _detail_cell_matches(nb, detail)
+            if not ok:
+                failed_detail = dict(detail)
+                failed_detail["status"] = "failed"
+                failed.append(failed_detail)
+    return failed
+
+
 def _format_batch_details(details):
     lines = []
     for item in details:
+        index = f"#{item['index']} " if "index" in item else ""
         cell = f" id={item['cell_id']}" if item.get("cell_id") else ""
-        lines.append(f"- {item['op']}: {item['path']}{cell}")
+        status = f" [{item['status']}]" if item.get("status") else ""
+        hashes = ""
+        if item.get("before_hash") or item.get("after_hash"):
+            hashes = f" {item.get('before_hash', '')}->{item.get('after_hash', '')}"
+        lines.append(f"- {index}{item['op']}: {item['path']}{cell}{status}{hashes}")
+        for inserted in item.get("inserted", []):
+            lines.append(f"    inserted id={inserted.get('cell_id', '')} hash={inserted.get('after_hash', '')}")
         if item.get("diff"):
             lines.extend(f"    {line}" for line in item["diff"].splitlines())
     return "\n".join(lines)
@@ -468,7 +548,7 @@ def batch_edit_nb(
     validate_code: bool = True,  # Validate changed Python code before writing
     default_cell_type: str = "code",  # Default cell type for inserted cells without %% markers
 ):
-    "Apply a JSON batch edit plan to one or more notebooks with locks and diffs."
+    "Apply a JSON batch edit plan to one or more notebooks with locks, diffs, and read-back verification."
     data = _load_batch_plan(plan, plan_file)
     ops = data["operations"]
     paths = sorted({_op_path(op, path) for op in ops}, key=str)
@@ -476,20 +556,35 @@ def batch_edit_nb(
     exported = False
     with notebook_locks(*paths):
         notebooks = {nb_path: _read_nb(nb_path) for nb_path in paths}
-        for op in ops:
+        for index, op in enumerate(ops, start=1):
             nb_path = _op_path(op, path)
-            details.extend(_apply_batch_op(notebooks[nb_path], nb_path, op, validate_code=validate_code, default_cell_type=default_cell_type))
+            op_details = _apply_batch_op(
+                notebooks[nb_path], nb_path, op,
+                validate_code=validate_code, default_cell_type=default_cell_type,
+            )
+            for detail in op_details:
+                detail["index"] = index
+            details.extend(op_details)
         if not dry_run:
             for nb_path, nb in notebooks.items():
                 stamp_notebook_metadata(nb)
                 _write_nb(nb, nb_path)
                 exported = _export_notebook(nb, nb_path) is not None or exported
+            failed = _verify_batch_details(details)
+            if failed:
+                for item in failed:
+                    for detail in details:
+                        if detail.get("index") == item.get("index") and detail.get("cell_id") == item.get("cell_id"):
+                            detail["status"] = "failed"
+                cli_error("Batch edit verification failed after writing:\n" + _format_batch_details(failed))
+            for detail in details:
+                detail["status"] = "verified"
     prefix = "Dry run: would apply" if dry_run else "Applied"
     msg = f"{prefix} {len(ops)} batch operations across {len(paths)} notebook(s)"
     if exported: msg += " and exported with nbdev"
     if details: msg += "\n" + _format_batch_details(details)
     print(msg)
-    return cli_return([str(path) for path in paths])
+    return cli_return({"paths": [str(path) for path in paths], "details": details})
 
 # %% ../nbs/02_write.ipynb #splitcode
 def _cell_lines(cell):

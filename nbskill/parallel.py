@@ -11,7 +11,7 @@ from pathlib import Path
 # %% ../nbs/09_parallel.ipynb #9eb56702
 _LOCKS_GUARD = threading.Lock()
 _NOTEBOOK_LOCKS = {}
-_EXECUTION_SEMAPHORE = threading.Semaphore(1)
+_EXECUTION_SEMAPHORE = threading.RLock()
 
 # %% ../nbs/09_parallel.ipynb #be270912
 def notebook_key(path):

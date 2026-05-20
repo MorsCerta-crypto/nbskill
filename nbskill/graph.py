@@ -8,6 +8,7 @@ __all__ = ['notebook_order_problems', 'notebook_order_problem_lines', 'symbol_us
 import ast
 import builtins
 import glob
+import json
 from pathlib import Path
 
 from fastcore.nbio import read_nb as _read_nb
@@ -225,10 +226,23 @@ def _body_binding_names(nodes):
     return names
 
 
-def _cell_binding_names(tree):
+def _block_binding_names(nodes):
     names = set()
-    for node in tree.body: names.update(_binding_names_from_node(node))
+    for node in nodes:
+        names.update(_binding_names_from_node(node))
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)):
+            continue
+        for attr in ("body", "orelse", "finalbody"):
+            body = getattr(node, attr, None)
+            if body: names.update(_block_binding_names(body))
+        for handler in getattr(node, "handlers", []):
+            names.update(_binding_names_from_node(handler))
+            names.update(_block_binding_names(handler.body))
     return names
+
+
+def _cell_binding_names(tree):
+    return _block_binding_names(tree.body)
 
 
 def _call_root_name(node):
@@ -428,22 +442,54 @@ def _symbol_graph_data(path, symbol):
     for definition in definitions:
         callee_symbols.extend(_resolve_callees(graph, definition["calls"]))
     callee_symbols = sorted(set(item for item in callee_symbols if item != symbol))
-    return {"symbol": symbol, "definitions": definitions, "callers": callers, "callees": callee_symbols, "graph": graph}
+    return {
+        "symbol": symbol,
+        "definitions": definitions,
+        "callers": callers,
+        "caller_usages": _caller_usage_records(callers, symbol),
+        "callees": callee_symbols,
+        "graph": graph,
+    }
 
 
-def _caller_usage_lines(records, symbol, limit=8):
-    lines, seen = [], set()
+def _caller_usage_records(records, symbol):
+    items, seen = [], set()
     for record in records:
         for site in record.get("call_sites", ()):
             if not _call_matches_symbol(site.get("name"), symbol): continue
             key = (record["path"], record["cell_id"], site.get("lineno"), site.get("line"))
             if key in seen: continue
             seen.add(key)
-            lineno = f" line {site['lineno']}" if site.get("lineno") else ""
-            source = f": {site['line']}" if site.get("line") else ""
-            lines.append(f"- {record['path']} id={record['cell_id']}{lineno}{source}")
-            if len(lines) >= limit: return lines
+            items.append({
+                "path": record["path"],
+                "cell_id": record["cell_id"],
+                "lineno": site.get("lineno"),
+                "name": site.get("name"),
+                "line": site.get("line"),
+            })
+    return items
+
+
+def _caller_usage_lines(records, symbol, limit=8):
+    lines = []
+    for site in _caller_usage_records(records, symbol)[:limit]:
+        lineno = f" line {site['lineno']}" if site.get("lineno") else ""
+        source = f": {site['line']}" if site.get("line") else ""
+        lines.append(f"- {site['path']} id={site['cell_id']}{lineno}{source}")
     return lines
+
+
+def _symbol_graph_public_data(data):
+    return {
+        "symbol": data["symbol"],
+        "definitions": data["definitions"],
+        "callers": data["callers"],
+        "caller_usages": data["caller_usages"],
+        "callees": [
+            {"symbol": symbol, "locations": _callee_locations(data["graph"], symbol)}
+            for symbol in data["callees"]
+        ],
+    }
 
 
 def _format_symbol_graph_data(data):
@@ -487,10 +533,17 @@ def symbol_usage_summary(path, symbols):
 def symbol_graph(
     path: str = "nbs",  # Notebook file, directory, or glob to scan
     symbol: str = "",  # Function, class, or Class.method to inspect
+    json_output: bool = False,  # Print complete structured JSON instead of compact text
 ):
     "Print definitions, callers, and callees for a notebook symbol."
     if not symbol: cli_error("Pass --symbol to inspect")
-    text = _format_symbol_graph_data(_symbol_graph_data(path, symbol))
+    data = _symbol_graph_data(path, symbol)
+    if json_output:
+        result = _symbol_graph_public_data(data)
+        text = json.dumps(result, indent=2, sort_keys=True)
+        print(text)
+        return cli_return(result)
+    text = _format_symbol_graph_data(data)
     print(text)
     return cli_return(text)
 

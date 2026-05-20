@@ -15,7 +15,7 @@ from pathlib import Path
 from fastcore.nbio import mk_cell
 from fastcore.nbio import read_nb as _read_nb
 from fastcore.nbio import write_nb as _write_nb
-from nbdev.doclinks import nbdev_export
+from nbdev.doclinks import nbdev_export as _run_nb_export
 
 from .execute import exec_nb as _exec_nb
 from nbskill.foundation import (
@@ -99,7 +99,7 @@ class EditSession:
 def _export_notebook(nb, nb_path):
     py_path = exported_py_path(nb_path, nb)
     if py_path is None: return None
-    nbdev_export(path=str(nb_path))
+    _run_nb_export(path=str(nb_path))
     if py_path.exists():
         stamp_export_metadata(nb, py_path)
         _write_nb(nb, nb_path)

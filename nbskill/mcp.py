@@ -17,6 +17,8 @@ from io import StringIO
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
+from fastcore.nbio import read_nb as _read_raw_nb
+from fastcore.nbio import write_nb as _write_raw_nb
 from fastcore.script import Param, call_parse, _in_call_parse
 from fastmcp import FastMCP
 from fastmcp.tools import ToolResult
@@ -29,9 +31,10 @@ from .edit_interactive import execute_project_plan as _execute_project_plan
 from .edit_interactive import plan_result_text as _plan_result_text
 from .execute import exec_nb as _exec_nb
 from .workbench import agent_workbench as _agent_workbench
-from .foundation import _empty_failure_map, _failure_map_path, _load_failure_map, exported_py_path
+from .foundation import _empty_failure_map, _failure_map_path, _load_failure_map, cell_source, exported_py_path
 from .graph import notebook_order_problems as _notebook_order_problems
 from .graph import private_symbol_report as _private_symbol_report
+from .graph import _symbol_graph_data, _symbol_graph_public_data
 from .graph import symbol_graph as _symbol_graph
 from .parallel import notebook_locks
 from .read import nb_cell as _nb_cell
@@ -55,7 +58,7 @@ def as_text(value):
 
 
 _CAPTURE_LOCK = threading.RLock()
-_REDACT_KEYS = {"new", "cells", "plan", "source", "old_str", "new_str"}
+_REDACT_KEYS = {"new", "new_lines", "cells", "plan", "source", "old_str", "new_str"}
 _REMOVED_SCRIPT_NAMES = (
     "nbskill-mcp", "read-nb", "write-nb", "update-cell", "batch-edit-nb",
     "show-doc", "exec-nb", "diff-nb", "style-check", "symbol-graph", "private-symbol-report",
@@ -90,6 +93,27 @@ def capture_notebook_call(func, *paths, **kwargs):
     "Capture a call while holding per-notebook locks for `paths`."
     with notebook_locks(*paths):
         return capture_call(func, **kwargs)
+
+
+def _capture_exec_nb_cli_call(arguments):
+    call_args = {key: value for key, value in arguments.items() if key != "detail"}
+    script = "; ".join([
+        "import json, sys",
+        "from nbskill.execute import exec_nb",
+        "exec_nb(**json.loads(sys.argv[1]))",
+    ])
+    lock_paths = [call_args.get("path")]
+    if call_args.get("dest"): lock_paths.append(call_args["dest"])
+    with notebook_locks(*lock_paths):
+        proc = subprocess.run(
+            [sys.executable, "-c", script, json.dumps(call_args)],
+            text=True, capture_output=True, cwd=str(Path.cwd()),
+        )
+    chunks = [item.rstrip() for item in (proc.stdout, proc.stderr) if item]
+    output = chr(10).join(chunks)
+    if proc.returncode != 0:
+        raise RuntimeError(output or f"exec_nb subprocess failed with exit code {proc.returncode}")
+    return output
 
 
 def _capture_write_nb_call(path, arguments):
@@ -247,6 +271,46 @@ def _generated_pairs_for_scope(root, path):
     return pairs
 
 
+def _cell_source_text(cell):
+    if isinstance(cell, dict):
+        source = cell.get("source", "")
+        return "".join(source) if isinstance(source, list) else str(source)
+    return cell_source(cell)
+
+
+def _cell_type_text(cell):
+    return cell.get("cell_type", "") if isinstance(cell, dict) else getattr(cell, "cell_type", "")
+
+
+def _cell_export_relevant(cell):
+    if _cell_type_text(cell) != "code": return False
+    return any(re.match(r"^\s*#\|\s*(export|default_exp)\b", line) for line in _cell_source_text(cell).splitlines())
+
+
+def _notebook_export_relevant_change(owner, root):
+    owner = Path(owner)
+    root = Path(root)
+    owner_rel = _rel_to_root(owner, root)
+    proc = subprocess.run(["git", "-C", str(root), "show", f"HEAD:{owner_rel}"], text=True, capture_output=True)
+    if proc.returncode != 0: return True
+    try:
+        old_nb = json.loads(proc.stdout)
+        new_nb = json.loads(owner.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return True
+    old_cells = {cell.get("id"): cell for cell in old_nb.get("cells", []) if cell.get("id")}
+    new_cells = {cell.get("id"): cell for cell in new_nb.get("cells", []) if cell.get("id")}
+    for cell_id in set(old_cells) | set(new_cells):
+        old_cell, new_cell = old_cells.get(cell_id), new_cells.get(cell_id)
+        if old_cell is None or new_cell is None:
+            changed = True
+        else:
+            changed = _cell_type_text(old_cell) != _cell_type_text(new_cell) or _cell_source_text(old_cell) != _cell_source_text(new_cell)
+        if changed and any(_cell_export_relevant(cell) for cell in (old_cell, new_cell) if cell is not None):
+            return True
+    return False
+
+
 def _style_problem_warnings(path, root):
     warnings = []
     for problem in _notebook_size_problems(path):
@@ -336,12 +400,13 @@ def _doctor_warnings(path=".", scope_path=None, scope_cell_ids=None):
                 path=py_rel, owner=owner_rel,
             ))
         if owner_rel in changed and py_rel not in changed:
-            warnings.append(_warning(
-                "notebook_export_missing",
-                f"Notebook {owner_rel} changed but generated file {py_rel} is unchanged.",
-                "Run export or use an nbskill write tool before shipping.",
-                path=owner_rel, generated=py_rel,
-            ))
+            if _notebook_export_relevant_change(owner, root):
+                warnings.append(_warning(
+                    "notebook_export_missing",
+                    f"Notebook {owner_rel} changed but generated file {py_rel} is unchanged.",
+                    "Run export or use an nbskill write tool before shipping.",
+                    path=owner_rel, generated=py_rel,
+                ))
     for problem in _notebook_validation_problems(diagnostic_path):
         if problem.get("code") != "exported-py-hash-mismatch": continue
         warnings.append(_warning(
@@ -884,23 +949,23 @@ _MCP_TOOL_CATALOG = {
         "feature": "notebook_edit",
         "usefulness": "core",
         "tags": ("edit", "notebook", "cell"),
-        "description": "Update one existing cell by id, old text, or line range, split it into smaller cells, with validation and automatic export; whole-cell replacements must be one cell block unless split=True is passed.",
-        "when_to_use": "Use after nb_cell gives the id and line numbers. Prefer line_range for partial edits, split_before or split=True for breaking up large cells, whole-cell replacement for one cell source block, and write_nb/batch_edit_nb for adding or replacing multiple cells.",
+        "description": "Update one existing cell by id, old text, or line range, split it into smaller cells, with validation and automatic export; MCP callers can pass new_lines for exact source without temporary files or CLI newline decoding.",
+        "when_to_use": "Use after nb_cell gives the id and line numbers. Prefer line_range for partial edits, split_before or split=True for breaking up large cells, new_lines for exact multiline source through MCP, and write_nb/batch_edit_nb for adding or replacing multiple cells.",
         "combine_with": "Keep separate from write_nb because single-cell updates are the safest common edit path; do not use it for multi-cell blocks.",
     },
     "batch_edit_nb": {
         "feature": "notebook_edit",
         "usefulness": "core",
         "tags": ("edit", "notebook", "batch", "plan"),
-        "description": "Apply a deterministic JSON edit plan across one or more notebooks with compact operation details, locks, validation, and export.",
-        "when_to_use": "Use when the intended operations are already known and should be applied atomically or across files.",
+        "description": "Apply a deterministic JSON edit plan across one or more notebooks with locks, validation, export, and read-back verification hashes for every operation.",
+        "when_to_use": "Use when the intended operations are already known and should be applied atomically or across files; inspect returned per-operation hashes when trust matters.",
         "combine_with": "Could absorb write/update operations, but that would make the main edit schema broader and less discoverable.",
     },
     "exec_nb": {
         "feature": "verification",
         "usefulness": "core",
         "tags": ("execute", "notebook", "verify", "safe"),
-        "description": "Execute a notebook, chapter, or cells up to an id with safe-mode controls and visible output/error capture.",
+        "description": "Execute a notebook, chapter, or cells up to an id with safe-mode controls and visible output/error capture; unsafe execution is routed through a CLI subprocess so signal-based timeouts run in a main interpreter without blocking MCP worker threads.",
         "when_to_use": "Use after edits or before trusting notebook behavior; use check_only=True when outputs should not be written.",
         "combine_with": "Keep separate because execution has distinct safety and concurrency semantics.",
     },
@@ -932,8 +997,8 @@ _MCP_TOOL_CATALOG = {
         "feature": "symbol_analysis",
         "usefulness": "situational",
         "tags": ("analysis", "symbol", "graph"),
-        "description": "Analyze one symbol's definitions, callers, and callees across notebooks.",
-        "when_to_use": "Use when understanding impact, dependencies, or call relationships around one symbol.",
+        "description": "Analyze one symbol's definitions, callers, caller usage lines, and callees across notebooks.",
+        "when_to_use": "Use when understanding impact, dependencies, or call relationships around one symbol; request JSON/structured content for migration scripts.",
         "combine_with": "Private symbol reporting moved into doctor(scope='warning') and style_check output.",
     },
     "style_check": {
@@ -1079,15 +1144,21 @@ def create_mcp():
 
     @mcp.tool(**_mcp_tool_meta("update_cell"))
     def update_cell_tool(
-        path: str, new: str = "", new_file: str | None = None, cell_id: str | None = None,
-        old_str: str | None = None, line_range: str | None = None,
-        split: bool = False, split_before: str | None = None,
+        path: str, new: str = "", new_lines: list[str] | None = None,
+        new_file: str | None = None, decode_newlines: bool = False,
+        cell_id: str | None = None, old_str: str | None = None,
+        line_range: str | None = None, split: bool = False, split_before: str | None = None,
         cell_type: str = "code", run_test: bool = False,
         validate_code: bool = True, detail: str = "summary",
     ) -> ToolResult:
-        "Update one existing notebook cell; use line_range/old_str for partial edits, split_before or split=True for splitting cells, and single blocks for normal whole-cell replacements."
-        arguments = dict(path=path, new=new, new_file=new_file, cell_id=cell_id, old_str=old_str, line_range=line_range, split=split, split_before=split_before, cell_type=cell_type, run_test=run_test, validate_code=validate_code, detail=detail)
-        full_output = capture_notebook_call(_update_cell, path, **{k: v for k, v in arguments.items() if k != "detail"}, dry_run=False)
+        "Update one existing notebook cell; use new_lines for exact multiline source through MCP without temporary files."
+        if new_lines is not None:
+            if new or new_file: raise ValueError("Use either new_lines, new, or new_file")
+            new = chr(10).join(new_lines)
+            decode_newlines = False
+        arguments = dict(path=path, new=new, new_lines=new_lines, new_file=new_file, decode_newlines=decode_newlines, cell_id=cell_id, old_str=old_str, line_range=line_range, split=split, split_before=split_before, cell_type=cell_type, run_test=run_test, validate_code=validate_code, detail=detail)
+        call_args = {k: v for k, v in arguments.items() if k not in {"detail", "new_lines"}}
+        full_output = capture_notebook_call(_update_cell, path, **call_args, dry_run=False)
         return mcp_tool_result("update_cell", arguments, full_output, detail=detail)
 
     @mcp.tool(**_mcp_tool_meta("batch_edit_nb"))
@@ -1108,7 +1179,10 @@ def create_mcp():
     ) -> ToolResult:
         "Execute a notebook and return visible outputs/errors. Use check_only=True to avoid writing outputs."
         arguments = dict(path=path, dest=dest, exc_stop=exc_stop, up2id=up2id, chapter=chapter, timeout=timeout, show_output=show_output, verbose=verbose, safe=safe, allow=allow, ok_dests=ok_dests, cache_httpx=cache_httpx, cache_dir=cache_dir, cache_domains=cache_domains, allow_new=allow_new, check_only=check_only, detail=detail)
-        full_output = capture_notebook_call(_exec_nb, path, dest or path, **{k: v for k, v in arguments.items() if k != "detail"})
+        if safe:
+            full_output = capture_notebook_call(_exec_nb, path, dest or path, **{k: v for k, v in arguments.items() if k != "detail"})
+        else:
+            full_output = _capture_exec_nb_cli_call(arguments)
         return mcp_tool_result("exec_nb", arguments, full_output, detail=detail)
 
     @mcp.tool(**_mcp_tool_meta("diff_nb"))
@@ -1160,11 +1234,14 @@ def create_mcp():
         return tool_result
 
     @mcp.tool(**_mcp_tool_meta("symbol_graph"))
-    def symbol_graph_tool(path: str = "nbs", symbol: str = "", detail: str = "summary") -> ToolResult:
+    def symbol_graph_tool(path: str = "nbs", symbol: str = "", json_output: bool = False, detail: str = "summary") -> ToolResult:
         "Show definitions, callers, and callees for one notebook symbol."
-        arguments = dict(path=path, symbol=symbol, detail=detail)
-        full_output = capture_call(_symbol_graph, path=path, symbol=symbol)
-        return mcp_tool_result("symbol_graph", arguments, full_output, detail=detail)
+        arguments = dict(path=path, symbol=symbol, json_output=json_output, detail=detail)
+        full_output = capture_call(_symbol_graph, path=path, symbol=symbol, json_output=json_output)
+        result = mcp_tool_result("symbol_graph", arguments, full_output, detail=detail)
+        if symbol:
+            result.structured_content["symbol_graph"] = _symbol_graph_public_data(_symbol_graph_data(path, symbol))
+        return result
 
     @mcp.tool(**_mcp_tool_meta("style_check"))
     def style_check_tool(

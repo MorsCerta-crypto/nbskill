@@ -16,7 +16,7 @@ from nbskill.foundation import (
     cell_matches_type, cell_prefix, cell_source, chapter_index_set,
     cli_return, find_cell_by_id, first_line, is_definition_node,
     is_export_directive, is_exported_code_cell, matches_filter,
-    with_context,
+    source_without_directives, with_context,
 )
 
 # %% ../nbs/01_read.ipynb #3876f40e
@@ -37,7 +37,6 @@ def _markdown_overview(cell, include_docs=False):
     if headings: return headings
     return source.splitlines() if include_docs and source else []
 
-
 # %% ../nbs/01_read.ipynb #2bf5140a
 def _definition_lines(node, indent=""):
     tmp = copy.deepcopy(node)
@@ -49,7 +48,6 @@ def _definition_lines(node, indent=""):
         lines.append(f"{indent}{line}" if line else line)
     return lines
 
-
 # %% ../nbs/01_read.ipynb #f18e8160
 def _docstring_lines(node, indent="    "):
     doc = ast.get_docstring(node)
@@ -59,11 +57,9 @@ def _docstring_lines(node, indent="    "):
     if len(lines) == 1: return [f"{indent}{quote}{lines[0]}{quote}"]
     return [indent + quote, *[f"{indent}{line}" for line in lines], indent + quote]
 
-
 # %% ../nbs/01_read.ipynb #1479f1ce
 def _function_overview(node, indent=""):
     return [*_definition_lines(node, indent=indent), *_docstring_lines(node, indent=indent + "    ")]
-
 
 # %% ../nbs/01_read.ipynb #0bf698d9
 def _class_overview(node):
@@ -73,7 +69,6 @@ def _class_overview(node):
         if lines and lines[-1] != "": lines.append("")
         lines += _function_overview(method, indent="    ")
     return lines
-
 
 # %% ../nbs/01_read.ipynb #ef1608ad
 def _code_overview(cell):
@@ -88,7 +83,6 @@ def _code_overview(cell):
     if lines and lines[-1] == "": lines.pop()
     return lines
 
-
 # %% ../nbs/01_read.ipynb #8d5cdcf7
 def _format_headers(items, include_docs=False):
     chunks = []
@@ -98,7 +92,6 @@ def _format_headers(items, include_docs=False):
         else: lines = []
         if lines: chunks.append(f"{cell_prefix(idx, cell, True)}\n" + "\n".join(lines))
     return "\n\n".join(chunks)
-
 
 # %% ../nbs/01_read.ipynb #f204f489
 def _format_source(source, line_numbers=False):
@@ -128,7 +121,6 @@ _QUERY_KEY_ALIASES = {
     "re": "regex",
 }
 
-
 # %% ../nbs/01_read.ipynb #4f3e6dfd
 def _normalize_query_key(key):
     name = _QUERY_KEY_ALIASES.get(str(key).strip().lower())
@@ -137,11 +129,9 @@ def _normalize_query_key(key):
         raise ValueError(f"Unknown query key {key!r}; use one of: {choices}")
     return name
 
-
 # %% ../nbs/01_read.ipynb #e3f7da55
 def _normalize_query_dict(spec):
     return {_normalize_query_key(key): None if value is None else str(value) for key, value in dict(spec).items()}
-
 
 # %% ../nbs/01_read.ipynb #5b09a9e8
 def _parse_query_terms(text):
@@ -155,7 +145,6 @@ def _parse_query_terms(text):
         spec[_normalize_query_key(key)] = value
     if bare and "contains" not in spec: spec["contains"] = " ".join(bare)
     return spec
-
 
 # %% ../nbs/01_read.ipynb #82b26f15
 def _parse_query(query):
@@ -173,7 +162,6 @@ def _parse_query(query):
         return [_parse_query_terms(part) for part in text.split(";") if part.strip()]
     return _parse_query(parsed)
 
-
 # %% ../nbs/01_read.ipynb #643079c0
 def _select_query_items(nb, spec):
     items = [find_cell_by_id(nb.cells, spec["cell_id"])] if spec.get("cell_id") else list(enumerate(nb.cells))
@@ -185,11 +173,10 @@ def _select_query_items(nb, spec):
     if spec.get("regex") is not None: items = [(i, c) for i, c in items if matches_filter(c.source, spec["regex"])]
     return items
 
-
 # %% ../nbs/01_read.ipynb #5a2f23bf
 def _cell_defined_symbols(cell):
     if getattr(cell, "cell_type", None) != "code": return []
-    try: tree = ast.parse(_source_without_directives(cell_source(cell)))
+    try: tree = ast.parse(source_without_directives(cell_source(cell)))
     except SyntaxError: return []
     symbols = []
     for node in tree.body:
@@ -198,7 +185,6 @@ def _cell_defined_symbols(cell):
             for child in node.body:
                 if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)): symbols.append(f"{node.name}.{child.name}")
     return symbols
-
 
 # %% ../nbs/01_read.ipynb #aaa009d2
 def _format_usage_for_items(path, items, max_symbols=4):
@@ -216,7 +202,6 @@ def _format_usage_for_items(path, items, max_symbols=4):
         text = f"{text}\n... {len(symbols) - len(shown)} more symbols omitted ..."
     return text
 
-
 # %% ../nbs/01_read.ipynb #76e0d320
 def _chapter_title_from_cell(cell):
     if getattr(cell, "cell_type", None) != "markdown": return None
@@ -225,11 +210,9 @@ def _chapter_title_from_cell(cell):
         if match: return match.group(1).strip()
     return None
 
-
 # %% ../nbs/01_read.ipynb #37ae8575
 def _normalize_chapter_title(value):
     return re.sub(r"\s+", " ", str(value).strip().lower())
-
 
 # %% ../nbs/01_read.ipynb #411b4891
 def _chapter_spans_for_nb(cells):
@@ -241,13 +224,11 @@ def _chapter_spans_for_nb(cells):
         spans.append(dict(title=title, start=start, end=end))
     return spans
 
-
 # %% ../nbs/01_read.ipynb #fa91bd16
 def _notebook_head_items(cells):
     spans = _chapter_spans_for_nb(cells)
     head_end = spans[0]["start"] if spans else len(cells)
     return [(idx, cells[idx]) for idx in range(head_end)]
-
 
 # %% ../nbs/01_read.ipynb #c8ed9b2e
 def _chapter_span_for_index(cells, idx):
@@ -258,14 +239,12 @@ def _chapter_span_for_index(cells, idx):
         if span["start"] <= idx < span["end"]: return span
     raise ValueError(f"Cell index {idx} is outside the notebook")
 
-
 # %% ../nbs/01_read.ipynb #27e44c97
 def _chapter_matches(span, name):
     title = span["title"]
     if matches_filter(title, name): return True
     wanted, candidate = _normalize_chapter_title(name), _normalize_chapter_title(title)
     return bool(wanted and (wanted in candidate or candidate in wanted))
-
 
 # %% ../nbs/01_read.ipynb #8cbbb8bd
 def _one_chapter_span(cells, name):
@@ -277,7 +256,6 @@ def _one_chapter_span(cells, name):
     matched = ", ".join(span["title"] for span in matches)
     raise ValueError(f"Chapter {name!r} matches multiple chapters: {matched}")
 
-
 # %% ../nbs/01_read.ipynb #c605990b
 def _query_items(nb, query):
     items, seen = [], set()
@@ -287,7 +265,6 @@ def _query_items(nb, query):
             seen.add(idx)
             items.append((idx, cell))
     return items
-
 
 # %% ../nbs/01_read.ipynb #50593287
 def _selected_chapter_span(nb, query=None, name=None, any_cell_id=None):
@@ -301,7 +278,6 @@ def _selected_chapter_span(nb, query=None, name=None, any_cell_id=None):
     if not items: raise ValueError(f"No cells match query {query!r}")
     return _chapter_span_for_index(nb.cells, items[0][0])
 
-
 # %% ../nbs/01_read.ipynb #de4022bc
 def _chapter_items(nb, span):
     idxs = set()
@@ -312,7 +288,6 @@ def _chapter_items(nb, span):
         items.append((idx, cell))
     return items
 
-
 # %% ../nbs/01_read.ipynb #675786ce
 def _selected_cell_item(nb, query=None, id=None):
     if (query is None) == (id is None): raise ValueError("Pass exactly one of query or id")
@@ -322,7 +297,6 @@ def _selected_cell_item(nb, query=None, id=None):
     if not items: raise ValueError(f"No cells match query {query!r}")
     preview = _format_overview(items[:12], show_ids=True)
     raise ValueError(f"Query {query!r} matched {len(items)} cells; narrow it or pass id.\n{preview}")
-
 
 # %% ../nbs/01_read.ipynb #b4784010
 def nb_overview(
@@ -335,7 +309,6 @@ def nb_overview(
     text = _format_headers(list(enumerate(nb.cells)), include_docs=include_docs)
     if verbose and text: print(text)
     return cli_return(text)
-
 
 # %% ../nbs/01_read.ipynb #e17a74d9
 def nb_chapter(
@@ -350,7 +323,6 @@ def nb_chapter(
     text = _format_full(_chapter_items(nb, span), show_ids=True, line_numbers=False)
     if text: print(text)
     return cli_return(text)
-
 
 # %% ../nbs/01_read.ipynb #32506359
 def nb_cell(
@@ -368,11 +340,6 @@ def nb_cell(
         text = f"{text}\n\nUsage:\n{usage}" if text else f"Usage:\n{usage}"
     if text: print(text)
     return cli_return(text)
-
-
-# %% ../nbs/01_read.ipynb #4b23b7ed
-def _source_without_directives(source):
-    return "\n".join(line for line in source.splitlines() if not line.lstrip().startswith("#|"))
 
 # %% ../nbs/01_read.ipynb #38ee5411
 def _annotation_name(annotation):
@@ -405,7 +372,7 @@ def _node_defines_symbol(node, symbol):
 # %% ../nbs/01_read.ipynb #de0add17
 def _cell_defines_symbol(cell, symbol):
     if cell.cell_type != "code": return False
-    try: tree = ast.parse(_source_without_directives(cell.source))
+    try: tree = ast.parse(source_without_directives(cell.source))
     except SyntaxError: return False
     return any(_node_defines_symbol(node, symbol) for node in tree.body)
 
@@ -418,7 +385,7 @@ def _find_symbol_cell(nb, symbol):
 # %% ../nbs/01_read.ipynb #063695a7
 def _find_symbol_node(cell, symbol):
     if getattr(cell, "cell_type", None) != "code": return None
-    try: tree = ast.parse(_source_without_directives(cell.source))
+    try: tree = ast.parse(source_without_directives(cell.source))
     except SyntaxError: return None
     parts = symbol.split(".")
     for node in tree.body:
@@ -471,7 +438,6 @@ def _usage_group_locations(raw_locations):
         grouped.setdefault(path, []).append(cell_id)
     return list(grouped.items()), sum(len(ids) for ids in grouped.values())
 
-
 # %% ../nbs/01_read.ipynb #ae0338fd
 def _format_usage_locations(label, raw_locations, max_paths=4, max_ids=4):
     groups, total = _usage_group_locations(raw_locations)
@@ -487,13 +453,11 @@ def _format_usage_locations(label, raw_locations, max_paths=4, max_ids=4):
     if len(groups) > max_paths: lines.append(f"- +{len(groups) - max_paths} more notebooks")
     return lines
 
-
 # %% ../nbs/01_read.ipynb #5b0a93f6
 def _raw_caller_usage_lines(raw_lines):
     if "Caller usages:" not in raw_lines: return []
     start = raw_lines.index("Caller usages:") + 1
     return [line for line in raw_lines[start:] if line.startswith("- ")]
-
 
 # %% ../nbs/01_read.ipynb #9d424218
 def _format_symbol_usage(path, symbol):
@@ -516,7 +480,6 @@ def _format_symbol_usage(path, symbol):
     callee_items = [item.strip() for item in callees.split(";") if item.strip() and item.strip() != "none"]
     lines.append(f"Callees: {', '.join(callee_items)}" if callee_items else "Callees: none")
     return lines
-
 
 # %% ../nbs/01_read.ipynb #2cb657b6
 def _format_symbol_doc(path, nb, symbol, context=2, source=False, show_ids=False):
@@ -552,7 +515,6 @@ def _format_symbol_doc(path, nb, symbol, context=2, source=False, show_ids=False
         lines.append("Usage")
         lines.extend(usage)
     return "\n".join(lines)
-
 
 # %% ../nbs/01_read.ipynb #1584953f
 def show_doc(

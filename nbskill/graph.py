@@ -7,64 +7,28 @@ __all__ = ['notebook_order_problems', 'notebook_order_problem_lines', 'symbol_gr
 # %% ../nbs/10_graph.ipynb #09416808
 import ast
 import builtins
-import glob
 import json
 from pathlib import Path
 
 from fastcore.nbio import read_nb
 
 
-from .foundation import cell_source, cli_error, cli_return, is_export_directive, path_candidates
-
-# %% ../nbs/10_graph.ipynb #f0515186
-def _source_without_directives(source):
-    return "\n".join(line for line in source.splitlines() if not is_export_directive(line))
-
-
-# %% ../nbs/10_graph.ipynb #e3e729b6
-def _is_notebook_path(path):
-    path = Path(path)
-    return path.suffix == ".ipynb" and ".ipynb_checkpoints" not in path.parts
-
-
-# %% ../nbs/10_graph.ipynb #0bd1b641
-def _matching_notebook_paths(pth, raw):
-    pattern = str(pth) if pth != Path(raw).expanduser() else raw
-    if any(char in raw for char in "*?[]"):
-        candidates = [Path(item) for item in glob.glob(pattern, recursive=True)]
-    elif pth.is_dir():
-        candidates = list(pth.rglob("*.ipynb"))
-    elif pth.is_file():
-        candidates = [pth]
-    else:
-        candidates = []
-    return sorted({path for path in candidates if _is_notebook_path(path)})
-
-
-# %% ../nbs/10_graph.ipynb #fbc46772
-def _notebook_paths(path="nbs"):
-    raw = str(path)
-    for pth in path_candidates(path):
-        paths = _matching_notebook_paths(pth, raw)
-        if paths: return paths
-    cli_error(f"No notebooks matched {path!r}")
-
+from .foundation import cell_source, cli_error, cli_return, notebook_paths, path_candidates, source_without_directives
 
 # %% ../nbs/10_graph.ipynb #c5547d77
 def _graph_scope(path):
-    for pth in path_candidates(path):
-        if _matching_notebook_paths(pth, str(path)):
-            return pth.parent if pth.is_file() else pth
+    paths = notebook_paths(path)
+    if paths:
+        pth = Path(path)
+        return pth.parent if pth.is_file() else pth
     pth = path_candidates(path)[-1]
     return pth.parent if pth.is_file() else pth
-
 
 # %% ../nbs/10_graph.ipynb #52b8a16e
 def _parse_cell(cell):
     if getattr(cell, "cell_type", None) != "code": return None
-    try: return ast.parse(_source_without_directives(cell_source(cell)))
+    try: return ast.parse(source_without_directives(cell_source(cell)))
     except SyntaxError: return None
-
 
 # %% ../nbs/10_graph.ipynb #3a330f91
 def _name_parts(node):
@@ -74,12 +38,10 @@ def _name_parts(node):
         return [*base, node.attr] if base else [node.attr]
     return []
 
-
 # %% ../nbs/10_graph.ipynb #261715f8
 def _call_name(node):
     parts = _name_parts(node)
     return ".".join(parts) if parts else None
-
 
 # %% ../nbs/10_graph.ipynb #fd22b01f
 def _call_site_records(node, source=""):
@@ -95,11 +57,9 @@ def _call_site_records(node, source=""):
             records.append({"name": call_name, "lineno": lineno, "line": line})
     return tuple(records)
 
-
 # %% ../nbs/10_graph.ipynb #f7f6a22e
 def _call_names(node):
     return tuple(dict.fromkeys(site["name"] for site in _call_site_records(node)))
-
 
 # %% ../nbs/10_graph.ipynb #e5d965a3
 def _node_definitions(node):
@@ -111,7 +71,6 @@ def _node_definitions(node):
                 items.append((f"{node.name}.{child.name}", child, "method"))
         return items
     return []
-
 
 # %% ../nbs/10_graph.ipynb #06bc0d6f
 def _cell_definition_records(path, module, idx, cell):
@@ -131,10 +90,9 @@ def _cell_definition_records(path, module, idx, cell):
             })
     return records
 
-
 # %% ../nbs/10_graph.ipynb #9f9de949
 def _cell_call_record(path, idx, cell):
-    source = _source_without_directives(cell_source(cell))
+    source = source_without_directives(cell_source(cell))
     tree = _parse_cell(cell)
     if tree is None: return None
     calls = _call_names(tree)
@@ -147,14 +105,12 @@ def _cell_call_record(path, idx, cell):
         "call_sites": _call_site_records(tree, source),
     }
 
-
 # %% ../nbs/10_graph.ipynb #967de6cc
 def _import_module_name(node):
     if node.module is None: return None
     if node.module == "nbskill": return ""
     if node.module.startswith("nbskill."): return node.module.removeprefix("nbskill.")
     return node.module
-
 
 # %% ../nbs/10_graph.ipynb #c10cccf9
 def _cell_import_records(path, idx, cell):
@@ -176,7 +132,6 @@ def _cell_import_records(path, idx, cell):
             })
     return records
 
-
 # %% ../nbs/10_graph.ipynb #8ce0cfb4
 def _notebook_module_name(path, nb):
     for cell in nb.cells:
@@ -186,11 +141,10 @@ def _notebook_module_name(path, nb):
                 return line.split(None, 2)[-1].replace("/", ".")
     return Path(path).stem
 
-
 # %% ../nbs/10_graph.ipynb #170b1d54
 def _collect_graph(path="nbs"):
     definitions, callers, imports = [], [], []
-    for nb_path in _notebook_paths(path):
+    for nb_path in notebook_paths(path):
         nb = read_nb(nb_path)
         module = _notebook_module_name(nb_path, nb)
         for idx, cell in enumerate(nb.cells):
@@ -200,10 +154,8 @@ def _collect_graph(path="nbs"):
             if record: callers.append(record)
     return {"definitions": definitions, "callers": callers, "imports": imports}
 
-
 # %% ../nbs/10_graph.ipynb #5649a185
 _BUILTIN_CALL_NAMES = set(dir(builtins)) | {"display", "get_ipython"}
-
 
 # %% ../nbs/10_graph.ipynb #01c3e3d0
 def _target_names(target):
@@ -214,7 +166,6 @@ def _target_names(target):
         return names
     return set()
 
-
 # %% ../nbs/10_graph.ipynb #aedd031f
 def _argument_names(args):
     items = [
@@ -223,7 +174,6 @@ def _argument_names(args):
         *([args.kwarg] if args.kwarg else []),
     ]
     return {arg.arg for arg in items if arg is not None}
-
 
 # %% ../nbs/10_graph.ipynb #ed9ffabe
 def _binding_names_from_node(node):
@@ -246,14 +196,12 @@ def _binding_names_from_node(node):
     if isinstance(node, ast.ExceptHandler) and node.name: return {node.name}
     return set()
 
-
 # %% ../nbs/10_graph.ipynb #35e8b9fa
 def _body_binding_names(nodes):
     names = set()
     for node in ast.walk(ast.Module(body=list(nodes), type_ignores=[])):
         names.update(_binding_names_from_node(node))
     return names
-
 
 # %% ../nbs/10_graph.ipynb #677472eb
 def _block_binding_names(nodes):
@@ -270,18 +218,15 @@ def _block_binding_names(nodes):
             names.update(_block_binding_names(handler.body))
     return names
 
-
 # %% ../nbs/10_graph.ipynb #5c2fe586
 def _cell_binding_names(tree):
     return _block_binding_names(tree.body)
-
 
 # %% ../nbs/10_graph.ipynb #80f12600
 def _call_root_name(node):
     if isinstance(node, ast.Name): return node.id
     if isinstance(node, ast.Attribute): return _call_root_name(node.value)
     return None
-
 
 # %% ../nbs/10_graph.ipynb #27a0454b
 class _CallRootVisitor(ast.NodeVisitor):
@@ -334,7 +279,6 @@ class _CallRootVisitor(ast.NodeVisitor):
             self.records.append({"symbol": name, "line": getattr(node, "lineno", None), "deferred": bool(self.local_scopes)})
         self.generic_visit(node)
 
-
 # %% ../nbs/10_graph.ipynb #f5ac828d
 def _cell_call_root_records(cell):
     tree = _parse_cell(cell)
@@ -343,11 +287,10 @@ def _cell_call_root_records(cell):
     visitor.visit(tree)
     return visitor.records
 
-
 # %% ../nbs/10_graph.ipynb #9346da10
 def _cell_order_data(path):
     data = []
-    for nb_path in _notebook_paths(path):
+    for nb_path in notebook_paths(path):
         try:
             nb = read_nb(nb_path)
         except FileNotFoundError:
@@ -361,7 +304,6 @@ def _cell_order_data(path):
         data.append({"path": nb_path, "cells": cells})
     return data
 
-
 # %% ../nbs/10_graph.ipynb #d85924da
 def _binding_locations(cells):
     locations = {}
@@ -370,11 +312,9 @@ def _binding_locations(cells):
             locations.setdefault(name, []).append(item)
     return locations
 
-
 # %% ../nbs/10_graph.ipynb #1421b25f
 def _first_later_binding(locations, name, idx):
     return next((item for item in locations.get(name, []) if item["idx"] > idx), None)
-
 
 # %% ../nbs/10_graph.ipynb #af9d84cd
 def _order_problem(kind, nb_path, item, call, detail, confidence="medium"):
@@ -390,12 +330,10 @@ def _order_problem(kind, nb_path, item, call, detail, confidence="medium"):
         "confidence": confidence,
     }
 
-
 # %% ../nbs/10_graph.ipynb #8498a435
 def _format_order_problem(problem):
     line = f" line={problem['line']}" if problem.get("line") else ""
     return f"- {problem['code']}: {problem['path']} id={problem.get('cell_id', '')}{line} symbol={problem['symbol']!r} {problem['detail']}"
-
 
 # %% ../nbs/10_graph.ipynb #ca7c04e6
 def notebook_order_problems(path="nbs"):
@@ -433,17 +371,14 @@ def notebook_order_problems(path="nbs"):
         unique.append(problem)
     return unique
 
-
 # %% ../nbs/10_graph.ipynb #68af12c1
 def notebook_order_problem_lines(path="nbs"):
     "Return style-check lines for calls before definitions/imports and missing callable imports."
     return [_format_order_problem(problem) for problem in notebook_order_problems(path)]
 
-
 # %% ../nbs/10_graph.ipynb #3f8ebe48
 def _symbol_short_name(symbol):
     return str(symbol).rsplit(".", 1)[-1]
-
 
 # %% ../nbs/10_graph.ipynb #1f13ada8
 def _call_matches_symbol(call, symbol):
@@ -451,16 +386,13 @@ def _call_matches_symbol(call, symbol):
     symbol = str(symbol)
     return call == symbol or _symbol_short_name(call) == _symbol_short_name(symbol)
 
-
 # %% ../nbs/10_graph.ipynb #b047d309
 def _definitions_for_symbol(graph, symbol):
     return [record for record in graph["definitions"] if record["symbol"] == symbol or _symbol_short_name(record["symbol"]) == symbol]
 
-
 # %% ../nbs/10_graph.ipynb #7c9f2f39
 def _caller_records_for_symbol(graph, symbol):
     return [record for record in graph["callers"] if any(_call_matches_symbol(call, symbol) for call in record["calls"])]
-
 
 # %% ../nbs/10_graph.ipynb #35814f1f
 def _resolve_callees(graph, calls):
@@ -471,16 +403,13 @@ def _resolve_callees(graph, calls):
             if _call_matches_symbol(call, symbol): resolved.append(symbol)
     return sorted(set(resolved))
 
-
 # %% ../nbs/10_graph.ipynb #9caf4f09
 def _locations(records):
     return [f"{record['path']} id={record['cell_id']}" for record in records]
 
-
 # %% ../nbs/10_graph.ipynb #3e7fe7f3
 def _callee_locations(graph, symbol):
     return _locations(_definitions_for_symbol(graph, symbol))
-
 
 # %% ../nbs/10_graph.ipynb #c9c730f6
 def _definition_location(record):
@@ -578,7 +507,6 @@ def symbol_graph_data(path, symbol):
         "graph": graph,
     }
 
-
 # %% ../nbs/10_graph.ipynb #4296c733
 def _caller_usage_records(records, symbol):
     items, seen = [], set()
@@ -597,7 +525,6 @@ def _caller_usage_records(records, symbol):
             })
     return items
 
-
 # %% ../nbs/10_graph.ipynb #610687e3
 def _caller_usage_lines(records, symbol, limit=8):
     lines = []
@@ -606,7 +533,6 @@ def _caller_usage_lines(records, symbol, limit=8):
         source = f": {site['line']}" if site.get("line") else ""
         lines.append(f"- {site['path']} id={site['cell_id']}{lineno}{source}")
     return lines
-
 
 # %% ../nbs/10_graph.ipynb #6271f92e
 def symbol_graph_public_data(data):
@@ -620,7 +546,6 @@ def symbol_graph_public_data(data):
             for symbol in data["callees"]
         ],
     }
-
 
 # %% ../nbs/10_graph.ipynb #c3d1d403
 def _format_symbol_graph_data(data):
@@ -642,7 +567,6 @@ def _format_symbol_graph_data(data):
         lines.append("- (none)")
     return "\n".join(lines)
 
-
 # %% ../nbs/10_graph.ipynb #8886e609
 def symbol_usage_summary(path, symbols):
     "Return a compact caller/callee summary for one or more symbols."
@@ -658,7 +582,6 @@ def symbol_usage_summary(path, symbols):
             chunks.append("Caller usages:")
             chunks.extend(caller_usage)
     return "\n".join(chunks)
-
 
 # %% ../nbs/10_graph.ipynb #df8eac1b
 def _symbol_connection_public_data(data):
@@ -705,7 +628,6 @@ def symbol_graph(
     print(text)
     return cli_return(text)
 
-
 # %% ../nbs/10_graph.ipynb #privsympub
 def private_symbol_report(
     path: str = "nbs",  # Notebook file, directory, or glob to scan
@@ -730,7 +652,6 @@ def private_symbol_report(
     text = "\n".join(dict.fromkeys(lines))
     print(text)
     return cli_return(text)
-
 
 # %% ../nbs/10_graph.ipynb #7fcb0f27
 def symbol_connection(

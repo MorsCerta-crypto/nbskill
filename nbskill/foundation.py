@@ -2,13 +2,15 @@
 
 # %% auto #0
 __all__ = ['remove_demo_path', 'demo_path', 'path_candidates', 'is_valid_ipynb', 'write_demo_notebook', 'cli_return', 'cli_error',
-           'failure_map_path', 'empty_failure_map', 'load_failure_map', 'install_nbdev_pre_commit_hooks',
-           'parse_literal', 'none_if_string', 'is_definition_node', 'node_start_line', 'is_export_directive',
-           'cell_source', 'cell_metadata', 'notebook_metadata', 'file_hash', 'exported_py_path',
-           'stamp_export_metadata', 'parse_one_cell', 'find_cell_by_id', 'find_cell_by_text', 'replace_cell',
-           'clear_outputs', 'load_cells_text', 'validate_code_cells', 'parse_cells', 'first_line', 'cell_prefix',
-           'matches_filter', 'is_exported_code_cell', 'stamp_notebook_metadata', 'cell_class_names',
-           'cell_matches_type', 'with_context', 'chapter_index_set', 'one_chapter']
+           'failure_map_path', 'empty_failure_map', 'load_failure_map', 'git_run', 'git_root', 'git_status_paths',
+           'git_tracked_paths', 'git_diff_stats', 'notebook_paths', 'source_without_directives', 'file_line_count',
+           'cap_text', 'generated_owner', 'install_nbdev_pre_commit_hooks', 'parse_literal', 'none_if_string',
+           'is_definition_node', 'node_start_line', 'is_export_directive', 'cell_source', 'cell_metadata',
+           'notebook_metadata', 'file_hash', 'exported_py_path', 'stamp_export_metadata', 'parse_one_cell',
+           'find_cell_by_id', 'find_cell_by_text', 'replace_cell', 'clear_outputs', 'load_cells_text',
+           'validate_code_cells', 'parse_cells', 'first_line', 'cell_prefix', 'matches_filter', 'is_exported_code_cell',
+           'stamp_notebook_metadata', 'cell_class_names', 'cell_matches_type', 'with_context', 'chapter_index_set',
+           'one_chapter']
 
 # %% ../nbs/00_foundation.ipynb #2500639f
 import ast,hashlib,json,os,re
@@ -141,10 +143,147 @@ _NBSKILL_HOOKS_DISABLED_SENTINEL = "nbskill-hooks-disabled"
 
 
 # %% ../nbs/00_foundation.ipynb #8f029a46
-def _git_root(path="."):
-    proc = subprocess.run(["git", "-C", str(path), "rev-parse", "--show-toplevel"], text=True, capture_output=True)
-    return Path(proc.stdout.strip()) if proc.returncode == 0 and proc.stdout.strip() else None
+def git_run(root, *args):
+    "Run a git command from `root` and return stdout, or empty text on failure."
+    proc = subprocess.run(["git", "-C", str(root), *args], text=True, capture_output=True)
+    return proc.stdout if proc.returncode == 0 else ""
 
+
+def git_root(path="."):
+    "Return the containing git repository root, if one exists."
+    path = Path(path).expanduser()
+    base = path.parent if path.suffix else path
+    candidates = [base, *path_candidates(base), Path(".")]
+    for candidate in dict.fromkeys(candidates):
+        out = git_run(candidate, "rev-parse", "--show-toplevel").strip()
+        if out: return Path(out)
+    return None
+
+# %% ../nbs/00_foundation.ipynb #3bfd5b33
+def git_status_paths(root):
+    "Return paths with working-tree changes relative to `root`."
+    paths = set()
+    for line in git_run(root, "status", "--porcelain").splitlines():
+        raw = line[3:].strip() if len(line) > 3 else line.strip()
+        if " -> " in raw: raw = raw.split(" -> ", 1)[1]
+        if raw: paths.add(raw)
+    return paths
+
+
+def git_tracked_paths(root):
+    "Return git-tracked paths relative to `root`."
+    return set(git_run(root, "ls-files").splitlines())
+
+# %% ../nbs/00_foundation.ipynb #67cf89b1
+def git_diff_stats(root, ref="HEAD"):
+    "Return added/deleted line stats for working-tree changes from `ref`."
+    stats = {}
+    for line in git_run(root, "diff", "--numstat", ref, "--").splitlines():
+        added, deleted, path = line.split("\t", 2)
+        stats[path] = {
+            "added": int(added) if added.isdigit() else 0,
+            "deleted": int(deleted) if deleted.isdigit() else 0,
+        }
+    return stats
+
+# %% ../nbs/00_foundation.ipynb #c592566d
+def _is_notebook_path(path):
+    path = Path(path)
+    hidden = any(part.startswith(".") or part == ".ipynb_checkpoints" for part in path.parts)
+    return path.suffix == ".ipynb" and not hidden and not path.name.startswith("_")
+
+
+def _has_glob_chars(path):
+    return any(char in str(path) for char in "*?[]")
+
+# %% ../nbs/00_foundation.ipynb #108a4e3f
+def _glob_notebook_paths(path):
+    try:
+        from fastcore.xtras import globtastic
+        if _has_glob_chars(path):
+            import glob
+            return [Path(item) for item in glob.glob(str(path), recursive=True)]
+        return [Path(item) for item in globtastic(path, file_glob="*.ipynb", skip_folder_re=r"(^[_.]|\.ipynb_checkpoints)", skip_file_re=r"^[_.]", func=Path)]
+    except Exception:
+        return sorted(Path(path).rglob("*.ipynb")) if Path(path).is_dir() else []
+
+
+def _nbdev_notebook_paths(path):
+    try:
+        from nbdev.doclinks import nbglob
+        return [Path(item) for item in nbglob(path=path, as_path=True)]
+    except Exception:
+        return []
+
+# %% ../nbs/00_foundation.ipynb #d5f9ce64
+def notebook_paths(path="nbs"):
+    "Return visible notebook paths for a file, directory, glob, or nbdev project path."
+    raw = "." if path is None else str(path)
+    for candidate in path_candidates(raw):
+        pth = Path(candidate).expanduser()
+        if pth.is_file():
+            paths = [pth]
+        elif _has_glob_chars(raw):
+            paths = _glob_notebook_paths(pth)
+        elif pth.is_dir():
+            paths = _nbdev_notebook_paths(pth) or _glob_notebook_paths(pth)
+        else:
+            paths = []
+        paths = sorted({item for item in paths if _is_notebook_path(item)})
+        if paths: return paths
+    return []
+
+# %% ../nbs/00_foundation.ipynb #e9bf74bc
+def source_without_directives(source):
+    "Return source with nbdev cell directives removed."
+    return "\n".join(line for line in str(source or "").splitlines() if not line.lstrip().startswith("#|"))
+
+# %% ../nbs/00_foundation.ipynb #4f8cb340
+def file_line_count(path):
+    "Return the number of text lines in `path`, or zero when it cannot be read."
+    try: return len(Path(path).read_text(encoding="utf-8", errors="ignore").splitlines())
+    except OSError: return 0
+
+
+def cap_text(text, limit=2000, max_output_chars=None):
+    "Cap text, returning a string or review-style metadata when `max_output_chars` is used."
+    metadata = max_output_chars is not None
+    limit = max_output_chars if metadata else limit
+    text = "" if text is None else str(text)
+    if limit is None or len(text) <= limit:
+        capped, omitted = text, 0
+    else:
+        omitted = len(text) - limit
+        capped = f"{text[:limit].rstrip()}\n... truncated {omitted} chars ..."
+    if not metadata: return capped
+    return {"text": capped, "truncated": bool(omitted), "chars": len(text), "omitted_chars": omitted}
+
+# %% ../nbs/00_foundation.ipynb #65e47857
+_GENERATED_HEADER_RE = re.compile(r"^# AUTOGENERATED! DO NOT EDIT! File to edit: (.+)$")
+
+
+def _generated_owner_from_header(path):
+    try: lines = Path(path).read_text(encoding="utf-8", errors="ignore").splitlines()[:3]
+    except OSError: return None
+    for line in lines:
+        match = _GENERATED_HEADER_RE.match(line.strip())
+        if match: return (Path(path).parent / match.group(1).rstrip(".")).resolve()
+    return None
+
+
+def generated_owner(path, notebooks=None):
+    "Return the source notebook for an nbdev-generated Python file, when known."
+    path = Path(path)
+    if path.suffix != ".py" or not path.exists(): return None
+    owner = _generated_owner_from_header(path)
+    if owner is not None or notebooks is None: return owner
+    target = path.resolve()
+    for nb_path in notebook_paths(notebooks):
+        try: py_path = exported_py_path(nb_path)
+        except (FileNotFoundError, OSError): py_path = None
+        if py_path is not None and Path(py_path).exists() and Path(py_path).resolve() == target:
+            return Path(nb_path).resolve()
+    return None
 
 # %% ../nbs/00_foundation.ipynb #035dbb05
 def _looks_like_nbdev_project(root):
@@ -214,7 +353,7 @@ def _hooks_removed_by_user(root, pre_commit):
 # %% ../nbs/00_foundation.ipynb #94da0ea4
 def install_nbdev_pre_commit_hooks(path=".", run_nbdev_install_hooks=True):
     "Install nbdev-clean and nbdev-test pre-commit hooks in a git-backed nbdev project."
-    root = _git_root(path)
+    root = git_root(path)
     if root is None: return {"installed": False, "reason": "not-a-git-repo"}
     if not _looks_like_nbdev_project(root): return {"installed": False, "reason": "not-an-nbdev-project", "root": str(root)}
     hooks = root / ".git" / "hooks"
@@ -232,7 +371,6 @@ def install_nbdev_pre_commit_hooks(path=".", run_nbdev_install_hooks=True):
     installed.parent.mkdir(parents=True, exist_ok=True)
     installed.write_text("nbskill hooks installed once\n", encoding="utf-8")
     return {"installed": True, "root": str(root), "hook": str(pre_commit)}
-
 
 # %% ../nbs/00_foundation.ipynb #41efc12d
 def parse_literal(value):

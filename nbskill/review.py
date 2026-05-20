@@ -6,7 +6,6 @@ __all__ = ['skip_style_paths', 'notebook_validation_problems', 'notebook_size_pr
 
 # %% ../nbs/04_review.ipynb #3cff0f46
 import ast
-import glob
 import json
 import os
 import re
@@ -24,7 +23,8 @@ from nbdev.diff import nbs_pair, source_diff
 
 from nbskill.foundation import (
     empty_failure_map, failure_map_path, load_failure_map, cell_class_names,
-    cell_source, cli_error, cli_return, exported_py_path, file_hash,
+    cell_source, cli_error, cli_return, exported_py_path, file_hash, file_line_count,
+    cap_text, notebook_paths, source_without_directives,
     is_export_directive, is_exported_code_cell, none_if_string,
 )
 from .knowledge import knowledge_style_problems
@@ -32,19 +32,15 @@ from .knowledge import knowledge_style_problems
 # %% ../nbs/04_review.ipynb #8077f190
 skip_style_paths = "_proc __pycache__ src assets examples tests archive".split(" ")
 
-
 # %% ../nbs/04_review.ipynb #9d09a4cd
 _LARGE_CODE_CELL_LINE_LIMIT = 30
 _LARGE_MARKDOWN_CELL_LINE_LIMIT = 20
 
-
 # %% ../nbs/04_review.ipynb #cd0e6f4f
 _LARGE_CELL_FUNCTION_LIMIT = 2
 
-
 # %% ../nbs/04_review.ipynb #d3ec7a69
 _LARGE_GENERATED_PY_LINE_LIMIT = 1000
-
 
 # %% ../nbs/04_review.ipynb #fe42eab2
 def _style_skip_paths(skip_path=None):
@@ -54,12 +50,10 @@ def _style_skip_paths(skip_path=None):
     else: paths.append(str(skip_path))
     return paths
 
-
 # %% ../nbs/04_review.ipynb #66451add
 def _style_root_is_skipped(path, skip_paths):
     parts = Path("." if path is None else path).expanduser().parts
     return any(part in skip_paths for part in parts)
-
 
 # %% ../nbs/04_review.ipynb #fa2a6012
 def _style_check_argv(path=".", skip_folder_re=None, skip_path=None):
@@ -69,49 +63,19 @@ def _style_check_argv(path=".", skip_folder_re=None, skip_path=None):
     for item in _style_skip_paths(skip_path): argv += ["--skip-path", item]
     return argv
 
-
-# %% ../nbs/04_review.ipynb #8bab4e6f
-def _is_notebook_path(path):
-    path = Path(path)
-    return path.suffix == ".ipynb" and ".ipynb_checkpoints" not in path.parts
-
-
-# %% ../nbs/04_review.ipynb #beccebff
-def _notebook_paths(path="."):
-    raw = str(path)
-    pth = Path(raw).expanduser()
-    if any(char in raw for char in "*?[]"):
-        candidates = [Path(item) for item in glob.glob(raw, recursive=True)]
-    elif pth.is_dir():
-        candidates = list(pth.rglob("*.ipynb"))
-    elif pth.is_file() and pth.suffix == ".ipynb":
-        candidates = [pth]
-    else:
-        candidates = []
-    return sorted({candidate for candidate in candidates if _is_notebook_path(candidate)})
-
-
-# %% ../nbs/04_review.ipynb #7a2c77ab
-def _source_without_directives(source):
-    return "\n".join(line for line in source.splitlines() if not is_export_directive(line))
-
-
 # %% ../nbs/04_review.ipynb #14593fb3
 def _parse_code_cell(cell):
     if getattr(cell, "cell_type", None) != "code": return None
-    try: return ast.parse(_source_without_directives(cell_source(cell)))
+    try: return ast.parse(source_without_directives(cell_source(cell)))
     except SyntaxError: return None
-
 
 # %% ../nbs/04_review.ipynb #e67245c1
 def _top_level_function_count(tree):
     return sum(isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) for node in tree.body)
 
-
 # %% ../nbs/04_review.ipynb #2ce5bab7
 def _assert_count(tree):
     return sum(isinstance(node, ast.Assert) for node in ast.walk(tree))
-
 
 # %% ../nbs/04_review.ipynb #1e9b3b0c
 def _test_function_count(tree):
@@ -119,7 +83,6 @@ def _test_function_count(tree):
         isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("test_")
         for node in tree.body
     )
-
 
 # %% ../nbs/04_review.ipynb #aa771abe
 def _public_functions(tree):
@@ -130,13 +93,11 @@ def _public_functions(tree):
         and not node.name.startswith("test_")
     ]
 
-
 # %% ../nbs/04_review.ipynb #cbba1fcd
 def _docstring_line_count(node):
     doc = ast.get_docstring(node, clean=False)
     if doc is None: return 0
     return len(doc.splitlines())
-
 
 # %% ../nbs/04_review.ipynb #0bb953c7
 def _public_function_docstring_problems(nb_path, cell, tree):
@@ -155,7 +116,6 @@ def _public_function_docstring_problems(nb_path, cell, tree):
         ))
     return problems
 
-
 # %% ../nbs/04_review.ipynb #ead51f24
 def _import_keys(tree):
     keys = []
@@ -171,13 +131,11 @@ def _import_keys(tree):
                 keys.append(f"from {module} import {alias.name} as {local}")
     return keys
 
-
 # %% ../nbs/04_review.ipynb #c6da3c2f
 def _cell_content_line_count(cell):
     source = cell_source(cell)
-    if getattr(cell, "cell_type", None) == "code": source = _source_without_directives(source)
+    if getattr(cell, "cell_type", None) == "code": source = source_without_directives(source)
     return len([line for line in source.splitlines() if line.strip()])
-
 
 # %% ../nbs/04_review.ipynb #59cd00f0
 def _single_top_level_function_cell(tree):
@@ -202,22 +160,14 @@ def _large_cell_problems(nb_path, cell, function_limit=_LARGE_CELL_FUNCTION_LIMI
         problems.append(_problem("large-cell", nb_path, cell, detail, function_count=function_count))
     return problems
 
-
-# %% ../nbs/04_review.ipynb #d9bb552b
-def _generated_py_line_count(path):
-    try: return len(Path(path).read_text(encoding="utf-8", errors="ignore").splitlines())
-    except OSError: return 0
-
-
 # %% ../nbs/04_review.ipynb #e22b0a5c
 def _generated_py_size_problem(nb_path, nb, line_limit=_LARGE_GENERATED_PY_LINE_LIMIT):
     py_path = exported_py_path(nb_path, nb)
     if py_path is None or not py_path.exists(): return None
-    line_count = _generated_py_line_count(py_path)
+    line_count = file_line_count(py_path)
     if line_count <= line_limit: return None
     detail = f"{line_count} generated Python lines; split this notebook/module with the split tool"
     return _problem("large-generated-py", nb_path, detail=detail, exported_py_path=str(py_path), line_count=line_count)
-
 
 # %% ../nbs/04_review.ipynb #d1103da4
 def _problem(code, path, cell=None, detail="", severity="warning", source="nbskill", **kwargs):
@@ -231,7 +181,6 @@ def _problem(code, path, cell=None, detail="", severity="warning", source="nbski
     if cell is not None: problem["cell_id"] = getattr(cell, "id", "")
     problem.update({key: value for key, value in kwargs.items() if value is not None})
     return problem
-
 
 # %% ../nbs/04_review.ipynb #a381b823
 def _format_problem(problem):
@@ -250,17 +199,14 @@ def _format_problem(problem):
     suffix = " ".join(fields + ([problem.get("detail", "")] if problem.get("detail") else []))
     return f"- {problem['code']}: {problem['path']}{cell}{line} {suffix}".rstrip()
 
-
 # %% ../nbs/04_review.ipynb #faf6154f
 def _nbskill_info(obj):
     meta = getattr(obj, "metadata", {}) or {}
     return meta.get("nbskill") if isinstance(meta, dict) else None
 
-
 # %% ../nbs/04_review.ipynb #c83d3d3d
 def _validation_problem(code, path, cell=None, detail="", **kwargs):
     return _problem(code, path, cell, detail=detail, severity="error", source="nbskill-validation", **kwargs)
-
 
 # %% ../nbs/04_review.ipynb #f2db0747
 def _cell_metadata_validation_problems(nb_path, cell):
@@ -278,7 +224,6 @@ def _cell_metadata_validation_problems(nb_path, cell):
         problems.append(_validation_problem("missing-cell-semantic-types", nb_path, cell))
     return problems
 
-
 # %% ../nbs/04_review.ipynb #41c74eb4
 def _notebook_export_hash_problems(nb_path, nb):
     py_path = exported_py_path(nb_path, nb)
@@ -295,19 +240,17 @@ def _notebook_export_hash_problems(nb_path, nb):
         return [_validation_problem("exported-py-hash-mismatch", nb_path, detail=detail, exported_py_path=str(py_path))]
     return []
 
-
 # %% ../nbs/04_review.ipynb #c7ca4786
 def notebook_validation_problems(path="."):
     "Return invalid nbskill metadata problems for notebooks under `path`."
     problems = []
-    for nb_path in _notebook_paths(path):
+    for nb_path in notebook_paths(path):
         if _style_root_is_skipped(nb_path, skip_style_paths): continue
         try: nb = read_nb(nb_path)
         except FileNotFoundError: continue
         problems.extend(_notebook_export_hash_problems(nb_path, nb))
         for cell in nb.cells: problems.extend(_cell_metadata_validation_problems(nb_path, cell))
     return problems
-
 
 # %% ../nbs/04_review.ipynb #d6fcb3d5
 def _notebook_size_problems_for_nb(nb_path, nb):
@@ -317,24 +260,22 @@ def _notebook_size_problems_for_nb(nb_path, nb):
     if generated_problem: problems.append(generated_problem)
     return problems
 
-
 # %% ../nbs/04_review.ipynb #93269841
 def notebook_size_problems(path="."):
     "Return size warnings for notebook cells and generated Python files."
     problems = []
-    for nb_path in _notebook_paths(path):
+    for nb_path in notebook_paths(path):
         if _style_root_is_skipped(nb_path, skip_style_paths): continue
         try: nb = read_nb(nb_path)
         except FileNotFoundError: continue
         problems.extend(_notebook_size_problems_for_nb(nb_path, nb))
     return problems
 
-
 # %% ../nbs/04_review.ipynb #1868abe0
 def _notebook_style_problems(path="."):
     problems = notebook_validation_problems(path)
     duplicate_imports = {}
-    for nb_path in _notebook_paths(path):
+    for nb_path in notebook_paths(path):
         if _style_root_is_skipped(nb_path, skip_style_paths): continue
         try:
             nb = read_nb(nb_path)
@@ -368,7 +309,7 @@ def _notebook_style_problems(path="."):
         problem for problem in knowledge_style_problems(path)
         if not _style_root_is_skipped(problem["path"], skip_style_paths)
     )
-    if _notebook_paths(path):
+    if notebook_paths(path):
         from nbskill.graph import notebook_order_problems
         problems.extend(
             problem for problem in notebook_order_problems(path)
@@ -376,11 +317,9 @@ def _notebook_style_problems(path="."):
         )
     return problems
 
-
 # %% ../nbs/04_review.ipynb #88fd5d5c
 def _notebook_style_problem_lines(path="."):
     return [_format_problem(problem) for problem in _notebook_style_problems(path)]
-
 
 # %% ../nbs/04_review.ipynb #36619e7d
 def _format_notebook_style_report(path="."):
@@ -388,13 +327,11 @@ def _format_notebook_style_report(path="."):
     if not lines: return "Notebook style report: no notebook hygiene problems found."
     return "\n".join(["Notebook style report:", *lines])
 
-
 # %% ../nbs/04_review.ipynb #e65e352e
 def _format_count_group(title, counts):
     if not counts: return [f"{title}: none"]
     ordered = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
     return [f"{title}: " + ", ".join(f"{tool}={count}" for tool, count in ordered)]
-
 
 # %% ../nbs/04_review.ipynb #c175eb05
 def _format_failure_event(event):
@@ -404,7 +341,6 @@ def _format_failure_event(event):
     detail = event.get("summary") or event.get("error") or ",".join(event.get("reasons", []))
     location = f" path={path}" if path else ""
     return f"- {kind}: {tool}{location} {detail}".rstrip()
-
 
 # %% ../nbs/04_review.ipynb #ef60bd30
 def _global_usage_summary_data():
@@ -417,7 +353,6 @@ def _global_usage_summary_data():
         "counts": data.get("counts", {}),
         "recent_problems": problems,
     }
-
 
 # %% ../nbs/04_review.ipynb #9528d8fa
 def _format_global_usage_summary(data=None):
@@ -436,7 +371,6 @@ def _format_global_usage_summary(data=None):
         lines.append("recent problems: none")
     return "\n".join(lines)
 
-
 # %% ../nbs/04_review.ipynb #0db645a6
 def reset_global_usage_summary():
     path = failure_map_path()
@@ -444,24 +378,8 @@ def reset_global_usage_summary():
     except FileNotFoundError: pass
     except OSError: path.write_text(json.dumps(empty_failure_map(), indent=2, sort_keys=True), encoding="utf-8")
 
-
 # %% ../nbs/04_review.ipynb #86f15b90
 _CHKSTYLE_RE = re.compile(r"^# (?P<path>.*?):cell\[(?P<cell>[^\]]+)\]:(?P<line>\d+): (?P<detail>.*)$")
-
-
-# %% ../nbs/04_review.ipynb #52095711
-def _cap_text(text, max_output_chars=12000):
-    text = text or ""
-    if max_output_chars is None or len(text) <= max_output_chars:
-        return {"text": text, "truncated": False, "chars": len(text), "omitted_chars": 0}
-    omitted = len(text) - max_output_chars
-    return {
-        "text": f"{text[:max_output_chars].rstrip()}\n... truncated {omitted} chars ...",
-        "truncated": True,
-        "chars": len(text),
-        "omitted_chars": omitted,
-    }
-
 
 # %% ../nbs/04_review.ipynb #a3620495
 def _chkstyle_diagnostics(text, max_diagnostics=200):
@@ -487,7 +405,6 @@ def _chkstyle_diagnostics(text, max_diagnostics=200):
         if max_diagnostics and len(diagnostics) >= max_diagnostics: break
     return diagnostics
 
-
 # %% ../nbs/04_review.ipynb #b5afae3f
 def _problem_chart(diagnostics):
     def counts(key):
@@ -498,7 +415,6 @@ def _problem_chart(diagnostics):
         "by_path": counts("path"),
         "by_source": counts("source"),
     }
-
 
 # %% ../nbs/04_review.ipynb #5cc09b8c
 def _fix_suggestions(diagnostics):
@@ -514,7 +430,6 @@ def _fix_suggestions(diagnostics):
             })
     return fixes
 
-
 # %% ../nbs/04_review.ipynb #06616c3e
 def style_report(
     path: str = ".",  # File or folder to check
@@ -529,7 +444,7 @@ def style_report(
     notebook_problems = _notebook_style_problems(path)
     usage = _global_usage_summary_data()
     chkstyle = chkstyle or {"status": 0, "output": ""}
-    capped = _cap_text(chkstyle.get("output", ""), max_output_chars=max_output_chars)
+    capped = cap_text(chkstyle.get("output", ""), max_output_chars=max_output_chars)
     diagnostics = [
         *(_chkstyle_diagnostics(chkstyle.get("output", ""), max_diagnostics=max_diagnostics)),
         *notebook_problems,
@@ -567,7 +482,6 @@ def style_report(
         "text": text,
     }
 
-
 # %% ../nbs/04_review.ipynb #bc59a7ff
 def run_style_check(path=".", skip_folder_re=None, skip_path=None, strict=False, max_output_chars=None):
     "Run chkstyle with nbskill's default skip paths and capped output."
@@ -578,7 +492,7 @@ def run_style_check(path=".", skip_folder_re=None, skip_path=None, strict=False,
     with redirect_stdout(out), redirect_stderr(err):
         status = _chkstyle_main(_style_check_argv(path, skip_folder_re, skip_path))
     output = "\n".join(chunk.rstrip() for chunk in (out.getvalue(), err.getvalue()) if chunk)
-    capped = _cap_text(output, max_output_chars=max_output_chars) if max_output_chars else {"text": output, "truncated": False, "chars": len(output), "omitted_chars": 0}
+    capped = cap_text(output, max_output_chars=max_output_chars) if max_output_chars else {"text": output, "truncated": False, "chars": len(output), "omitted_chars": 0}
     return {"status": status, "output": output, **capped}
 
 # %% ../nbs/04_review.ipynb #0737b175
@@ -589,10 +503,8 @@ def _normalize_style_check_cli_aliases():
     }
     sys.argv[:] = [aliases.get(arg, arg) for arg in sys.argv]
 
-
 # %% ../nbs/04_review.ipynb #ca5d2e70
 _normalize_style_check_cli_aliases()
-
 
 # %% ../nbs/04_review.ipynb #d2f84049
 def style_check(
@@ -626,7 +538,6 @@ def style_check(
     if strict and (chkstyle["status"] or has_problems): raise SystemExit(chkstyle["status"] or 1)
     return cli_return(chkstyle["status"] or int(has_problems))
 
-
 # %% ../nbs/04_review.ipynb #12c4df69
 def validate_nbs(
     path: Param("Notebook file, folder, or glob to validate", str, opt=False, nargs="?") = "nbs",  # Notebook file, folder, or glob to validate
@@ -643,12 +554,10 @@ def validate_nbs(
         print("Notebook validation: no invalid nbskill metadata found.")
     return cli_return(int(bool(problems)))
 
-
 # %% ../nbs/04_review.ipynb #29c18378
 def code_source(cell):
     "Return source for code cells; ignore markdown and raw cells."
     return cell.source if cell.cell_type == "code" else None
-
 
 # %% ../nbs/04_review.ipynb #e672839a
 def _git_ref_path_error(path, ref):
@@ -677,7 +586,6 @@ def _git_ref_path_error(path, ref):
         "Commit the notebook first, choose an existing ref/path, or pass --ref_a None to compare against the working tree."
     )
 
-
 # %% ../nbs/04_review.ipynb #c5efa64e
 def _git_root_rel(path):
     path = Path(path)
@@ -690,7 +598,6 @@ def _git_root_rel(path):
     try: return root, path.resolve().relative_to(root.resolve()).as_posix()
     except ValueError: return None, None
 
-
 # %% ../nbs/04_review.ipynb #d185a451
 def _notebook_json_at_ref(path, ref):
     path = Path(path)
@@ -702,7 +609,6 @@ def _notebook_json_at_ref(path, ref):
     if show.returncode != 0: return None
     return json.loads(show.stdout)
 
-
 # %% ../nbs/04_review.ipynb #e2cd5f3d
 def _nbskill_metadata_by_cell(nb_json):
     cells = (nb_json or {}).get("cells", [])
@@ -710,7 +616,6 @@ def _nbskill_metadata_by_cell(nb_json):
         cell.get("id", str(idx)): (cell.get("metadata", {}) or {}).get("nbskill")
         for idx, cell in enumerate(cells)
     }
-
 
 # %% ../nbs/04_review.ipynb #88dfd58e
 def _nbskill_metadata_change_count(path, ref_a, ref_b):
@@ -722,13 +627,11 @@ def _nbskill_metadata_change_count(path, ref_a, ref_b):
     keys = set(old) | set(new)
     return sum(1 for key in keys if old.get(key) != new.get(key) and (old.get(key) is not None or new.get(key) is not None))
 
-
 # %% ../nbs/04_review.ipynb #70ef5a93
 def _metadata_summary(count):
     if not count: return ""
     noun = "cell" if count == 1 else "cells"
     return f"Ignored nbskill metadata changes in {count} {noun}."
-
 
 # %% ../nbs/04_review.ipynb #588d27c7
 def _changed_code_cell_ids(path, ref_a="HEAD", ref_b=None):
@@ -740,7 +643,6 @@ def _changed_code_cell_ids(path, ref_a="HEAD", ref_b=None):
     old = {cid: src for cid, src in old.items() if src is not None}
     new = {cid: src for cid, src in new.items() if src is not None}
     return {cid for cid in set(old) | set(new) if old.get(cid) != new.get(cid)}
-
 
 # %% ../nbs/04_review.ipynb #f9df4bbb
 def _diff_filter_ids(path, ref_b=None, cell_id=None, after_id=None):
@@ -755,7 +657,6 @@ def _diff_filter_ids(path, ref_b=None, cell_id=None, after_id=None):
         selected &= set(ids[ids.index(after_id) + 1:])
     return selected
 
-
 # %% ../nbs/04_review.ipynb #41b9fd02
 def _format_style_delta_report(path, diagnostics, changed_cell_ids, usage_text):
     header = f"Style delta for changed code cells in {path}: {len(diagnostics)} diagnostic(s) across {len(changed_cell_ids)} changed cell(s)"
@@ -767,7 +668,6 @@ def _format_style_delta_report(path, diagnostics, changed_cell_ids, usage_text):
         detail = item.get("detail") or item.get("code", "")
         lines.append(f"- {item.get('source', 'nbskill')}: {item.get('path', path)}{cell}{line} {detail}".rstrip())
     return "\n\n".join(["\n".join(lines), usage_text])
-
 
 # %% ../nbs/04_review.ipynb #fe9b3c86
 def diff_nb(
@@ -811,4 +711,3 @@ def diff_nb(
     else: report = "No code cell changes"
     print(report)
     return cli_return(report)
-

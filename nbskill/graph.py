@@ -12,9 +12,9 @@ import json
 from pathlib import Path
 
 from fastcore.nbio import read_nb
-from fastcore.script import call_parse
 
-from .foundation import cell_source, cli_error, cli_return, is_export_directive, path_candidates, tracked_call
+
+from .foundation import cell_source, cli_error, cli_return, is_export_directive, path_candidates
 
 # %% ../nbs/10_graph.ipynb #f0515186
 def _source_without_directives(source):
@@ -688,8 +688,6 @@ def _format_symbol_connection_data(data):
     return "\n".join(lines)
 
 # %% ../nbs/10_graph.ipynb #symgraphpub
-@call_parse
-@tracked_call
 def symbol_graph(
     path: str = "nbs",  # Notebook file, directory, or glob to scan
     symbol: str = "",  # Function, class, or Class.method to inspect
@@ -709,8 +707,6 @@ def symbol_graph(
 
 
 # %% ../nbs/10_graph.ipynb #privsympub
-@call_parse
-@tracked_call
 def private_symbol_report(
     path: str = "nbs",  # Notebook file, directory, or glob to scan
 ):
@@ -737,8 +733,6 @@ def private_symbol_report(
 
 
 # %% ../nbs/10_graph.ipynb #7fcb0f27
-@call_parse
-@tracked_call
 def symbol_connection(
     path: str = "nbs",  # Notebook file, directory, or glob to scan
     start: str = "",  # Symbol where traversal starts

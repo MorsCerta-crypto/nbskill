@@ -22,13 +22,12 @@ import pyskills
 from execnb.shell import CaptureShell
 from fastcore.nbio import read_nb
 from fastcore.nbio import write_nb as _write_nb
-from fastcore.script import call_parse
 from safepyrun import RunPython
 from safepyrun.core import allow as _safepyrun_allow
 
 from nbskill.foundation import (
     cell_metadata, cli_error, cli_return, one_chapter, parse_literal,
-    stamp_notebook_metadata, tracked_call,
+    stamp_notebook_metadata,
 )
 from .parallel import execution_slot, notebook_locks
 
@@ -687,8 +686,6 @@ def _safe_mode_hint(nb, up2id=None):
     return "Safe execution hint: safepyrun blocked an audited operation. For trusted notebooks, rerun with safe=False or --no-safe."
 
 # %% ../nbs/03_execute.ipynb #434c13b3
-@call_parse
-@tracked_call
 def exec_nb(
     path: str,  # Notebook path
     dest: str | None = None,  # Destination path; defaults to overwriting path

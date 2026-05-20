@@ -8,9 +8,8 @@ import subprocess
 from importlib.resources import files
 from pathlib import Path
 
-from fastcore.script import call_parse
 
-from .foundation import cli_return, install_nbdev_pre_commit_hooks, tracked_call
+from .foundation import cli_return, install_nbdev_pre_commit_hooks
 
 # %% ../nbs/06_skill.ipynb #skillbld
 _SKILL_START = "<!-- nbskill-skill:start -->"
@@ -41,8 +40,6 @@ def _skill_frontmatter(out_path):
     return _SKILL_FRONTMATTER
 
 # %% ../nbs/06_skill.ipynb #8226e202
-@call_parse
-@tracked_call
 def build_skill_from_readme(
     readme_path: str = "README.md",  # README containing the marked skill section
     out_path: str = "nbskill/SKILL.md",  # Skill file to write
@@ -87,8 +84,6 @@ def nbskill_mcp_restart_notice():
 
 
 # %% ../nbs/06_skill.ipynb #dab79c19
-@call_parse
-@tracked_call
 def install_nbskill(
     target: str = "codex",  # codex, claude, both, or custom when skills_dir is set
     skills_dir: str | None = None,  # Parent skills directory; skill is installed below jupyter-notebooks

@@ -17,13 +17,13 @@ from io import StringIO
 from pathlib import Path
 
 from fastcore.nbio import read_nb
-from fastcore.script import call_parse, _in_call_parse
 
 from .edit_interactive import execute_plan
-from .foundation import cell_class_names, cell_source, exported_py_path, tracked_call
+from .foundation import cell_class_names, cell_source, exported_py_path
 from .graph import notebook_order_problems, symbol_usage_summary
 from .read import nb_cell, nb_overview
 from .review import notebook_validation_problems, style_report
+
 
 # %% ../nbs/11_agent_workbench.ipynb #3ac8d841
 BUILTIN_TASTE_PROFILE = {
@@ -574,12 +574,6 @@ def _render_workbench_plan(contract, taste, context):
     ]
     return "\n".join(lines).rstrip()
 
-# %% ../nbs/11_agent_workbench.ipynb #0277eaf9
-def _print_cli_result(result):
-    text = result.get("rendered_plan") or result.get("summary") or json.dumps(result, indent=2, sort_keys=True)
-    print(text)
-    return None
-
 # %% ../nbs/11_agent_workbench.ipynb #7131526e
 def agent_workbench_result(
     goal: str,
@@ -622,8 +616,6 @@ def agent_workbench_result(
     return result
 
 # %% ../nbs/11_agent_workbench.ipynb #2927f514
-@call_parse
-@tracked_call
 def agent_workbench(
     goal: str,  # Desired software-development outcome
     notebook: str | None = None,  # Required when execute=True; also narrows context when provided
@@ -633,9 +625,8 @@ def agent_workbench(
     timeout: int = 30,  # Per-cell timeout for execute_plan
 ) -> dict:
     "Prepare or execute a taste-aware, small-diff agent workbench run."
-    result = agent_workbench_result(
+    return agent_workbench_result(
         goal, notebook=notebook, contract_file=contract_file, execute=execute,
         max_steps=max_steps, timeout=timeout,
     )
-    if _in_call_parse.get(): return _print_cli_result(result)
-    return result
+

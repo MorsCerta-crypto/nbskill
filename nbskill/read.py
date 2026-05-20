@@ -11,12 +11,11 @@ import re
 import shlex
 
 from fastcore.nbio import read_nb
-from fastcore.script import call_parse
 
 from nbskill.foundation import (
     cell_matches_type, cell_prefix, cell_source, chapter_index_set,
     cli_return, find_cell_by_id, first_line, is_definition_node,
-    is_export_directive, is_exported_code_cell, matches_filter, tracked_call,
+    is_export_directive, is_exported_code_cell, matches_filter,
     with_context,
 )
 
@@ -326,8 +325,6 @@ def _selected_cell_item(nb, query=None, id=None):
 
 
 # %% ../nbs/01_read.ipynb #b4784010
-@call_parse
-@tracked_call
 def nb_overview(
     nb_path: str,  # Notebook path
     include_docs: bool = False,  # Include Markdown cells without headings
@@ -341,8 +338,6 @@ def nb_overview(
 
 
 # %% ../nbs/01_read.ipynb #e17a74d9
-@call_parse
-@tracked_call
 def nb_chapter(
     nb_path: str,  # Notebook path
     query: str | None = None,  # Query for any cell inside the chapter
@@ -358,8 +353,6 @@ def nb_chapter(
 
 
 # %% ../nbs/01_read.ipynb #32506359
-@call_parse
-@tracked_call
 def nb_cell(
     nb_path: str,  # Notebook path
     query: str | None = None,  # Query that resolves to exactly one cell
@@ -562,8 +555,6 @@ def _format_symbol_doc(path, nb, symbol, context=2, source=False, show_ids=False
 
 
 # %% ../nbs/01_read.ipynb #1584953f
-@call_parse
-@tracked_call
 def show_doc(
     path: str,  # Notebook path
     symbol: str | None = None,  # Function, class, or Class.method to inspect

@@ -3,8 +3,8 @@
 # %% auto #0
 __all__ = ['remove_demo_path', 'demo_path', 'path_candidates', 'is_valid_ipynb', 'write_demo_notebook', 'cli_return', 'cli_error',
            'failure_map_path', 'empty_failure_map', 'load_failure_map', 'install_nbdev_pre_commit_hooks',
-           'tracked_call', 'parse_literal', 'none_if_string', 'is_definition_node', 'node_start_line',
-           'is_export_directive', 'cell_source', 'cell_metadata', 'notebook_metadata', 'file_hash', 'exported_py_path',
+           'parse_literal', 'none_if_string', 'is_definition_node', 'node_start_line', 'is_export_directive',
+           'cell_source', 'cell_metadata', 'notebook_metadata', 'file_hash', 'exported_py_path',
            'stamp_export_metadata', 'parse_one_cell', 'find_cell_by_id', 'find_cell_by_text', 'replace_cell',
            'clear_outputs', 'load_cells_text', 'validate_code_cells', 'parse_cells', 'first_line', 'cell_prefix',
            'matches_filter', 'is_exported_code_cell', 'stamp_notebook_metadata', 'cell_class_names',
@@ -12,13 +12,13 @@ __all__ = ['remove_demo_path', 'demo_path', 'path_candidates', 'is_valid_ipynb',
 
 # %% ../nbs/00_foundation.ipynb #2500639f
 import ast,hashlib,json,os,re
-import shutil,subprocess,sys,time,traceback
+import shutil,subprocess,sys
 from contextlib import contextmanager
-from functools import wraps
 from pathlib import Path
 from fastcore.basics import in_jupyter
 from fastcore.nbio import mk_cell, new_nb, write_nb
 from fastcore.script import _in_call_parse
+
 
 # %% ../nbs/00_foundation.ipynb #demohelpcode
 def remove_demo_path(path):
@@ -124,96 +124,6 @@ def load_failure_map(path):
     data.setdefault("last_call", None)
     return data
 
-# %% ../nbs/00_foundation.ipynb #9144b899
-def _bump_count(data, kind, tool):
-    counts = data.setdefault("counts", {})
-    group = counts.setdefault(kind, {})
-    group[tool] = group.get(tool, 0) + 1
-
-# %% ../nbs/00_foundation.ipynb #20566719
-def _call_details(args, kwargs):
-    details = {"cwd": str(Path.cwd())}
-    if args and isinstance(args[0], (str, Path)): details["path"] = str(args[0])
-    for key in ("path", "cell_id", "chapter"):
-        value = kwargs.get(key)
-        if value is not None: details[key] = str(value)
-    return details
-
-# %% ../nbs/00_foundation.ipynb #a2259698
-def _write_failure_map(path, data):
-    data["events"] = data.get("events", [])[-200:]
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
-
-# %% ../nbs/00_foundation.ipynb #ab846f37
-def _record_tool_start(tool, details=None):
-    path = failure_map_path()
-    now = time.time()
-    details = details or {}
-    event = {"tool": tool, "ts": now, **details}
-    try:
-        data = load_failure_map(path)
-        _bump_count(data, "usage", tool)
-        last = data.get("last_call")
-        if last:
-            delta = now - float(last.get("ts", now))
-            reasons = []
-            if last.get("tool") == tool: reasons.append("same_tool")
-            if delta <= 1.0: reasons.append("within_1s")
-            if reasons:
-                _bump_count(data, "friction", tool)
-                data["events"].append({
-                    "kind": "friction",
-                    "tool": tool,
-                    "path": details.get("path"),
-                    "cell_id": details.get("cell_id"),
-                    "previous_tool": last.get("tool"),
-                    "previous_path": last.get("path"),
-                    "seconds_since_previous": round(delta, 3),
-                    "reasons": reasons,
-                    "ts": now,
-                })
-        data["last_call"] = event
-        _write_failure_map(path, data)
-    except OSError:
-        pass
-    return event
-
-
-# %% ../nbs/00_foundation.ipynb #963e84e1
-def _record_tool_failure(event, exc):
-    path = failure_map_path()
-    try:
-        data = load_failure_map(path)
-        tool = event["tool"]
-        summary = "".join(traceback.format_exception_only(type(exc), exc)).strip()
-        _bump_count(data, "failures", tool)
-        data["events"].append({
-            "kind": "failure",
-            "tool": tool,
-            "path": event.get("path"),
-            "cell_id": event.get("cell_id"),
-            "chapter": event.get("chapter"),
-            "cwd": event.get("cwd"),
-            "error_type": type(exc).__name__,
-            "error": str(exc),
-            "summary": summary,
-            "ts": time.time(),
-        })
-        _write_failure_map(path, data)
-    except OSError:
-        pass
-
-# %% ../nbs/00_foundation.ipynb #747da8b5
-@contextmanager
-def _track_tool(tool, details=None):
-    event = _record_tool_start(tool, details=details)
-    try:
-        yield
-    except BaseException as exc:
-        _record_tool_failure(event, exc)
-        raise
-
 # %% ../nbs/00_foundation.ipynb #48374f0e
 _NBSKILL_HOOKS_MARKER_START = "# nbskill nbdev hooks:start"
 
@@ -228,10 +138,6 @@ _NBSKILL_HOOKS_INSTALLED_SENTINEL = "nbskill-hooks-installed"
 
 # %% ../nbs/00_foundation.ipynb #10840497
 _NBSKILL_HOOKS_DISABLED_SENTINEL = "nbskill-hooks-disabled"
-
-
-# %% ../nbs/00_foundation.ipynb #3ab06271
-_NBSKILL_HOOK_ROOTS = set()
 
 
 # %% ../nbs/00_foundation.ipynb #8f029a46
@@ -326,26 +232,6 @@ def install_nbdev_pre_commit_hooks(path=".", run_nbdev_install_hooks=True):
     installed.parent.mkdir(parents=True, exist_ok=True)
     installed.write_text("nbskill hooks installed once\n", encoding="utf-8")
     return {"installed": True, "root": str(root), "hook": str(pre_commit)}
-
-
-# %% ../nbs/00_foundation.ipynb #396ae822
-def _ensure_nbdev_pre_commit_hooks(path="."):
-    if os.environ.get("NBSKILL_NO_INSTALL_HOOKS"): return None
-    root = _git_root(path)
-    if root is None or str(root) in _NBSKILL_HOOK_ROOTS: return None
-    _NBSKILL_HOOK_ROOTS.add(str(root))
-    try: return install_nbdev_pre_commit_hooks(root)
-    except BaseException: return None
-
-
-# %% ../nbs/00_foundation.ipynb #f91401a4
-def tracked_call(func):
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        _ensure_nbdev_pre_commit_hooks()
-        with _track_tool(func.__name__, details=_call_details(args, kwargs)):
-            return func(*args, **kwargs)
-    return wrapper
 
 
 # %% ../nbs/00_foundation.ipynb #41efc12d

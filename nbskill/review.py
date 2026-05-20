@@ -19,13 +19,13 @@ from pathlib import Path
 
 from chkstyle.core import main as _chkstyle_main
 from fastcore.nbio import read_nb
-from fastcore.script import Param, call_parse
+from fastcore.script import Param
 from nbdev.diff import nbs_pair, source_diff
 
 from nbskill.foundation import (
     empty_failure_map, failure_map_path, load_failure_map, cell_class_names,
     cell_source, cli_error, cli_return, exported_py_path, file_hash,
-    is_export_directive, is_exported_code_cell, none_if_string, tracked_call,
+    is_export_directive, is_exported_code_cell, none_if_string,
 )
 from .knowledge import knowledge_style_problems
 
@@ -595,8 +595,6 @@ _normalize_style_check_cli_aliases()
 
 
 # %% ../nbs/04_review.ipynb #d2f84049
-@call_parse
-@tracked_call
 def style_check(
     path: Param("File or folder to check", str, opt=False, nargs="?") = ".",  # File or folder to check
     skip_folder_re: str | None = None,  # Regex for folders to skip
@@ -630,8 +628,6 @@ def style_check(
 
 
 # %% ../nbs/04_review.ipynb #12c4df69
-@call_parse
-@tracked_call
 def validate_nbs(
     path: Param("Notebook file, folder, or glob to validate", str, opt=False, nargs="?") = "nbs",  # Notebook file, folder, or glob to validate
     strict: bool = True,  # Exit non-zero when invalid metadata is found
@@ -774,8 +770,6 @@ def _format_style_delta_report(path, diagnostics, changed_cell_ids, usage_text):
 
 
 # %% ../nbs/04_review.ipynb #fe9b3c86
-@call_parse
-@tracked_call
 def diff_nb(
     path: str,  # Notebook path
     ref_a: str|None = "HEAD",  # First git ref; use None for working tree

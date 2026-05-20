@@ -22,7 +22,7 @@ from pathlib import Path
 from fastcore.nbio import mk_cell, new_nb
 from fastcore.nbio import read_nb
 from fastcore.nbio import write_nb as _write_nb
-from fastcore.script import Param, call_parse, _in_call_parse
+from fastcore.script import Param
 from nbdev.doclinks import nbdev_export as _run_nb_export
 
 from .execute import exec_nb, run_notebook_test
@@ -31,7 +31,7 @@ from nbskill.foundation import (
     cell_class_names, cell_source, clear_outputs, cli_error,
     cli_return, find_cell_by_id, find_cell_by_text, is_exported_code_cell,
     load_cells_text, exported_py_path, one_chapter, parse_cells, parse_one_cell,
-    replace_cell, stamp_export_metadata, stamp_notebook_metadata, tracked_call,
+    replace_cell, stamp_export_metadata, stamp_notebook_metadata,
     validate_code_cells,
 )
 from .parallel import notebook_locks
@@ -155,8 +155,6 @@ def _write_literal_replacements(path, old_str, new_str, run_test=False, validate
 
 
 # %% ../nbs/02_write.ipynb #0f2f63da
-@call_parse
-@tracked_call
 def write_nb(
     path: str,  # Notebook path, directory, or glob when replacing literals
     cells: Param("Cell block text", str, opt=False, nargs="?") = "",  # Cells to write; use - to read stdin
@@ -290,8 +288,6 @@ def _replace_cell_with_cells(nb, idx, cells):
 
 
 # %% ../nbs/02_write.ipynb #ba6abded
-@call_parse
-@tracked_call
 def update_cell(
     path: str,  # Notebook path
     new: Param("Replacement cell source, replacement text, or line-range replacement", str, opt=False, nargs="?") = "",
@@ -773,8 +769,6 @@ def _format_batch_details(details):
 
 
 # %% ../nbs/02_write.ipynb #04a5744e
-@call_parse
-@tracked_call
 def batch_edit_nb(
     plan: Param("JSON edit plan, or - to read stdin", str, opt=False, nargs="?") = "",
     plan_file: str | None = None,  # Read the JSON plan from a UTF-8 file
@@ -1051,8 +1045,6 @@ def _format_split_plan(path, dest, chapter, plan, dry_run=False):
 
 
 # %% ../nbs/02_write.ipynb #948a5600
-@call_parse
-@tracked_call
 def split_nb_chapter(
     path: str,  # Source notebook path
     chapter: str,  # Chapter title string or regex to split out

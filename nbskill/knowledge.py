@@ -9,9 +9,10 @@ import glob,json,os,re,time
 from pathlib import Path
 
 from fastcore.nbio import read_nb
-from fastcore.script import call_parse
 
-from .foundation import cell_source, cli_return, tracked_call
+
+from .foundation import cell_source
+
 
 # %% ../nbs/12_knowledge.ipynb #knowdefaults1
 _DEFAULT_BEHAVIOURS = [
@@ -113,13 +114,7 @@ def _check_regex(pattern):
     re.compile(pattern)
     return pattern
 
-# %% ../nbs/12_knowledge.ipynb #32f017c7
-def _print_json(value):
-    print(json.dumps(value, indent=2, sort_keys=True))
-
 # %% ../nbs/12_knowledge.ipynb #2852fabc
-@call_parse
-@tracked_call
 def store_knowledge(
     apply_regex: str,  # Regex to apply to notebook code cells
     note: str,  # Behaviour note shown when the regex matches
@@ -139,13 +134,10 @@ def store_knowledge(
         item["created_ts"] = now
         data["behaviours"].append(item)
     pth = _write_knowledge(data, path)
-    result = {"path": str(pth), "stored": item, "count": len(data["behaviours"])}
-    _print_json(result)
-    return cli_return(result)
+    return {"path": str(pth), "stored": item, "count": len(data["behaviours"])}
+
 
 # %% ../nbs/12_knowledge.ipynb #4a4befe6
-@call_parse
-@tracked_call
 def add_behaviour_steering(
     regex: str,  # Regex the agent created from a behaviour note
     path: str | None = None,  # Override JSON memory path
@@ -154,8 +146,6 @@ def add_behaviour_steering(
     return store_knowledge(regex, f"Behaviour steering matched: {regex}", path=path)
 
 # %% ../nbs/12_knowledge.ipynb #3ae65303
-@call_parse
-@tracked_call
 def get_knowledge(
     regex: str | None = None,  # Optional regex for filtering stored regexes and notes
     path: str | None = None,  # Override JSON memory path
@@ -167,9 +157,8 @@ def get_knowledge(
     if regex:
         query_re = re.compile(_check_regex(regex))
         items = [item for item in items if query_re.search(item.get("regex", "")) or query_re.search(item.get("note", ""))]
-    result = {"path": str(knowledge_path(path)), "count": len(items), "behaviours": items}
-    _print_json(result)
-    return cli_return(result)
+    return {"path": str(knowledge_path(path)), "count": len(items), "behaviours": items}
+
 
 # %% ../nbs/12_knowledge.ipynb #bccae447
 def _is_notebook_path(path):

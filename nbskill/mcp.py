@@ -22,7 +22,7 @@ from pathlib import Path
 
 # %% ../nbs/07_mcp.ipynb #mcpimports2
 from fastcore.nbio import read_nb as _read_raw_nb
-from fastcore.script import Param, call_parse, _in_call_parse
+from fastcore.script import _in_call_parse
 from fastmcp import FastMCP
 from fastmcp.tools import ToolResult
 from mcp.types import TextContent
@@ -804,24 +804,6 @@ def _status_data():
     }
 
 
-# %% ../nbs/07_mcp.ipynb #54a50a01
-def _format_status(data):
-    lines = [
-        "nbskill status",
-        f"version={data['version']}",
-        f"cwd={data['cwd']}",
-        f"python={data['python']}",
-        f"mcp_command={data['mcp_command']}",
-        f"mcp_command_path={data['mcp_command_path'] or '(not on PATH)'}",
-        "cli_tools:",
-    ]
-    lines.extend(f"- {name}: {path or '(not on PATH)'}" for name, path in data["cli_tools"].items())
-    lines.append(f"reconnect_hint={data['reconnect_hint']}")
-    lines.append("install_commands:")
-    lines.extend(f"- {cmd}" for cmd in data["install_commands"])
-    return "\n".join(lines)
-
-
 # %% ../nbs/07_mcp.ipynb #7a5dcc61
 def _doctor_report(
     path=".",
@@ -895,12 +877,9 @@ def _doctor_report(
 
 
 # %% ../nbs/07_mcp.ipynb #85b62f4f
-@call_parse
-def nbskill_status(json_output: bool = False):  # Print JSON instead of text
+def nbskill_status(json_output: bool = False):  # Keep argument for compatibility with the CLI wrapper
     "Report nbskill version, MCP command setup, canonical CLI tools, and reconnect hints."
-    data = _status_data()
-    print(json.dumps(data, indent=2, sort_keys=True) if json_output else _format_status(data))
-    return data if not _in_call_parse else None
+    return _status_data()
 
 
 # %% ../nbs/07_mcp.ipynb #0bae0134
@@ -1706,7 +1685,6 @@ def create_mcp():
 
 
 # %% ../nbs/07_mcp.ipynb #bc41ce66
-@call_parse
 def main(
     transport: str = "stdio",  # MCP transport; stdio is what Codex/Claude use for local servers
     show_banner: bool = False,  # Show FastMCP startup banner

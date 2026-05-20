@@ -16,10 +16,9 @@ from pathlib import Path
 
 from fastcore.nbio import mk_cell, new_nb
 from fastcore.nbio import write_nb
-from fastcore.script import call_parse
 from nbdev.doclinks import nbdev_export as _run_nb_export
 
-from .foundation import cli_return, exported_py_path, is_definition_node, node_start_line, stamp_export_metadata, tracked_call
+from .foundation import cli_return, exported_py_path, is_definition_node, node_start_line, stamp_export_metadata
 
 # %% ../nbs/05_convert.ipynb #ac1075c9
 def _node_source(lines, node):
@@ -178,8 +177,6 @@ def _export_new_notebook(nb, nb_path):
 
 
 # %% ../nbs/05_convert.ipynb #e32d15d9
-@call_parse
-@tracked_call
 def new_nbdev_notebook(
     name: str,  # Notebook name or path
     default_exp: str | None = None,  # nbdev default_exp module name
@@ -333,8 +330,6 @@ def _py2nbs_folder(
 
 
 # %% ../nbs/05_convert.ipynb #e6439330
-@call_parse
-@tracked_call
 def py2nb(
     path: str,  # Python file or folder to convert
     nbs_path: str = "nbs",  # Folder for generated notebooks
@@ -374,8 +369,6 @@ def py2nb(
 
 
 # %% ../nbs/05_convert.ipynb #35c804b1
-@call_parse
-@tracked_call
 def py2nbs(
     path: str,  # Folder containing Python files
     nbs_path: str = "nbs",  # Folder for generated notebooks
@@ -463,8 +456,6 @@ def _validate_nbdev_project(dest, package, run_validation=True, dry_run=True):
     return result
 
 # %% ../nbs/05_convert.ipynb #e2eb9ac6
-@call_parse
-@tracked_call
 def py2nbdev(
     source: str,  # Existing Python project/package root
     dest: str,  # Destination nbdev project root

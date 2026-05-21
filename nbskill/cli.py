@@ -601,9 +601,16 @@ def reference_query(
     current_repo: str = ".",  # Current project for dependency status
     repos: str | None = None,  # Optional comma-separated repo names
     path: str | None = None,  # Override reference home
+    kind: str | None = None,  # Optional item kind filter
+    package: str | None = None,  # Optional package filter
+    module: str | None = None,  # Optional module filter
+    symbol: str | None = None,  # Optional symbol filter
 ):
     "Search indexed reference implementations."
-    result = nbskill.knowledge.reference_query(query, top_k=top_k, include_branch=include_branch, current_repo=current_repo, repos=repos, path=path)
+    result = nbskill.knowledge.reference_query(
+        query, top_k=top_k, include_branch=include_branch, current_repo=current_repo, repos=repos, path=path,
+        kind=kind, package=package, module=module, symbol=symbol,
+    )
     return _print_json(result)
 
 # %% ../nbs/13_cli.ipynb #ec4e829f

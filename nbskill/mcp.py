@@ -1519,11 +1519,18 @@ def _get_knowledge_tool(regex: str | None = None, path: str | None = None, detai
 def _reference_query_tool(
     query: str, top_k: int = 3, include_branch: bool = False,
     current_repo: str = ".", repos: str | None = None, path: str | None = None,
+    kind: str | None = None, package: str | None = None, module: str | None = None, symbol: str | None = None,
     detail: str = "summary",
 ) -> ToolResult:
     "Search globally indexed reference implementations."
-    arguments = dict(query=query, top_k=top_k, include_branch=include_branch, current_repo=current_repo, repos=repos, path=path, detail=detail)
-    result_data = reference_query(query, top_k=top_k, include_branch=include_branch, current_repo=current_repo, repos=repos, path=path)
+    arguments = dict(
+        query=query, top_k=top_k, include_branch=include_branch, current_repo=current_repo, repos=repos, path=path,
+        kind=kind, package=package, module=module, symbol=symbol, detail=detail,
+    )
+    result_data = reference_query(
+        query, top_k=top_k, include_branch=include_branch, current_repo=current_repo, repos=repos, path=path,
+        kind=kind, package=package, module=module, symbol=symbol,
+    )
     full_output = json.dumps(result_data, indent=2, sort_keys=True)
     result = mcp_tool_result("reference_query", arguments, full_output, detail=detail)
     result.structured_content["reference_query"] = result_data

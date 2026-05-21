@@ -7,6 +7,12 @@ __all__ = ['default_knowledge', 'knowledge_path', 'load_knowledge', 'store_knowl
 
 # %% ../nbs/12_knowledge.ipynb #911ef06b
 import ast, glob, hashlib, importlib.util, json, math, os, re, shutil, subprocess, tempfile, time
+
+try:
+    import tomllib
+except ImportError:
+    tomllib = None
+
 from pathlib import Path
 
 from fastcore.nbio import read_nb
@@ -227,9 +233,17 @@ def _reference_table_names():
     }
 
 # %% ../nbs/12_knowledge.ipynb #84bf6b2c
+def _require_sentence_transformers():
+    try:
+        import sentence_transformers
+        return sentence_transformers
+    except Exception as exc:
+        raise RuntimeError(f"sentence-transformers is required for reference knowledge: {type(exc).__name__}: {exc}") from exc
+
 def _reference_db(path=None):
     lancedb, reason = _try_lancedb()
     if lancedb is None: raise RuntimeError(f"LanceDB is required for reference knowledge: {reason}")
+    _require_sentence_transformers()
     home = reference_home(path)
     home.mkdir(parents=True, exist_ok=True)
     return lancedb.connect(str(_lancedb_path(path)))
@@ -242,13 +256,17 @@ def _reference_items_table(path=None):
     return _reference_table(path, "items")
 
 # %% ../nbs/12_knowledge.ipynb #c2724539
-_REFERENCE_VECTOR_DIMS = 64
 _REFERENCE_SYNONYM_GROUPS = [
     {"route", "endpoint", "handler", "url", "page"},
     {"button", "control", "clickable", "action"},
     {"build", "make", "create", "render", "compose"},
     {"website", "web", "html", "fasthtml"},
     {"payment", "billing", "stripe", "checkout"},
+    {"attribute", "attributes", "attr", "attrs", "field", "fields"},
+    {"argument", "arguments", "arg", "args", "parameter", "parameters", "param", "params"},
+    {"constructor", "init", "__init__", "initializer"},
+    {"compose", "composition", "pipeline", "pipe", "chain"},
+    {"patch", "monkeypatch"},
 ]
 
 # %% ../nbs/12_knowledge.ipynb #936d7da8
@@ -313,9 +331,21 @@ def _lance_rows(path, key):
     try: return [dict(row) for row in table.to_arrow().to_pylist()]
     except Exception: return []
 
+def _prepare_lance_rows(key, rows):
+    if key != "items": return list(rows)
+    rows = [dict(row) for row in rows]
+    vectors = _embed_reference_texts(row.get("search_text", "") for row in rows)
+    backend = _reference_embedding_backend(len(vectors[0]) if vectors else None)
+    for row, vector in zip(rows, vectors):
+        row["vector"] = vector
+        row["embedding_backend"] = backend
+        row["returned_count"] = int(row.get("returned_count") or 0)
+    return rows
+
 def _write_lance_table(path, key, rows):
     db = _reference_db(path)
     name = _reference_table_names()[key]
+    rows = _prepare_lance_rows(key, rows)
     if not rows:
         table = _reference_table(path, key)
         if table is not None: table.delete("name is not null" if key == "repos" else "item_id is not null" if key == "items" else "caller_id is not null")
@@ -361,6 +391,26 @@ def _reference_token_map():
     return token_map
 
 # %% ../nbs/12_knowledge.ipynb #e91a29bb
+_REFERENCE_SENTENCE_MODEL = os.environ.get("NBSKILL_REFERENCE_SENTENCE_MODEL", "all-MiniLM-L6-v2")
+_REFERENCE_SENTENCE_TRANSFORMER = None
+_REFERENCE_SENTENCE_NOTE = None
+
+def _sentence_transformer():
+    global _REFERENCE_SENTENCE_TRANSFORMER, _REFERENCE_SENTENCE_NOTE
+    if _REFERENCE_SENTENCE_TRANSFORMER is not None: return _REFERENCE_SENTENCE_TRANSFORMER
+    try:
+        from sentence_transformers import SentenceTransformer
+    except Exception as exc:
+        _REFERENCE_SENTENCE_NOTE = f"sentence-transformers unavailable: {type(exc).__name__}: {exc}"
+        raise RuntimeError(_REFERENCE_SENTENCE_NOTE) from exc
+    try:
+        _REFERENCE_SENTENCE_TRANSFORMER = SentenceTransformer(_REFERENCE_SENTENCE_MODEL, local_files_only=True)
+        _REFERENCE_SENTENCE_NOTE = None
+        return _REFERENCE_SENTENCE_TRANSFORMER
+    except Exception as exc:
+        _REFERENCE_SENTENCE_NOTE = f"sentence-transformers model unavailable locally: {type(exc).__name__}: {exc}"
+        raise RuntimeError(_REFERENCE_SENTENCE_NOTE) from exc
+
 def _reference_tokens(text):
     token_map = _reference_token_map()
     tokens = []
@@ -368,17 +418,33 @@ def _reference_tokens(text):
         tokens.extend(sorted(token_map.get(token, {token})))
     return tokens
 
-def _reference_vector(text, dims=_REFERENCE_VECTOR_DIMS):
-    vector = [0.0] * dims
-    for token in _reference_tokens(text):
-        digest = hashlib.sha1(token.encode("utf-8")).digest()
-        idx = int.from_bytes(digest[:4], "big") % dims
-        vector[idx] += 1.0
-    norm = math.sqrt(sum(value * value for value in vector)) or 1.0
-    return [value / norm for value in vector]
+def _reference_vector(text, dims=None):
+    model = _sentence_transformer()
+    vector = [float(value) for value in model.encode(str(text), normalize_embeddings=True)]
+    if dims is not None and len(vector) != dims:
+        raise RuntimeError(f"Embedding dimension mismatch: query vector has {len(vector)} dims, index has {dims}; reingest references")
+    return vector
 
-def _embed_reference_texts(texts):
-    return [_reference_vector(text) for text in texts]
+def _embed_reference_texts(texts, dims=None):
+    texts = list(texts)
+    model = _sentence_transformer()
+    vectors = [[float(value) for value in row] for row in model.encode(texts, normalize_embeddings=True)]
+    if dims is not None and any(len(vector) != dims for vector in vectors):
+        raise RuntimeError(f"Embedding dimension mismatch while writing LanceDB rows; expected {dims}")
+    return vectors
+
+def _reference_embedding_backend(dims=None):
+    vector = _reference_vector("dimension probe")
+    if dims is not None and len(vector) != dims:
+        raise RuntimeError(f"Embedding dimension mismatch: model has {len(vector)} dims, index has {dims}; reingest references")
+    return f"sentence-transformers:{_REFERENCE_SENTENCE_MODEL}"
+
+def _reference_embedding_note():
+    try:
+        _sentence_transformer()
+        return None
+    except RuntimeError as exc:
+        return str(exc)
 
 # %% ../nbs/12_knowledge.ipynb #12ac7137
 def _sync_lancedb(path=None):
@@ -392,23 +458,107 @@ def _sync_lancedb(path=None):
 # %% ../nbs/12_knowledge.ipynb #24b46696
 def _merge_lancedb_rows(*groups):
     merged = {}
-    for rows in groups:
+    for source, rows in groups:
         for row in rows or []:
             key = row.get("item_id")
-            if key and key not in merged: merged[key] = row
+            if not key: continue
+            current = merged.setdefault(key, row)
+            sources = set(current.get("_search_sources") or [])
+            sources.add(source)
+            current["_search_sources"] = sorted(sources)
+            current["_reference_score"] = max(float(current.get("_reference_score") or 0), _reference_rank_score(row))
     return [row for row in merged.values() if row.get("item_id")]
 
-def _lancedb_search(query, top_k=3, repos=None, path=None):
+def _lance_literal(value):
+    return "'" + str(value).replace("'", "''") + "'"
+
+def _reference_filter_expr(repos=None, kind=None, package=None, module=None, symbol=None):
+    clauses = []
+    values = {"kind": kind, "package": package, "module": module, "symbol": symbol}
+    for field, value in values.items():
+        if value: clauses.append(f"{field} = {_lance_literal(value)}")
+    repo_names = _repo_filter(repos)
+    if repo_names:
+        clauses.append("repo IN (" + ", ".join(_lance_literal(repo) for repo in repo_names) + ")")
+    return " AND ".join(clauses)
+
+def _row_matches_reference_filter(row, repos=None, kind=None, package=None, module=None, symbol=None):
+    repo_names = set(_repo_filter(repos) or [])
+    if repo_names and row.get("repo") not in repo_names: return False
+    for field, value in {"kind": kind, "package": package, "module": module, "symbol": symbol}.items():
+        if value and row.get(field) != value: return False
+    return True
+
+def _reference_rank_score(row, query=""):
+    base = float(row.get("_relevance_score") or row.get("_score") or row.get("_reference_score") or 0)
+    score = math.log1p(max(base, 0.0))
+    if row.get("_distance") is not None:
+        try: score += 1.0 / (1.0 + max(float(row["_distance"]), 0.0))
+        except (TypeError, ValueError): pass
+    tokens = set(_reference_tokens(query))
+    symbol = str(row.get("symbol", "") or "").lower().replace("_", " ")
+    module = str(row.get("module", "") or "").lower()
+    doc = str(row.get("docstring", "") or "").lower()
+    sig = str(row.get("signature", "") or "").lower()
+    src = str(row.get("source", "") or "").lower()
+    symbol_parts = set(re.findall(r"[a-z0-9]+", symbol))
+    for token in tokens:
+        if token in {symbol, symbol.replace(" ", "_")}: score += 10.0
+        elif token in symbol_parts: score += 3.0
+        elif token in symbol: score += 1.5
+        if token in doc: score += 1.0
+        if token in sig: score += 0.6
+        if token in module: score += 0.3
+        if token in src: score += 0.1
+    if tokens and all(token in doc or token in symbol or token in sig for token in tokens): score += 2.0
+    if len(symbol.replace(' ', '')) <= 1 and not doc: score -= 8.0
+    return score
+
+def _prefer_reference_row(current, candidate):
+    if current is None: return candidate
+    cur_path, cand_path = current.get("path", ""), candidate.get("path", "")
+    if cur_path.startswith("nbs/") and not cand_path.startswith("nbs/"): return candidate
+    if candidate.get("_reference_score", 0) > current.get("_reference_score", 0): return candidate
+    return current
+
+def _dedupe_reference_rows(rows):
+    deduped = {}
+    for row in rows:
+        source_hash = hashlib.sha1(str(row.get("source", "")).encode("utf-8")).hexdigest()
+        key = (row.get("repo"), row.get("kind"), row.get("symbol"), source_hash)
+        deduped[key] = _prefer_reference_row(deduped.get(key), row)
+    return sorted(deduped.values(), key=lambda row: row.get("_reference_score", 0), reverse=True)
+
+def _search_rows(builder, limit, filter_expr=None):
+    try:
+        if filter_expr: builder = builder.where(filter_expr, prefilter=True)
+    except TypeError:
+        if filter_expr: builder = builder.where(filter_expr)
+    try: return builder.limit(limit).to_list()
+    except Exception: return []
+
+def _lancedb_search(query, top_k=3, repos=None, path=None, kind=None, package=None, module=None, symbol=None):
     table = _reference_table(path, "items")
     if table is None: return [], None, "lancedb"
-    limit = max(top_k * 4, top_k)
-    vector_rows = table.search(_reference_vector(query)).limit(limit).to_list()
-    try: fts_rows = table.search(query, query_type="fts").limit(limit).to_list()
-    except Exception: fts_rows = []
-    rows = _merge_lancedb_rows(vector_rows, fts_rows)
-    allowed = set(repos or [])
-    if allowed: rows = [row for row in rows if row.get("repo") in allowed]
-    return rows[:top_k], None, "lancedb"
+    limit = max(top_k * 20, 80)
+    items = _lance_rows(path, "items")
+    dims = next((len(row.get("vector") or []) for row in items if row.get("vector")), None)
+    vector = _reference_vector(query, dims=dims)
+    text_query = " ".join(_query_tokens(query)) or query
+    filter_expr = _reference_filter_expr(repos=repos, kind=kind, package=package, module=module, symbol=symbol)
+    try:
+        hybrid = _search_rows(table.search(query_type="hybrid").vector(vector).text(text_query), limit, filter_expr)
+    except Exception:
+        hybrid = []
+    vector_rows = _search_rows(table.search(vector).metric("cosine"), limit, filter_expr)
+    fts_rows = _search_rows(table.search(text_query, query_type="fts"), limit, filter_expr)
+    rows = _merge_lancedb_rows(("hybrid", hybrid), ("vector", vector_rows), ("bm25_fts", fts_rows))
+    rows = [row for row in rows if _row_matches_reference_filter(row, repos=repos, kind=kind, package=package, module=module, symbol=symbol)]
+    for row in rows: row["_reference_score"] = _reference_rank_score(row, query=query)
+    rows = _dedupe_reference_rows(sorted(rows, key=lambda row: row.get("_reference_score", 0), reverse=True))
+    note = _reference_embedding_note()
+    backend = "lancedb_hybrid_bm25_vector"
+    return rows[:top_k], note, backend
 
 # %% ../nbs/12_knowledge.ipynb #4847aafa
 def _node_name(node):
@@ -480,10 +630,17 @@ def _item_row(repo, version, package, kind, module, symbol, rel_path, source, **
         "end_line": extra.get("end_line", 1), "signature": extra.get("signature", ""),
         "docstring": extra.get("docstring", ""), "source": _source_excerpt(source),
         "search_text": search_text, "tags": tags, "calls": extra.get("calls", []),
-        "vector": _reference_vector(search_text),
+        "vector": _reference_vector(search_text), "embedding_backend": _reference_embedding_backend(),
+        "returned_count": int(extra.get("returned_count") or 0),
     }
 
 # %% ../nbs/12_knowledge.ipynb #7ca2b9a2
+def _class_block_source(source, node):
+    init = next((child for child in node.body if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)) and child.name == "__init__"), None)
+    if init is None: return ast.get_source_segment(source, node) or ""
+    lines = source.splitlines()
+    return "\n".join(lines[node.lineno - 1:getattr(init, "end_lineno", init.lineno)])
+
 def _extract_def_rows(tree, source, repo, version, package, rel_path, module, cell_id=""):
     rows, imports = [], _import_names(tree)
     for node in tree.body:
@@ -496,7 +653,7 @@ def _extract_def_rows(tree, source, repo, version, package, rel_path, module, ce
                 decorators=_decorator_names(node), imports=imports, calls=_call_names(node),
             ))
         elif isinstance(node, ast.ClassDef):
-            body = ast.get_source_segment(source, node) or ""
+            body = _class_block_source(source, node)
             rows.append(_item_row(
                 repo, version, package, "class", module, node.name, rel_path, body,
                 cell_id=cell_id, start_line=node.lineno, end_line=getattr(node, "end_lineno", node.lineno),
@@ -504,7 +661,7 @@ def _extract_def_rows(tree, source, repo, version, package, rel_path, module, ce
                 decorators=_decorator_names(node), imports=imports, calls=_call_names(node),
             ))
             for child in node.body:
-                if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)) and child.name != "__init__":
                     method_body = ast.get_source_segment(source, child) or ""
                     rows.append(_item_row(
                         repo, version, package, "method", module, f"{node.name}.{child.name}", rel_path, method_body,
@@ -545,9 +702,34 @@ def _extract_notebook_rows(path, root, repo, version, package):
     return rows
 
 # %% ../nbs/12_knowledge.ipynb #90a6c090
+def _pyproject_data(root):
+    pyproject = Path(root) / "pyproject.toml"
+    if not pyproject.exists() or tomllib is None: return {}
+    try:
+        return tomllib.loads(pyproject.read_text(encoding="utf-8", errors="replace"))
+    except Exception:
+        return {}
+
+def _nbdev_config(root):
+    data = _pyproject_data(root)
+    tool = data.get("tool", {}) if isinstance(data, dict) else {}
+    nbdev = tool.get("nbdev", {}) if isinstance(tool, dict) else {}
+    if not nbdev: return None
+    nbs_path = nbdev.get("nbs_path") or nbdev.get("nbs-path") or "nbs"
+    lib_path = nbdev.get("lib_path") or nbdev.get("lib-path") or nbdev.get("lib_name")
+    return {"kind": "nbdev", "nbs_path": str(nbs_path), "lib_path": str(lib_path or "")}
+
 def _supported_reference_files(root):
+    root = Path(root)
     skip = {".git", ".venv", "__pycache__", ".mypy_cache", ".pytest_cache", ".ipynb_checkpoints"}
-    for path in Path(root).rglob("*"):
+    nbdev = _nbdev_config(root)
+    if nbdev:
+        nbs_root = root / nbdev["nbs_path"]
+        if nbs_root.exists():
+            for path in nbs_root.rglob("*.ipynb"):
+                if not any(part in skip for part in path.parts): yield path
+        return
+    for path in root.rglob("*"):
         if any(part in skip for part in path.parts): continue
         if path.suffix == ".py" or path.suffix == ".ipynb":
             yield path
@@ -569,15 +751,28 @@ def _run_git(args, cwd):
     return proc.stdout.strip()
 
 # %% ../nbs/12_knowledge.ipynb #8671120d
+def _github_repo_slug(source):
+    text = str(source).strip().removesuffix(".git")
+    if re.match(r"^[\w.-]+/[\w.-]+$", text): return text
+    match = re.match(r"^(?:https://github\.com/|git@github\.com:)([\w.-]+/[\w.-]+)$", text)
+    return match.group(1) if match else None
+
+def _clone_reference_with_gh(source, dest):
+    slug = _github_repo_slug(source)
+    if not slug or shutil.which("gh") is None: return False
+    proc = subprocess.run(["gh", "repo", "clone", slug, str(dest), "--", "--quiet"], text=True, capture_output=True)
+    if proc.returncode != 0: return False
+    return True
+
 def _checkout_reference(repo, dest):
     source = repo["url"]
     source_path = Path(source).expanduser()
     if source_path.exists() and not (source_path / ".git").exists():
         shutil.copytree(source_path, dest)
-    else:
+    elif not _clone_reference_with_gh(source, dest):
         subprocess.run(["git", "clone", "--quiet", source, str(dest)], check=True)
-        version = repo.get("version") or "HEAD"
-        if version != "HEAD": _run_git(["checkout", "--quiet", version], dest)
+    version = repo.get("version") or "HEAD"
+    if version != "HEAD": _run_git(["checkout", "--quiet", version], dest)
     if (Path(dest) / ".git").exists():
         try: return _run_git(["rev-parse", "HEAD"], dest)
         except RuntimeError: return repo.get("version") or "local"
@@ -598,11 +793,17 @@ def _infer_package(root, repo):
 # %% ../nbs/12_knowledge.ipynb #b19548a5
 def _extract_reference_rows(root, repo, version, package):
     rows = _readme_rows(root, repo["name"], version, package)
+    repo_kind = "nbdev" if _nbdev_config(root) else "python"
+    for row in rows: row["repo_kind"] = repo_kind
     for file_path in _supported_reference_files(root):
         if file_path.suffix == ".py":
-            rows.extend(_extract_python_rows(file_path, root, repo["name"], version, package))
+            extracted = _extract_python_rows(file_path, root, repo["name"], version, package)
         elif file_path.suffix == ".ipynb":
-            rows.extend(_extract_notebook_rows(file_path, root, repo["name"], version, package))
+            extracted = _extract_notebook_rows(file_path, root, repo["name"], version, package)
+        else:
+            extracted = []
+        for row in extracted: row["repo_kind"] = repo_kind
+        rows.extend(extracted)
     return rows
 
 # %% ../nbs/12_knowledge.ipynb #a717a326
@@ -656,14 +857,15 @@ def reference_ingest(
             repo = data["repos"][repo_name]
             checkout = Path(tmp) / repo_name
             resolved = _checkout_reference(repo, checkout)
-            if not force and repo.get("resolved_version") == resolved and repo.get("item_count"):
-                reports.append({"name": repo_name, "resolved_version": resolved, "skipped": True, "item_count": repo["item_count"]})
+            repo_kind = "nbdev" if _nbdev_config(checkout) else "python"
+            if not force and repo.get("resolved_version") == resolved and repo.get("item_count") and repo.get("repo_kind") == repo_kind:
+                reports.append({"name": repo_name, "resolved_version": resolved, "repo_kind": repo_kind, "skipped": True, "item_count": repo["item_count"]})
                 continue
             package = _infer_package(checkout, repo)
             rows = _extract_reference_rows(checkout, repo, resolved, package)
             count = _write_reference_rows(repo_name, resolved, rows, path=path)
-            repo.update({"package": package, "resolved_version": resolved, "last_indexed_ts": time.time(), "item_count": count})
-            reports.append({"name": repo_name, "resolved_version": resolved, "package": package, "item_count": count})
+            repo.update({"package": package, "repo_kind": repo_kind, "resolved_version": resolved, "last_indexed_ts": time.time(), "item_count": count})
+            reports.append({"name": repo_name, "resolved_version": resolved, "repo_kind": repo_kind, "package": package, "item_count": count})
     _write_reference_registry(data, path)
     sync = _sync_lancedb(path)
     return {"path": str(_lancedb_path(path)), "ingested": reports, "index": sync}
@@ -737,21 +939,43 @@ def _branch_for_item(item_id, path=None, limit=8):
     return branch
 
 # %% ../nbs/12_knowledge.ipynb #2415a5b7
+def _first_docstring_line(docstring):
+    for line in str(docstring or "").strip().splitlines():
+        text = line.strip()
+        if text: return text
+    return ""
+
 def _public_reference_hit(row):
     tags = row.get("tags") or []
     if isinstance(tags, str):
         try: tags = json.loads(tags)
         except json.JSONDecodeError: tags = [tags]
+    docstring = row.get("docstring") or ""
     return {
         "repo": row.get("repo"), "version": row.get("version"), "package": row.get("package") or None,
-        "kind": row.get("kind"), "module": row.get("module"), "symbol": row.get("symbol"),
+        "repo_kind": row.get("repo_kind") or None, "kind": row.get("kind"), "module": row.get("module"), "symbol": row.get("symbol"),
         "path": row.get("path"), "cell_id": row.get("cell_id") or None,
         "line": row.get("start_line"), "signature": row.get("signature"),
-        "docstring": row.get("docstring"), "source": row.get("source"),
-        "tags": list(tags),
+        "docstring": docstring, "docstring_first_line": _first_docstring_line(docstring),
+        "source": row.get("source"), "tags": list(tags), "returned_count": int(row.get("returned_count") or 0),
+        "score": row.get("_reference_score"), "search_sources": row.get("_search_sources") or [],
+        "embedding_backend": row.get("embedding_backend"),
     }
 
 # %% ../nbs/12_knowledge.ipynb #9b01b99f
+def _bump_reference_return_counts(rows, path=None):
+    ids = {row.get("item_id") for row in rows if row.get("item_id")}
+    if not ids: return {}
+    updated, counts = [], {}
+    for row in _lance_rows(path, "items"):
+        row = dict(row)
+        if row.get("item_id") in ids:
+            row["returned_count"] = int(row.get("returned_count") or 0) + 1
+            counts[row["item_id"]] = row["returned_count"]
+        updated.append(row)
+    if counts: _write_lance_table(path, "items", updated)
+    return counts
+
 def reference_query(
     query: str,  # Natural-language implementation query
     top_k: int = 3,  # Number of implementation hits to return
@@ -759,14 +983,21 @@ def reference_query(
     current_repo: str = ".",  # Current project for dependency status
     repos=None,  # Optional repo name or comma-separated names to search
     path: str | None = None,  # Override reference home
+    kind: str | None = None,  # Optional item kind filter: readme, module, function, class, method
+    package: str | None = None,  # Optional package filter
+    module: str | None = None,  # Optional module filter
+    symbol: str | None = None,  # Optional symbol filter
 ):
     "Search indexed reference implementations."
     repo_names = _repo_filter(repos)
-    rows, reason, backend = _lancedb_search(query, top_k=top_k, repos=repo_names, path=path)
+    rows, reason, backend = _lancedb_search(query, top_k=top_k, repos=repo_names, path=path, kind=kind, package=package, module=module, symbol=symbol)
+    counts = _bump_reference_return_counts(rows[:top_k], path=path)
     hits = []
     for row in rows[:top_k]:
+        if row.get("item_id") in counts: row["returned_count"] = counts[row["item_id"]]
         hit = _public_reference_hit(row)
         hit["dependency_status"] = _dependency_status(hit.get("package"), current_repo=current_repo)
         if include_branch: hit["branch"] = _branch_for_item(row["item_id"], path=path)
         hits.append(hit)
-    return {"query": query, "backend": backend, "note": reason, "count": len(hits), "hits": hits}
+    filters = {"repos": repo_names, "kind": kind, "package": package, "module": module, "symbol": symbol}
+    return {"query": query, "backend": backend, "note": reason, "filters": filters, "count": len(hits), "hits": hits}

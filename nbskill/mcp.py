@@ -45,6 +45,7 @@ from .graph import symbol_graph_data, symbol_graph_public_data
 from .graph import symbol_graph
 from .knowledge import add_behaviour_steering
 from .knowledge import get_knowledge
+from .knowledge import reference_query
 from .knowledge import store_knowledge
 from .parallel import notebook_locks
 from .read import nb_cell
@@ -686,6 +687,7 @@ def _status_data():
         "batch_edit_nb", "show_doc", "exec_nb", "diff_nb", "style_check",
         "install_nbskill", "symbol_graph", "private_symbol_report", "agent_workbench",
         "new_nbdev_notebook", "add_behaviour_steering", "store_knowledge", "get_knowledge",
+        "reference_add", "reference_list", "reference_ingest", "reference_query",
         "nbskill_mcp",
     ]
     return {
@@ -1136,6 +1138,14 @@ _MCP_KNOWLEDGE_TOOL_CATALOG = {
         'when_to_use': 'Use before adding a similar rule, or when inspecting why style_check emitted a stored knowledge warning.',
         'combine_with': 'Use store_knowledge to add or update rules.',
     },
+    'reference_query': {
+        'feature': 'reference_knowledge',
+        'usefulness': 'core',
+        'tags': ('knowledge', 'reference', 'search', 'implementation'),
+        'description': 'Search globally indexed reference implementations and optionally include direct same-repo callers and callees.',
+        'when_to_use': 'Use when a task needs examples from the user reference knowledgebase before implementing similar code.',
+        'combine_with': 'CLI reference_add/reference_ingest build the index; MCP only exposes querying in v1.',
+    },
 }
 
 # %% ../nbs/07_mcp.ipynb #mcpcat09
@@ -1503,6 +1513,21 @@ def _get_knowledge_tool(regex: str | None = None, path: str | None = None, detai
     arguments = dict(regex=regex, path=path, detail=detail)
     full_output = capture_call(get_knowledge, regex=regex, path=path)
     return mcp_tool_result("get_knowledge", arguments, full_output, detail=detail)
+
+# %% ../nbs/07_mcp.ipynb #b6d3f15d
+@mcp.tool(**_mcp_tool_meta("reference_query"))
+def _reference_query_tool(
+    query: str, top_k: int = 3, include_branch: bool = False,
+    current_repo: str = ".", repos: str | None = None, path: str | None = None,
+    detail: str = "summary",
+) -> ToolResult:
+    "Search globally indexed reference implementations."
+    arguments = dict(query=query, top_k=top_k, include_branch=include_branch, current_repo=current_repo, repos=repos, path=path, detail=detail)
+    result_data = reference_query(query, top_k=top_k, include_branch=include_branch, current_repo=current_repo, repos=repos, path=path)
+    full_output = json.dumps(result_data, indent=2, sort_keys=True)
+    result = mcp_tool_result("reference_query", arguments, full_output, detail=detail)
+    result.structured_content["reference_query"] = result_data
+    return result
 
 # %% ../nbs/07_mcp.ipynb #mcptool19
 @mcp.tool(**_mcp_tool_meta("py2nb"))

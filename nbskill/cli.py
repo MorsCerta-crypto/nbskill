@@ -5,7 +5,8 @@ __all__ = ['tracked_call', 'nb_overview', 'nb_chapter', 'nb_cell', 'show_doc', '
            'split_nb_chapter', 'exec_nb', 'diff_nb', 'style_check', 'nbskill_validate', 'py2nb', 'py2nbs',
            'new_nbdev_notebook', 'py2nbdev', 'build_nbskill_skill', 'install_nbskill', 'symbol_graph',
            'symbol_connection', 'private_symbol_report', 'store_knowledge', 'add_behaviour_steering', 'get_knowledge',
-           'agent_workbench', 'nbskill_status', 'nbskill_mcp']
+           'reference_add', 'reference_list', 'reference_ingest', 'reference_query', 'agent_workbench',
+           'nbskill_status', 'nbskill_mcp']
 
 # %% ../nbs/13_cli.ipynb #bb21ab3c
 import json, os, time, traceback
@@ -554,6 +555,56 @@ def get_knowledge(regex: str | None = None, path: str | None = None, include_def
     result = nbskill.knowledge.get_knowledge(regex=regex, path=path, include_defaults=include_defaults)
     return _print_json(result)
 
+
+# %% ../nbs/13_cli.ipynb #4323e69b
+@call_parse
+@tracked_call
+def reference_add(
+    url: str,  # Repository URL or local path
+    name: str | None = None,  # Registry name
+    version: str = "HEAD",  # Git ref to ingest
+    package: str | None = None,  # Import/distribution package name
+    path: str | None = None,  # Override reference home
+):
+    "Register or update one reference repository."
+    result = nbskill.knowledge.reference_add(url, name=name, version=version, package=package, path=path)
+    return _print_json(result)
+
+# %% ../nbs/13_cli.ipynb #7490d021
+@call_parse
+@tracked_call
+def reference_list(path: str | None = None):
+    "List registered reference repositories."
+    result = nbskill.knowledge.reference_list(path=path)
+    return _print_json(result)
+
+# %% ../nbs/13_cli.ipynb #d43f8b46
+@call_parse
+@tracked_call
+def reference_ingest(
+    name: str | None = None,  # Registry name to ingest
+    all: bool = False,  # Ingest all registered repositories
+    path: str | None = None,  # Override reference home
+    force: bool = False,  # Reingest even if the resolved version is unchanged
+):
+    "Clone registered references and index implementations."
+    result = nbskill.knowledge.reference_ingest(name=name, all=all, path=path, force=force)
+    return _print_json(result)
+
+# %% ../nbs/13_cli.ipynb #217e491f
+@call_parse
+@tracked_call
+def reference_query(
+    query: str,  # Natural-language implementation query
+    top_k: int = 3,  # Number of hits to return
+    include_branch: bool = False,  # Include direct same-repo callers and callees
+    current_repo: str = ".",  # Current project for dependency status
+    repos: str | None = None,  # Optional comma-separated repo names
+    path: str | None = None,  # Override reference home
+):
+    "Search indexed reference implementations."
+    result = nbskill.knowledge.reference_query(query, top_k=top_k, include_branch=include_branch, current_repo=current_repo, repos=repos, path=path)
+    return _print_json(result)
 
 # %% ../nbs/13_cli.ipynb #ec4e829f
 @call_parse

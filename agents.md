@@ -24,11 +24,10 @@ Keep edits surgical. Read the nearby notebook context, edit one coherent piece, 
 - Start with `healthcheck` when you need to confirm the MCP server is alive or discover current capabilities.
 - Use `doctor` for scoped project health: errors, warnings, style, or all diagnostics.
 - Use `style_check` for notebook hygiene, changed-cell style deltas, private-symbol warnings, duplicate imports, and stored knowledge warnings.
-- Use `nb_overview` for a compact map of a notebook: headings, imports, public definitions, and docstrings.
-- Use `nb_chapter` to read one section around a heading, query, or cell id.
-- Use `nb_cell` for precise line-numbered context before editing a specific cell.
-- Use `show_doc` when starting from a public symbol and you need its docs-oriented context.
-- Use `edit_cell`, `edit_cell_range`, `insert_cells`, or `apply_notebook_edits` for notebook edits instead of touching raw JSON.
+- Use `file_context` for a compact notebook map: imports, Markdown, public definitions, and docstrings.
+- Use `chapter_context` to read one section around a heading, query, or cell id.
+- Use `symbol_context` when starting from a public symbol and you need exact implementation context.
+- Use `edit_notebook` for notebook edits instead of touching raw JSON. It handles whole-cell edits, line edits, insertion, deletion, moves, and notebook-wide `replace_text`/`replace_texts` refactors.
 - Use `exec_nb` for focused execution. Prefer `check_only=True` while validating edits, and execute only the needed cell range or chapter when possible.
 - Use `diff_nb` to review code-cell changes without notebook metadata noise.
 - Use `symbol_graph` when you need definitions, callers, callees, or cross-notebook symbol impact.
@@ -51,7 +50,7 @@ Good knowledge entries are concrete: mention the notebook or symbol family, the 
 
 Prefer a tight loop:
 
-1. Read with `nb_overview`, `nb_chapter`, `nb_cell`, or `show_doc`.
+1. Read with `file_context`, `chapter_context`, `symbol_context`, or another focused read tool.
 2. Check the knowledge store.
 3. Make the smallest notebook-aware edit.
 4. Run a focused `exec_nb`, `style_check changed_only`, or `diff_nb`.

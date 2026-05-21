@@ -8,7 +8,7 @@ The MCP server exposes focused tools after merging the obvious advanced and conv
 | --- | --- | --- | --- |
 | Diagnostics | `healthcheck`, `doctor` | Core | `healthcheck` is a cheap liveness/schema probe; `doctor` now has `error`, `warning`, and `style` scopes. |
 | Focused context | `project_context`, `file_context`, `chapter_context`, `symbol_context` | Core | The context family intentionally separates repository, file, chapter, and implementation views. |
-| Notebook editing | `edit_cell`, `edit_cell_range`, `insert_cells`, `apply_notebook_edits` | Core | These should stay separate because whole-cell edits, partial edits, insertion, and coordinated plans have different safe defaults. |
+| Notebook editing | `edit_notebook` | Core | One atomic edit surface now covers whole-cell edits, partial edits, insertion, deletion, moves, and coordinated notebook-level text replacements. |
 | Verification and review | `exec_nb`, `diff_nb`, `style_check` | Core | Each answers a different post-edit question: behavior, changed code, and structural/private-symbol hygiene. |
 | Symbol analysis | `symbol_graph` | Situational | Useful for impact analysis around one public or private symbol. |
 | Agentic planning | `agent_workbench` | Advanced | Covers bounded notebook/project edit plans when direct structured tools are not enough. |

@@ -26,7 +26,7 @@ from safepyrun import RunPython
 from safepyrun.core import allow as _safepyrun_allow
 
 from nbskill.foundation import (
-    cell_metadata, cli_error, cli_return, one_chapter, parse_literal,
+    cell_metadata, cell_source, cli_error, cli_return, one_chapter, parse_literal,
     stamp_notebook_metadata,
 )
 from .parallel import execution_slot, notebook_locks
@@ -463,6 +463,16 @@ def _timeout_error(ename, text):
     return {"output_type": "error", "ename": ename, "evalue": text, "traceback": [text]}
 
 # %% ../nbs/03_execute.ipynb #c136baf3
+def _cell_eval_false(cell):
+    if getattr(cell, "cell_type", None) != "code": return False
+    for line in cell_source(cell).splitlines():
+        text = line.strip().lower().replace(" ", "")
+        if not text: continue
+        if not text.startswith("#|"): return False
+        if text in {"#|eval:false", "#|eval=false"}: return True
+    return False
+
+
 def _skip_timed_out_cell(cell):
     if cell.cell_type != "code": return False
     meta = cell_metadata(cell)
@@ -538,6 +548,10 @@ def _execute_nb(
                 )
                 for cell in nb.cells:
                     if preproc(cell): continue
+                    if _cell_eval_false(cell):
+                        cell.outputs = []
+                        postproc(cell)
+                        continue
                     if _skip_timed_out_cell(cell):
                         postproc(cell)
                         continue

@@ -17,7 +17,7 @@ The main `SKILL.md` intentionally stays focused on the core loop: MCP health, fo
 
 ## Coordinated Editing
 
-`apply_notebook_edits(operations=[...])` applies deterministic edit plans with diffs and expected-hash guards. Use it when the target cells and operations are known and several changes should land together.
+`edit_notebook(edits=[...])` applies deterministic edit plans with diffs and expected-hash guards. Use it when the target cells and operations are known and several changes should land together.
 
 ## Single-Notebook Agent Loop
 

@@ -2,9 +2,8 @@
 
 # %% auto #0
 __all__ = ['mcp', 'as_text', 'capture_call', 'capture_notebook_call', 'mcp_tool_result', 'nbskill_status', 'doctor_tool',
-           'edit_cell_tool', 'edit_cell_range_tool', 'insert_cells_tool', 'apply_notebook_edits_tool', 'exec_nb_tool',
-           'execute_plan_tool', 'agent_workbench_tool', 'style_check_tool', 'py2nb_tool', 'new_nbdev_notebook_tool',
-           'create_mcp', 'main']
+           'edit_notebook_tool', 'exec_nb_tool', 'execute_plan_tool', 'agent_workbench_tool', 'style_check_tool',
+           'py2nb_tool', 'new_nbdev_notebook_tool', 'create_mcp', 'main']
 
 # %% ../nbs/07_mcp.ipynb #mcpimports1
 import hashlib,json,os
@@ -18,11 +17,12 @@ from contextlib import redirect_stdout, redirect_stderr
 from importlib.metadata import PackageNotFoundError, version
 from io import StringIO
 from pathlib import Path
+from urllib.parse import unquote, urlparse
 
 # %% ../nbs/07_mcp.ipynb #mcpimports2
 from fastcore.nbio import read_nb as _read_raw_nb
 from fastcore.script import _in_call_parse
-from fastmcp import FastMCP
+from fastmcp import Context, FastMCP
 from fastmcp.tools import ToolResult
 from mcp.types import TextContent
 
@@ -55,6 +55,7 @@ from .read import symbol_context
 
 
 # %% ../nbs/07_mcp.ipynb #mcpimports5
+from .edit import edit_notebook
 from .review import reset_global_usage_summary
 from .review import notebook_size_problems
 from .review import notebook_validation_problems
@@ -149,7 +150,7 @@ def _mcp_expected_hash_warning(path, cell_id, expected_hash):
 
 # %% ../nbs/07_mcp.ipynb #da137c83
 def _capture_exec_nb_cli_call(arguments):
-    call_args = {key: value for key, value in arguments.items() if key != "detail"}
+    call_args = {key: value for key, value in arguments.items() if key not in {"detail", "workspace_root"}}
     script = "; ".join([
         "import json, sys",
         "from nbskill.execute import exec_nb",
@@ -157,10 +158,11 @@ def _capture_exec_nb_cli_call(arguments):
     ])
     lock_paths = [call_args.get("path")]
     if call_args.get("dest"): lock_paths.append(call_args["dest"])
+    cwd = git_root(call_args.get("path") or ".") or _git_base(call_args.get("path") or ".").resolve()
     with notebook_locks(*lock_paths):
         proc = subprocess.run(
             [sys.executable, "-c", script, json.dumps(call_args)],
-            text=True, capture_output=True, cwd=str(Path.cwd()),
+            text=True, capture_output=True, cwd=str(cwd),
         )
     chunks = [item.rstrip() for item in (proc.stdout, proc.stderr) if item]
     output = chr(10).join(chunks)
@@ -291,6 +293,61 @@ def _rooted_path(path, root):
         except OSError:
             continue
     return pth.resolve()
+
+# %% ../nbs/07_mcp.ipynb #b86f4b8a
+def _file_uri_path(uri):
+    parsed = urlparse(str(uri))
+    if parsed.scheme != "file": return None
+    netloc = f"//{parsed.netloc}" if parsed.netloc else ""
+    return Path(unquote(f"{netloc}{parsed.path}"))
+
+
+async def _mcp_client_roots(ctx=None):
+    if ctx is None: return []
+    try: roots = await ctx.list_roots()
+    except Exception: return []
+    paths = []
+    for root in roots:
+        path = _file_uri_path(getattr(root, "uri", ""))
+        if path is not None: paths.append(path)
+    return paths
+
+
+async def _mcp_workspace_root(ctx=None):
+    for path in await _mcp_client_roots(ctx):
+        try:
+            if path.exists(): return path.resolve()
+        except OSError:
+            continue
+    return None
+
+
+def _mcp_workspace_path(path, root):
+    if path in (None, ""): return path
+    raw = Path(str(path)).expanduser()
+    if raw.is_absolute() or root is None: return str(raw)
+    return str((Path(root) / raw).resolve())
+
+
+def _mcp_workspace_paths(paths, root):
+    if paths in (None, ""): return paths
+    return ",".join(_mcp_workspace_path(item.strip(), root) for item in str(paths).split(",") if item.strip())
+
+
+def _mcp_workspace_edit_paths(edits, root):
+    resolved = []
+    for edit in edits:
+        item = dict(edit)
+        if item.get("path"): item["path"] = _mcp_workspace_path(item["path"], root)
+        resolved.append(item)
+    return resolved
+
+
+def _mcp_workspace_call_args(arguments, root, *keys):
+    data = dict(arguments)
+    for key in keys:
+        if key in data: data[key] = _mcp_workspace_path(data[key], root)
+    return data
 
 # %% ../nbs/07_mcp.ipynb #919caf72
 def _rel_to_root(path, root):
@@ -555,15 +612,13 @@ def _response_scope_cell_ids(tool, arguments, preview):
     if tool == "diff_nb":
         ids = set(re.findall(r"--- code cell ([^\s]+) ---", text))
         return ids if ids else set()
-    if tool in {"edit_cell", "edit_cell_range"}:
-        cell_id = arguments.get("cell_id") or _first_match(r"Updated .* id=([^\s]+)", text)
-        return {str(cell_id)} if cell_id else None
-    if tool == "insert_cells":
-        anchor_id = arguments.get("anchor_id")
-        return {str(anchor_id)} if anchor_id else None
-    if tool == "apply_notebook_edits":
-        ids = {str(item.get("cell_id") or item.get("anchor_id")) for item in arguments.get("edits", []) if isinstance(item, dict) and (item.get("cell_id") or item.get("anchor_id"))}
-        return ids or None
+    if tool == "edit_notebook":
+        ids = arguments.get("affected_cell_ids") or []
+        if not ids and isinstance(arguments.get("edit_notebook"), dict):
+            ids = arguments["edit_notebook"].get("affected_cell_ids", [])
+        if not ids:
+            ids = [str(item.get("cell_id") or item.get("anchor_id")) for item in arguments.get("edits", []) if isinstance(item, dict) and (item.get("cell_id") or item.get("anchor_id"))]
+        return set(str(item) for item in ids if item) or None
     if tool == "exec_nb":
         up2id = arguments.get("up2id")
         if isinstance(up2id, str) and up2id and not up2id.isdigit(): return {up2id}
@@ -572,7 +627,6 @@ def _response_scope_cell_ids(tool, arguments, preview):
         value = arguments.get(key)
         if value: return {str(value)}
     return None
-
 
 # %% ../nbs/07_mcp.ipynb #c8b5469d
 def _unique_strings(items):
@@ -598,10 +652,7 @@ def _edit_scope_paths(arguments):
 # %% ../nbs/07_mcp.ipynb #7645304f
 def _response_scope_paths(tool, arguments, preview):
     text_paths = _notebook_paths_from_text(preview.get("text", ""))
-    if tool == "apply_notebook_edits":
-        return _unique_strings([*_edit_scope_paths(arguments), *text_paths])
-    if tool in {"edit_cell", "edit_cell_range", "insert_cells"} and text_paths:
-        return text_paths
+    if tool == "edit_notebook": return _unique_strings([*_edit_scope_paths(arguments), *text_paths])
     path = arguments.get("path") or arguments.get("nb_path")
     return [str(path)] if path else []
 
@@ -625,9 +676,8 @@ def _response_warnings(tool, arguments, preview):
             "Repeat with a narrower query or detail='debug' if you need full context.",
         ))
     read_context_tools = {"project_context", "file_context", "chapter_context", "symbol_context"}
-    scoped_project_tools = {"edit_cell", "edit_cell_range", "insert_cells", "apply_notebook_edits", "exec_nb"}
-    if tool in read_context_tools:
-        return _dedupe_warnings(warnings)
+    scoped_project_tools = {"exec_nb"}
+    if tool in read_context_tools or tool == "edit_notebook": return _dedupe_warnings(warnings)
     if tool == "diff_nb":
         path = arguments.get("path") or "."
         cell_ids = _response_scope_cell_ids(tool, arguments, preview)
@@ -637,7 +687,6 @@ def _response_warnings(tool, arguments, preview):
         for path in _response_scope_paths(tool, arguments, preview):
             warnings.extend(_doctor_warnings(path, scope_path=path, scope_cell_ids=cell_ids))
     return _dedupe_warnings(warnings)[:3]
-
 
 # %% ../nbs/07_mcp.ipynb #4a32f9e9
 def _brief_call(tool, arguments, preview):
@@ -684,7 +733,7 @@ def mcp_tool_result(tool, arguments, full_output, max_output_chars=12000, detail
 
 
 # %% ../nbs/07_mcp.ipynb #d696afd1
-def _status_data():
+def _status_data(client_roots=None):
     scripts = [
         "project_context", "file_context", "chapter_context", "symbol_context",
         "write_nb", "update_cell", "batch_edit_nb", "exec_nb", "diff_nb", "style_check",
@@ -693,9 +742,13 @@ def _status_data():
         "reference_add", "reference_list", "reference_ingest", "reference_query",
         "nbskill_mcp",
     ]
+    client_roots = [str(Path(item).resolve()) for item in (client_roots or [])]
+    workspace_root = client_roots[0] if client_roots else str(Path.cwd())
     return {
         "version": _package_version(),
         "cwd": str(Path.cwd()),
+        "workspace_root": workspace_root,
+        "client_roots": client_roots,
         "python": sys.executable,
         "mcp_command": "nbskill_mcp",
         "mcp_command_path": shutil.which("nbskill_mcp"),
@@ -735,7 +788,7 @@ def _doctor_report(
     hints = [
         "Use scopes='error,warning,style' or scopes='all' for the full doctor report.",
         "Use scopes='style' to include chkstyle output; chkstyle is omitted from error/warning scopes.",
-        "Use project_context/file_context/chapter_context/symbol_context, then edit_cell, edit_cell_range, insert_cells, or apply_notebook_edits.",
+        "Use project_context/file_context/chapter_context/symbol_context, then edit_notebook for deterministic notebook mutations.",
     ]
     changed = sorted(git_status_paths(root)) if (root / ".git").exists() else []
     generated = [
@@ -1022,43 +1075,18 @@ _MCP_READ_DOC_TOOL_CATALOG = {}
 
 # %% ../nbs/07_mcp.ipynb #mcpcat04
 _MCP_CELL_EDIT_TOOL_CATALOG = {
-    'edit_cell': {
+    'edit_notebook': {
         'feature': 'notebook_edit',
         'usefulness': 'core',
-        'tags': ('edit', 'notebook', 'cell', 'source-lines'),
-        'description': 'Replace one existing notebook cell from source_lines with validation, optional expected_hash, optional split_lines on empty lines, automatic export, and default-on feedback for exploratory/test cells.',
-        'when_to_use': 'Use after file_context, chapter_context, or symbol_context identifies the target cell id. Send source_lines directly; pass split_lines only for empty separator lines. Leave auto_feedback=True unless a speculative edit must not execute.',
-        'combine_with': 'Use edit_cell_range for small line edits, insert_cells for new cells, and apply_notebook_edits for coordinated multi-step edits.',
-    },
-    'edit_cell_range': {
-        'feature': 'notebook_edit',
-        'usefulness': 'core',
-        'tags': ('edit', 'notebook', 'cell', 'line-range'),
-        'description': 'Replace a 1-based inclusive line range in one existing notebook cell from replacement_lines, with default-on feedback when the edited cell is exploratory or a test.',
-        'when_to_use': 'Use for focused edits inside a large cell when preserving the rest of the cell matters.',
-        'combine_with': 'Use edit_cell when replacing the entire cell.',
-    },
-    'insert_cells': {
-        'feature': 'notebook_edit',
-        'usefulness': 'core',
-        'tags': ('edit', 'notebook', 'insert', 'source-lines'),
-        'description': 'Insert one or more notebook cells before or after an anchor id from structured cell objects with source_lines, optional split_lines, and default-on feedback for exploratory/test cells.',
-        'when_to_use': 'Use when adding notebook material. Each cell may include cell_type, source_lines, and split_lines.',
-        'combine_with': 'Use apply_notebook_edits when inserts must be coordinated with replacements.',
+        'tags': ('edit', 'notebook', 'cell', 'text', 'batch'),
+        'description': 'Apply deterministic notebook edit operations atomically across cells, lines, and notebook-wide text replacements; returns structured match counts, hashes, affected cell ids, diffs, warnings, and optional feedback.',
+        'when_to_use': "Use after file_context, chapter_context, or symbol_context identifies target cells. Use replace_text/replace_texts with target='all' for notebook-level renames, line ops for focused cell edits, and structural ops for insert/delete/move/replace cell changes.",
+        'combine_with': 'Read context before editing; review with diff_nb, exec_nb(check_only=True), doctor, or style_check afterwards.',
     },
 }
 
 # %% ../nbs/07_mcp.ipynb #mcpcat05
-_MCP_BATCH_EDIT_TOOL_CATALOG = {
-    'apply_notebook_edits': {
-        'feature': 'notebook_edit',
-        'usefulness': 'core',
-        'tags': ('edit', 'notebook', 'batch', 'source-lines'),
-        'description': 'Apply structured notebook edit operations directly; operations use source_lines/replacement_lines and optional split_lines, never JSON plan text or plan files. Feedback runs by default only for exploratory/test cells.',
-        'when_to_use': 'Use for coordinated edits across one or more notebooks when a single tool call is clearer than several direct edit calls.',
-        'combine_with': 'This replaces the MCP-facing batch edit plan surface; CLI batch editing remains separate.',
-    },
-}
+_MCP_BATCH_EDIT_TOOL_CATALOG = {}
 
 # %% ../nbs/07_mcp.ipynb #mcpcat06
 _MCP_REVIEW_TOOL_CATALOG = {
@@ -1218,30 +1246,32 @@ mcp = FastMCP(
         "notebook edits, verification/review, symbol analysis, agentic planning, and conversion. "
         "For reading, use project_context for repository orientation, file_context for one notebook, "
         "chapter_context for one section, and symbol_context for a concrete implementation. "
-        "For edits, prefer edit_cell for one existing cell, edit_cell_range for partial cell edits, "
-        "insert_cells for adding cells, and apply_notebook_edits for coordinated structured edits. Use split_lines only to split at empty source lines. "
-        "Edit tools default to auto_feedback=True, which runs only exploratory or test cells in check-only mode and returns their output/errors. "
-        "Use exec_nb, diff_nb, and style_check for verification and review; use doctor with "
-        "scopes='error', 'warning', 'style', or 'all' for diagnostics. Chkstyle output only appears "
-        "when doctor includes the style scope. Reserve execute_plan for agentic notebook/project edits "
-        "Use store_knowledge/get_knowledge for behaviour steering memory; style_check applies stored regex rules as warnings. "
-        "Normal tool output is concise; use detail='debug' only when troubleshooting. "
-        "Notebook operations are concurrency-safe: calls touching the same notebook are serialized, "
-        "calls touching different notebooks can run in parallel, and execution uses a global semaphore. "
-        "Keep documentation before exported code and show-off examples after it."
+        "For edits, use edit_notebook as the single production mutation tool. It supports whole-cell, "
+        "line-range, insert/delete/move, and notebook-wide replace_text/replace_texts operations with "
+        "expected_hash guards and structured diffs. Edit tools default to auto_feedback=True, which runs "
+        "only exploratory or test cells in check-only mode and returns their output/errors. Use exec_nb, "
+        "diff_nb, and style_check for verification and review; use doctor with scopes='error', 'warning', "
+        "'style', or 'all' for diagnostics. Chkstyle output only appears when doctor includes the style "
+        "scope. Reserve execute_plan for agentic notebook/project edits. Use store_knowledge/get_knowledge "
+        "for behaviour steering memory; style_check applies stored regex rules as warnings. Normal tool "
+        "output is concise; use detail='debug' only when troubleshooting. Notebook operations are "
+        "concurrency-safe: calls touching the same notebook are serialized, calls touching different "
+        "notebooks can run in parallel, and execution uses a global semaphore. Keep documentation before "
+        "exported code and show-off examples after it."
     ),
 )
 
-
 # %% ../nbs/07_mcp.ipynb #mcphealthch
 @mcp.tool(**_mcp_tool_meta("healthcheck"))
-def _healthcheck_tool(detail: str = "summary") -> ToolResult:
+async def _healthcheck_tool(detail: str = "summary", ctx: Context = None) -> ToolResult:
     "Return lightweight nbskill MCP status and point deeper diagnostics to doctor."
-    data = _status_data()
+    client_roots = await _mcp_client_roots(ctx)
+    data = _status_data(client_roots)
     full_output = "\n".join([
         "nbskill mcp ok",
         f"version={data['version']}",
         f"cwd={Path.cwd()}",
+        f"workspace_root={data['workspace_root']}",
         f"python={sys.executable}",
         f"pid={os.getpid()}",
         f"capabilities={_MCP_CAPABILITIES}",
@@ -1254,14 +1284,17 @@ def _healthcheck_tool(detail: str = "summary") -> ToolResult:
 
 # %% ../nbs/07_mcp.ipynb #mcptool01
 @mcp.tool(**_mcp_tool_meta("doctor"))
-def doctor_tool(
+async def doctor_tool(
     path: str = ".", scopes: str = "error,warning", detail: str = "summary",
     fix: bool = False, reset: bool = False, skip_folder_re: str | None = None,
     skip_path: str | None = None, max_output_chars: int = 12000,
-    max_diagnostics: int = 200,
+    max_diagnostics: int = 200, ctx: Context = None,
 ) -> ToolResult:
     "Report scoped MCP diagnostics: errors, warnings, and optional chkstyle/style details."
-    arguments = dict(path=path, scopes=scopes, detail=detail, fix=fix, reset=reset, skip_folder_re=skip_folder_re, skip_path=skip_path, max_output_chars=max_output_chars, max_diagnostics=max_diagnostics)
+    root = await _mcp_workspace_root(ctx)
+    path = _mcp_workspace_path(path, root)
+    skip_path = _mcp_workspace_path(skip_path, root) if skip_path else skip_path
+    arguments = dict(path=path, scopes=scopes, detail=detail, fix=fix, reset=reset, skip_folder_re=skip_folder_re, skip_path=skip_path, max_output_chars=max_output_chars, max_diagnostics=max_diagnostics, workspace_root=str(root) if root else None)
     report = _doctor_report(path=path, detail=detail, fix=fix, reset=reset, capabilities=_MCP_CAPABILITIES, scopes=scopes, skip_folder_re=skip_folder_re, skip_path=skip_path, max_output_chars=max_output_chars, max_diagnostics=max_diagnostics)
     return mcp_tool_result(
         "doctor", arguments, report["text"], detail=detail,
@@ -1270,141 +1303,101 @@ def doctor_tool(
 
 # %% ../nbs/07_mcp.ipynb #mcpnboverv
 @mcp.tool(**_mcp_tool_meta("project_context"))
-def _project_context_tool(path: str = ".", detail: str = "summary") -> ToolResult:
+async def _project_context_tool(path: str = ".", detail: str = "summary", ctx: Context = None) -> ToolResult:
     "Show project README sections, notebook filenames, and notebook file docstrings."
-    arguments = dict(path=path, detail=detail)
+    root = await _mcp_workspace_root(ctx)
+    path = _mcp_workspace_path(path, root)
+    arguments = dict(path=path, detail=detail, workspace_root=str(root) if root else None)
     with notebook_locks(path):
         data = project_context(path, verbose=False)
     return mcp_tool_result("project_context", arguments, data["text"], detail=detail, context=data)
 
-
 # %% ../nbs/07_mcp.ipynb #mcpnbchapt
 @mcp.tool(**_mcp_tool_meta("chapter_context"))
-def _chapter_context_tool(path: str, query: str | None = None, name: str | None = None, any_cell_id: str | None = None, detail: str = "summary") -> ToolResult:
+async def _chapter_context_tool(path: str, query: str | None = None, name: str | None = None, any_cell_id: str | None = None, detail: str = "summary", ctx: Context = None) -> ToolResult:
     "Show the notebook head plus one selected chapter."
-    arguments = dict(path=path, query=query, name=name, any_cell_id=any_cell_id, detail=detail)
+    root = await _mcp_workspace_root(ctx)
+    path = _mcp_workspace_path(path, root)
+    arguments = dict(path=path, query=query, name=name, any_cell_id=any_cell_id, detail=detail, workspace_root=str(root) if root else None)
     with notebook_locks(path):
         data = chapter_context(path, query=query, name=name, any_cell_id=any_cell_id, verbose=False)
     return mcp_tool_result("chapter_context", arguments, data["text"], detail=detail, context=data)
 
-
 # %% ../nbs/07_mcp.ipynb #mcpnbcell
 @mcp.tool(**_mcp_tool_meta("file_context"))
-def _file_context_tool(path: str, include_re: str | None = None, exclude_re: str | None = None, detail: str = "summary") -> ToolResult:
+async def _file_context_tool(path: str, include_re: str | None = None, exclude_re: str | None = None, detail: str = "summary", ctx: Context = None) -> ToolResult:
     "Show one notebook's imports, docs, Markdown, and definitions with optional regex filters."
-    arguments = dict(path=path, include_re=include_re, exclude_re=exclude_re, detail=detail)
+    root = await _mcp_workspace_root(ctx)
+    path = _mcp_workspace_path(path, root)
+    arguments = dict(path=path, include_re=include_re, exclude_re=exclude_re, detail=detail, workspace_root=str(root) if root else None)
     with notebook_locks(path):
         data = file_context(path, include_re=include_re, exclude_re=exclude_re, verbose=False)
     return mcp_tool_result("file_context", arguments, data["text"], detail=detail, context=data)
 
-
 # %% ../nbs/07_mcp.ipynb #mcpshowdoc
 @mcp.tool(**_mcp_tool_meta("symbol_context"))
-def _symbol_context_tool(path: str, symbol: str, depth: int = 1, detail: str = "summary") -> ToolResult:
+async def _symbol_context_tool(path: str, symbol: str, depth: int = 1, detail: str = "summary", ctx: Context = None) -> ToolResult:
     "Show exact implementation context, examples/tests, callers, and callees for a symbol."
-    arguments = dict(path=path, symbol=symbol, depth=depth, detail=detail)
+    root = await _mcp_workspace_root(ctx)
+    path = _mcp_workspace_path(path, root)
+    arguments = dict(path=path, symbol=symbol, depth=depth, detail=detail, workspace_root=str(root) if root else None)
     with notebook_locks(path):
         data = symbol_context(path, symbol=symbol, depth=depth, verbose=False)
     return mcp_tool_result("symbol_context", arguments, data["text"], detail=detail, context=data)
 
-
 # %% ../nbs/07_mcp.ipynb #mcptool06
-@mcp.tool(**_mcp_tool_meta("edit_cell"))
-def edit_cell_tool(
-    path: str, cell_id: str, source_lines: list[str], cell_type: str = "code",
-    split_lines: list[int] | None = None, validate_code: bool = True,
-    expected_hash: str | None = None, auto_feedback: bool = True,
-    feedback_timeout: int = 10, feedback_safe: bool = True, detail: str = "summary",
-) -> ToolResult:
-    "Replace one existing notebook cell from source_lines."
-    arguments = dict(path=path, cell_id=cell_id, source_lines=source_lines, cell_type=cell_type, split_lines=split_lines, validate_code=validate_code, expected_hash=expected_hash, auto_feedback=auto_feedback, feedback_timeout=feedback_timeout, feedback_safe=feedback_safe, detail=detail)
-    if warning := _mcp_expected_hash_warning(path, cell_id, expected_hash):
-        return mcp_tool_result("edit_cell", arguments, warning["message"], detail=detail, warnings=[warning], ok=False)
-    start = _mcp_cell_index(path, cell_id)
-    cell_count = _mcp_structured_cell_count([dict(source_lines=source_lines, cell_type=cell_type, split_lines=split_lines)], cell_type)
-    full_output = replace_notebook_cell(path, cell_id, source_lines, cell_type=cell_type, split_lines=split_lines, validate_code=validate_code, auto_feedback=False)
-    cell_ids = _mcp_cell_ids_from_index(path, start, cell_count)
-    full_output = _append_mcp_feedback(full_output, path, cell_ids, auto_feedback, feedback_timeout, feedback_safe)
-    return mcp_tool_result("edit_cell", arguments, full_output, detail=detail, ok=True, after_hash=_mcp_cell_source_hash(path, cell_id))
-
-# %% ../nbs/07_mcp.ipynb #mcptool07
-@mcp.tool(**_mcp_tool_meta("edit_cell_range"))
-def edit_cell_range_tool(
-    path: str, cell_id: str, start_line: int, end_line: int,
-    replacement_lines: list[str], validate_code: bool = True,
-    expected_hash: str | None = None, auto_feedback: bool = True,
-    feedback_timeout: int = 10, feedback_safe: bool = True, detail: str = "summary",
-) -> ToolResult:
-    "Replace a 1-based inclusive line range in one existing notebook cell."
-    arguments = dict(path=path, cell_id=cell_id, start_line=start_line, end_line=end_line, replacement_lines=replacement_lines, validate_code=validate_code, expected_hash=expected_hash, auto_feedback=auto_feedback, feedback_timeout=feedback_timeout, feedback_safe=feedback_safe, detail=detail)
-    if warning := _mcp_expected_hash_warning(path, cell_id, expected_hash):
-        return mcp_tool_result("edit_cell_range", arguments, warning["message"], detail=detail, warnings=[warning], ok=False)
-    full_output = replace_notebook_range(path, cell_id, start_line, end_line, replacement_lines, validate_code=validate_code, auto_feedback=False)
-    full_output = _append_mcp_feedback(full_output, path, [cell_id], auto_feedback, feedback_timeout, feedback_safe)
-    return mcp_tool_result("edit_cell_range", arguments, full_output, detail=detail, ok=True, after_hash=_mcp_cell_source_hash(path, cell_id))
-
-# %% ../nbs/07_mcp.ipynb #mcptool08
-@mcp.tool(**_mcp_tool_meta("insert_cells"))
-def insert_cells_tool(
-    path: str, anchor_id: str, where: str = "after", cells: list[dict] | None = None,
-    split_lines: list[int] | None = None, validate_code: bool = True,
-    default_cell_type: str = "code", auto_feedback: bool = True,
-    feedback_timeout: int = 10, feedback_safe: bool = True, detail: str = "summary",
-) -> ToolResult:
-    "Insert structured notebook cells before or after an anchor id."
-    if where not in {"before", "after"}: raise ValueError("where must be 'before' or 'after'")
-    if split_lines is not None:
-        if len(cells or []) != 1: raise ValueError("top-level split_lines requires exactly one cell")
-        cells = [dict(cells[0], split_lines=split_lines)]
-    arguments = dict(path=path, anchor_id=anchor_id, where=where, cells=cells, split_lines=split_lines, validate_code=validate_code, default_cell_type=default_cell_type, auto_feedback=auto_feedback, feedback_timeout=feedback_timeout, feedback_safe=feedback_safe, detail=detail)
-    anchor_index = _mcp_cell_index(path, anchor_id)
-    start = anchor_index if where == "before" else anchor_index + 1
-    cell_count = _mcp_structured_cell_count(cells, default_cell_type)
-    full_output = insert_notebook_cells(path, anchor_id, where, cells, validate_code=validate_code, default_cell_type=default_cell_type, auto_feedback=False)
-    cell_ids = _mcp_cell_ids_from_index(path, start, cell_count)
-    full_output = _append_mcp_feedback(full_output, path, cell_ids, auto_feedback, feedback_timeout, feedback_safe)
-    return mcp_tool_result("insert_cells", arguments, full_output, detail=detail, ok=True)
-
-# %% ../nbs/07_mcp.ipynb #mcptool09
-@mcp.tool(**_mcp_tool_meta("apply_notebook_edits"))
-def apply_notebook_edits_tool(
+@mcp.tool(**_mcp_tool_meta("edit_notebook"))
+async def edit_notebook_tool(
     path: str, edits: list[dict], validate_code: bool = True,
     default_cell_type: str = "code", auto_feedback: bool = True,
     feedback_timeout: int = 10, feedback_safe: bool = True, detail: str = "summary",
+    ctx: Context = None,
 ) -> ToolResult:
-    "Apply structured notebook edit operations without JSON plan text."
+    "Apply deterministic notebook edit operations atomically."
     if not edits: raise ValueError("Pass at least one edit")
-    arguments = dict(path=path, edits=edits, validate_code=validate_code, default_cell_type=default_cell_type, auto_feedback=auto_feedback, feedback_timeout=feedback_timeout, feedback_safe=feedback_safe, detail=detail)
-    warnings = [
-        warning for edit in edits
-        if (warning := _mcp_expected_hash_warning(str(edit.get("path") or path), edit.get("cell_id"), edit.get("expected_hash")))
-    ]
-    if warnings:
-        return mcp_tool_result("apply_notebook_edits", arguments, "Skipped apply_notebook_edits because one or more expected_hash checks failed.", detail=detail, warnings=warnings, ok=False)
-    chunks = []
-    for index, edit in enumerate(edits, 1):
-        edit_path, start, cell_count = _mcp_feedback_location(path, edit, default_cell_type)
-        output = apply_notebook_edit(edit, path, validate_code=validate_code, default_cell_type=default_cell_type, auto_feedback=False)
-        cell_ids = _mcp_cell_ids_from_index(edit_path, start, cell_count)
-        output = _append_mcp_feedback(output, edit_path, cell_ids, auto_feedback, feedback_timeout, feedback_safe)
-        chunks.append(f"#{index} {edit.get('op')}\n{output}".rstrip())
-    return mcp_tool_result("apply_notebook_edits", arguments, "\n\n".join(chunks), detail=detail, ok=True)
-    return mcp_tool_result("apply_notebook_edits", arguments, "\n\n".join(chunks), detail=detail, ok=True)
+    root = await _mcp_workspace_root(ctx)
+    path = _mcp_workspace_path(path, root)
+    edits = _mcp_workspace_edit_paths(edits, root)
+    arguments = dict(path=path, edits=edits, validate_code=validate_code, default_cell_type=default_cell_type, auto_feedback=auto_feedback, feedback_timeout=feedback_timeout, feedback_safe=feedback_safe, detail=detail, workspace_root=str(root) if root else None)
+    result = edit_notebook(
+        path, edits, validate_code=validate_code, default_cell_type=default_cell_type,
+        auto_feedback=auto_feedback, feedback_timeout=feedback_timeout,
+        feedback_safe=feedback_safe, detail=detail,
+    )
+    warnings = result.get("warnings", []) if isinstance(result, dict) else []
+    full_output = result.get("text", str(result)) if isinstance(result, dict) else str(result)
+    tool_result = mcp_tool_result(
+        "edit_notebook", arguments, full_output, detail=detail, warnings=warnings,
+        ok=bool(result.get("ok", False)) if isinstance(result, dict) else True,
+        changed=result.get("changed") if isinstance(result, dict) else None,
+        no_change=result.get("no_change") if isinstance(result, dict) else None,
+        affected_cell_ids=result.get("affected_cell_ids", []) if isinstance(result, dict) else [],
+        before_hash=result.get("before_hash") if isinstance(result, dict) else None,
+        after_hash=result.get("after_hash") if isinstance(result, dict) else None,
+        exported=result.get("exported") if isinstance(result, dict) else None,
+    )
+    if isinstance(result, dict): tool_result.structured_content["edit_notebook"] = result
+    return tool_result
 
 # %% ../nbs/07_mcp.ipynb #mcptool10
 @mcp.tool(**_mcp_tool_meta("exec_nb"))
-def exec_nb_tool(
+async def exec_nb_tool(
     path: str, dest: str | None = None, exc_stop: bool = False, up2id: int | str | None = None,
     chapter: str | None = None, timeout: int = 30, show_output: bool = True,
     verbose: bool = False, safe: bool = True, allow: str | None = None,
     ok_dests: str | None = None, cache_httpx: bool = False, cache_dir: str | None = None,
     cache_domains: str | None = None, allow_new: bool = False, check_only: bool = False,
-    detail: str = "summary",
+    detail: str = "summary", ctx: Context = None,
 ) -> ToolResult:
     "Execute a notebook and return visible outputs/errors. Use check_only=True to avoid writing outputs."
-    arguments = dict(path=path, dest=dest, exc_stop=exc_stop, up2id=up2id, chapter=chapter, timeout=timeout, show_output=show_output, verbose=verbose, safe=safe, allow=allow, ok_dests=ok_dests, cache_httpx=cache_httpx, cache_dir=cache_dir, cache_domains=cache_domains, allow_new=allow_new, check_only=check_only, detail=detail)
+    root = await _mcp_workspace_root(ctx)
+    path = _mcp_workspace_path(path, root)
+    dest = _mcp_workspace_path(dest, root) if dest else dest
+    ok_dests = _mcp_workspace_paths(ok_dests, root) if ok_dests else ok_dests
+    cache_dir = _mcp_workspace_path(cache_dir, root) if cache_dir else cache_dir
+    arguments = dict(path=path, dest=dest, exc_stop=exc_stop, up2id=up2id, chapter=chapter, timeout=timeout, show_output=show_output, verbose=verbose, safe=safe, allow=allow, ok_dests=ok_dests, cache_httpx=cache_httpx, cache_dir=cache_dir, cache_domains=cache_domains, allow_new=allow_new, check_only=check_only, detail=detail, workspace_root=str(root) if root else None)
     if safe:
-        full_output = capture_notebook_call(exec_nb, path, dest or path, **{k: v for k, v in arguments.items() if k != "detail"})
+        full_output = capture_notebook_call(exec_nb, path, dest or path, **{k: v for k, v in arguments.items() if k not in {"detail", "workspace_root"}})
     else:
         full_output = _capture_exec_nb_cli_call(arguments)
     warnings = []
@@ -1418,24 +1411,29 @@ def exec_nb_tool(
 
 # %% ../nbs/07_mcp.ipynb #mcpdiffnb
 @mcp.tool(**_mcp_tool_meta("diff_nb"))
-def _diff_nb_tool(path: str, ref_a: str | None = "HEAD", ref_b: str | None = None, adds: bool = True, changes: bool = True, dels: bool = False, cell_id: str | None = None, after_id: str | None = None, show_owner: bool = False, detail: str = "summary") -> ToolResult:
+async def _diff_nb_tool(path: str, ref_a: str | None = "HEAD", ref_b: str | None = None, adds: bool = True, changes: bool = True, dels: bool = False, cell_id: str | None = None, after_id: str | None = None, show_owner: bool = False, detail: str = "summary", ctx: Context = None) -> ToolResult:
     "Diff notebook code cells without expanding raw notebook JSON; optionally filter by cell id or map generated Python to its owner."
-    arguments = dict(path=path, ref_a=ref_a, ref_b=ref_b, adds=adds, changes=changes, dels=dels, cell_id=cell_id, after_id=after_id, show_owner=show_owner, detail=detail)
+    root = await _mcp_workspace_root(ctx)
+    path = _mcp_workspace_path(path, root)
+    arguments = dict(path=path, ref_a=ref_a, ref_b=ref_b, adds=adds, changes=changes, dels=dels, cell_id=cell_id, after_id=after_id, show_owner=show_owner, detail=detail, workspace_root=str(root) if root else None)
     if show_owner and Path(path).suffix == ".py":
         return mcp_tool_result("diff_nb", arguments, _owner_output(path), detail=detail)
-    full_output = capture_notebook_call(diff_nb, path, **{k: v for k, v in arguments.items() if k not in {"show_owner", "detail"}})
+    full_output = capture_notebook_call(diff_nb, path, **{k: v for k, v in arguments.items() if k not in {"show_owner", "detail", "workspace_root"}})
     return mcp_tool_result("diff_nb", arguments, full_output, detail=detail)
 
 # %% ../nbs/07_mcp.ipynb #mcptool12
 @mcp.tool(**_mcp_tool_meta("execute_plan"))
-def execute_plan_tool(
+async def execute_plan_tool(
     plan: str, notebook: str | None = None, scope: str = "notebook",
     notebooks: str | None = None, model: str | None = None, max_steps: int = 20,
     timeout: int = 30,
-    detail: str = "summary",
+    detail: str = "summary", ctx: Context = None,
 ) -> ToolResult:
     "Run a bounded edit-interactive loop against one notebook or a project notebook set."
-    arguments = dict(plan=plan, notebook=notebook, scope=scope, notebooks=notebooks, model=model, max_steps=max_steps, timeout=timeout, detail=detail)
+    root = await _mcp_workspace_root(ctx)
+    notebook = _mcp_workspace_path(notebook, root) if notebook else notebook
+    notebooks = _mcp_workspace_paths(notebooks, root) if notebooks else notebooks
+    arguments = dict(plan=plan, notebook=notebook, scope=scope, notebooks=notebooks, model=model, max_steps=max_steps, timeout=timeout, detail=detail, workspace_root=str(root) if root else None)
     mode = "project" if scope == "project" or notebooks else "notebook"
     if mode == "project":
         project_args = dict(plan=plan, notebooks=notebooks, model=model, max_steps=max_steps, timeout=timeout, dry_run=False)
@@ -1454,13 +1452,16 @@ def execute_plan_tool(
 
 # %% ../nbs/07_mcp.ipynb #mcptool13
 @mcp.tool(**_mcp_tool_meta("agent_workbench"))
-def agent_workbench_tool(
+async def agent_workbench_tool(
     goal: str, notebook: str | None = None, contract_file: str | None = None,
     execute: bool = False, max_steps: int = 8, timeout: int = 30,
-    detail: str = "summary",
+    detail: str = "summary", ctx: Context = None,
 ) -> ToolResult:
     "Prepare or execute a taste-aware small-diff workbench run."
-    arguments = dict(goal=goal, notebook=notebook, contract_file=contract_file, execute=execute, max_steps=max_steps, timeout=timeout, detail=detail)
+    root = await _mcp_workspace_root(ctx)
+    notebook = _mcp_workspace_path(notebook, root) if notebook else notebook
+    contract_file = _mcp_workspace_path(contract_file, root) if contract_file else contract_file
+    arguments = dict(goal=goal, notebook=notebook, contract_file=contract_file, execute=execute, max_steps=max_steps, timeout=timeout, detail=detail, workspace_root=str(root) if root else None)
     result = agent_workbench_result(
         goal, notebook=notebook, contract_file=contract_file, execute=execute,
         max_steps=max_steps, timeout=timeout,
@@ -1472,9 +1473,11 @@ def agent_workbench_tool(
 
 # %% ../nbs/07_mcp.ipynb #mcpsymbolg
 @mcp.tool(**_mcp_tool_meta("symbol_graph"))
-def _symbol_graph_tool(path: str = "nbs", symbol: str = "", json_output: bool = False, detail: str = "summary") -> ToolResult:
+async def _symbol_graph_tool(path: str = "nbs", symbol: str = "", json_output: bool = False, detail: str = "summary", ctx: Context = None) -> ToolResult:
     "Show definitions, callers, and callees for one notebook symbol."
-    arguments = dict(path=path, symbol=symbol, json_output=json_output, detail=detail)
+    root = await _mcp_workspace_root(ctx)
+    path = _mcp_workspace_path(path, root)
+    arguments = dict(path=path, symbol=symbol, json_output=json_output, detail=detail, workspace_root=str(root) if root else None)
     full_output = capture_call(symbol_graph, path=path, symbol=symbol, json_output=json_output)
     result = mcp_tool_result("symbol_graph", arguments, full_output, detail=detail)
     if symbol:
@@ -1483,16 +1486,19 @@ def _symbol_graph_tool(path: str = "nbs", symbol: str = "", json_output: bool = 
 
 # %% ../nbs/07_mcp.ipynb #mcptool15
 @mcp.tool(**_mcp_tool_meta("style_check"))
-def style_check_tool(
+async def style_check_tool(
     path: str = ".", skip_folder_re: str | None = None, skip_path: str | None = None,
     strict: bool = False, delete_after_output: bool = False,
     max_output_chars: int = 12000, max_diagnostics: int = 200, fix: bool = False,
     changed_only: bool = False, ref_a: str | None = "HEAD", ref_b: str | None = None,
-    detail: str = "summary",
+    detail: str = "summary", ctx: Context = None,
 ) -> ToolResult:
     "Print capped chkstyle output, notebook hygiene warnings, private symbol warnings, and global tool usage."
-    arguments = dict(path=path, skip_folder_re=skip_folder_re, skip_path=skip_path, strict=strict, delete_after_output=delete_after_output, max_output_chars=max_output_chars, max_diagnostics=max_diagnostics, fix=fix, changed_only=changed_only, ref_a=ref_a, ref_b=ref_b, detail=detail)
-    style_output = capture_call(style_check, **{k: v for k, v in arguments.items() if k != "detail"})
+    root = await _mcp_workspace_root(ctx)
+    path = _mcp_workspace_path(path, root)
+    skip_path = _mcp_workspace_path(skip_path, root) if skip_path else skip_path
+    arguments = dict(path=path, skip_folder_re=skip_folder_re, skip_path=skip_path, strict=strict, delete_after_output=delete_after_output, max_output_chars=max_output_chars, max_diagnostics=max_diagnostics, fix=fix, changed_only=changed_only, ref_a=ref_a, ref_b=ref_b, detail=detail, workspace_root=str(root) if root else None)
+    style_output = capture_call(style_check, **{k: v for k, v in arguments.items() if k not in {"detail", "workspace_root"}})
     private_output = _private_symbol_report_text(path)
     full_output = "\n\n".join(chunk for chunk in [private_output, style_output] if chunk)
     report = style_report(
@@ -1505,40 +1511,49 @@ def style_check_tool(
 
 # %% ../nbs/07_mcp.ipynb #mcpstorekn
 @mcp.tool(**_mcp_tool_meta("store_knowledge"))
-def _store_knowledge_tool(apply_regex: str, note: str, path: str | None = None, detail: str = "summary") -> ToolResult:
+async def _store_knowledge_tool(apply_regex: str, note: str, path: str | None = None, detail: str = "summary", ctx: Context = None) -> ToolResult:
     "Store or update one behaviour steering regex and note."
-    arguments = dict(apply_regex=apply_regex, note=note, path=path, detail=detail)
+    root = await _mcp_workspace_root(ctx)
+    path = _mcp_workspace_path(path or ".", root)
+    arguments = dict(apply_regex=apply_regex, note=note, path=path, detail=detail, workspace_root=str(root) if root else None)
     full_output = capture_call(store_knowledge, apply_regex=apply_regex, note=note, path=path)
     return mcp_tool_result("store_knowledge", arguments, full_output, detail=detail)
 
 # %% ../nbs/07_mcp.ipynb #mcpaddbeha
 @mcp.tool(**_mcp_tool_meta("add_behaviour_steering"))
-def _add_behaviour_steering_tool(regex: str, path: str | None = None, detail: str = "summary") -> ToolResult:
+async def _add_behaviour_steering_tool(regex: str, path: str | None = None, detail: str = "summary", ctx: Context = None) -> ToolResult:
     "Add a behaviour steering regex with a generic note."
-    arguments = dict(regex=regex, path=path, detail=detail)
+    root = await _mcp_workspace_root(ctx)
+    path = _mcp_workspace_path(path or ".", root)
+    arguments = dict(regex=regex, path=path, detail=detail, workspace_root=str(root) if root else None)
     full_output = capture_call(add_behaviour_steering, regex=regex, path=path)
     return mcp_tool_result("add_behaviour_steering", arguments, full_output, detail=detail)
 
 # %% ../nbs/07_mcp.ipynb #mcpgetknow
 @mcp.tool(**_mcp_tool_meta("get_knowledge"))
-def _get_knowledge_tool(regex: str | None = None, path: str | None = None, detail: str = "summary") -> ToolResult:
+async def _get_knowledge_tool(regex: str | None = None, path: str | None = None, detail: str = "summary", ctx: Context = None) -> ToolResult:
     "Return stored behaviour steering rules, optionally filtered by regex."
-    arguments = dict(regex=regex, path=path, detail=detail)
+    root = await _mcp_workspace_root(ctx)
+    path = _mcp_workspace_path(path or ".", root)
+    arguments = dict(regex=regex, path=path, detail=detail, workspace_root=str(root) if root else None)
     full_output = capture_call(get_knowledge, regex=regex, path=path)
     return mcp_tool_result("get_knowledge", arguments, full_output, detail=detail)
 
 # %% ../nbs/07_mcp.ipynb #b6d3f15d
 @mcp.tool(**_mcp_tool_meta("reference_query"))
-def _reference_query_tool(
+async def _reference_query_tool(
     query: str, top_k: int = 3, include_branch: bool = False,
     current_repo: str = ".", repos: str | None = None, path: str | None = None,
     kind: str | None = None, package: str | None = None, module: str | None = None, symbol: str | None = None,
-    detail: str = "summary",
+    detail: str = "summary", ctx: Context = None,
 ) -> ToolResult:
     "Search globally indexed reference implementations."
+    root = await _mcp_workspace_root(ctx)
+    current_repo = _mcp_workspace_path(current_repo, root)
+    path = _mcp_workspace_path(path, root) if path else path
     arguments = dict(
         query=query, top_k=top_k, include_branch=include_branch, current_repo=current_repo, repos=repos, path=path,
-        kind=kind, package=package, module=module, symbol=symbol, detail=detail,
+        kind=kind, package=package, module=module, symbol=symbol, detail=detail, workspace_root=str(root) if root else None,
     )
     result_data = reference_query(
         query, top_k=top_k, include_branch=include_branch, current_repo=current_repo, repos=repos, path=path,
@@ -1551,35 +1566,45 @@ def _reference_query_tool(
 
 # %% ../nbs/07_mcp.ipynb #mcptool19
 @mcp.tool(**_mcp_tool_meta("py2nb"))
-def py2nb_tool(
+async def py2nb_tool(
     path: str, nbs_path: str = "nbs", dest: str | None = None, recursive: bool = True,
     maxdepth: int | None = None, preserve_tree: bool = True, class_lines: int = 100,
     method_lines: int = 10, package: str | None = None, include: str | None = None,
     exclude: str | None = None, skip_init: bool = True, include_tests: bool = False,
-    force: bool = True, detail: str = "summary",
+    force: bool = True, detail: str = "summary", ctx: Context = None,
 ) -> ToolResult:
     "Convert one Python file or a folder of Python files into nbdev notebook source."
-    arguments = dict(path=path, nbs_path=nbs_path, dest=dest, recursive=recursive, maxdepth=maxdepth, preserve_tree=preserve_tree, class_lines=class_lines, method_lines=method_lines, package=package, include=include, exclude=exclude, skip_init=skip_init, include_tests=include_tests, force=force, detail=detail)
-    full_output = capture_call(py2nb, **{k: v for k, v in arguments.items() if k != "detail"}, dry_run=False)
+    root = await _mcp_workspace_root(ctx)
+    path = _mcp_workspace_path(path, root)
+    nbs_path = _mcp_workspace_path(nbs_path, root)
+    dest = _mcp_workspace_path(dest, root) if dest else dest
+    arguments = dict(path=path, nbs_path=nbs_path, dest=dest, recursive=recursive, maxdepth=maxdepth, preserve_tree=preserve_tree, class_lines=class_lines, method_lines=method_lines, package=package, include=include, exclude=exclude, skip_init=skip_init, include_tests=include_tests, force=force, detail=detail, workspace_root=str(root) if root else None)
+    full_output = capture_call(py2nb, **{k: v for k, v in arguments.items() if k not in {"detail", "workspace_root"}}, dry_run=False)
     return mcp_tool_result("py2nb", arguments, full_output, detail=detail)
 
 # %% ../nbs/07_mcp.ipynb #mcppy2nbdev
 @mcp.tool(**_mcp_tool_meta("py2nbdev"))
-def _py2nbdev_tool(source: str, dest: str, package: str | None = None, nbs_path: str = "nbs", force: bool = False, run_validation: bool = True, detail: str = "summary") -> ToolResult:
+async def _py2nbdev_tool(source: str, dest: str, package: str | None = None, nbs_path: str = "nbs", force: bool = False, run_validation: bool = True, detail: str = "summary", ctx: Context = None) -> ToolResult:
     "Create a pragmatic nbdev project from a pure-Python package."
-    arguments = dict(source=source, dest=dest, package=package, nbs_path=nbs_path, force=force, run_validation=run_validation, detail=detail)
-    full_output = capture_call(py2nbdev, **{k: v for k, v in arguments.items() if k != "detail"}, dry_run=False)
+    root = await _mcp_workspace_root(ctx)
+    source = _mcp_workspace_path(source, root)
+    dest = _mcp_workspace_path(dest, root)
+    arguments = dict(source=source, dest=dest, package=package, nbs_path=nbs_path, force=force, run_validation=run_validation, detail=detail, workspace_root=str(root) if root else None)
+    full_output = capture_call(py2nbdev, **{k: v for k, v in arguments.items() if k not in {"detail", "workspace_root"}}, dry_run=False)
     return mcp_tool_result("py2nbdev", arguments, full_output, detail=detail)
 
 # %% ../nbs/07_mcp.ipynb #mcptool21
 @mcp.tool(**_mcp_tool_meta("new_nbdev_notebook"))
-def new_nbdev_notebook_tool(
+async def new_nbdev_notebook_tool(
     name: str, default_exp: str | None = None, title: str | None = None,
     nbs_path: str = "nbs", force: bool = False, detail: str = "summary",
+    ctx: Context = None,
 ) -> ToolResult:
     "Create a minimal nbdev source notebook and exported module."
-    arguments = dict(name=name, default_exp=default_exp, title=title, nbs_path=nbs_path, force=force, detail=detail)
-    full_output = capture_call(new_nbdev_notebook, **{k: v for k, v in arguments.items() if k != "detail"}, dry_run=False)
+    root = await _mcp_workspace_root(ctx)
+    nbs_path = _mcp_workspace_path(nbs_path, root)
+    arguments = dict(name=name, default_exp=default_exp, title=title, nbs_path=nbs_path, force=force, detail=detail, workspace_root=str(root) if root else None)
+    full_output = capture_call(new_nbdev_notebook, **{k: v for k, v in arguments.items() if k not in {"detail", "workspace_root"}}, dry_run=False)
     return mcp_tool_result("new_nbdev_notebook", arguments, full_output, detail=detail)
 
 # %% ../nbs/07_mcp.ipynb #6daab47d

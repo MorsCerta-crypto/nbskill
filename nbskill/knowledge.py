@@ -840,6 +840,15 @@ def _reference_edge_rows(repo_name, version, rows):
     return edges
 
 # %% ../nbs/12_knowledge.ipynb #1315f364
+def _reference_ingest_progress(index, total, repo_name, stage, extra=""):
+    import sys
+    width = 24
+    done = width if total <= 0 else int(width * min(index, total) / total)
+    bar = "#" * done + "-" * (width - done)
+    label = f" {repo_name}" if repo_name else ""
+    suffix = f" {extra}" if extra else ""
+    print(f"reference_ingest [{bar}] {index}/{total}{label}: {stage}{suffix}", file=sys.stderr, flush=True)
+
 def reference_ingest(
     name: str | None = None,  # Registry name to ingest
     all: bool = False,  # Ingest all registered repositories
@@ -850,24 +859,33 @@ def reference_ingest(
     data = _load_reference_registry(path)
     if not data["repos"]: raise ValueError("No reference repositories registered")
     names = list(data["repos"]) if all else [name or next(iter(data["repos"]))]
+    total = len(names)
     reports = []
+    _reference_ingest_progress(0, total, "", "start")
     with tempfile.TemporaryDirectory(prefix="nbskill-reference-") as tmp:
-        for repo_name in names:
+        for i, repo_name in enumerate(names, start=1):
             if repo_name not in data["repos"]: raise KeyError(f"Unknown reference repo: {repo_name}")
             repo = data["repos"][repo_name]
             checkout = Path(tmp) / repo_name
+            _reference_ingest_progress(i, total, repo_name, "clone")
             resolved = _checkout_reference(repo, checkout)
             repo_kind = "nbdev" if _nbdev_config(checkout) else "python"
             if not force and repo.get("resolved_version") == resolved and repo.get("item_count") and repo.get("repo_kind") == repo_kind:
                 reports.append({"name": repo_name, "resolved_version": resolved, "repo_kind": repo_kind, "skipped": True, "item_count": repo["item_count"]})
+                _reference_ingest_progress(i, total, repo_name, "skip", f"{repo['item_count']} items")
                 continue
             package = _infer_package(checkout, repo)
+            _reference_ingest_progress(i, total, repo_name, "extract", f"{repo_kind} {resolved[:7]}")
             rows = _extract_reference_rows(checkout, repo, resolved, package)
+            _reference_ingest_progress(i, total, repo_name, "embed/write", f"{len(rows)} rows")
             count = _write_reference_rows(repo_name, resolved, rows, path=path)
             repo.update({"package": package, "repo_kind": repo_kind, "resolved_version": resolved, "last_indexed_ts": time.time(), "item_count": count})
             reports.append({"name": repo_name, "resolved_version": resolved, "repo_kind": repo_kind, "package": package, "item_count": count})
+            _reference_ingest_progress(i, total, repo_name, "done", f"{count} items")
     _write_reference_registry(data, path)
+    _reference_ingest_progress(total, total, "", "sync")
     sync = _sync_lancedb(path)
+    _reference_ingest_progress(total, total, "", "complete")
     return {"path": str(_lancedb_path(path)), "ingested": reports, "index": sync}
 
 # %% ../nbs/12_knowledge.ipynb #9822bb44
@@ -966,15 +984,25 @@ def _public_reference_hit(row):
 def _bump_reference_return_counts(rows, path=None):
     ids = {row.get("item_id") for row in rows if row.get("item_id")}
     if not ids: return {}
-    updated, counts = [], {}
-    for row in _lance_rows(path, "items"):
-        row = dict(row)
-        if row.get("item_id") in ids:
-            row["returned_count"] = int(row.get("returned_count") or 0) + 1
-            counts[row["item_id"]] = row["returned_count"]
-        updated.append(row)
-    if counts: _write_lance_table(path, "items", updated)
-    return counts
+    last_exc = None
+    for attempt in range(3):
+        updated, counts = [], {}
+        for row in _lance_rows(path, "items"):
+            row = dict(row)
+            if row.get("item_id") in ids:
+                row["returned_count"] = int(row.get("returned_count") or 0) + 1
+                counts[row["item_id"]] = row["returned_count"]
+            updated.append(row)
+        if not counts: return {}
+        try:
+            _write_lance_table(path, "items", updated)
+            return counts
+        except RuntimeError as exc:
+            last_exc = exc
+            if "commit conflict" not in str(exc).lower() and "preempted by concurrent transaction" not in str(exc).lower():
+                raise
+            time.sleep(0.05 * (attempt + 1))
+    raise last_exc
 
 def reference_query(
     query: str,  # Natural-language implementation query

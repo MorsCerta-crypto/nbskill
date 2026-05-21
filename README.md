@@ -11,37 +11,10 @@ expects the meaningful implementation to stay in notebooks and export
 clean Python modules from there.
 
 That mismatch matters in practice. A small source edit can accidentally
-preserve stale outputs, overwrite the wrong cell after another edit, or
-hide the useful code change inside a noisy JSON diff. Agents also need
-to understand whether a cell is documentation, setup, exported code, a
-test, or a show-off example before they touch it.
-
-`nbskill` turns that into a safer workflow:
-
-- [`project_context`](https://MorsCerta-crypto.github.io/nbskill/read.html#project_context),
-  [`file_context`](https://MorsCerta-crypto.github.io/nbskill/read.html#file_context),
-  [`chapter_context`](https://MorsCerta-crypto.github.io/nbskill/read.html#chapter_context),
-  and
-  [`symbol_context`](https://MorsCerta-crypto.github.io/nbskill/read.html#symbol_context)
-  expose focused context views.
-- `edit_cell`, `edit_cell_range`, `insert_cells`, and
-  `apply_notebook_edits` edit cells by ids, line ranges, and structured
-  operations while exporting automatically.
-- [`exec_nb`](https://MorsCerta-crypto.github.io/nbskill/execute.html#exec_nb)
-  runs notebooks with local project imports available and records
-  visible outputs.
-- [`diff_nb`](https://MorsCerta-crypto.github.io/nbskill/review.html#diff_nb)
-  and
-  [`style_check`](https://MorsCerta-crypto.github.io/nbskill/review.html#style_check)
-  make review focused on code cells and style hints.
-- [`py2nb`](https://MorsCerta-crypto.github.io/nbskill/convert.html#py2nb)
-  bootstraps notebooks from a Python file or folder when a project is
-  moving toward nbdev.
-- [`agent_workbench`](https://MorsCerta-crypto.github.io/nbskill/agent_workbench.html#agent_workbench)
-  turns taste, context, budgets, and gates into an executor-ready plan
-  before an autonomous edit.
-- `nbskill_mcp` exposes the same operations to Codex, Claude, or any MCP
-  client.
+preserve stale outputs, overwrite the wrong cell after context goes
+stale, or bypass the notebook story that explains why the code exists.
+`nbskill` gives agents a narrow set of notebook-aware tools: context
+readers, structured edits, execution, diffs, and diagnostics.
 
 ## How the notebooks fit together
 
@@ -76,15 +49,12 @@ The production core is intentionally narrow:
 
 | Area | MCP tools | Public API | Status |
 |----|----|----|----|
-| Reading | [`project_context`](https://MorsCerta-crypto.github.io/nbskill/read.html#project_context), [`file_context`](https://MorsCerta-crypto.github.io/nbskill/read.html#file_context), [`chapter_context`](https://MorsCerta-crypto.github.io/nbskill/read.html#chapter_context), [`symbol_context`](https://MorsCerta-crypto.github.io/nbskill/read.html#symbol_context) | yes | core |
-| Editing | `edit_cell`, `edit_cell_range`, `insert_cells`, `apply_notebook_edits` | yes | core |
-| Execution and review | [`exec_nb`](https://MorsCerta-crypto.github.io/nbskill/execute.html#exec_nb), [`diff_nb`](https://MorsCerta-crypto.github.io/nbskill/review.html#diff_nb), [`style_check`](https://MorsCerta-crypto.github.io/nbskill/review.html#style_check), `doctor` | yes | core |
-| Concurrency | per-notebook locks and execution semaphore | yes | core infrastructure |
-| Conversion | [`py2nb`](https://MorsCerta-crypto.github.io/nbskill/convert.html#py2nb), [`py2nbdev`](https://MorsCerta-crypto.github.io/nbskill/convert.html#py2nbdev) | yes | supporting |
-| Agentic edit loops | [`agent_workbench`](https://MorsCerta-crypto.github.io/nbskill/agent_workbench.html#agent_workbench) | provisional | supporting |
-| Graph and knowledge tools | [`symbol_graph`](https://MorsCerta-crypto.github.io/nbskill/graph.html#symbol_graph), knowledge store, behaviour steering | provisional | supporting |
+| Reading | [`project_context`](https://MorsCerta-crypto.github.io/nbskill/cli.html#project_context), [`file_context`](https://MorsCerta-crypto.github.io/nbskill/cli.html#file_context), [`chapter_context`](https://MorsCerta-crypto.github.io/nbskill/cli.html#chapter_context), [`symbol_context`](https://MorsCerta-crypto.github.io/nbskill/cli.html#symbol_context) | yes | core |
+| Editing | [`edit_notebook`](https://MorsCerta-crypto.github.io/nbskill/edit.html#edit_notebook) | yes | core |
+| Execution and review | [`exec_nb`](https://MorsCerta-crypto.github.io/nbskill/cli.html#exec_nb), [`diff_nb`](https://MorsCerta-crypto.github.io/nbskill/cli.html#diff_nb), [`style_check`](https://MorsCerta-crypto.github.io/nbskill/cli.html#style_check), `doctor` | yes | core |
+| Conversion | [`py2nb`](https://MorsCerta-crypto.github.io/nbskill/cli.html#py2nb), [`py2nbdev`](https://MorsCerta-crypto.github.io/nbskill/cli.html#py2nbdev) | yes | supporting |
 
-The production workflow is:
+### Production workflow
 
 1.  Edit the source notebook, not generated Python.
 2.  Keep the intended behavior covered by a contract cell or
@@ -114,17 +84,21 @@ _write_nb(new_nb([
 
 ## Reading: choose the smallest useful context
 
-[`project_context`](https://MorsCerta-crypto.github.io/nbskill/read.html#project_context)
+The context API has four deliberate levels.
+[`project_context`](https://MorsCerta-crypto.github.io/nbskill/cli.html#project_context)
 orients you in a repository with README excerpts, notebook filenames,
 and notebook docstrings.
-[`file_context`](https://MorsCerta-crypto.github.io/nbskill/read.html#file_context)
-shows one notebook's imports, header docs, Markdown cells, and
+[`file_context`](https://MorsCerta-crypto.github.io/nbskill/cli.html#file_context)
+shows one notebook’s imports, header docs, Markdown cells, and
 definition summaries, with `include_re` and `exclude_re` filters.
-[`chapter_context`](https://MorsCerta-crypto.github.io/nbskill/read.html#chapter_context)
+[`chapter_context`](https://MorsCerta-crypto.github.io/nbskill/cli.html#chapter_context)
 preserves the chapter-focused view for one selected section.
-[`symbol_context`](https://MorsCerta-crypto.github.io/nbskill/read.html#symbol_context)
-returns exact implementation context, nearby prose, examples/tests,
-callers, and depth-controlled callees.
+[`symbol_context`](https://MorsCerta-crypto.github.io/nbskill/cli.html#symbol_context)
+replaces symbol docs with exact implementation context, nearby prose,
+examples/tests, callers, and depth-controlled callees.
+
+The MCP tools keep printing details hidden unless the returned context
+is useful to the agent.
 
 ``` python
 file_context(str(demo_nb))
@@ -135,19 +109,24 @@ file_context(str(demo_nb))
 
 ## Writing: add cells through MCP
 
-Use `insert_cells` when adding examples, tests, or explanatory sections.
-The MCP tool accepts structured cells and places them before or after a
-stable id, so agents can describe notebook cells as cells instead of JSON
-objects.
+Use
+[`edit_notebook`](https://MorsCerta-crypto.github.io/nbskill/edit.html#edit_notebook)
+when adding examples, tests, explanatory sections, or source changes.
+The MCP tool accepts structured edits and can replace cells, patch line
+ranges, insert cells before or after stable ids, delete or move cells,
+and run notebook-wide
+[`replace_text`](https://MorsCerta-crypto.github.io/nbskill/edit.html#replace_text)/[`replace_texts`](https://MorsCerta-crypto.github.io/nbskill/edit.html#replace_texts)
+renames.
 
 That lets nbskill preserve notebook structure, clear stale execution
 state where needed, and keep generated modules in sync when the notebook
 has an export target.
 
-For larger notebook refactors, use `agent_workbench` with a tight goal,
-small budgets, and explicit verification. Keep the loop notebook-first:
-read the smallest useful context, make a focused edit, then check the
-changed cells before expanding the scope.
+For larger notebook refactors, use
+[`agent_workbench`](https://MorsCerta-crypto.github.io/nbskill/cli.html#agent_workbench)
+with a tight goal, small budgets, and explicit verification. Keep the
+loop notebook-first: read the smallest useful context, make a focused
+edit, then check the changed cells before expanding the scope.
 
 ``` python
 write_nb(str(demo_nb), chr(10).join([
@@ -173,14 +152,22 @@ chapter_context(str(demo_nb), name="Result")
 
 ## Updating: use ids for precise edits
 
-Use `edit_cell` when replacing one cell and `edit_cell_range` when only
-part of the cell should change. Pass the `expected_hash` from the latest
+Use
+[`edit_notebook`](https://MorsCerta-crypto.github.io/nbskill/edit.html#edit_notebook)
+with `cell_id` when replacing one cell or changing a line range. Use
+`target="all"` with
+[`replace_text`](https://MorsCerta-crypto.github.io/nbskill/edit.html#replace_text)
+or
+[`replace_texts`](https://MorsCerta-crypto.github.io/nbskill/edit.html#replace_texts)
+for notebook-level renames. Pass the `expected_hash` from the latest
 context read when stale context should fail instead of overwriting newer
 work.
 
-Use `apply_notebook_edits` when several cell changes should land
-together. Keep the edit narrow, then immediately inspect `diff_nb` or run
-the smallest useful `exec_nb` check.
+Keep the edit narrow, then immediately inspect
+[`diff_nb`](https://MorsCerta-crypto.github.io/nbskill/cli.html#diff_nb)
+or run the smallest useful
+[`exec_nb`](https://MorsCerta-crypto.github.io/nbskill/cli.html#exec_nb)
+check.
 
 ``` python
 answer_cell = next(cell for cell in _read_raw_nb(demo_nb).cells if "answer = x * 10" in cell.source)
@@ -199,7 +186,7 @@ _ = chapter_context(str(demo_nb), any_cell_id=answer_cell.id)
 
 ## Executing: run the notebook as a notebook
 
-[`exec_nb`](https://MorsCerta-crypto.github.io/nbskill/execute.html#exec_nb)
+[`exec_nb`](https://MorsCerta-crypto.github.io/nbskill/cli.html#exec_nb)
 uses `execnb` and adds the notebook directory plus the project root to
 the import path. That lets tests and examples behave like they do inside
 an nbdev project.
@@ -215,18 +202,18 @@ _ = exec_nb(str(demo_nb), timeout=5, show_output=True)
 
 ## Reviewing: look at behavior and code changes
 
-[`symbol_context`](https://MorsCerta-crypto.github.io/nbskill/read.html#symbol_context)
+[`symbol_context`](https://MorsCerta-crypto.github.io/nbskill/cli.html#symbol_context)
 answers the question “what should I know before changing this
 implementation?” with exact source, nearby Markdown, examples/tests,
 callers, and optional callee summaries.
-[`diff_nb`](https://MorsCerta-crypto.github.io/nbskill/review.html#diff_nb)
+[`diff_nb`](https://MorsCerta-crypto.github.io/nbskill/cli.html#diff_nb)
 keeps review focused on code-cell source rather than outputs and
 metadata.
 
 These tools keep review at the level a maintainer cares about.
-[`symbol_context`](https://MorsCerta-crypto.github.io/nbskill/read.html#symbol_context)
+[`symbol_context`](https://MorsCerta-crypto.github.io/nbskill/cli.html#symbol_context)
 reconstructs the local rationale and impact around a function, while
-[`diff_nb`](https://MorsCerta-crypto.github.io/nbskill/review.html#diff_nb)
+[`diff_nb`](https://MorsCerta-crypto.github.io/nbskill/cli.html#diff_nb)
 filters out notebook churn so a reviewer can see whether the
 implementation changed.
 
@@ -237,14 +224,14 @@ _ = diff_nb(str(project_root / "nbs/02_write.ipynb"), ref_a=None)
 
 ## Converting: bootstrap nbdev notebooks from Python
 
-[`py2nb`](https://MorsCerta-crypto.github.io/nbskill/convert.html#py2nb)
+[`py2nb`](https://MorsCerta-crypto.github.io/nbskill/cli.html#py2nb)
 parses Python with `ast`, creates one nbdev notebook, and keeps exports
 explicit. It is useful when a project starts in `.py` files but wants to
 move toward literate notebooks.
 
 ``` python
 sample_py = workspace / "sample_tool.py"
-sample_py.write_text("def double(x):\\n    return x * 2\\n", encoding="utf-8")
+sample_py.write_text("def double(x):\n    return x * 2\n", encoding="utf-8")
 converted_nb = workspace / "sample_tool.ipynb"
 
 _ = py2nb(str(sample_py), dest=str(converted_nb))
@@ -283,22 +270,24 @@ chapter_context(path="nbs/02_write.ipynb", name="Updating")
 symbol_context(path="nbs/02_write.ipynb", symbol="write_nb", depth=1)
 ```
 
+Then edit the cell that actually needs to change and run focused
+verification.
+
 After inspecting the precise cell, edit by stable cell id or a narrow
-line range. MCP notebook edits export automatically when the notebook has
-an export target.
+line range. MCP notebook edits export automatically when the notebook
+has an export target.
 
 ``` python
-edit_cell(
+edit_notebook(
     path="nbs/02_write.ipynb",
-    cell_id="abc123",
-    source="def target():\n    return 'updated'",
+    edits=[dict(op="replace_cell", cell_id="abc123", source_lines=["def target():", "    return 'updated'"])],
 )
 ```
 
 Finish with a review or execution tool depending on what changed. Use
-[`diff_nb`](https://MorsCerta-crypto.github.io/nbskill/review.html#diff_nb)
+[`diff_nb`](https://MorsCerta-crypto.github.io/nbskill/cli.html#diff_nb)
 for implementation edits and
-[`exec_nb`](https://MorsCerta-crypto.github.io/nbskill/execute.html#exec_nb)
+[`exec_nb`](https://MorsCerta-crypto.github.io/nbskill/cli.html#exec_nb)
 when the notebook behavior needs to be checked end to end.
 
 ``` python
@@ -327,47 +316,34 @@ the client is using stale tool metadata.
 1.  Use `healthcheck` before notebook work or after
     reinstalling/exporting tool signatures.
 2.  Use
-    [`project_context`](https://MorsCerta-crypto.github.io/nbskill/read.html#project_context),
-    [`file_context`](https://MorsCerta-crypto.github.io/nbskill/read.html#file_context),
-    [`chapter_context`](https://MorsCerta-crypto.github.io/nbskill/read.html#chapter_context),
+    [`project_context`](https://MorsCerta-crypto.github.io/nbskill/cli.html#project_context),
+    [`file_context`](https://MorsCerta-crypto.github.io/nbskill/cli.html#file_context),
+    [`chapter_context`](https://MorsCerta-crypto.github.io/nbskill/cli.html#chapter_context),
     and
-    [`symbol_context`](https://MorsCerta-crypto.github.io/nbskill/read.html#symbol_context)
+    [`symbol_context`](https://MorsCerta-crypto.github.io/nbskill/cli.html#symbol_context)
     as context needs become more precise.
 3.  Use
-    [`symbol_graph`](https://MorsCerta-crypto.github.io/nbskill/graph.html#symbol_graph)
-    when you need graph-oriented caller/callee impact beyond
-    `symbol_context`.
+    [`symbol_graph`](https://MorsCerta-crypto.github.io/nbskill/cli.html#symbol_graph)
+    when you specifically need graph-oriented caller/callee impact
+    beyond the symbol context payload.
 4.  Keep notebook craft in the loop: preserve the story, add rationale
-    before code, and put examples or tests after the behavior they
-    exercise.
+    before code, and put examples or tests after implementation cells.
 5.  Use
-    `edit_cell`, `edit_cell_range`, `insert_cells`, or
-    `apply_notebook_edits` for notebook edits. Use `edit_cell_range`
-    for small partial edits, `insert_cells` for new documentation,
-    examples, or tests, and `apply_notebook_edits` for coordinated
-    multi-cell changes.
-6.  Use
-    [`exec_nb`](https://MorsCerta-crypto.github.io/nbskill/execute.html#exec_nb)
-    for the narrowest behavior check, preferably with `check_only=True`
-    when outputs do not need to be written.
-7.  Finish with
-    [`diff_nb`](https://MorsCerta-crypto.github.io/nbskill/review.html#diff_nb)
-    plus `doctor(scopes="error,warning,style")` or
-    [`style_check`](https://MorsCerta-crypto.github.io/nbskill/review.html#style_check)
-    on touched notebooks.
-
-Stay notebook-first: edit `nbs/*.ipynb` source notebooks, not generated
-`.py` files. Functions beginning with `_` are notebook-local unless
-deliberately promoted to a public helper.
+    [`edit_notebook`](https://MorsCerta-crypto.github.io/nbskill/edit.html#edit_notebook)
+    for notebook edits.
+6.  Verify with
+    [`exec_nb`](https://MorsCerta-crypto.github.io/nbskill/cli.html#exec_nb),
+    [`diff_nb`](https://MorsCerta-crypto.github.io/nbskill/cli.html#diff_nb),
+    [`style_check`](https://MorsCerta-crypto.github.io/nbskill/cli.html#style_check),
+    or `doctor` before handing work back.
 
 ## Notebook Craft
 
 A good notebook has a story. Move one step at a time: describe the
 problem in Markdown, export the implementation, demonstrate it with a
 small example and visible output when useful, then protect it with a
-small test.
-Larger features should grow from earlier cells rather than appear as one
-big code block.
+small test. Larger features should grow from earlier cells rather than
+appear as one big code block.
 
 Keep cells small and semantic. A cell should usually be one of these
 things: Markdown rationale, imports, exported code, private
@@ -387,21 +363,23 @@ examples close to the feature they demonstrate, with visible outputs
 when the output helps understanding. Tests should be small, local, and
 named by the single behavior they protect.
 
-Notebook directives matter:
-
-- Cells exported to Python start with `#| export`.
-- Cells that should not execute during the test phase include
-  `#| eval: false`.
-- Cells that should not appear in documentation, such as test cells,
-  start with `#| hide`.
+Notebook directives matter: cells exported to Python start with
+`#| export`, cells that should not execute during the test phase include
+`#| eval: false`, and cells that should not appear in documentation,
+such as test cells, start with `#| hide`.
 
 ## Knowledge Store
 
 Check the knowledge store before solving a notebook or style problem
-from scratch. Use `get_knowledge` to find recorded local rules and
-known warning patterns, `store_knowledge` to save reusable discoveries,
-and `add_behaviour_steering` for recurring guidance that should surface
-during later `style_check` runs.
+from scratch. Use
+[`get_knowledge`](https://MorsCerta-crypto.github.io/nbskill/cli.html#get_knowledge)
+to find recorded local rules and known warning patterns,
+[`store_knowledge`](https://MorsCerta-crypto.github.io/nbskill/cli.html#store_knowledge)
+to save reusable discoveries, and
+[`add_behaviour_steering`](https://MorsCerta-crypto.github.io/nbskill/cli.html#add_behaviour_steering)
+for recurring guidance that should surface during later
+[`style_check`](https://MorsCerta-crypto.github.io/nbskill/cli.html#style_check)
+runs.
 
 Treat knowledge warnings as project memory. Read the note, decide
 whether it applies, and either follow it or record why this case is
@@ -416,7 +394,7 @@ Open references only when the core workflow is not enough:
 - `references/mcp-tool-report.md` for MCP feature groups and tool-count
   reduction candidates.
 - `references/conversion.md` for converting Python files or folders with
-  [`py2nb`](https://MorsCerta-crypto.github.io/nbskill/convert.html#py2nb).
+  [`py2nb`](https://MorsCerta-crypto.github.io/nbskill/cli.html#py2nb).
 - `references/extended-tools.md` for symbol docs, review, graph reports,
   and edit-interactive plans. <!-- nbskill-skill:end -->
 
@@ -435,8 +413,8 @@ than a pile of cells.
 Do not hide broad changes inside oversized cells, duplicate imports
 across the same notebook scope, leave unused code behind, or bundle
 unrelated assertions into one test cell. Before stopping, inspect
-[`diff_nb`](https://MorsCerta-crypto.github.io/nbskill/review.html#diff_nb)
+[`diff_nb`](https://MorsCerta-crypto.github.io/nbskill/cli.html#diff_nb)
 and run a style-oriented check with
 `doctor(scopes="error,warning,style")` or
-[`style_check`](https://MorsCerta-crypto.github.io/nbskill/review.html#style_check)
+[`style_check`](https://MorsCerta-crypto.github.io/nbskill/cli.html#style_check)
 for the touched notebooks.

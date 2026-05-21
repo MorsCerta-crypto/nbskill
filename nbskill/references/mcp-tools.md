@@ -18,7 +18,7 @@ See `references/mcp-tool-report.md` for the current usefulness review and reduct
 | --- | --- | --- |
 | Diagnostics | `healthcheck`, `doctor` | Check MCP liveness, fatal notebook errors, warnings, private symbol leaks, optional style diagnostics, reconnect hints, and setup failures. |
 | Focused context | `project_context`, `file_context`, `chapter_context`, `symbol_context` | Move from repository orientation to one notebook, one chapter, or one concrete implementation. |
-| Notebook editing | `edit_cell`, `edit_cell_range`, `insert_cells`, `apply_notebook_edits` | Replace a cell, patch a line range, insert new cells, or apply coordinated structured edits. |
+| Notebook editing | `edit_notebook` | Apply deterministic whole-cell, line, insert/delete/move, and notebook-wide text replacement edits atomically with structured diffs. |
 | Verification and review | `exec_nb`, `diff_nb`, `style_check` | Run notebooks safely, review code-cell diffs, and catch structural hygiene/private-symbol issues. |
 | Symbol analysis | `symbol_graph` | Inspect definitions, callers, and callees for one symbol. |
 | Agentic planning | `agent_workbench` | Run bounded notebook/project edit loops only when direct structured tools are not enough. |
@@ -32,17 +32,14 @@ See `references/mcp-tool-report.md` for the current usefulness review and reduct
 3. `file_context` shows imports, header docs, Markdown cells, and definition docstrings for one notebook, with regex filters.
 4. `chapter_context` shows the notebook head plus one selected chapter.
 5. `symbol_context` focuses on one implementation with exact source, mentioning Markdown, examples/tests, callers, and callees.
-6. `edit_cell` replaces one existing cell by stable id and can check an expected hash before writing.
-7. `edit_cell_range` changes a small line range inside one cell; prefer it for precise partial edits.
-8. `insert_cells` adds new documentation, example, or test cells around a known id.
-9. `apply_notebook_edits` coordinates several structured edits, including expected-hash checks, when one edit must land with another.
-10. `style_check` reports chkstyle output, notebook hygiene, private symbol warnings, duplicate imports, and global tool usage/problems.
-11. `exec_nb` runs a notebook, a chapter, or cells up to an id. It is safe by default: fresh or changed cells are denied until they have either been run by the user or stamped by a prior nbskill execution. Pass `allow_new=True` only after explicit approval, and use `safe=False` only for deliberate legacy execution.
-12. `diff_nb` reviews notebook changes in a text form.
+6. `edit_notebook` applies deterministic edit operations atomically. Use `replace_text`/`replace_texts` with `target="all"` for notebook-level renames, line ops for focused cell edits, and structural ops for insert/delete/move/replace cell changes.
+7. `style_check` reports chkstyle output, notebook hygiene, private symbol warnings, duplicate imports, and global tool usage/problems.
+8. `exec_nb` runs a notebook, a chapter, or cells up to an id. It is safe by default: fresh or changed cells are denied until they have either been run by the user or stamped by a prior nbskill execution. Pass `allow_new=True` only after explicit approval, and use `safe=False` only for deliberate legacy execution.
+9. `diff_nb` reviews notebook changes in a text form.
 
 Use `doctor(scopes="error,warning")` for fatal notebook problems and warnings. Add `style` only when chkstyle output is useful; `doctor` does not run or show chkstyle for error/warning-only scopes. Private symbol reporting is part of the warning scope.
 
-Use `agent_workbench` for a bounded single-notebook or project-level plan when direct edits are not enough. Use `apply_notebook_edits` when the operations are already known and should be applied deterministically.
+Use `agent_workbench` for a bounded single-notebook or project-level plan when direct edits are not enough. Use `edit_notebook` when the operations are already known and should be applied deterministically.
 
 ## Concurrency
 
@@ -54,21 +51,21 @@ The locks are local to one MCP server process. If multiple independent MCP serve
 
 For nbdev projects, exported code belongs in notebook cells marked with nbdev directives such as `#| export`. Cells that should not execute during the test phase include `#| eval: false`; cells that should not appear in docs, such as test cells, start with `#| hide`. After notebook edits, use export or verification tools rather than editing generated Python directly.
 
-## `apply_notebook_edits`
+## `edit_notebook`
 
-Plan shape:
+Edit shape:
 
 ```json
 {
-  "operations": [
-    {"op": "set_cell_source", "path": "nbs/02_write.ipynb", "cell_id": "abc123", "source": "value = 2"},
-    {"op": "insert_after_id", "path": "nbs/02_write.ipynb", "cell_id": "abc123", "cells": "%%code\n#| hide\nassert value == 2"},
-    {"op": "replace_text", "path": "nbs/02_write.ipynb", "old": "old_name", "new": "new_name"}
+  "edits": [
+    {"op": "replace_cell", "cell_id": "abc123", "source_lines": ["value = 2"]},
+    {"op": "insert_cells", "anchor_id": "abc123", "where": "after", "cells": [{"cell_type": "code", "source_lines": ["#| hide", "assert value == 2"]}]},
+    {"op": "replace_text", "target": "all", "old": "old_name", "new": "new_name"}
   ]
 }
 ```
 
-Supported operations include cell replacement, insertion, deletion, and text replacement. Prefer expected hashes when you have just read a cell and want stale context to fail.
+Supported operations are `replace_cell`, `insert_cells`, `delete_cells`, `move_cells`, `replace_lines`, `insert_lines`, `delete_lines`, `replace_text`, and `replace_texts`. Prefer expected hashes when you have just read a cell and want stale context to fail.
 
 ## `exec_nb`
 

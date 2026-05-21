@@ -35,12 +35,10 @@ the client is using stale tool metadata.
 4.  Keep notebook craft in the loop: preserve the story, add rationale
     before code, and put examples or tests after the behavior they
     exercise.
-5.  Use
-    `edit_cell`, `edit_cell_range`, `insert_cells`, or
-    `apply_notebook_edits` for notebook edits. Use `edit_cell_range`
-    for small partial edits, `insert_cells` for new documentation,
-    examples, or tests, and `apply_notebook_edits` for coordinated
-    multi-cell changes.
+5.  Use `edit_notebook` for notebook edits. It supports whole-cell
+    replacement, line edits, cell insertion/deletion/moves, and
+    notebook-wide `replace_text`/`replace_texts` refactors with
+    expected-hash guards and structured diffs.
 6.  Use
     [`exec_nb`](https://MorsCerta-crypto.github.io/nbskill/execute.html#exec_nb)
     for the narrowest behavior check, preferably with `check_only=True`

@@ -11,20 +11,21 @@ uv run nbskill_status
 ## Reading
 
 ```bash
-uv run nb_overview notebook.ipynb
-uv run nb_overview notebook.ipynb --include_docs
-uv run nb_chapter notebook.ipynb --name "Data loading"
-uv run nb_chapter notebook.ipynb --any_cell_id abc123
-uv run nb_cell notebook.ipynb --id abc123
-uv run nb_cell notebook.ipynb --query 'contains="def train"'
-uv run show_doc notebook.ipynb symbol --source --show_ids
+uv run project_context .
+uv run file_context notebook.ipynb
+uv run file_context notebook.ipynb --include_re train
+uv run file_context notebook.ipynb --exclude_re scratch
+uv run chapter_context notebook.ipynb --name "Data loading"
+uv run chapter_context notebook.ipynb --any_cell_id abc123
+uv run symbol_context notebook.ipynb train --depth 1
 ```
 
 Reader behavior:
 
-- `nb_overview`: Markdown headings, imports, signatures, and docstrings; no line numbers.
-- `nb_chapter`: notebook head plus one selected chapter; no line numbers.
-- `nb_cell`: one selected cell with previous docs, examples/tests, usage context, and line numbers.
+- `project_context`: README excerpts, notebook filenames, and notebook file docstrings.
+- `file_context`: imports, header docs, Markdown cells, and definition docstrings; supports include/exclude regex filters.
+- `chapter_context`: notebook head plus one selected chapter.
+- `symbol_context`: exact implementation context, mentioning Markdown, examples/tests, callers, and depth-controlled callees.
 
 ## Writing
 

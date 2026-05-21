@@ -30,17 +30,16 @@ to the MCP workflow.
 1.  Use `healthcheck` before notebook work or after
     reinstalling/exporting tool signatures.
 2.  Use
-    [`nb_overview`](https://MorsCerta-crypto.github.io/nbskill/read.html#nb_overview),
-    then
-    [`nb_chapter`](https://MorsCerta-crypto.github.io/nbskill/read.html#nb_chapter),
-    then
-    [`nb_cell`](https://MorsCerta-crypto.github.io/nbskill/read.html#nb_cell)
+    [`project_context`](https://MorsCerta-crypto.github.io/nbskill/read.html#project_context),
+    [`file_context`](https://MorsCerta-crypto.github.io/nbskill/read.html#file_context),
+    [`chapter_context`](https://MorsCerta-crypto.github.io/nbskill/read.html#chapter_context),
+    and
+    [`symbol_context`](https://MorsCerta-crypto.github.io/nbskill/read.html#symbol_context)
     as context needs become more precise.
 3.  Use
-    [`show_doc`](https://MorsCerta-crypto.github.io/nbskill/read.html#show_doc)
-    for symbol-first rationale and
     [`symbol_graph`](https://MorsCerta-crypto.github.io/nbskill/graph.html#symbol_graph)
-    for caller/callee impact.
+    when you need graph-oriented caller/callee impact beyond
+    `symbol_context`.
 4.  Keep notebook craft in the loop: preserve the story, add rationale
     before code, and put examples or tests after the behavior they
     exercise.
@@ -101,8 +100,9 @@ interface.
 
 ``` bash
 uv run nbskill_status
-uv run nb_overview nbs/02_write.ipynb --include_docs
-uv run nb_cell nbs/02_write.ipynb --query 'contains="def write_nb"'
+uv run project_context .
+uv run file_context nbs/02_write.ipynb --include_re write
+uv run symbol_context nbs/02_write.ipynb write_nb --depth 1
 uv run batch_edit_nb --plan_file /tmp/nbskill-plan.json --dry_run
 uv run style_check nbs/02_write.ipynb --delete-after-output
 uv run exec_nb nbs/03_execute.ipynb --up2id abc123 --timeout 10 --check_only

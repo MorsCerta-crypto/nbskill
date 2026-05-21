@@ -17,7 +17,7 @@ See `references/mcp-tool-report.md` for the current usefulness review and reduct
 | Feature area | Tools | Normal use |
 | --- | --- | --- |
 | Diagnostics | `healthcheck`, `doctor` | Check MCP liveness, fatal notebook errors, warnings, private symbol leaks, optional style diagnostics, reconnect hints, and setup failures. |
-| Focused reading | `nb_overview`, `nb_chapter`, `nb_cell`, `show_doc` | Move from notebook map to chapter context to one line-numbered edit target; use `show_doc` for symbol-first docs work. |
+| Focused context | `project_context`, `file_context`, `chapter_context`, `symbol_context` | Move from repository orientation to one notebook, one chapter, or one concrete implementation. |
 | Notebook editing | `write_nb`, `update_cell`, `batch_edit_nb` | Add cells, update one existing cell, or apply deterministic JSON edit plans. |
 | Verification and review | `exec_nb`, `diff_nb`, `style_check` | Run notebooks safely, review code-cell diffs, and catch structural hygiene/private-symbol issues. |
 | Symbol analysis | `symbol_graph` | Inspect definitions, callers, and callees for one symbol. |
@@ -27,10 +27,10 @@ See `references/mcp-tool-report.md` for the current usefulness review and reduct
 ## Tool Loop
 
 1. `healthcheck` confirms the server is alive and reports concurrency behavior.
-2. `nb_overview` gives a compact map of Markdown headings, imports, signatures, and docstrings.
-3. `nb_chapter` shows the notebook head plus one selected chapter.
-4. `nb_cell` shows one selected cell with line-numbered source, previous docs, examples/tests, and usage context.
-5. `show_doc` focuses on one exported symbol and its surrounding notebook story.
+2. `project_context` gives README excerpts, notebook filenames, and notebook file docstrings.
+3. `file_context` shows imports, header docs, Markdown cells, and definition docstrings for one notebook, with regex filters.
+4. `chapter_context` shows the notebook head plus one selected chapter.
+5. `symbol_context` focuses on one implementation with exact source, mentioning Markdown, examples/tests, callers, and callees.
 6. `write_nb` inserts new cells or replaces a selected chapter/full notebook. Inline multiline MCP cell text is routed through a temporary `cells_file` so backslash escapes inside code are preserved.
 7. `update_cell` changes one existing cell by id, source text, or line range. Prefer `line_range` for partial edits. Use `split_before="def name"` to split an existing cell before a matching line, or `split=True` with `---` cell blocks to replace one cell with several smaller cells.
 8. `batch_edit_nb` applies JSON edit plans with compact operation details and multi-notebook locks.

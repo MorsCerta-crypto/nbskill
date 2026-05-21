@@ -18,12 +18,12 @@ test, or a show-off example before they touch it.
 
 `nbskill` turns that into a safer workflow:
 
-- [`nb_overview`](https://MorsCerta-crypto.github.io/nbskill/read.html#nb_overview),
-  [`nb_chapter`](https://MorsCerta-crypto.github.io/nbskill/read.html#nb_chapter),
-  [`nb_cell`](https://MorsCerta-crypto.github.io/nbskill/read.html#nb_cell),
+- [`project_context`](https://MorsCerta-crypto.github.io/nbskill/read.html#project_context),
+  [`file_context`](https://MorsCerta-crypto.github.io/nbskill/read.html#file_context),
+  [`chapter_context`](https://MorsCerta-crypto.github.io/nbskill/read.html#chapter_context),
   and
-  [`show_doc`](https://MorsCerta-crypto.github.io/nbskill/read.html#show_doc)
-  expose focused notebook views.
+  [`symbol_context`](https://MorsCerta-crypto.github.io/nbskill/read.html#symbol_context)
+  expose focused context views.
 - [`write_nb`](https://MorsCerta-crypto.github.io/nbskill/write.html#write_nb)
   and
   [`update_cell`](https://MorsCerta-crypto.github.io/nbskill/write.html#update_cell)
@@ -77,7 +77,7 @@ The production core is intentionally narrow:
 
 | Area | CLI | MCP | Public API | Status |
 |----|----|----|----|----|
-| Reading | [`nb_overview`](https://MorsCerta-crypto.github.io/nbskill/read.html#nb_overview), [`nb_chapter`](https://MorsCerta-crypto.github.io/nbskill/read.html#nb_chapter), [`nb_cell`](https://MorsCerta-crypto.github.io/nbskill/read.html#nb_cell), [`show_doc`](https://MorsCerta-crypto.github.io/nbskill/read.html#show_doc) | yes | yes | core |
+| Reading | [`project_context`](https://MorsCerta-crypto.github.io/nbskill/read.html#project_context), [`file_context`](https://MorsCerta-crypto.github.io/nbskill/read.html#file_context), [`chapter_context`](https://MorsCerta-crypto.github.io/nbskill/read.html#chapter_context), [`symbol_context`](https://MorsCerta-crypto.github.io/nbskill/read.html#symbol_context) | yes | yes | core |
 | Editing | [`write_nb`](https://MorsCerta-crypto.github.io/nbskill/write.html#write_nb), [`update_cell`](https://MorsCerta-crypto.github.io/nbskill/write.html#update_cell), [`batch_edit_nb`](https://MorsCerta-crypto.github.io/nbskill/write.html#batch_edit_nb) | structured edit tools | yes | core |
 | Execution | [`exec_nb`](https://MorsCerta-crypto.github.io/nbskill/execute.html#exec_nb), [`run_notebook_test`](https://MorsCerta-crypto.github.io/nbskill/execute.html#run_notebook_test) | [`exec_nb`](https://MorsCerta-crypto.github.io/nbskill/execute.html#exec_nb) | yes | core |
 | Review | [`diff_nb`](https://MorsCerta-crypto.github.io/nbskill/review.html#diff_nb), [`style_check`](https://MorsCerta-crypto.github.io/nbskill/review.html#style_check), `nbskill_validate` | [`diff_nb`](https://MorsCerta-crypto.github.io/nbskill/review.html#diff_nb), [`style_check`](https://MorsCerta-crypto.github.io/nbskill/review.html#style_check), `doctor` | yes | core |
@@ -107,7 +107,7 @@ functions that are exposed as CLI commands and MCP tools. Nothing here
 edits this repository.
 
 ``` python
-workspace = _reset_demo_workspace(project_root)
+workspace = _readme_workspace()
 demo_nb = workspace / "demo.ipynb"
 
 _write_nb(new_nb([
@@ -116,24 +116,22 @@ _write_nb(new_nb([
 ]), demo_nb)
 ```
 
-## Reading: start with a compact map
+## Reading: choose the smallest useful context
 
-[`nb_overview`](https://MorsCerta-crypto.github.io/nbskill/read.html#nb_overview)
-is the first tool to reach for. It always shows Markdown headings,
-imports, function/class/method signatures, and docstrings; pass
-`include_docs=True` when ordinary Markdown cells without headings should
-be visible too. For CLI/Python use, `verbose=False` returns the same
-text without printing it; MCP tools keep that print control hidden.
-
-When you know the area,
-[`nb_chapter`](https://MorsCerta-crypto.github.io/nbskill/read.html#nb_chapter)
-shows the notebook head plus one selected section. Use
-[`nb_cell`](https://MorsCerta-crypto.github.io/nbskill/read.html#nb_cell)
-for the precise, line-numbered view around a single cell, including
-previous docs, examples/tests, and local caller/callee context.
+[`project_context`](https://MorsCerta-crypto.github.io/nbskill/read.html#project_context)
+orients you in a repository with README excerpts, notebook filenames,
+and notebook docstrings.
+[`file_context`](https://MorsCerta-crypto.github.io/nbskill/read.html#file_context)
+shows one notebook's imports, header docs, Markdown cells, and
+definition summaries, with `include_re` and `exclude_re` filters.
+[`chapter_context`](https://MorsCerta-crypto.github.io/nbskill/read.html#chapter_context)
+preserves the chapter-focused view for one selected section.
+[`symbol_context`](https://MorsCerta-crypto.github.io/nbskill/read.html#symbol_context)
+returns exact implementation context, nearby prose, examples/tests,
+callers, and depth-controlled callees.
 
 ``` python
-nb_overview(str(demo_nb), include_docs=True)
+file_context(str(demo_nb))
 ```
 
     Cell id=2054f7fb: markdown
@@ -161,8 +159,16 @@ Run it as a dry run first; it is intentionally not exposed as an MCP
 tool. Pass `--no-dry_run` when the plan looks right.
 
 ``` python
-write_nb(str(demo_nb),"%%markdown\n## Result\nThe next cell computes from the earlier value.\n---\n%%code\nanswer = x * 10\nanswer")
-nb_chapter(str(demo_nb), name="Result")
+write_nb(str(demo_nb), chr(10).join([
+    "%%markdown",
+    "## Result",
+    "The next cell computes from the earlier value.",
+    "---",
+    "%%code",
+    "answer = x * 10",
+    "answer",
+]))
+chapter_context(str(demo_nb), name="Result")
 ```
 
     Wrote 4 cells to /var/folders/6_/45pyyxdd7hz3wz33p813bx_c0000gn/T/nbskill-readme-demo/demo.ipynb
@@ -191,8 +197,8 @@ target, so generated Python stays in sync with the notebook source.
 
 ``` python
 answer_cell = next(cell for cell in _read_raw_nb(demo_nb).cells if "answer = x * 10" in cell.source)
-update_cell(str(demo_nb),"answer = x * 12\nanswer",cell_id=answer_cell.id)
-_ = nb_cell(str(demo_nb), id=answer_cell.id)
+update_cell(str(demo_nb), "answer = x * 12\nanswer", cell_id=answer_cell.id)
+_ = chapter_context(str(demo_nb), any_cell_id=answer_cell.id)
 ```
 
     Updated cell id=fcf83b53
@@ -222,23 +228,23 @@ _ = exec_nb(str(demo_nb), timeout=5, show_output=True)
 
 ## Reviewing: look at behavior and code changes
 
-[`show_doc`](https://MorsCerta-crypto.github.io/nbskill/read.html#show_doc)
-answers the question “why is this symbol here?” with a compact symbol
-card: location, nearby Markdown, signature/docstring, optional source
-and examples, and grouped usage.
+[`symbol_context`](https://MorsCerta-crypto.github.io/nbskill/read.html#symbol_context)
+answers the question “what should I know before changing this
+implementation?” with exact source, nearby Markdown, examples/tests,
+callers, and optional callee summaries.
 [`diff_nb`](https://MorsCerta-crypto.github.io/nbskill/review.html#diff_nb)
 keeps review focused on code-cell source rather than outputs and
 metadata.
 
 These tools keep review at the level a maintainer cares about.
-[`show_doc`](https://MorsCerta-crypto.github.io/nbskill/read.html#show_doc)
+[`symbol_context`](https://MorsCerta-crypto.github.io/nbskill/read.html#symbol_context)
 reconstructs the local rationale and impact around a function, while
 [`diff_nb`](https://MorsCerta-crypto.github.io/nbskill/review.html#diff_nb)
 filters out notebook churn so a reviewer can see whether the
 implementation changed.
 
 ``` python
-_ = show_doc(str(project_root / "nbs/02_write.ipynb"), "write_nb", context=1, source=False)
+_ = symbol_context(str(project_root / "nbs/02_write.ipynb"), "write_nb", depth=0)
 _ = diff_nb(str(project_root / "nbs/02_write.ipynb"), ref_a=None)
 ```
 
@@ -251,11 +257,11 @@ move toward literate notebooks.
 
 ``` python
 sample_py = workspace / "sample_tool.py"
-sample_py.write_text("def double(x):\n    return x * 2\n", encoding="utf-8")
+sample_py.write_text("def double(x):\\n    return x * 2\\n", encoding="utf-8")
 converted_nb = workspace / "sample_tool.ipynb"
 
 _ = py2nb(str(sample_py), dest=str(converted_nb))
-_ = nb_overview(str(converted_nb))
+_ = file_context(str(converted_nb))
 ```
 
     Wrote 2 cells to /var/folders/6_/45pyyxdd7hz3wz33p813bx_c0000gn/T/nbskill-readme-demo/sample_tool.ipynb
@@ -284,9 +290,10 @@ the current question.
 
 ``` python
 healthcheck()
-nb_overview(nb_path="nbs/02_write.ipynb", include_docs=True)
-nb_chapter(nb_path="nbs/02_write.ipynb", name="Updating")
-nb_cell(nb_path="nbs/02_write.ipynb", id="abc123")
+project_context(path=".")
+file_context(path="nbs/02_write.ipynb", include_re="write")
+chapter_context(path="nbs/02_write.ipynb", name="Updating")
+symbol_context(path="nbs/02_write.ipynb", symbol="write_nb", depth=1)
 ```
 
 After inspecting the precise cell, edit by stable cell id or a narrow
@@ -342,17 +349,16 @@ to the MCP workflow.
 1.  Use `healthcheck` before notebook work or after
     reinstalling/exporting tool signatures.
 2.  Use
-    [`nb_overview`](https://MorsCerta-crypto.github.io/nbskill/read.html#nb_overview),
-    then
-    [`nb_chapter`](https://MorsCerta-crypto.github.io/nbskill/read.html#nb_chapter),
-    then
-    [`nb_cell`](https://MorsCerta-crypto.github.io/nbskill/read.html#nb_cell)
+    [`project_context`](https://MorsCerta-crypto.github.io/nbskill/read.html#project_context),
+    [`file_context`](https://MorsCerta-crypto.github.io/nbskill/read.html#file_context),
+    [`chapter_context`](https://MorsCerta-crypto.github.io/nbskill/read.html#chapter_context),
+    and
+    [`symbol_context`](https://MorsCerta-crypto.github.io/nbskill/read.html#symbol_context)
     as context needs become more precise.
 3.  Use
-    [`show_doc`](https://MorsCerta-crypto.github.io/nbskill/read.html#show_doc)
-    for symbol-first rationale and
     [`symbol_graph`](https://MorsCerta-crypto.github.io/nbskill/graph.html#symbol_graph)
-    for caller/callee impact.
+    when you need graph-oriented caller/callee impact beyond
+    `symbol_context`.
 4.  Keep notebook craft in the loop: preserve the story, add rationale
     before code, and put examples or tests after the behavior they
     exercise.
@@ -414,8 +420,9 @@ interface.
 
 ``` bash
 uv run nbskill_status
-uv run nb_overview nbs/02_write.ipynb --include_docs
-uv run nb_cell nbs/02_write.ipynb --query 'contains="def write_nb"'
+uv run project_context .
+uv run file_context nbs/02_write.ipynb --include_re write
+uv run symbol_context nbs/02_write.ipynb write_nb --depth 1
 uv run batch_edit_nb --plan_file /tmp/nbskill-plan.json --dry_run
 uv run style_check nbs/02_write.ipynb --delete-after-output
 uv run exec_nb nbs/03_execute.ipynb --up2id abc123 --timeout 10 --check_only

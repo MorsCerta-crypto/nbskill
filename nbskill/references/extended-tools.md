@@ -4,8 +4,8 @@ The main `SKILL.md` intentionally stays focused on the core loop: MCP, focused n
 
 ## Reading More Context
 
-- `show_doc(notebook, symbol, source=False, show_ids=False)` prints a compact symbol card: location, nearby Markdown, signature/docstring, optional source and examples, and grouped usage.
-- `nb_cell(notebook, id=...)` includes neighboring explanatory Markdown, examples/tests, and usage context around a selected cell.
+- `symbol_context(notebook, symbol, depth=1)` prints exact implementation context with nearby Markdown, examples/tests, callers, and optional callee summaries.
+- `file_context(notebook, include_re=..., exclude_re=...)` narrows one notebook to matching Markdown and definition items.
 
 ## Review And Analysis
 

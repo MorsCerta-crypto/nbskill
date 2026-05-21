@@ -108,9 +108,9 @@ def _public_function_docstring_problems(nb_path, cell, tree):
         line_count = _docstring_line_count(node)
         if line_count == 1: continue
         if line_count == 0:
-            detail = f"public function {node.name!r} needs a one-line docstring for nb_overview"
+            detail = f"public function {node.name!r} needs a one-line docstring for file_context"
         else:
-            detail = f"public function {node.name!r} has {line_count} docstring lines; keep it to one line for nb_overview"
+            detail = f"public function {node.name!r} has {line_count} docstring lines; keep it to one line for file_context"
         problems.append(_problem(
             "public-function-docstring", nb_path, cell, detail,
             symbol=node.name, line=getattr(node, "lineno", None), docstring_lines=line_count,
@@ -202,13 +202,13 @@ def _public_function_literacy_problems_for_nb(nb_path, nb):
     for cell, node in public_functions:
         line_count = _docstring_line_count(node)
         if line_count == 0:
-            detail = f"public function {node.name!r} needs a one-line docstring for nb_overview"
+            detail = f"public function {node.name!r} needs a one-line docstring for file_context"
             problems.append(_public_function_contract_problem(
                 nb_path, cell, node, "public-function-docstring", "one-line docstring",
                 detail, docstring_lines=line_count,
             ))
         elif line_count != 1:
-            detail = f"public function {node.name!r} has {line_count} docstring lines; keep it to one line for nb_overview"
+            detail = f"public function {node.name!r} has {line_count} docstring lines; keep it to one line for file_context"
             problems.append(_public_function_contract_problem(
                 nb_path, cell, node, "public-function-docstring", "one-line docstring",
                 detail, docstring_lines=line_count,

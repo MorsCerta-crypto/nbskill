@@ -23,7 +23,7 @@ from nbskill.foundation import (
     git_tracked_paths, notebook_paths, source_without_directives,
 )
 from .graph import notebook_order_problems, symbol_usage_summary
-from .read import nb_cell, nb_overview
+from .read import file_context
 from .review import notebook_validation_problems, style_report
 
 # %% ../nbs/11_agent_workbench.ipynb #3ac8d841
@@ -279,7 +279,7 @@ def compile_context(goal, path="nbs", contract=None, taste=None) -> dict:
     notebooks = notebook_paths(path)
     overview_cards = []
     for nb_path in notebooks:
-        overview = _call_text(nb_overview, nb_path=str(nb_path), include_docs=True, verbose=True)
+        overview = _call_text(file_context, path=str(nb_path), verbose=True)
         overview_cards.append({
             "path": str(nb_path),
             "score": _score_text(overview, tokens),
@@ -291,10 +291,12 @@ def compile_context(goal, path="nbs", contract=None, taste=None) -> dict:
     symbols = []
     for card in selected:
         nb_path = Path(card["path"])
+        nb = read_nb(nb_path)
+        cells_by_id = {getattr(cell, "id", ""): cell for cell in nb.cells}
         cell_cards = _cell_records(nb_path, tokens)
         for cell in cell_cards[:2]:
-            try: context = _call_text(nb_cell, nb_path=str(nb_path), id=cell["id"])
-            except BaseException: context = ""
+            target = cells_by_id.get(cell["id"])
+            context = cell_source(target) if target is not None else ""
             evidence.append({**cell, "context": cap_text(context, 2200)})
         symbols.extend(_symbol_candidates(nb_path, tokens))
     symbol_summary = symbol_usage_summary(path, symbols) if symbols else ""
@@ -314,6 +316,7 @@ def compile_context(goal, path="nbs", contract=None, taste=None) -> dict:
         "style_summary": state["style"].get("summary", {}),
         "verification_hints": contract.get("verification", []),
     }
+
 
 # %% ../nbs/11_agent_workbench.ipynb #902e700d
 def _changed_files(baseline, current):

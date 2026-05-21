@@ -48,10 +48,11 @@ from .knowledge import get_knowledge
 from .knowledge import reference_query
 from .knowledge import store_knowledge
 from .parallel import notebook_locks
-from .read import nb_cell
-from .read import nb_chapter
-from .read import nb_overview
-from .read import show_doc
+from .read import chapter_context
+from .read import file_context
+from .read import project_context
+from .read import symbol_context
+
 
 # %% ../nbs/07_mcp.ipynb #mcpimports5
 from .review import reset_global_usage_summary
@@ -142,7 +143,7 @@ def _mcp_expected_hash_warning(path, cell_id, expected_hash):
     return _warning(
         "expected_hash_mismatch",
         f"Skipped edit for {path} id={cell_id}: expected hash {expected_hash}, found {actual}.",
-        "Refresh nb_cell context and retry with the current source.",
+        "Refresh file_context or chapter_context and retry with the current source.",
         path=str(path), cell_id=cell_id, expected_hash=expected_hash, actual_hash=actual,
     )
 
@@ -546,13 +547,9 @@ def _line_cell_ids(text):
 # %% ../nbs/07_mcp.ipynb #928582a3
 def _response_scope_cell_ids(tool, arguments, preview):
     text = preview.get("text", "")
-    if tool == "nb_overview": return None
-    if tool == "nb_chapter": return _line_cell_ids(text) or None
-    if tool == "nb_cell":
-        if arguments.get("id"): return {str(arguments["id"])}
-        cell_id = _first_match(r"^Cell id=([^\s:]+)", text, re.MULTILINE)
-        return {cell_id} if cell_id else None
-    if tool == "show_doc":
+    if tool in {"project_context", "file_context"}: return None
+    if tool == "chapter_context": return _line_cell_ids(text) or None
+    if tool == "symbol_context":
         cell_id = _first_match(r"^Location:.*?Cell id=([^\s:]+)", text, re.MULTILINE)
         return {cell_id} if cell_id else None
     if tool == "diff_nb":
@@ -575,6 +572,7 @@ def _response_scope_cell_ids(tool, arguments, preview):
         value = arguments.get(key)
         if value: return {str(value)}
     return None
+
 
 # %% ../nbs/07_mcp.ipynb #c8b5469d
 def _unique_strings(items):
@@ -626,10 +624,12 @@ def _response_warnings(tool, arguments, preview):
             f"{tool} output was truncated by {preview['omitted_chars']} chars.",
             "Repeat with a narrower query or detail='debug' if you need full context.",
         ))
-    context_tools = {"nb_overview", "nb_chapter", "nb_cell", "show_doc", "diff_nb"}
+    read_context_tools = {"project_context", "file_context", "chapter_context", "symbol_context"}
     scoped_project_tools = {"edit_cell", "edit_cell_range", "insert_cells", "apply_notebook_edits", "exec_nb"}
-    if tool in context_tools:
-        path = arguments.get("path") or arguments.get("nb_path") or "."
+    if tool in read_context_tools:
+        return _dedupe_warnings(warnings)
+    if tool == "diff_nb":
+        path = arguments.get("path") or "."
         cell_ids = _response_scope_cell_ids(tool, arguments, preview)
         warnings.extend(_doctor_warnings(path, scope_path=path, scope_cell_ids=cell_ids)[:3])
     elif tool in scoped_project_tools:
@@ -637,6 +637,7 @@ def _response_warnings(tool, arguments, preview):
         for path in _response_scope_paths(tool, arguments, preview):
             warnings.extend(_doctor_warnings(path, scope_path=path, scope_cell_ids=cell_ids))
     return _dedupe_warnings(warnings)[:3]
+
 
 # %% ../nbs/07_mcp.ipynb #4a32f9e9
 def _brief_call(tool, arguments, preview):
@@ -652,6 +653,7 @@ def _brief_call(tool, arguments, preview):
 def mcp_tool_result(tool, arguments, full_output, max_output_chars=12000, detail="summary", warnings=None, hints=None, **structured):
     "Return concise visible MCP text plus structured data for clients that inspect it."
     detail = detail or "summary"
+    if detail == "debug": max_output_chars = max(max_output_chars, 50000)
     preview = _text_preview(full_output or "", limit=max_output_chars)
     warnings = _dedupe_warnings([*(warnings or []), *_response_warnings(tool, arguments or {}, preview)])
     hints = list(hints or [])
@@ -664,7 +666,7 @@ def mcp_tool_result(tool, arguments, full_output, max_output_chars=12000, detail
     if detail == "debug" and hints:
         lines += ["", "Hints:"]
         lines.extend(f"- {hint}" for hint in hints)
-    summary = "\n".join(lines)
+    summary = chr(10).join(lines)
     data = {
         "summary": summary,
         "call": {"tool": tool, "arguments": _redact_arguments(arguments or {})},
@@ -680,11 +682,12 @@ def mcp_tool_result(tool, arguments, full_output, max_output_chars=12000, detail
     data.update(structured)
     return ToolResult(content=[TextContent(type="text", text=summary)], structured_content=data)
 
+
 # %% ../nbs/07_mcp.ipynb #d696afd1
 def _status_data():
     scripts = [
-        "nb_overview", "nb_chapter", "nb_cell", "write_nb", "update_cell",
-        "batch_edit_nb", "show_doc", "exec_nb", "diff_nb", "style_check",
+        "project_context", "file_context", "chapter_context", "symbol_context",
+        "write_nb", "update_cell", "batch_edit_nb", "exec_nb", "diff_nb", "style_check",
         "install_nbskill", "symbol_graph", "private_symbol_report", "agent_workbench",
         "new_nbdev_notebook", "add_behaviour_steering", "store_knowledge", "get_knowledge",
         "reference_add", "reference_list", "reference_ingest", "reference_query",
@@ -732,7 +735,7 @@ def _doctor_report(
     hints = [
         "Use scopes='error,warning,style' or scopes='all' for the full doctor report.",
         "Use scopes='style' to include chkstyle output; chkstyle is omitted from error/warning scopes.",
-        "Use nb_overview/nb_chapter/nb_cell/show_doc, then edit_cell, edit_cell_range, insert_cells, or apply_notebook_edits.",
+        "Use project_context/file_context/chapter_context/symbol_context, then edit_cell, edit_cell_range, insert_cells, or apply_notebook_edits.",
     ]
     changed = sorted(git_status_paths(root)) if (root / ".git").exists() else []
     generated = [
@@ -978,43 +981,44 @@ _MCP_DIAGNOSTIC_TOOL_CATALOG = {
 
 # %% ../nbs/07_mcp.ipynb #mcpcat02
 _MCP_READ_CONTEXT_TOOL_CATALOG = {
-    'nb_overview': {
+    'project_context': {
         'feature': 'read_context',
         'usefulness': 'core',
-        'tags': ('read', 'notebook', 'orientation'),
-        'description': 'Compact notebook map showing Markdown headings, imports, function/class/method signatures, and docstrings; ordinary Markdown docs are optional.',
-        'when_to_use': 'Start here when opening a notebook or choosing which chapter or cell to inspect next.',
-        'combine_with': 'Do not merge back into a broad reader; this intentionally stays small and scannable.',
+        'tags': ('read', 'project', 'orientation'),
+        'description': 'Project context with relevant README sections, notebook filenames, and notebook file docstrings.',
+        'when_to_use': 'Start here when opening a repository or planning work across multiple notebooks.',
+        'combine_with': 'Follow with file_context for one notebook or symbol_context for one implementation.',
     },
-    'nb_chapter': {
+    'file_context': {
+        'feature': 'read_context',
+        'usefulness': 'core',
+        'tags': ('read', 'notebook', 'file'),
+        'description': 'Notebook file context with imports, header docs, Markdown cells, and function/class/method docstrings; supports include/exclude regex filters.',
+        'when_to_use': 'Use before changing or reviewing one notebook file.',
+        'combine_with': 'Use chapter_context for a section-level view or symbol_context for implementation detail.',
+    },
+    'chapter_context': {
         'feature': 'read_context',
         'usefulness': 'core',
         'tags': ('read', 'notebook', 'chapter'),
         'description': 'Notebook head plus one selected chapter found by chapter name, text query, or any cell id inside the chapter.',
-        'when_to_use': 'Use after nb_overview when a section-level view is enough and line numbers are unnecessary.',
-        'combine_with': 'Could share implementation with nb_cell, but the agent-facing context level is distinct.',
+        'when_to_use': 'Use when a section-level view is enough and whole-file context is too broad.',
+        'combine_with': 'Use file_context first for file orientation or symbol_context when changing a concrete implementation.',
     },
-    'nb_cell': {
+    'symbol_context': {
         'feature': 'read_context',
         'usefulness': 'core',
-        'tags': ('read', 'notebook', 'cell', 'line-numbers'),
-        'description': 'Precise line-numbered cell view; query lookups include previous markdown, examples/tests, and caller/callee usage.',
-        'when_to_use': 'Use before editing one cell, especially when line numbers, examples, or usage context matter.',
-        'combine_with': 'Keep separate because it is the only reader that should expose line numbers and edit-local context.',
+        'tags': ('read', 'symbol', 'implementation'),
+        'description': 'Implementation context for one symbol with exact source, mentioning Markdown, examples/tests with outputs, callers, and depth-controlled callees.',
+        'when_to_use': 'Use before changing a function, class, or method, or when tracing how a symbol is used.',
+        'combine_with': 'Use depth=0 for direct implementation context; increase depth to inspect callees under the hood.',
     },
 }
 
+
 # %% ../nbs/07_mcp.ipynb #mcpcat03
-_MCP_READ_DOC_TOOL_CATALOG = {
-    'show_doc': {
-        'feature': 'read_context',
-        'usefulness': 'situational',
-        'tags': ('read', 'symbol', 'documentation'),
-        'description': 'Symbol card showing location, nearest docs, signature/docstring, optional source/examples, and compact grouped usage.',
-        'when_to_use': 'Use when the task starts from a public symbol and needs API-level context; use nb_cell for line-numbered edit context.',
-        'combine_with': 'Could be covered by nb_cell plus symbol search, but it remains useful as a compact API documentation view.',
-    },
-}
+_MCP_READ_DOC_TOOL_CATALOG = {}
+
 
 # %% ../nbs/07_mcp.ipynb #mcpcat04
 _MCP_CELL_EDIT_TOOL_CATALOG = {
@@ -1023,7 +1027,7 @@ _MCP_CELL_EDIT_TOOL_CATALOG = {
         'usefulness': 'core',
         'tags': ('edit', 'notebook', 'cell', 'source-lines'),
         'description': 'Replace one existing notebook cell from source_lines with validation, optional expected_hash, optional split_lines on empty lines, automatic export, and default-on feedback for exploratory/test cells.',
-        'when_to_use': 'Use after nb_cell gives the id. Send source_lines directly; pass split_lines only for empty separator lines. Leave auto_feedback=True unless a speculative edit must not execute.',
+        'when_to_use': 'Use after file_context, chapter_context, or symbol_context identifies the target cell id. Send source_lines directly; pass split_lines only for empty separator lines. Leave auto_feedback=True unless a speculative edit must not execute.',
         'combine_with': 'Use edit_cell_range for small line edits, insert_cells for new cells, and apply_notebook_edits for coordinated multi-step edits.',
     },
     'edit_cell_range': {
@@ -1210,10 +1214,10 @@ _MCP_CAPABILITIES = ",".join(_MCP_TOOL_CATALOG)
 mcp = FastMCP(
     "nbskill",
     instructions=(
-        "Work notebook-first in nbdev projects. Feature areas are diagnostics, focused reads, "
+        "Work notebook-first in nbdev projects. Feature areas are diagnostics, focused context, "
         "notebook edits, verification/review, symbol analysis, agentic planning, and conversion. "
-        "For reading, use nb_overview for a map, nb_chapter for one section, nb_cell for precise "
-        "line-numbered edit context, and show_doc when starting from a public symbol. "
+        "For reading, use project_context for repository orientation, file_context for one notebook, "
+        "chapter_context for one section, and symbol_context for a concrete implementation. "
         "For edits, prefer edit_cell for one existing cell, edit_cell_range for partial cell edits, "
         "insert_cells for adding cells, and apply_notebook_edits for coordinated structured edits. Use split_lines only to split at empty source lines. "
         "Edit tools default to auto_feedback=True, which runs only exploratory or test cells in check-only mode and returns their output/errors. "
@@ -1227,6 +1231,7 @@ mcp = FastMCP(
         "Keep documentation before exported code and show-off examples after it."
     ),
 )
+
 
 # %% ../nbs/07_mcp.ipynb #mcphealthch
 @mcp.tool(**_mcp_tool_meta("healthcheck"))
@@ -1264,36 +1269,44 @@ def doctor_tool(
     )
 
 # %% ../nbs/07_mcp.ipynb #mcpnboverv
-@mcp.tool(**_mcp_tool_meta("nb_overview"))
-def _nb_overview_tool(nb_path: str, include_docs: bool = False, detail: str = "summary") -> ToolResult:
-    "Show headings, imports, signatures, and docstrings, optionally with non-heading Markdown docs."
-    arguments = dict(nb_path=nb_path, include_docs=include_docs, detail=detail)
-    full_output = capture_notebook_call(nb_overview, nb_path, nb_path=nb_path, include_docs=include_docs, verbose=True)
-    return mcp_tool_result("nb_overview", arguments, full_output, detail=detail)
+@mcp.tool(**_mcp_tool_meta("project_context"))
+def _project_context_tool(path: str = ".", detail: str = "summary") -> ToolResult:
+    "Show project README sections, notebook filenames, and notebook file docstrings."
+    arguments = dict(path=path, detail=detail)
+    with notebook_locks(path):
+        data = project_context(path, verbose=False)
+    return mcp_tool_result("project_context", arguments, data["text"], detail=detail, context=data)
+
 
 # %% ../nbs/07_mcp.ipynb #mcpnbchapt
-@mcp.tool(**_mcp_tool_meta("nb_chapter"))
-def _nb_chapter_tool(nb_path: str, query: str | None = None, name: str | None = None, any_cell_id: str | None = None, detail: str = "summary") -> ToolResult:
+@mcp.tool(**_mcp_tool_meta("chapter_context"))
+def _chapter_context_tool(path: str, query: str | None = None, name: str | None = None, any_cell_id: str | None = None, detail: str = "summary") -> ToolResult:
     "Show the notebook head plus one selected chapter."
-    arguments = dict(nb_path=nb_path, query=query, name=name, any_cell_id=any_cell_id, detail=detail)
-    full_output = capture_notebook_call(nb_chapter, nb_path, nb_path=nb_path, query=query, name=name, any_cell_id=any_cell_id)
-    return mcp_tool_result("nb_chapter", arguments, full_output, detail=detail)
+    arguments = dict(path=path, query=query, name=name, any_cell_id=any_cell_id, detail=detail)
+    with notebook_locks(path):
+        data = chapter_context(path, query=query, name=name, any_cell_id=any_cell_id, verbose=False)
+    return mcp_tool_result("chapter_context", arguments, data["text"], detail=detail, context=data)
+
 
 # %% ../nbs/07_mcp.ipynb #mcpnbcell
-@mcp.tool(**_mcp_tool_meta("nb_cell"))
-def _nb_cell_tool(nb_path: str, query: str | None = None, id: str | None = None, detail: str = "summary") -> ToolResult:
-    "Show one selected cell; query lookups include previous docs, examples/tests, and caller/callee usage."
-    arguments = dict(nb_path=nb_path, query=query, id=id, detail=detail)
-    full_output = capture_notebook_call(nb_cell, nb_path, nb_path=nb_path, query=query, id=id)
-    return mcp_tool_result("nb_cell", arguments, full_output, detail=detail)
+@mcp.tool(**_mcp_tool_meta("file_context"))
+def _file_context_tool(path: str, include_re: str | None = None, exclude_re: str | None = None, detail: str = "summary") -> ToolResult:
+    "Show one notebook's imports, docs, Markdown, and definitions with optional regex filters."
+    arguments = dict(path=path, include_re=include_re, exclude_re=exclude_re, detail=detail)
+    with notebook_locks(path):
+        data = file_context(path, include_re=include_re, exclude_re=exclude_re, verbose=False)
+    return mcp_tool_result("file_context", arguments, data["text"], detail=detail, context=data)
+
 
 # %% ../nbs/07_mcp.ipynb #mcpshowdoc
-@mcp.tool(**_mcp_tool_meta("show_doc"))
-def _show_doc_tool(path: str, symbol: str, context: int = 2, source: bool = False, show_ids: bool = False, detail: str = "summary") -> ToolResult:
-    "Show a compact symbol card with location, docs, definition, optional source/examples, and grouped usage."
-    arguments = dict(path=path, symbol=symbol, context=context, source=source, show_ids=show_ids, detail=detail)
-    full_output = capture_notebook_call(show_doc, path, path=path, symbol=symbol, context=context, source=source, show_ids=show_ids)
-    return mcp_tool_result("show_doc", arguments, full_output, detail=detail)
+@mcp.tool(**_mcp_tool_meta("symbol_context"))
+def _symbol_context_tool(path: str, symbol: str, depth: int = 1, detail: str = "summary") -> ToolResult:
+    "Show exact implementation context, examples/tests, callers, and callees for a symbol."
+    arguments = dict(path=path, symbol=symbol, depth=depth, detail=detail)
+    with notebook_locks(path):
+        data = symbol_context(path, symbol=symbol, depth=depth, verbose=False)
+    return mcp_tool_result("symbol_context", arguments, data["text"], detail=detail, context=data)
+
 
 # %% ../nbs/07_mcp.ipynb #mcptool06
 @mcp.tool(**_mcp_tool_meta("edit_cell"))

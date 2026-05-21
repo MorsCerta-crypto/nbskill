@@ -1,37 +1,60 @@
 # Agent Notes
 
-Use the nbskill MCP server for notebook work in this repository. It keeps agents out of raw `.ipynb` JSON and preserves the nbdev workflow.
+Use the nbskill MCP server for notebook work in this repository. It keeps agents out of raw `.ipynb` JSON, preserves the nbdev workflow, and gives you notebook-aware reads, edits, execution, diffs, style checks, and shared project knowledge.
 
-## Install the MCP server
+## Notebook Workflow
 
-From this directory:
+Work notebook-first and keep each change small. Prefer this shape for new or revised behavior:
 
-```bash
-uv tool install --editable . --force
-codex mcp add nbskill -- nbskill_mcp
-```
+1. Markdown docs explain the behavior and name the public symbol.
+2. Exported code implements the behavior in a focused cell.
+3. A small example cell calls the behavior and shows useful output.
+4. A small test cell checks one thing at a time.
 
-After installing or updating nbskill, reconnect or restart the MCP client so it launches the current `nbskill_mcp` command.
+Notebook directives matter:
 
-## Use nbskill
+- Cells exported to Python start with `#| export`.
+- Cells that should not execute during the test phase include `#| eval: false`.
+- Cells that should not appear in documentation, such as test cells, start with `#| hide`.
 
-- Call `healthcheck` first to confirm the MCP server is alive and to see available capabilities.
-- Prefer notebook-aware MCP tools over editing notebook JSON directly.
-- Start reads with `nb_overview`, then use `nb_chapter` or `nb_cell` for focused context.
-- Edit with `edit_cell`, `edit_cell_range`, `insert_cells`, or `apply_notebook_edits`.
-- Use `expected_hash` when editing a cell after reading it, so stale context fails instead of overwriting newer work.
-- Run `exec_nb`, `diff_nb`, `style_check`, or `doctor` for verification.
+Keep edits surgical. Read the nearby notebook context, edit one coherent piece, then immediately check whether the result is what you wanted before continuing. Avoid huge edit batches that only reveal problems after a long run.
 
-## Fallback CLI
+## MCP Tool Guide
 
-If MCP tools are unavailable, check the install and use the CLI equivalents:
+- Start with `healthcheck` when you need to confirm the MCP server is alive or discover current capabilities.
+- Use `doctor` for scoped project health: errors, warnings, style, or all diagnostics.
+- Use `style_check` for notebook hygiene, changed-cell style deltas, private-symbol warnings, duplicate imports, and stored knowledge warnings.
+- Use `nb_overview` for a compact map of a notebook: headings, imports, public definitions, and docstrings.
+- Use `nb_chapter` to read one section around a heading, query, or cell id.
+- Use `nb_cell` for precise line-numbered context before editing a specific cell.
+- Use `show_doc` when starting from a public symbol and you need its docs-oriented context.
+- Use `edit_cell`, `edit_cell_range`, `insert_cells`, or `apply_notebook_edits` for notebook edits instead of touching raw JSON.
+- Use `exec_nb` for focused execution. Prefer `check_only=True` while validating edits, and execute only the needed cell range or chapter when possible.
+- Use `diff_nb` to review code-cell changes without notebook metadata noise.
+- Use `symbol_graph` when you need definitions, callers, callees, or cross-notebook symbol impact.
+- Use `agent_workbench` for a bounded notebook edit plan when the change spans multiple cells or needs the MCP server to coordinate reads, edits, export, and checks.
 
-```bash
-uv run nbskill_status
-uv run nb_overview nbs/00_foundation.ipynb
-uv run nb_cell nbs/00_foundation.ipynb --id <cell-id>
-uv run exec_nb nbs/00_foundation.ipynb --timeout 10
-uv run style_check nbs --changed_only --max_diagnostics 80
-```
+When editing cells after reading them, use the MCP server's stale-context protections when available, such as expected hashes, so newer user or agent edits are not overwritten.
 
-Keep edits surgical: notebooks in `nbs/` are the source of truth, generated Python should stay in sync through the nbskill write path.
+## Knowledge Store
+
+Use the nbskill knowledge store before solving a problem from scratch. Someone may already have recorded the local rule, warning pattern, or preferred fix.
+
+- Query existing knowledge with `get_knowledge` before making a nontrivial notebook or style change.
+- Store reusable findings with `store_knowledge` after you discover a rule that would save future agents time.
+- Use `add_behaviour_steering` for recurring style or workflow guidance that should surface during later checks.
+- Treat knowledge warnings from `style_check` as project memory, not noise. Read the note, decide whether it applies, and either follow it or record why this case is different.
+
+Good knowledge entries are concrete: mention the notebook or symbol family, the warning pattern, the preferred fix, and the reason.
+
+## Small Edit Loops
+
+Prefer a tight loop:
+
+1. Read with `nb_overview`, `nb_chapter`, `nb_cell`, or `show_doc`.
+2. Check the knowledge store.
+3. Make the smallest notebook-aware edit.
+4. Run a focused `exec_nb`, `style_check changed_only`, or `diff_nb`.
+5. Only then continue to the next edit.
+
+Stop once the requested change is handled and verification is clear. Do not broaden scope, reformat unrelated cells, or edit generated Python directly when the notebook source should own the change.

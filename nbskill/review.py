@@ -182,12 +182,20 @@ def _public_function_contract_problem(nb_path, cell, node, code, missing, detail
     )
 
 # %% ../nbs/04_review.ipynb #2c4162bd
+def _call_parse_name(node):
+    if isinstance(node, ast.Name) and node.id == "call_parse": return True
+    if isinstance(node, ast.Attribute) and node.attr == "call_parse": return True
+    return False
+
+# %% ../nbs/04_review.ipynb #e037ee42
 def _public_function_literacy_problems_for_nb(nb_path, nb):
     public_functions = []
+    call_parse_names = set()
     for cell in nb.cells:
         tree = _parse_code_cell(cell)
         if tree is None or not is_exported_code_cell(cell): continue
         public_functions.extend((cell, node) for node in _public_functions(tree))
+        call_parse_names.update(_call_parse_wrapped_public_functions(tree))
     public_names = {node.name for _, node in public_functions}
     references = _public_function_reference_sets(nb, public_names)
     problems = []
@@ -205,6 +213,8 @@ def _public_function_literacy_problems_for_nb(nb_path, nb):
                 nb_path, cell, node, "public-function-docstring", "one-line docstring",
                 detail, docstring_lines=line_count,
             ))
+        if node.name in call_parse_names:
+            continue
         if node.name not in references["markdown"]:
             problems.append(_public_function_contract_problem(
                 nb_path, cell, node, "public-function-markdown", "Markdown docs cell mentioning the function",
@@ -218,6 +228,13 @@ def _public_function_literacy_problems_for_nb(nb_path, nb):
                 nb_path, cell, node, "public-function-test", "test cell that asserts or checks the function",
             ))
     return problems
+
+# %% ../nbs/04_review.ipynb #1ec78aa2
+def _call_parse_wrapped_public_functions(tree):
+    names = []
+    for node in _public_functions(tree):
+        if any(_call_parse_name(dec) for dec in getattr(node, "decorator_list", [])): names.append(node.name)
+    return set(names)
 
 # %% ../nbs/04_review.ipynb #e45642cc
 def public_function_literacy_problems(path="."):

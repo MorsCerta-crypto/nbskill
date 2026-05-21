@@ -18,10 +18,11 @@ See `references/mcp-tool-report.md` for the current usefulness review and reduct
 | --- | --- | --- |
 | Diagnostics | `healthcheck`, `doctor` | Check MCP liveness, fatal notebook errors, warnings, private symbol leaks, optional style diagnostics, reconnect hints, and setup failures. |
 | Focused context | `project_context`, `file_context`, `chapter_context`, `symbol_context` | Move from repository orientation to one notebook, one chapter, or one concrete implementation. |
-| Notebook editing | `write_nb`, `update_cell`, `batch_edit_nb` | Add cells, update one existing cell, or apply deterministic JSON edit plans. |
+| Notebook editing | `edit_cell`, `edit_cell_range`, `insert_cells`, `apply_notebook_edits` | Replace a cell, patch a line range, insert new cells, or apply coordinated structured edits. |
 | Verification and review | `exec_nb`, `diff_nb`, `style_check` | Run notebooks safely, review code-cell diffs, and catch structural hygiene/private-symbol issues. |
 | Symbol analysis | `symbol_graph` | Inspect definitions, callers, and callees for one symbol. |
-| Agentic planning | `execute_plan` | Run bounded nested edit loops for one notebook or a project scope only when deterministic tools are not enough. |
+| Agentic planning | `agent_workbench` | Run bounded notebook/project edit loops only when direct structured tools are not enough. |
+| Knowledge store | `get_knowledge`, `store_knowledge`, `add_behaviour_steering` | Reuse known local rules, save repeated warning patterns, and surface project memory during style checks. |
 | Conversion | `py2nb`, `py2nbdev` | Migrate Python files/folders or bootstrap nbdev projects. |
 
 ## Tool Loop
@@ -31,16 +32,17 @@ See `references/mcp-tool-report.md` for the current usefulness review and reduct
 3. `file_context` shows imports, header docs, Markdown cells, and definition docstrings for one notebook, with regex filters.
 4. `chapter_context` shows the notebook head plus one selected chapter.
 5. `symbol_context` focuses on one implementation with exact source, mentioning Markdown, examples/tests, callers, and callees.
-6. `write_nb` inserts new cells or replaces a selected chapter/full notebook. Inline multiline MCP cell text is routed through a temporary `cells_file` so backslash escapes inside code are preserved.
-7. `update_cell` changes one existing cell by id, source text, or line range. Prefer `line_range` for partial edits. Use `split_before="def name"` to split an existing cell before a matching line, or `split=True` with `---` cell blocks to replace one cell with several smaller cells.
-8. `batch_edit_nb` applies JSON edit plans with compact operation details and multi-notebook locks.
-9. `style_check` reports chkstyle output, notebook hygiene, private symbol warnings, duplicate imports, and global tool usage/problems.
-10. `exec_nb` runs a notebook, a chapter, or cells up to an id. It is safe by default: fresh or changed cells are denied until they have either been run by the user or stamped by a prior nbskill execution. Pass `allow_new=True` only after explicit approval, and use `safe=False` only for deliberate legacy execution.
-11. `diff_nb` reviews notebook changes in a text form.
+6. `edit_cell` replaces one existing cell by stable id and can check an expected hash before writing.
+7. `edit_cell_range` changes a small line range inside one cell; prefer it for precise partial edits.
+8. `insert_cells` adds new documentation, example, or test cells around a known id.
+9. `apply_notebook_edits` coordinates several structured edits, including expected-hash checks, when one edit must land with another.
+10. `style_check` reports chkstyle output, notebook hygiene, private symbol warnings, duplicate imports, and global tool usage/problems.
+11. `exec_nb` runs a notebook, a chapter, or cells up to an id. It is safe by default: fresh or changed cells are denied until they have either been run by the user or stamped by a prior nbskill execution. Pass `allow_new=True` only after explicit approval, and use `safe=False` only for deliberate legacy execution.
+12. `diff_nb` reviews notebook changes in a text form.
 
 Use `doctor(scopes="error,warning")` for fatal notebook problems and warnings. Add `style` only when chkstyle output is useful; `doctor` does not run or show chkstyle for error/warning-only scopes. Private symbol reporting is part of the warning scope.
 
-Use `execute_plan(scope="notebook", notebook=...)` for a bounded single-notebook plan, or `execute_plan(scope="project", notebooks=...)` for project-level decomposition. Use `batch_edit_nb` when the operations are already known and should be applied deterministically from a JSON plan.
+Use `agent_workbench` for a bounded single-notebook or project-level plan when direct edits are not enough. Use `apply_notebook_edits` when the operations are already known and should be applied deterministically.
 
 ## Concurrency
 
@@ -50,9 +52,9 @@ The locks are local to one MCP server process. If multiple independent MCP serve
 
 ## Editing Safely
 
-For nbdev projects, exported code belongs in notebook cells marked with nbdev directives such as `#| export`. After notebook edits, use export or verification tools rather than editing generated Python directly.
+For nbdev projects, exported code belongs in notebook cells marked with nbdev directives such as `#| export`. Cells that should not execute during the test phase include `#| eval: false`; cells that should not appear in docs, such as test cells, start with `#| hide`. After notebook edits, use export or verification tools rather than editing generated Python directly.
 
-## `batch_edit_nb`
+## `apply_notebook_edits`
 
 Plan shape:
 
@@ -60,13 +62,13 @@ Plan shape:
 {
   "operations": [
     {"op": "set_cell_source", "path": "nbs/02_write.ipynb", "cell_id": "abc123", "source": "value = 2"},
-    {"op": "insert_after_id", "path": "nbs/02_write.ipynb", "cell_id": "abc123", "cells": "%%code\nassert value == 2"},
+    {"op": "insert_after_id", "path": "nbs/02_write.ipynb", "cell_id": "abc123", "cells": "%%code\n#| hide\nassert value == 2"},
     {"op": "replace_text", "path": "nbs/02_write.ipynb", "old": "old_name", "new": "new_name"}
   ]
 }
 ```
 
-Supported operations are `set_cell_source`, `insert_after_id`, `insert_before_id`, `delete_cell_id`, and `replace_text`. Dry-run is enabled by default.
+Supported operations include cell replacement, insertion, deletion, and text replacement. Prefer expected hashes when you have just read a cell and want stale context to fail.
 
 ## `exec_nb`
 
@@ -91,22 +93,21 @@ exec_nb(
 ) -> str
 ```
 
-In safe mode, IPython magics and `!` shell commands are rejected, destructive filesystem and subprocess calls are blocked by `safepyrun`, and live `httpx` calls fail. With `check_only=True`, execution reports outputs and failures without writing notebook outputs or metadata. With `cache_httpx=True`, cache hits from `cachy.jsonl`-compatible data are returned and cache misses still fail.
+In safe mode, IPython magics and `!` system escapes are rejected, destructive filesystem and subprocess calls are blocked by `safepyrun`, and live `httpx` calls fail. With `check_only=True`, execution reports outputs and failures without writing notebook outputs or metadata. With `cache_httpx=True`, cache hits from `cachy.jsonl`-compatible data are returned and cache misses still fail.
 
-## `execute_plan`
+## `agent_workbench`
 
 Signature:
 
 ```python
-execute_plan(
-    plan: str,
+agent_workbench(
+    goal: str,
     notebook: str | None = None,
-    scope: str = "notebook",
-    notebooks: str | None = None,
-    model: str | None = None,
+    contract_file: str | None = None,
+    execute: bool = False,
     max_steps: int = 20,
     timeout: int = 30,
 ) -> dict
 ```
 
-Model resolution is `model or NBSKILL_AGENT or "chatgpt/gpt-5.4-mini"`. With `scope="notebook"`, pass `notebook` and the result includes `history` with notebook tool calls plus the agent's final `summary`. With `scope="project"`, pass `notebooks` to constrain decomposition; MCP execution tools apply requested changes directly.
+Use `agent_workbench` for bounded notebook or project work when direct MCP calls would be too verbose. Pass a concrete `goal`, constrain the task with `notebook` when possible, and set `execute=True` only when the loop should run verification after editing. Prefer the direct context, edit, and verification tools for small changes.

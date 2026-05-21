@@ -9,21 +9,13 @@ Use this skill when a repository treats notebooks as source files,
 especially nbdev projects where `nbs/*.ipynb` exports to Python modules.
 Prefer the nbskill MCP server as the normal interface: inspect, edit,
 execute, review, and diagnose notebooks through MCP tools instead of raw
-`.ipynb` JSON, generated `.py` files, or ad hoc shell commands.
+`.ipynb` JSON, generated `.py` files, or ad hoc file manipulation.
 
 ## Setup
 
-Install the local package and register the MCP server:
-
-``` bash
-uv tool install --editable . --force
-codex mcp add nbskill -- nbskill_mcp
-claude mcp add nbskill -- nbskill_mcp
-```
-
-Call `healthcheck` first when MCP is available. If tools are missing,
-run `uv run nbskill_status`, reconnect the MCP server, and then return
-to the MCP workflow.
+Call `healthcheck` first when MCP tools are available. It confirms the
+server is alive, reports capabilities, and gives reconnect hints when
+the client is using stale tool metadata.
 
 ## Core Workflow
 
@@ -44,13 +36,11 @@ to the MCP workflow.
     before code, and put examples or tests after the behavior they
     exercise.
 5.  Use
-    [`write_nb`](https://MorsCerta-crypto.github.io/nbskill/write.html#write_nb),
-    [`update_cell`](https://MorsCerta-crypto.github.io/nbskill/write.html#update_cell),
-    or
-    [`batch_edit_nb`](https://MorsCerta-crypto.github.io/nbskill/write.html#batch_edit_nb)
-    for notebook edits; MCP tools apply requested changes directly.
-    Use `split_before` or `split=True` on `update_cell` when breaking a
-    large cell into focused smaller cells.
+    `edit_cell`, `edit_cell_range`, `insert_cells`, or
+    `apply_notebook_edits` for notebook edits. Use `edit_cell_range`
+    for small partial edits, `insert_cells` for new documentation,
+    examples, or tests, and `apply_notebook_edits` for coordinated
+    multi-cell changes.
 6.  Use
     [`exec_nb`](https://MorsCerta-crypto.github.io/nbskill/execute.html#exec_nb)
     for the narrowest behavior check, preferably with `check_only=True`
@@ -68,8 +58,9 @@ deliberately promoted to a public helper.
 ## Notebook Craft
 
 A good notebook has a story. Move one step at a time: describe the
-problem, show the small behavior, export the implementation, demonstrate
-it with visible output when useful, then protect it with a small test.
+problem in Markdown, export the implementation, demonstrate it with a
+small example and visible output when useful, then protect it with a
+small test.
 Larger features should grow from earlier cells rather than appear as one
 big code block.
 
@@ -91,25 +82,25 @@ examples close to the feature they demonstrate, with visible outputs
 when the output helps understanding. Tests should be small, local, and
 named by the single behavior they protect.
 
-## CLI Fallback
+Notebook directives matter:
 
-Use CLI commands only when MCP tools are unavailable or final
-verification must run inside the project environment. Reconnect MCP as
-soon as practical; the CLI is a fallback, not the normal agent
-interface.
+- Cells exported to Python start with `#| export`.
+- Cells that should not execute during the test phase include
+  `#| eval: false`.
+- Cells that should not appear in documentation, such as test cells,
+  start with `#| hide`.
 
-``` bash
-uv run nbskill_status
-uv run project_context .
-uv run file_context nbs/02_write.ipynb --include_re write
-uv run symbol_context nbs/02_write.ipynb write_nb --depth 1
-uv run batch_edit_nb --plan_file /tmp/nbskill-plan.json --dry_run
-uv run style_check nbs/02_write.ipynb --delete-after-output
-uv run exec_nb nbs/03_execute.ipynb --up2id abc123 --timeout 10 --check_only
-```
+## Knowledge Store
 
-Use `cells_file`, `new_file`, or stdin when multiline shell quoting
-would be fragile.
+Check the knowledge store before solving a notebook or style problem
+from scratch. Use `get_knowledge` to find recorded local rules and
+known warning patterns, `store_knowledge` to save reusable discoveries,
+and `add_behaviour_steering` for recurring guidance that should surface
+during later `style_check` runs.
+
+Treat knowledge warnings as project memory. Read the note, decide
+whether it applies, and either follow it or record why this case is
+different.
 
 ## References
 
@@ -119,7 +110,6 @@ Open references only when the core workflow is not enough:
   and concurrency behavior.
 - `references/mcp-tool-report.md` for MCP feature groups and tool-count
   reduction candidates.
-- `references/cli-fallbacks.md` for shell-friendly command patterns.
 - `references/conversion.md` for converting Python files or folders with
   [`py2nb`](https://MorsCerta-crypto.github.io/nbskill/convert.html#py2nb).
 - `references/extended-tools.md` for symbol docs, review, graph reports,

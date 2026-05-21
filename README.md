@@ -24,10 +24,9 @@ test, or a show-off example before they touch it.
   and
   [`symbol_context`](https://MorsCerta-crypto.github.io/nbskill/read.html#symbol_context)
   expose focused context views.
-- [`write_nb`](https://MorsCerta-crypto.github.io/nbskill/write.html#write_nb)
-  and
-  [`update_cell`](https://MorsCerta-crypto.github.io/nbskill/write.html#update_cell)
-  edit cells by ids, chapters, and text while exporting automatically.
+- `edit_cell`, `edit_cell_range`, `insert_cells`, and
+  `apply_notebook_edits` edit cells by ids, line ranges, and structured
+  operations while exporting automatically.
 - [`exec_nb`](https://MorsCerta-crypto.github.io/nbskill/execute.html#exec_nb)
   runs notebooks with local project imports available and records
   visible outputs.
@@ -49,7 +48,7 @@ test, or a show-off example before they touch it.
 The notebooks in `nbs/` are ordered like the toolchain itself:
 
 1.  `00_foundation.ipynb` defines the private parsing, cell, chapter,
-    and CLI helpers used everywhere else.
+    and shared helpers used everywhere else.
 2.  `01_read.ipynb` makes notebooks readable without JSON noise.
 3.  `02_write.ipynb` applies safe cell edits and exports when requested.
 4.  `03_execute.ipynb` executes notebooks in the local project context.
@@ -75,36 +74,33 @@ a small executable contract before cells are split or code is moved.
 
 The production core is intentionally narrow:
 
-| Area | CLI | MCP | Public API | Status |
-|----|----|----|----|----|
-| Reading | [`project_context`](https://MorsCerta-crypto.github.io/nbskill/read.html#project_context), [`file_context`](https://MorsCerta-crypto.github.io/nbskill/read.html#file_context), [`chapter_context`](https://MorsCerta-crypto.github.io/nbskill/read.html#chapter_context), [`symbol_context`](https://MorsCerta-crypto.github.io/nbskill/read.html#symbol_context) | yes | yes | core |
-| Editing | [`write_nb`](https://MorsCerta-crypto.github.io/nbskill/write.html#write_nb), [`update_cell`](https://MorsCerta-crypto.github.io/nbskill/write.html#update_cell), [`batch_edit_nb`](https://MorsCerta-crypto.github.io/nbskill/write.html#batch_edit_nb) | structured edit tools | yes | core |
-| Execution | [`exec_nb`](https://MorsCerta-crypto.github.io/nbskill/execute.html#exec_nb), [`run_notebook_test`](https://MorsCerta-crypto.github.io/nbskill/execute.html#run_notebook_test) | [`exec_nb`](https://MorsCerta-crypto.github.io/nbskill/execute.html#exec_nb) | yes | core |
-| Review | [`diff_nb`](https://MorsCerta-crypto.github.io/nbskill/review.html#diff_nb), [`style_check`](https://MorsCerta-crypto.github.io/nbskill/review.html#style_check), `nbskill_validate` | [`diff_nb`](https://MorsCerta-crypto.github.io/nbskill/review.html#diff_nb), [`style_check`](https://MorsCerta-crypto.github.io/nbskill/review.html#style_check), `doctor` | yes | core |
-| Concurrency | n/a | internal locks | yes | core infrastructure |
-| Conversion | [`py2nb`](https://MorsCerta-crypto.github.io/nbskill/convert.html#py2nb), [`py2nbdev`](https://MorsCerta-crypto.github.io/nbskill/convert.html#py2nbdev), [`new_nbdev_notebook`](https://MorsCerta-crypto.github.io/nbskill/convert.html#new_nbdev_notebook) | optional | yes | CLI-first |
-| Skill install | [`install_nbskill`](https://MorsCerta-crypto.github.io/nbskill/skill.html#install_nbskill), `build_nbskill_skill` | no | yes | CLI-first |
-| Agentic edit loops | [`execute_plan`](https://MorsCerta-crypto.github.io/nbskill/edit_interactive.html#execute_plan), [`agent_workbench`](https://MorsCerta-crypto.github.io/nbskill/agent_workbench.html#agent_workbench) | experimental only | provisional | experimental |
-| Graph and knowledge tools | graph reports, behaviour steering | optional | provisional | experimental |
+| Area | MCP tools | Public API | Status |
+|----|----|----|----|
+| Reading | [`project_context`](https://MorsCerta-crypto.github.io/nbskill/read.html#project_context), [`file_context`](https://MorsCerta-crypto.github.io/nbskill/read.html#file_context), [`chapter_context`](https://MorsCerta-crypto.github.io/nbskill/read.html#chapter_context), [`symbol_context`](https://MorsCerta-crypto.github.io/nbskill/read.html#symbol_context) | yes | core |
+| Editing | `edit_cell`, `edit_cell_range`, `insert_cells`, `apply_notebook_edits` | yes | core |
+| Execution and review | [`exec_nb`](https://MorsCerta-crypto.github.io/nbskill/execute.html#exec_nb), [`diff_nb`](https://MorsCerta-crypto.github.io/nbskill/review.html#diff_nb), [`style_check`](https://MorsCerta-crypto.github.io/nbskill/review.html#style_check), `doctor` | yes | core |
+| Concurrency | per-notebook locks and execution semaphore | yes | core infrastructure |
+| Conversion | [`py2nb`](https://MorsCerta-crypto.github.io/nbskill/convert.html#py2nb), [`py2nbdev`](https://MorsCerta-crypto.github.io/nbskill/convert.html#py2nbdev) | yes | supporting |
+| Agentic edit loops | [`agent_workbench`](https://MorsCerta-crypto.github.io/nbskill/agent_workbench.html#agent_workbench) | provisional | supporting |
+| Graph and knowledge tools | [`symbol_graph`](https://MorsCerta-crypto.github.io/nbskill/graph.html#symbol_graph), knowledge store, behaviour steering | provisional | supporting |
 
 The production workflow is:
 
 1.  Edit the source notebook, not generated Python.
 2.  Keep the intended behavior covered by a contract cell or
     behavior-test notebook.
-3.  Export generated modules through the notebook-aware write path.
-4.  Run `uv run nbskill_validate nbs`.
-5.  Run focused execution checks with
-    `uv run exec_nb <notebook> --check_only`.
-6.  Run `uv run style_check nbs --changed_only --max_diagnostics 80`.
+3.  Export generated modules through notebook-aware MCP edits.
+4.  Run `doctor(scopes="error,warning")` on the touched notebooks or
+    project.
+5.  Run focused execution checks with `exec_nb(check_only=True)`.
+6.  Run `style_check(changed_only=True)` for the changed notebooks.
 7.  Only promote strict style gates after the current warning backlog
     has been paid down.
 
 ## A tiny notebook to work on
 
-The examples below create a temporary notebook, then use the same public
-functions that are exposed as CLI commands and MCP tools. Nothing here
-edits this repository.
+The examples below create a temporary notebook and show the behavior the
+MCP tools expose to agents. Nothing here edits this repository.
 
 ``` python
 workspace = _readme_workspace()
@@ -137,26 +133,21 @@ file_context(str(demo_nb))
     Cell id=2054f7fb: markdown
     ## A tiny notebook
 
-## Writing: add cells without raw notebook JSON
+## Writing: add cells through MCP
 
-[`write_nb`](https://MorsCerta-crypto.github.io/nbskill/write.html#write_nb)
-accepts cell blocks separated by `---`. The `%%markdown` and `%%code`
-markers make each new cell explicit, while \`\` keeps this temporary
-example from running nbdev export.
+Use `insert_cells` when adding examples, tests, or explanatory sections.
+The MCP tool accepts structured cells and places them before or after a
+stable id, so agents can describe notebook cells as cells instead of JSON
+objects.
 
-This is useful when adding examples, tests, or explanatory sections. The
-caller describes notebook cells as cells, not JSON objects, so nbskill
-can preserve notebook structure and clear stale execution state where
-needed.
+That lets nbskill preserve notebook structure, clear stale execution
+state where needed, and keep generated modules in sync when the notebook
+has an export target.
 
-For larger notebook refactors, the CLI-only
-[`split_nb_chapter`](https://MorsCerta-crypto.github.io/nbskill/write.html#split_nb_chapter)
-command moves one `##` chapter into a new nbdev notebook. It creates the
-new `#| default_exp`, copies imports used by the moved code, imports
-source-notebook definitions still needed by the split-out chapter, and
-promotes referenced private helpers in the source notebook when needed.
-Run it as a dry run first; it is intentionally not exposed as an MCP
-tool. Pass `--no-dry_run` when the plan looks right.
+For larger notebook refactors, use `agent_workbench` with a tight goal,
+small budgets, and explicit verification. Keep the loop notebook-first:
+read the smallest useful context, make a focused edit, then check the
+changed cells before expanding the scope.
 
 ``` python
 write_nb(str(demo_nb), chr(10).join([
@@ -182,18 +173,14 @@ chapter_context(str(demo_nb), name="Result")
 
 ## Updating: use ids for precise edits
 
-A notebook cell id tells
-[`update_cell`](https://MorsCerta-crypto.github.io/nbskill/write.html#update_cell)
-which cell to change. Use `old_str` or `line_range` when only part of
-the cell should change, or pass exactly one replacement cell block for a
-whole-cell update.
+Use `edit_cell` when replacing one cell and `edit_cell_range` when only
+part of the cell should change. Pass the `expected_hash` from the latest
+context read when stale context should fail instead of overwriting newer
+work.
 
-Use `split_before="def next_function"` to split an existing cell before
-a matching line, or `split=True` with `---` cell blocks to replace one
-large cell with several smaller cells.
-
-Writes export automatically when the notebook has an nbdev export
-target, so generated Python stays in sync with the notebook source.
+Use `apply_notebook_edits` when several cell changes should land
+together. Keep the edit narrow, then immediately inspect `diff_nb` or run
+the smallest useful `exec_nb` check.
 
 ``` python
 answer_cell = next(cell for cell in _read_raw_nb(demo_nb).cells if "answer = x * 10" in cell.source)
@@ -297,15 +284,14 @@ symbol_context(path="nbs/02_write.ipynb", symbol="write_nb", depth=1)
 ```
 
 After inspecting the precise cell, edit by stable cell id or a narrow
-line range. Notebook writes export automatically when the notebook has
+line range. MCP notebook edits export automatically when the notebook has
 an export target.
 
 ``` python
-update_cell(
+edit_cell(
     path="nbs/02_write.ipynb",
     cell_id="abc123",
-    new="def target():
-    return 'updated'",
+    source="def target():\n    return 'updated'",
 )
 ```
 
@@ -328,21 +314,13 @@ Use this skill when a repository treats notebooks as source files,
 especially nbdev projects where `nbs/*.ipynb` exports to Python modules.
 Prefer the nbskill MCP server as the normal interface: inspect, edit,
 execute, review, and diagnose notebooks through MCP tools instead of raw
-`.ipynb` JSON, generated `.py` files, or ad hoc shell commands.
+`.ipynb` JSON, generated `.py` files, or ad hoc file manipulation.
 
 ## Setup
 
-Install the local package and register the MCP server:
-
-``` bash
-uv tool install --editable . --force
-codex mcp add nbskill -- nbskill_mcp
-claude mcp add nbskill -- nbskill_mcp
-```
-
-Call `healthcheck` first when MCP is available. If tools are missing,
-run `uv run nbskill_status`, reconnect the MCP server, and then return
-to the MCP workflow.
+Call `healthcheck` first when MCP tools are available. It confirms the
+server is alive, reports capabilities, and gives reconnect hints when
+the client is using stale tool metadata.
 
 ## Core Workflow
 
@@ -363,14 +341,11 @@ to the MCP workflow.
     before code, and put examples or tests after the behavior they
     exercise.
 5.  Use
-    [`write_nb`](https://MorsCerta-crypto.github.io/nbskill/write.html#write_nb),
-    [`update_cell`](https://MorsCerta-crypto.github.io/nbskill/write.html#update_cell),
-    or
-    [`batch_edit_nb`](https://MorsCerta-crypto.github.io/nbskill/write.html#batch_edit_nb)
-    for notebook edits; MCP tools apply requested changes directly. Use
-    `split_before` or `split=True` on
-    [`update_cell`](https://MorsCerta-crypto.github.io/nbskill/write.html#update_cell)
-    when breaking a large cell into focused smaller cells.
+    `edit_cell`, `edit_cell_range`, `insert_cells`, or
+    `apply_notebook_edits` for notebook edits. Use `edit_cell_range`
+    for small partial edits, `insert_cells` for new documentation,
+    examples, or tests, and `apply_notebook_edits` for coordinated
+    multi-cell changes.
 6.  Use
     [`exec_nb`](https://MorsCerta-crypto.github.io/nbskill/execute.html#exec_nb)
     for the narrowest behavior check, preferably with `check_only=True`
@@ -388,8 +363,9 @@ deliberately promoted to a public helper.
 ## Notebook Craft
 
 A good notebook has a story. Move one step at a time: describe the
-problem, show the small behavior, export the implementation, demonstrate
-it with visible output when useful, then protect it with a small test.
+problem in Markdown, export the implementation, demonstrate it with a
+small example and visible output when useful, then protect it with a
+small test.
 Larger features should grow from earlier cells rather than appear as one
 big code block.
 
@@ -411,25 +387,25 @@ examples close to the feature they demonstrate, with visible outputs
 when the output helps understanding. Tests should be small, local, and
 named by the single behavior they protect.
 
-## CLI Fallback
+Notebook directives matter:
 
-Use CLI commands only when MCP tools are unavailable or final
-verification must run inside the project environment. Reconnect MCP as
-soon as practical; the CLI is a fallback, not the normal agent
-interface.
+- Cells exported to Python start with `#| export`.
+- Cells that should not execute during the test phase include
+  `#| eval: false`.
+- Cells that should not appear in documentation, such as test cells,
+  start with `#| hide`.
 
-``` bash
-uv run nbskill_status
-uv run project_context .
-uv run file_context nbs/02_write.ipynb --include_re write
-uv run symbol_context nbs/02_write.ipynb write_nb --depth 1
-uv run batch_edit_nb --plan_file /tmp/nbskill-plan.json --dry_run
-uv run style_check nbs/02_write.ipynb --delete-after-output
-uv run exec_nb nbs/03_execute.ipynb --up2id abc123 --timeout 10 --check_only
-```
+## Knowledge Store
 
-Use `cells_file`, `new_file`, or stdin when multiline shell quoting
-would be fragile.
+Check the knowledge store before solving a notebook or style problem
+from scratch. Use `get_knowledge` to find recorded local rules and
+known warning patterns, `store_knowledge` to save reusable discoveries,
+and `add_behaviour_steering` for recurring guidance that should surface
+during later `style_check` runs.
+
+Treat knowledge warnings as project memory. Read the note, decide
+whether it applies, and either follow it or record why this case is
+different.
 
 ## References
 
@@ -439,7 +415,6 @@ Open references only when the core workflow is not enough:
   and concurrency behavior.
 - `references/mcp-tool-report.md` for MCP feature groups and tool-count
   reduction candidates.
-- `references/cli-fallbacks.md` for shell-friendly command patterns.
 - `references/conversion.md` for converting Python files or folders with
   [`py2nb`](https://MorsCerta-crypto.github.io/nbskill/convert.html#py2nb).
 - `references/extended-tools.md` for symbol docs, review, graph reports,

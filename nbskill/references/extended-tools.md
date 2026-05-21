@@ -1,6 +1,6 @@
 # Extended Tool Reference
 
-The main `SKILL.md` intentionally stays focused on the core loop: MCP, focused notebook readers, `write_nb`, `batch_edit_nb`, and `exec_nb`. Use this reference when a task needs supporting tools.
+The main `SKILL.md` intentionally stays focused on the core loop: MCP health, focused notebook readers, structured edit tools, and `exec_nb`. Use this reference when a task needs supporting tools.
 
 ## Reading More Context
 
@@ -15,10 +15,10 @@ The main `SKILL.md` intentionally stays focused on the core loop: MCP, focused n
 - `symbol_graph` reports definitions, callers, and callees for one symbol.
 - `doctor(scopes="warning")` includes cross-notebook calls to private helpers.
 
-## Batch Editing
+## Coordinated Editing
 
-`batch_edit_nb(plan_file="/tmp/plan.json", dry_run=True)` applies deterministic JSON edit plans with diffs. Use it when the target cells and operations are known and repeated `update_cell` calls would be fragile.
+`apply_notebook_edits(operations=[...])` applies deterministic edit plans with diffs and expected-hash guards. Use it when the target cells and operations are known and several changes should land together.
 
 ## Single-Notebook Agent Loop
 
-`execute_plan(scope="notebook", notebook=..., plan=..., max_steps=20, timeout=30)` runs a bounded edit loop against exactly one notebook. Use `scope="project"` with `notebooks=...` for project-level decomposition when direct calls to `write_nb` and `exec_nb` would be too verbose.
+`agent_workbench(goal=..., notebook=..., execute=True, max_steps=20, timeout=30)` runs a bounded edit loop against one notebook. Use `notebook=None` with an explicit goal for project-level decomposition when direct calls to the context, edit, and verification tools would be too verbose.

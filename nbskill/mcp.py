@@ -56,6 +56,7 @@ from .read import show_doc
 from .review import reset_global_usage_summary
 from .review import notebook_size_problems
 from .review import notebook_validation_problems
+from .review import public_function_literacy_problems
 from .review import run_style_check
 from .review import style_check
 from .review import style_report
@@ -386,7 +387,8 @@ def _notebook_export_relevant_change(owner, root):
 # %% ../nbs/07_mcp.ipynb #02a83d8a
 def _style_problem_warnings(path, root):
     warnings = []
-    for problem in notebook_size_problems(path):
+    problems = [*notebook_size_problems(path), *public_function_literacy_problems(path)]
+    for problem in problems:
         code = problem.get("code")
         if code == "large-cell":
             cell = f" cell id={problem['cell_id']}" if problem.get("cell_id") else ""
@@ -403,6 +405,15 @@ def _style_problem_warnings(path, root):
                 f"Generated file {_rel_to_root(generated, root)} is getting large: {problem.get('detail')}.",
                 "Use the notebook split tool to split the source notebook/module.",
                 path=problem.get("path"), generated=generated, problem=problem,
+            ))
+        elif str(code).startswith("public-function-"):
+            missing = problem.get("missing") or "one-line docstring"
+            symbol = problem.get("symbol", "<unknown>")
+            warnings.append(_warning(
+                code.replace("-", "_"),
+                f"Notebook {_rel_to_root(problem.get('path'), root)} public function {symbol!r} is missing {missing}.",
+                "Add Markdown docs, a one-line docstring, an example cell, and a focused test cell.",
+                path=problem.get("path"), cell_id=problem.get("cell_id"), problem=problem,
             ))
     return warnings
 
@@ -641,7 +652,7 @@ def mcp_tool_result(tool, arguments, full_output, max_output_chars=12000, detail
     "Return concise visible MCP text plus structured data for clients that inspect it."
     detail = detail or "summary"
     preview = _text_preview(full_output or "", limit=max_output_chars)
-    warnings = [*(warnings or []), *_response_warnings(tool, arguments or {}, preview)]
+    warnings = _dedupe_warnings([*(warnings or []), *_response_warnings(tool, arguments or {}, preview)])
     hints = list(hints or [])
     lines = _brief_call(tool, arguments or {}, preview)
     if preview["text"]:
@@ -900,7 +911,10 @@ def _doctor_warning_items(path):
 def _doctor_style_report(path, skip_folder_re=None, skip_path=None, max_output_chars=12000, max_diagnostics=200):
     chkstyle = run_style_check(path, skip_folder_re, skip_path, strict=False, max_output_chars=max_output_chars)
     try:
-        return style_report(path, chkstyle=chkstyle, max_output_chars=max_output_chars, max_diagnostics=max_diagnostics)
+        return style_report(
+            path, chkstyle=chkstyle, max_output_chars=max_output_chars,
+            max_diagnostics=max_diagnostics, skip_folder_re=skip_folder_re, skip_path=skip_path,
+        )
     except FileNotFoundError as exc:
         message = f"Style scan found a missing notebook: {exc.filename or exc}"
         diagnostic = {
@@ -1458,7 +1472,11 @@ def style_check_tool(
     style_output = capture_call(style_check, **{k: v for k, v in arguments.items() if k != "detail"})
     private_output = _private_symbol_report_text(path)
     full_output = "\n\n".join(chunk for chunk in [private_output, style_output] if chunk)
-    report = style_report(path, max_output_chars=max_output_chars, max_diagnostics=max_diagnostics, changed_only=changed_only, ref_a=ref_a, ref_b=ref_b)
+    report = style_report(
+        path, max_output_chars=max_output_chars, max_diagnostics=max_diagnostics,
+        changed_only=changed_only, ref_a=ref_a, ref_b=ref_b,
+        skip_folder_re=skip_folder_re, skip_path=skip_path,
+    )
     report["private_symbol_report"] = private_output
     return mcp_tool_result("style_check", arguments, full_output, max_output_chars=max_output_chars, detail=detail, style_report=report)
 

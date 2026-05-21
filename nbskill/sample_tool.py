@@ -5,4 +5,5 @@ __all__ = ['double']
 
 # %% ../nbs/data/readme-demo/sample_tool.ipynb #py2nb-454dad7d
 def double(x):
+    "Return x multiplied by 2."
     return x * 2

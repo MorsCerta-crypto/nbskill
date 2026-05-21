@@ -252,6 +252,13 @@ def _cell_content_line_count(cell):
     if getattr(cell, "cell_type", None) == "code": source = source_without_directives(source)
     return len([line for line in source.splitlines() if line.strip()])
 
+# %% ../nbs/04_review.ipynb #d1103da4
+def _problem(code, path, cell=None, detail="", severity="warning", source="nbskill", **kwargs):
+    problem = dict(code=code,path=str(path),severity=severity,source=source,detail=detail)
+    if cell is not None: problem["cell_id"] = getattr(cell, "id", "")
+    problem.update({key: value for key, value in kwargs.items() if value is not None})
+    return problem
+
 # %% ../nbs/04_review.ipynb #59cd00f0
 def _single_top_level_function_cell(tree):
     return len(tree.body) == 1 and isinstance(tree.body[0], (ast.FunctionDef, ast.AsyncFunctionDef))
@@ -283,19 +290,6 @@ def _generated_py_size_problem(nb_path, nb, line_limit=_LARGE_GENERATED_PY_LINE_
     if line_count <= line_limit: return None
     detail = f"{line_count} generated Python lines; split this notebook/module with the split tool"
     return _problem("large-generated-py", nb_path, detail=detail, exported_py_path=str(py_path), line_count=line_count)
-
-# %% ../nbs/04_review.ipynb #d1103da4
-def _problem(code, path, cell=None, detail="", severity="warning", source="nbskill", **kwargs):
-    problem = {
-        "code": code,
-        "path": str(path),
-        "severity": severity,
-        "source": source,
-        "detail": detail,
-    }
-    if cell is not None: problem["cell_id"] = getattr(cell, "id", "")
-    problem.update({key: value for key, value in kwargs.items() if value is not None})
-    return problem
 
 # %% ../nbs/04_review.ipynb #a381b823
 def _format_problem(problem):
@@ -580,27 +574,26 @@ def style_report(
     chkstyle_text = capped["text"].strip()
     if changed_cell_ids is not None: text = _format_style_delta_report(path, diagnostics, changed_cell_ids, usage_text)
     else: text = "\n\n".join(chunk for chunk in [chkstyle_text, notebook_text, usage_text] if chunk)
-    summary = {}
-    summary["notebook_problem_count"] = len(notebook_problems)
-    summary["chkstyle_problem_count"] = len([item for item in diagnostics if item.get("source") == "chkstyle"])
-    summary["diagnostic_count"] = len(diagnostics)
-    summary["recent_problem_count"] = len(usage.get("recent_problems", []))
-    summary["output_truncated"] = capped["truncated"]
-    summary["output_chars"] = capped["chars"]
-    summary["omitted_chars"] = capped["omitted_chars"]
-    summary["changed_only"] = changed_only
-    summary["changed_cell_count"] = len(changed_cell_ids or [])
-    report = {}
-    report["path"] = str(path)
-    report["summary"] = summary
-    report["diagnostics"] = diagnostics[:max_diagnostics] if max_diagnostics else diagnostics
-    report["problem_chart"] = _problem_chart(diagnostics)
-    report["notebook_problems"] = notebook_problems
-    report["global_usage"] = usage
-    report["chkstyle"] = {"status": chkstyle.get("status", 0), **capped}
-    report["fixes"] = _fix_suggestions(diagnostics)
-    report["text"] = text
-    return report
+    summary = dict(
+        notebook_problem_count=len(notebook_problems),
+        chkstyle_problem_count=len([item for item in diagnostics if item.get("source") == "chkstyle"]),
+        diagnostic_count=len(diagnostics),
+        recent_problem_count=len(usage.get("recent_problems", [])),
+        output_truncated=capped["truncated"],
+        output_chars=capped["chars"],
+        omitted_chars=capped["omitted_chars"],
+        changed_only=changed_only,
+        changed_cell_count=len(changed_cell_ids or []))
+    return dict(
+        path=str(path),
+        summary=summary,
+        diagnostics=diagnostics[:max_diagnostics] if max_diagnostics else diagnostics,
+        problem_chart=_problem_chart(diagnostics),
+        notebook_problems=notebook_problems,
+        global_usage=usage,
+        chkstyle={"status": chkstyle.get("status", 0), **capped},
+        fixes=_fix_suggestions(diagnostics),
+        text=text)
 
 # %% ../nbs/04_review.ipynb #bc59a7ff
 def run_style_check(path=".", skip_folder_re=None, skip_path=None, strict=False, max_output_chars=None):
@@ -808,15 +801,13 @@ def diff_nb(
     ref_a, ref_b = none_if_string(ref_a), none_if_string(ref_b)
     if msg := (_git_ref_path_error(path, ref_a) or _git_ref_path_error(path, ref_b)):
         cli_error(msg)
-    try:
-        old, new = nbs_pair(path, ref_a=ref_a, ref_b=ref_b, f=code_source)
+    try: old, new = nbs_pair(path, ref_a=ref_a, ref_b=ref_b, f=code_source)
     except Exception as exc:
         detail = str(exc)
         hint = (
             f"Could not diff {path!r} against {ref_a!r}. "
             "The notebook may be new relative to that git ref, or the repository may not have a HEAD commit yet. "
-            "Commit the notebook first, or pass --ref_a None to compare against the working tree."
-        )
+            "Commit the notebook first, or pass --ref_a None to compare against the working tree.")
         if detail: hint += f"\nUnderlying error: {detail}"
         cli_error(hint)
     old = {cid: src for cid, src in old.items() if src is not None}

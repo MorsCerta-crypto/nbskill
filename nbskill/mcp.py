@@ -3,7 +3,7 @@
 # %% auto #0
 __all__ = ['mcp', 'as_text', 'capture_call', 'capture_notebook_call', 'mcp_tool_result', 'nbskill_status', 'doctor_tool',
            'edit_notebook_tool', 'exec_nb_tool', 'execute_plan_tool', 'agent_workbench_tool', 'style_check_tool',
-           'py2nb_tool', 'new_nbdev_notebook_tool', 'create_mcp', 'main']
+           'convert_tool', 'create_mcp', 'main']
 
 # %% ../nbs/07_mcp.ipynb #mcpimports1
 import hashlib,json,os
@@ -27,9 +27,7 @@ from fastmcp.tools import ToolResult
 from mcp.types import TextContent
 
 # %% ../nbs/07_mcp.ipynb #mcpimports3
-from .convert import new_nbdev_notebook
-from .convert import py2nb
-from .convert import py2nbdev
+from .convert import convert
 from .edit_interactive import execute_plan
 from .edit_interactive import execute_project_plan
 from .edit_interactive import plan_result_text
@@ -41,18 +39,12 @@ from .foundation import cell_source, exported_py_path, generated_owner, git_root
 # %% ../nbs/07_mcp.ipynb #mcpimports4
 from .graph import notebook_order_problems
 from .graph import private_symbol_report
-from .graph import symbol_graph_data, symbol_graph_public_data
-from .graph import symbol_graph
-from .knowledge import add_behaviour_steering
-from .knowledge import get_knowledge
+from .knowledge import reference_add
+from .knowledge import reference_ingest
+from .knowledge import reference_list
 from .knowledge import reference_query
-from .knowledge import store_knowledge
 from .parallel import notebook_locks
-from .read import chapter_context
-from .read import file_context
-from .read import project_context
-from .read import symbol_context
-
+from .read import context
 
 # %% ../nbs/07_mcp.ipynb #mcpimports5
 from .edit import edit_notebook
@@ -144,7 +136,7 @@ def _mcp_expected_hash_warning(path, cell_id, expected_hash):
     return _warning(
         "expected_hash_mismatch",
         f"Skipped edit for {path} id={cell_id}: expected hash {expected_hash}, found {actual}.",
-        "Refresh file_context or chapter_context and retry with the current source.",
+        "Refresh context for the notebook, chapter, or cell and retry with the current source.",
         path=str(path), cell_id=cell_id, expected_hash=expected_hash, actual_hash=actual,
     )
 
@@ -604,11 +596,9 @@ def _line_cell_ids(text):
 # %% ../nbs/07_mcp.ipynb #928582a3
 def _response_scope_cell_ids(tool, arguments, preview):
     text = preview.get("text", "")
-    if tool in {"project_context", "file_context"}: return None
-    if tool == "chapter_context": return _line_cell_ids(text) or None
-    if tool == "symbol_context":
-        cell_id = _first_match(r"^Location:.*?Cell id=([^\s:]+)", text, re.MULTILINE)
-        return {cell_id} if cell_id else None
+    if tool == "context":
+        ids = set(re.findall(r"\bCell id=([^\s:]+)", text))
+        return ids or None
     if tool == "diff_nb":
         ids = set(re.findall(r"--- code cell ([^\s]+) ---", text))
         return ids if ids else set()
@@ -623,9 +613,6 @@ def _response_scope_cell_ids(tool, arguments, preview):
         up2id = arguments.get("up2id")
         if isinstance(up2id, str) and up2id and not up2id.isdigit(): return {up2id}
         return _line_cell_ids(text) or None
-    for key in ("id", "cell_id", "any_cell_id"):
-        value = arguments.get(key)
-        if value: return {str(value)}
     return None
 
 # %% ../nbs/07_mcp.ipynb #c8b5469d
@@ -675,7 +662,7 @@ def _response_warnings(tool, arguments, preview):
             f"{tool} output was truncated by {preview['omitted_chars']} chars.",
             "Repeat with a narrower query or detail='debug' if you need full context.",
         ))
-    read_context_tools = {"project_context", "file_context", "chapter_context", "symbol_context"}
+    read_context_tools = {"context"}
     scoped_project_tools = {"exec_nb"}
     if tool in read_context_tools or tool == "edit_notebook": return _dedupe_warnings(warnings)
     if tool == "diff_nb":
@@ -735,23 +722,23 @@ def mcp_tool_result(tool, arguments, full_output, max_output_chars=12000, detail
 # %% ../nbs/07_mcp.ipynb #d696afd1
 def _status_data(client_roots=None):
     scripts = [
-        "project_context", "file_context", "chapter_context", "symbol_context",
-        "write_nb", "update_cell", "batch_edit_nb", "exec_nb", "diff_nb", "style_check",
-        "install_nbskill", "symbol_graph", "private_symbol_report", "agent_workbench",
-        "new_nbdev_notebook", "add_behaviour_steering", "store_knowledge", "get_knowledge",
-        "reference_add", "reference_list", "reference_ingest", "reference_query",
-        "nbskill_mcp",
+        "context", "write_nb", "update_cell", "batch_edit_nb", "exec_nb", "diff_nb", "style_check",
+        "install_nbskill", "agent_workbench", "convert", "reference",
+        "nbskill_mcp", "nbskill_mcp_start", "nbskill_mcp_stop", "nbskill_mcp_restart",
     ]
     client_roots = [str(Path(item).resolve()) for item in (client_roots or [])]
     workspace_root = client_roots[0] if client_roots else str(Path.cwd())
+    try: version_text = version("nbskill")
+    except PackageNotFoundError: version_text = "unknown"
+    command = "nbskill_mcp"
     return {
-        "version": _package_version(),
+        "version": version_text,
         "cwd": str(Path.cwd()),
         "workspace_root": workspace_root,
         "client_roots": client_roots,
         "python": sys.executable,
-        "mcp_command": "nbskill_mcp",
-        "mcp_command_path": shutil.which("nbskill_mcp"),
+        "mcp_command": command,
+        "mcp_command_path": shutil.which(command),
         "cli_tools": {name: shutil.which(name) for name in scripts},
         "reconnect_hint": "Restart or reconnect the MCP client after reinstalling nbskill or changing tool signatures.",
         "install_commands": [
@@ -788,7 +775,7 @@ def _doctor_report(
     hints = [
         "Use scopes='error,warning,style' or scopes='all' for the full doctor report.",
         "Use scopes='style' to include chkstyle output; chkstyle is omitted from error/warning scopes.",
-        "Use project_context/file_context/chapter_context/symbol_context, then edit_notebook for deterministic notebook mutations.",
+        "Use context, then edit_notebook for deterministic notebook mutations.",
     ]
     changed = sorted(git_status_paths(root)) if (root / ".git").exists() else []
     generated = [
@@ -1034,40 +1021,15 @@ _MCP_DIAGNOSTIC_TOOL_CATALOG = {
 
 # %% ../nbs/07_mcp.ipynb #mcpcat02
 _MCP_READ_CONTEXT_TOOL_CATALOG = {
-    'project_context': {
+    'context': {
         'feature': 'read_context',
         'usefulness': 'core',
-        'tags': ('read', 'project', 'orientation'),
-        'description': 'Project context with relevant README sections, notebook filenames, and notebook file docstrings.',
-        'when_to_use': 'Start here when opening a repository or planning work across multiple notebooks.',
-        'combine_with': 'Follow with file_context for one notebook or symbol_context for one implementation.',
-    },
-    'file_context': {
-        'feature': 'read_context',
-        'usefulness': 'core',
-        'tags': ('read', 'notebook', 'file'),
-        'description': 'Notebook file context with imports, header docs, Markdown cells, and function/class/method docstrings; supports include/exclude regex filters.',
-        'when_to_use': 'Use before changing or reviewing one notebook file.',
-        'combine_with': 'Use chapter_context for a section-level view or symbol_context for implementation detail.',
-    },
-    'chapter_context': {
-        'feature': 'read_context',
-        'usefulness': 'core',
-        'tags': ('read', 'notebook', 'chapter'),
-        'description': 'Notebook head plus one selected chapter found by chapter name, text query, or any cell id inside the chapter.',
-        'when_to_use': 'Use when a section-level view is enough and whole-file context is too broad.',
-        'combine_with': 'Use file_context first for file orientation or symbol_context when changing a concrete implementation.',
-    },
-    'symbol_context': {
-        'feature': 'read_context',
-        'usefulness': 'core',
-        'tags': ('read', 'symbol', 'implementation'),
-        'description': 'Implementation context for one symbol with exact source, mentioning Markdown, examples/tests with outputs, callers, and depth-controlled callees.',
-        'when_to_use': 'Use before changing a function, class, or method, or when tracing how a symbol is used.',
-        'combine_with': 'Use depth=0 for direct implementation context; increase depth to inspect callees under the hood.',
+        'tags': ('read', 'context', 'project', 'notebook', 'cell', 'symbol'),
+        'description': 'Single notebook-aware reader for project, notebook, chapter, cell id, or Python symbol targets.',
+        'when_to_use': "Use first: pass target='project', a notebook path/name, chapter title, cell id, or Python symbol; use scope only to narrow lookup.",
+        'combine_with': 'Verbose cell and symbol targets include symbol graph payloads, so no separate symbol graph tool is needed.',
     },
 }
-
 
 # %% ../nbs/07_mcp.ipynb #mcpcat03
 _MCP_READ_DOC_TOOL_CATALOG = {}
@@ -1080,7 +1042,7 @@ _MCP_CELL_EDIT_TOOL_CATALOG = {
         'usefulness': 'core',
         'tags': ('edit', 'notebook', 'cell', 'text', 'batch'),
         'description': 'Apply deterministic notebook edit operations atomically across cells, lines, and notebook-wide text replacements; returns structured match counts, hashes, affected cell ids, diffs, warnings, and optional feedback.',
-        'when_to_use': "Use after file_context, chapter_context, or symbol_context identifies target cells. Use replace_text/replace_texts with target='all' for notebook-level renames, line ops for focused cell edits, and structural ops for insert/delete/move/replace cell changes.",
+        'when_to_use': "Use after context identifies target cells. Use replace_text/replace_texts with target='all' for notebook-level renames, line ops for focused cell edits, and structural ops for insert/delete/move/replace cell changes.",
         'combine_with': 'Read context before editing; review with diff_nb, exec_nb(check_only=True), doctor, or style_check afterwards.',
     },
 }
@@ -1110,8 +1072,8 @@ _MCP_REVIEW_TOOL_CATALOG = {
         'feature': 'review',
         'usefulness': 'core',
         'tags': ('review', 'style', 'hygiene', 'privacy'),
-        'description': 'Notebook hygiene and style report including chkstyle output, private symbol warnings, duplicate imports, stored knowledge warnings, and order issues.',
-        'when_to_use': 'Use after substantial edits or when a notebook feels structurally messy; stored behaviour steering regexes are included as warnings.',
+        'description': 'Notebook hygiene and style report including chkstyle output, private symbol warnings, duplicate imports, and order issues.',
+        'when_to_use': 'Use after substantial edits or when a notebook feels structurally messy.',
         'combine_with': "Doctor can include style diagnostics with scopes='style'; standalone style_check remains the explicit review tool.",
     },
 }
@@ -1134,77 +1096,29 @@ _MCP_AGENT_TOOL_CATALOG = {
         'when_to_use': 'Use before autonomous implementation when taste, scope, context, and patch budgets need to be explicit.',
         'combine_with': 'Sits above execute_plan; execute_plan remains the bounded notebook executor.',
     },
-    'symbol_graph': {
-        'feature': 'symbol_analysis',
-        'usefulness': 'situational',
-        'tags': ('analysis', 'symbol', 'graph'),
-        'description': "Analyze one symbol's definitions, callers, caller usage lines, and callees across notebooks.",
-        'when_to_use': 'Use when understanding impact, dependencies, or call relationships around one symbol; request JSON/structured content for migration scripts.',
-        'combine_with': "Private symbol reporting moved into doctor(scope='warning') and style_check output.",
-    },
 }
 
 # %% ../nbs/07_mcp.ipynb #mcpcat08
 _MCP_KNOWLEDGE_TOOL_CATALOG = {
-    'store_knowledge': {
-        'feature': 'knowledge',
-        'usefulness': 'core',
-        'tags': ('knowledge', 'memory', 'style', 'regex'),
-        'description': 'Store or update one behaviour steering regex and note in the nbskill JSON memory file.',
-        'when_to_use': 'Use after translating a remembered good or bad practice into a regex that should warn in future style checks.',
-        'combine_with': 'add_behaviour_steering is a shorter regex-only helper; get_knowledge reads stored rules.',
-    },
-    'add_behaviour_steering': {
-        'feature': 'knowledge',
-        'usefulness': 'situational',
-        'tags': ('knowledge', 'memory', 'regex'),
-        'description': 'Add a behaviour steering regex with a generic note.',
-        'when_to_use': 'Use when the regex itself is enough context, or prefer store_knowledge when a human-readable note matters.',
-        'combine_with': 'store_knowledge is the richer form and style_check applies both kinds of stored rules.',
-    },
-    'get_knowledge': {
-        'feature': 'knowledge',
-        'usefulness': 'core',
-        'tags': ('knowledge', 'memory', 'lookup'),
-        'description': 'Return stored behaviour steering rules, optionally filtered by regex.',
-        'when_to_use': 'Use before adding a similar rule, or when inspecting why style_check emitted a stored knowledge warning.',
-        'combine_with': 'Use store_knowledge to add or update rules.',
-    },
-    'reference_query': {
+    'reference': {
         'feature': 'reference_knowledge',
         'usefulness': 'core',
         'tags': ('knowledge', 'reference', 'search', 'implementation'),
-        'description': 'Search globally indexed reference implementations and optionally include direct same-repo callers and callees.',
-        'when_to_use': 'Use when a task needs examples from the user reference knowledgebase before implementing similar code.',
-        'combine_with': 'CLI reference_add/reference_ingest build the index; MCP only exposes querying in v1.',
+        'description': 'Manage and search globally indexed reference implementations with add, list, ingest, and query actions.',
+        'when_to_use': 'Use query before implementing similar code; use add/list/ingest to maintain the local reference index.',
+        'combine_with': 'Combines add, list, ingest, and query as actions on one tool.',
     },
 }
 
 # %% ../nbs/07_mcp.ipynb #mcpcat09
 _MCP_CONVERT_TOOL_CATALOG = {
-    'py2nb': {
+    'convert': {
         'feature': 'conversion',
         'usefulness': 'situational',
-        'tags': ('convert', 'python', 'notebook', 'folder'),
-        'description': 'Convert one Python file or a folder of Python files into nbdev notebook source with pragmatic cell splitting.',
-        'when_to_use': 'Use for file-level or folder-level Python-to-notebook migration.',
-        'combine_with': 'Combined former py2nbs behavior into this file-or-folder converter.',
-    },
-    'py2nbdev': {
-        'feature': 'conversion',
-        'usefulness': 'situational',
-        'tags': ('convert', 'project', 'nbdev'),
-        'description': 'Create a pragmatic nbdev project from a pure-Python package or project tree.',
-        'when_to_use': 'Use when bootstrapping a whole nbdev project rather than converting one module or folder.',
-        'combine_with': 'Keep separate from py2nb because it creates project structure, not only notebooks.',
-    },
-    'new_nbdev_notebook': {
-        'feature': 'conversion',
-        'usefulness': 'situational',
-        'tags': ('create', 'notebook', 'nbdev'),
-        'description': 'Create a minimal nbdev source notebook and exported module.',
-        'when_to_use': 'Use when adding a new nbdev notebook/module to a project.',
-        'combine_with': 'Use py2nb when converting existing Python source instead of starting a blank notebook.',
+        'tags': ('convert', 'python', 'notebook', 'folder', 'project'),
+        'description': 'Convert one Python file, a folder of Python files, or a pure-Python package into nbdev notebooks/project structure.',
+        'when_to_use': 'Use mode="notebook" for file/folder migration and mode="project" for a whole nbdev project scaffold.',
+        'combine_with': 'Combines single-file, folder, and project conversion modes.',
     },
 }
 
@@ -1243,21 +1157,20 @@ mcp = FastMCP(
     "nbskill",
     instructions=(
         "Work notebook-first in nbdev projects. Feature areas are diagnostics, focused context, "
-        "notebook edits, verification/review, symbol analysis, agentic planning, and conversion. "
-        "For reading, use project_context for repository orientation, file_context for one notebook, "
-        "chapter_context for one section, and symbol_context for a concrete implementation. "
+        "notebook edits, verification/review, symbol impact, agentic planning, reference search, "
+        "and conversion. For reading, use context with a project, notebook, chapter title, cell id, "
+        "or public symbol target; verbose cell and symbol lookups include symbol graph payloads. "
         "For edits, use edit_notebook as the single production mutation tool. It supports whole-cell, "
         "line-range, insert/delete/move, and notebook-wide replace_text/replace_texts operations with "
         "expected_hash guards and structured diffs. Edit tools default to auto_feedback=True, which runs "
         "only exploratory or test cells in check-only mode and returns their output/errors. Use exec_nb, "
         "diff_nb, and style_check for verification and review; use doctor with scopes='error', 'warning', "
         "'style', or 'all' for diagnostics. Chkstyle output only appears when doctor includes the style "
-        "scope. Reserve execute_plan for agentic notebook/project edits. Use store_knowledge/get_knowledge "
-        "for behaviour steering memory; style_check applies stored regex rules as warnings. Normal tool "
-        "output is concise; use detail='debug' only when troubleshooting. Notebook operations are "
-        "concurrency-safe: calls touching the same notebook are serialized, calls touching different "
-        "notebooks can run in parallel, and execution uses a global semaphore. Keep documentation before "
-        "exported code and show-off examples after it."
+        "scope. Use reference for indexed reference implementations. Normal tool output is concise; use "
+        "detail='debug' only when troubleshooting. Notebook operations are concurrency-safe: calls touching "
+        "the same notebook are serialized, calls touching different notebooks can run in parallel, and "
+        "execution uses a global semaphore. Keep documentation before exported code and show-off examples "
+        "after it."
     ),
 )
 
@@ -1301,49 +1214,25 @@ async def doctor_tool(
         warnings=report["issues"], hints=report["hints"], doctor=report,
     )
 
-# %% ../nbs/07_mcp.ipynb #mcpnboverv
-@mcp.tool(**_mcp_tool_meta("project_context"))
-async def _project_context_tool(path: str = ".", detail: str = "summary", ctx: Context = None) -> ToolResult:
-    "Show project README sections, notebook filenames, and notebook file docstrings."
+# %% ../nbs/07_mcp.ipynb #5450e1be
+@mcp.tool(**_mcp_tool_meta("context"))
+async def _context_tool(
+    target: str = "project",
+    scope: str = ".",
+    verbose: bool = True,
+    detail: str = "summary",
+    ctx: Context = None,
+) -> ToolResult:
+    "Resolve one target to project, notebook, chapter, cell, or symbol context."
     root = await _mcp_workspace_root(ctx)
-    path = _mcp_workspace_path(path, root)
-    arguments = dict(path=path, detail=detail, workspace_root=str(root) if root else None)
-    with notebook_locks(path):
-        data = project_context(path, verbose=False)
-    return mcp_tool_result("project_context", arguments, data["text"], detail=detail, context=data)
-
-# %% ../nbs/07_mcp.ipynb #mcpnbchapt
-@mcp.tool(**_mcp_tool_meta("chapter_context"))
-async def _chapter_context_tool(path: str, query: str | None = None, name: str | None = None, any_cell_id: str | None = None, detail: str = "summary", ctx: Context = None) -> ToolResult:
-    "Show the notebook head plus one selected chapter."
-    root = await _mcp_workspace_root(ctx)
-    path = _mcp_workspace_path(path, root)
-    arguments = dict(path=path, query=query, name=name, any_cell_id=any_cell_id, detail=detail, workspace_root=str(root) if root else None)
-    with notebook_locks(path):
-        data = chapter_context(path, query=query, name=name, any_cell_id=any_cell_id, verbose=False)
-    return mcp_tool_result("chapter_context", arguments, data["text"], detail=detail, context=data)
-
-# %% ../nbs/07_mcp.ipynb #mcpnbcell
-@mcp.tool(**_mcp_tool_meta("file_context"))
-async def _file_context_tool(path: str, include_re: str | None = None, exclude_re: str | None = None, detail: str = "summary", ctx: Context = None) -> ToolResult:
-    "Show one notebook's imports, docs, Markdown, and definitions with optional regex filters."
-    root = await _mcp_workspace_root(ctx)
-    path = _mcp_workspace_path(path, root)
-    arguments = dict(path=path, include_re=include_re, exclude_re=exclude_re, detail=detail, workspace_root=str(root) if root else None)
-    with notebook_locks(path):
-        data = file_context(path, include_re=include_re, exclude_re=exclude_re, verbose=False)
-    return mcp_tool_result("file_context", arguments, data["text"], detail=detail, context=data)
-
-# %% ../nbs/07_mcp.ipynb #mcpshowdoc
-@mcp.tool(**_mcp_tool_meta("symbol_context"))
-async def _symbol_context_tool(path: str, symbol: str, depth: int = 1, detail: str = "summary", ctx: Context = None) -> ToolResult:
-    "Show exact implementation context, examples/tests, callers, and callees for a symbol."
-    root = await _mcp_workspace_root(ctx)
-    path = _mcp_workspace_path(path, root)
-    arguments = dict(path=path, symbol=symbol, depth=depth, detail=detail, workspace_root=str(root) if root else None)
-    with notebook_locks(path):
-        data = symbol_context(path, symbol=symbol, depth=depth, verbose=False)
-    return mcp_tool_result("symbol_context", arguments, data["text"], detail=detail, context=data)
+    scope = _mcp_workspace_path(scope, root)
+    target_text = str(target)
+    if target_text.endswith(".ipynb") or "/" in target_text or "\\" in target_text:
+        target = _mcp_workspace_path(target, root)
+    arguments = dict(target=target, scope=scope, verbose=verbose, detail=detail, workspace_root=str(root) if root else None)
+    with notebook_locks(scope):
+        data = context(target=target, scope=scope, verbose=verbose)
+    return mcp_tool_result("context", arguments, data["text"], detail=detail, context=data)
 
 # %% ../nbs/07_mcp.ipynb #mcptool06
 @mcp.tool(**_mcp_tool_meta("edit_notebook"))
@@ -1382,30 +1271,35 @@ async def edit_notebook_tool(
 # %% ../nbs/07_mcp.ipynb #mcptool10
 @mcp.tool(**_mcp_tool_meta("exec_nb"))
 async def exec_nb_tool(
-    path: str, dest: str | None = None, exc_stop: bool = False, up2id: int | str | None = None,
-    chapter: str | None = None, timeout: int = 30, show_output: bool = True,
-    verbose: bool = False, safe: bool = True, allow: str | None = None,
-    ok_dests: str | None = None, cache_httpx: bool = False, cache_dir: str | None = None,
-    cache_domains: str | None = None, allow_new: bool = False, check_only: bool = False,
-    detail: str = "summary", ctx: Context = None,
+    path: str,
+    up2id: int | str | None = None,
+    chapter: str | None = None,
+    timeout: int = 30,
+    show_output: bool = True,
+    allow_new: bool = False,
+    check_only: bool = False,
+    detail: str = "summary",
+    ctx: Context = None,
 ) -> ToolResult:
     "Execute a notebook and return visible outputs/errors. Use check_only=True to avoid writing outputs."
     root = await _mcp_workspace_root(ctx)
     path = _mcp_workspace_path(path, root)
-    dest = _mcp_workspace_path(dest, root) if dest else dest
-    ok_dests = _mcp_workspace_paths(ok_dests, root) if ok_dests else ok_dests
-    cache_dir = _mcp_workspace_path(cache_dir, root) if cache_dir else cache_dir
-    arguments = dict(path=path, dest=dest, exc_stop=exc_stop, up2id=up2id, chapter=chapter, timeout=timeout, show_output=show_output, verbose=verbose, safe=safe, allow=allow, ok_dests=ok_dests, cache_httpx=cache_httpx, cache_dir=cache_dir, cache_domains=cache_domains, allow_new=allow_new, check_only=check_only, detail=detail, workspace_root=str(root) if root else None)
-    if safe:
-        full_output = capture_notebook_call(exec_nb, path, dest or path, **{k: v for k, v in arguments.items() if k not in {"detail", "workspace_root"}})
-    else:
-        full_output = _capture_exec_nb_cli_call(arguments)
+    arguments = dict(
+        path=path, up2id=up2id, chapter=chapter, timeout=timeout, show_output=show_output,
+        allow_new=allow_new, check_only=check_only, detail=detail, workspace_root=str(root) if root else None,
+    )
+    call_args = dict(
+        path=path, dest=None, exc_stop=False, up2id=up2id, chapter=chapter, timeout=timeout,
+        show_output=show_output, verbose=False, safe=True, allow=None, ok_dests=None,
+        cache_httpx=False, cache_dir=None, cache_domains=None, allow_new=allow_new, check_only=check_only,
+    )
+    full_output = capture_notebook_call(exec_nb, path, **call_args)
     warnings = []
-    if safe and "PermissionError: Audit:" in full_output:
+    if "PermissionError: Audit:" in full_output:
         warnings.append(_warning(
             "safe-exec-audit-block",
             "Safe execution blocked an audited operation.",
-            "For trusted notebooks, rerun with safe=False.",
+            "Use an explicit CLI run for trusted notebooks that need broader execution permissions.",
         ))
     return mcp_tool_result("exec_nb", arguments, full_output, detail=detail, warnings=warnings)
 
@@ -1471,19 +1365,6 @@ async def agent_workbench_tool(
     if isinstance(result, dict): tool_result.structured_content["agent_workbench"] = result
     return tool_result
 
-# %% ../nbs/07_mcp.ipynb #mcpsymbolg
-@mcp.tool(**_mcp_tool_meta("symbol_graph"))
-async def _symbol_graph_tool(path: str = "nbs", symbol: str = "", json_output: bool = False, detail: str = "summary", ctx: Context = None) -> ToolResult:
-    "Show definitions, callers, and callees for one notebook symbol."
-    root = await _mcp_workspace_root(ctx)
-    path = _mcp_workspace_path(path, root)
-    arguments = dict(path=path, symbol=symbol, json_output=json_output, detail=detail, workspace_root=str(root) if root else None)
-    full_output = capture_call(symbol_graph, path=path, symbol=symbol, json_output=json_output)
-    result = mcp_tool_result("symbol_graph", arguments, full_output, detail=detail)
-    if symbol:
-        result.structured_content["symbol_graph"] = symbol_graph_public_data(symbol_graph_data(path, symbol))
-    return result
-
 # %% ../nbs/07_mcp.ipynb #mcptool15
 @mcp.tool(**_mcp_tool_meta("style_check"))
 async def style_check_tool(
@@ -1509,103 +1390,98 @@ async def style_check_tool(
     report["private_symbol_report"] = private_output
     return mcp_tool_result("style_check", arguments, full_output, max_output_chars=max_output_chars, detail=detail, style_report=report)
 
-# %% ../nbs/07_mcp.ipynb #mcpstorekn
-@mcp.tool(**_mcp_tool_meta("store_knowledge"))
-async def _store_knowledge_tool(apply_regex: str, note: str, path: str | None = None, detail: str = "summary", ctx: Context = None) -> ToolResult:
-    "Store or update one behaviour steering regex and note."
-    root = await _mcp_workspace_root(ctx)
-    path = _mcp_workspace_path(path or ".", root)
-    arguments = dict(apply_regex=apply_regex, note=note, path=path, detail=detail, workspace_root=str(root) if root else None)
-    full_output = capture_call(store_knowledge, apply_regex=apply_regex, note=note, path=path)
-    return mcp_tool_result("store_knowledge", arguments, full_output, detail=detail)
-
-# %% ../nbs/07_mcp.ipynb #mcpaddbeha
-@mcp.tool(**_mcp_tool_meta("add_behaviour_steering"))
-async def _add_behaviour_steering_tool(regex: str, path: str | None = None, detail: str = "summary", ctx: Context = None) -> ToolResult:
-    "Add a behaviour steering regex with a generic note."
-    root = await _mcp_workspace_root(ctx)
-    path = _mcp_workspace_path(path or ".", root)
-    arguments = dict(regex=regex, path=path, detail=detail, workspace_root=str(root) if root else None)
-    full_output = capture_call(add_behaviour_steering, regex=regex, path=path)
-    return mcp_tool_result("add_behaviour_steering", arguments, full_output, detail=detail)
-
-# %% ../nbs/07_mcp.ipynb #mcpgetknow
-@mcp.tool(**_mcp_tool_meta("get_knowledge"))
-async def _get_knowledge_tool(regex: str | None = None, path: str | None = None, detail: str = "summary", ctx: Context = None) -> ToolResult:
-    "Return stored behaviour steering rules, optionally filtered by regex."
-    root = await _mcp_workspace_root(ctx)
-    path = _mcp_workspace_path(path or ".", root)
-    arguments = dict(regex=regex, path=path, detail=detail, workspace_root=str(root) if root else None)
-    full_output = capture_call(get_knowledge, regex=regex, path=path)
-    return mcp_tool_result("get_knowledge", arguments, full_output, detail=detail)
-
 # %% ../nbs/07_mcp.ipynb #b6d3f15d
-@mcp.tool(**_mcp_tool_meta("reference_query"))
-async def _reference_query_tool(
-    query: str, top_k: int = 3, include_branch: bool = False,
-    current_repo: str = ".", repos: str | None = None, path: str | None = None,
-    kind: str | None = None, package: str | None = None, module: str | None = None, symbol: str | None = None,
-    detail: str = "summary", ctx: Context = None,
+@mcp.tool(**_mcp_tool_meta("reference"))
+async def _reference_tool(
+    action: str = "query",
+    query: str | None = None,
+    top_k: int = 3,
+    include_branch: bool = False,
+    current_repo: str = ".",
+    repos: str | None = None,
+    url: str | None = None,
+    name: str | None = None,
+    version: str = "HEAD",
+    package: str | None = None,
+    path: str | None = None,
+    kind: str | None = None,
+    module: str | None = None,
+    symbol: str | None = None,
+    all: bool = False,
+    force: bool = False,
+    detail: str = "summary",
+    ctx: Context = None,
 ) -> ToolResult:
-    "Search globally indexed reference implementations."
+    "Add, list, ingest, or query reference implementations."
     root = await _mcp_workspace_root(ctx)
     current_repo = _mcp_workspace_path(current_repo, root)
     path = _mcp_workspace_path(path, root) if path else path
+    action = str(action or "query").lower()
     arguments = dict(
-        query=query, top_k=top_k, include_branch=include_branch, current_repo=current_repo, repos=repos, path=path,
-        kind=kind, package=package, module=module, symbol=symbol, detail=detail, workspace_root=str(root) if root else None,
+        action=action, query=query, top_k=top_k, include_branch=include_branch, current_repo=current_repo, repos=repos,
+        url=url, name=name, version=version, package=package, path=path, kind=kind, module=module, symbol=symbol,
+        all=all, force=force, detail=detail, workspace_root=str(root) if root else None,
     )
-    result_data = reference_query(
-        query, top_k=top_k, include_branch=include_branch, current_repo=current_repo, repos=repos, path=path,
-        kind=kind, package=package, module=module, symbol=symbol,
-    )
+    if action == "add":
+        if not url: raise ValueError("reference action='add' needs url")
+        result_data = reference_add(url, name=name, version=version, package=package, path=path)
+    elif action == "list":
+        result_data = reference_list(path=path)
+    elif action == "ingest":
+        result_data = reference_ingest(name=name, all=all, path=path, force=force)
+    elif action == "query":
+        if not query: raise ValueError("reference action='query' needs query")
+        result_data = reference_query(
+            query, top_k=top_k, include_branch=include_branch, current_repo=current_repo, repos=repos, path=path,
+            kind=kind, package=package, module=module, symbol=symbol,
+        )
+    else:
+        raise ValueError("action must be add, list, ingest, or query")
     full_output = json.dumps(result_data, indent=2, sort_keys=True)
-    result = mcp_tool_result("reference_query", arguments, full_output, detail=detail)
-    result.structured_content["reference_query"] = result_data
+    result = mcp_tool_result("reference", arguments, full_output, detail=detail)
+    result.structured_content["reference"] = result_data
     return result
 
 # %% ../nbs/07_mcp.ipynb #mcptool19
-@mcp.tool(**_mcp_tool_meta("py2nb"))
-async def py2nb_tool(
-    path: str, nbs_path: str = "nbs", dest: str | None = None, recursive: bool = True,
-    maxdepth: int | None = None, preserve_tree: bool = True, class_lines: int = 100,
-    method_lines: int = 10, package: str | None = None, include: str | None = None,
-    exclude: str | None = None, skip_init: bool = True, include_tests: bool = False,
-    force: bool = True, detail: str = "summary", ctx: Context = None,
-) -> ToolResult:
-    "Convert one Python file or a folder of Python files into nbdev notebook source."
-    root = await _mcp_workspace_root(ctx)
-    path = _mcp_workspace_path(path, root)
-    nbs_path = _mcp_workspace_path(nbs_path, root)
-    dest = _mcp_workspace_path(dest, root) if dest else dest
-    arguments = dict(path=path, nbs_path=nbs_path, dest=dest, recursive=recursive, maxdepth=maxdepth, preserve_tree=preserve_tree, class_lines=class_lines, method_lines=method_lines, package=package, include=include, exclude=exclude, skip_init=skip_init, include_tests=include_tests, force=force, detail=detail, workspace_root=str(root) if root else None)
-    full_output = capture_call(py2nb, **{k: v for k, v in arguments.items() if k not in {"detail", "workspace_root"}}, dry_run=False)
-    return mcp_tool_result("py2nb", arguments, full_output, detail=detail)
-
-# %% ../nbs/07_mcp.ipynb #mcppy2nbdev
-@mcp.tool(**_mcp_tool_meta("py2nbdev"))
-async def _py2nbdev_tool(source: str, dest: str, package: str | None = None, nbs_path: str = "nbs", force: bool = False, run_validation: bool = True, detail: str = "summary", ctx: Context = None) -> ToolResult:
-    "Create a pragmatic nbdev project from a pure-Python package."
-    root = await _mcp_workspace_root(ctx)
-    source = _mcp_workspace_path(source, root)
-    dest = _mcp_workspace_path(dest, root)
-    arguments = dict(source=source, dest=dest, package=package, nbs_path=nbs_path, force=force, run_validation=run_validation, detail=detail, workspace_root=str(root) if root else None)
-    full_output = capture_call(py2nbdev, **{k: v for k, v in arguments.items() if k not in {"detail", "workspace_root"}}, dry_run=False)
-    return mcp_tool_result("py2nbdev", arguments, full_output, detail=detail)
-
-# %% ../nbs/07_mcp.ipynb #mcptool21
-@mcp.tool(**_mcp_tool_meta("new_nbdev_notebook"))
-async def new_nbdev_notebook_tool(
-    name: str, default_exp: str | None = None, title: str | None = None,
-    nbs_path: str = "nbs", force: bool = False, detail: str = "summary",
+@mcp.tool(**_mcp_tool_meta("convert"))
+async def convert_tool(
+    path: str,
+    mode: str = "notebook",
+    dest: str | None = None,
+    nbs_path: str = "nbs",
+    recursive: bool = True,
+    maxdepth: int | None = None,
+    preserve_tree: bool = True,
+    class_lines: int = 100,
+    method_lines: int = 10,
+    package: str | None = None,
+    include: str | None = None,
+    exclude: str | None = None,
+    skip_init: bool = True,
+    include_tests: bool = False,
+    force: bool = True,
+    run_validation: bool = True,
+    detail: str = "summary",
     ctx: Context = None,
 ) -> ToolResult:
-    "Create a minimal nbdev source notebook and exported module."
+    "Convert Python files/folders or a Python package into nbdev notebooks/project structure."
     root = await _mcp_workspace_root(ctx)
+    path = _mcp_workspace_path(path, root)
+    dest = _mcp_workspace_path(dest, root) if dest else dest
     nbs_path = _mcp_workspace_path(nbs_path, root)
-    arguments = dict(name=name, default_exp=default_exp, title=title, nbs_path=nbs_path, force=force, detail=detail, workspace_root=str(root) if root else None)
-    full_output = capture_call(new_nbdev_notebook, **{k: v for k, v in arguments.items() if k not in {"detail", "workspace_root"}}, dry_run=False)
-    return mcp_tool_result("new_nbdev_notebook", arguments, full_output, detail=detail)
+    arguments = dict(
+        path=path, mode=mode, dest=dest, nbs_path=nbs_path, recursive=recursive, maxdepth=maxdepth,
+        preserve_tree=preserve_tree, class_lines=class_lines, method_lines=method_lines, package=package,
+        include=include, exclude=exclude, skip_init=skip_init, include_tests=include_tests, force=force,
+        run_validation=run_validation, detail=detail, workspace_root=str(root) if root else None,
+    )
+    full_output = capture_call(
+        convert, path=path, mode=mode, dest=dest, nbs_path=nbs_path, recursive=recursive, maxdepth=maxdepth,
+        preserve_tree=preserve_tree, class_lines=class_lines, method_lines=method_lines, package=package,
+        include=include, exclude=exclude, skip_init=skip_init, include_tests=include_tests, dry_run=False,
+        force=force, run_validation=run_validation,
+    )
+    return mcp_tool_result("convert", arguments, full_output, detail=detail)
 
 # %% ../nbs/07_mcp.ipynb #6daab47d
 def create_mcp():

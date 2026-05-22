@@ -11,21 +11,17 @@ uv run nbskill_status
 ## Reading
 
 ```bash
-uv run project_context .
-uv run file_context notebook.ipynb
-uv run file_context notebook.ipynb --include_re train
-uv run file_context notebook.ipynb --exclude_re scratch
-uv run chapter_context notebook.ipynb --name "Data loading"
-uv run chapter_context notebook.ipynb --any_cell_id abc123
-uv run symbol_context notebook.ipynb train --depth 1
+uv run context project --scope .
+uv run context notebook.ipynb
+uv run context "Data loading" --scope notebook.ipynb
+uv run context abc123 --scope notebook.ipynb
+uv run context train --scope notebook.ipynb
 ```
 
 Reader behavior:
 
-- `project_context`: README excerpts, notebook filenames, and notebook file docstrings.
-- `file_context`: imports, header docs, Markdown cells, and definition docstrings; supports include/exclude regex filters.
-- `chapter_context`: notebook head plus one selected chapter.
-- `symbol_context`: exact implementation context, mentioning Markdown, examples/tests, callers, and depth-controlled callees.
+- `context`: project, notebook, chapter title, cell id, or public symbol context through one command.
+- Verbose cell and symbol targets include symbol graph payloads in MCP.
 
 ## Writing
 

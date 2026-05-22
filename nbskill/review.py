@@ -28,7 +28,6 @@ from nbskill.foundation import (
     cap_text, notebook_paths, source_without_directives,
     is_export_directive, is_exported_code_cell, none_if_string,
 )
-from .knowledge import knowledge_style_problems
 
 # %% ../nbs/04_review.ipynb #8077f190
 skip_style_paths = "_proc __pycache__ src assets examples tests archive".split(" ")
@@ -108,9 +107,9 @@ def _public_function_docstring_problems(nb_path, cell, tree):
         line_count = _docstring_line_count(node)
         if line_count == 1: continue
         if line_count == 0:
-            detail = f"public function {node.name!r} needs a one-line docstring for file_context"
+            detail = f"public function {node.name!r} needs a one-line docstring for context summaries"
         else:
-            detail = f"public function {node.name!r} has {line_count} docstring lines; keep it to one line for file_context"
+            detail = f"public function {node.name!r} has {line_count} docstring lines; keep it to one line for context summaries"
         problems.append(_problem(
             "public-function-docstring", nb_path, cell, detail,
             symbol=node.name, line=getattr(node, "lineno", None), docstring_lines=line_count,
@@ -202,13 +201,13 @@ def _public_function_literacy_problems_for_nb(nb_path, nb):
     for cell, node in public_functions:
         line_count = _docstring_line_count(node)
         if line_count == 0:
-            detail = f"public function {node.name!r} needs a one-line docstring for file_context"
+            detail = f"public function {node.name!r} needs a one-line docstring for context summaries"
             problems.append(_public_function_contract_problem(
                 nb_path, cell, node, "public-function-docstring", "one-line docstring",
                 detail, docstring_lines=line_count,
             ))
         elif line_count != 1:
-            detail = f"public function {node.name!r} has {line_count} docstring lines; keep it to one line for file_context"
+            detail = f"public function {node.name!r} has {line_count} docstring lines; keep it to one line for context summaries"
             problems.append(_public_function_contract_problem(
                 nb_path, cell, node, "public-function-docstring", "one-line docstring",
                 detail, docstring_lines=line_count,
@@ -438,10 +437,6 @@ def _notebook_style_problems(path=".", skip_folder_re=None, skip_path=None):
     for nb_path, items in duplicate_imports.items():
         for scope, key, ids in items:
             problems.append(_problem("duplicate-import", nb_path, scope=scope, import_key=key, cells=ids))
-    problems.extend(
-        problem for problem in knowledge_style_problems(path)
-        if not _style_path_is_skipped(problem["path"], skip_paths, skip_folder_re)
-    )
     if notebook_paths(path):
         from nbskill.graph import notebook_order_problems
         problems.extend(

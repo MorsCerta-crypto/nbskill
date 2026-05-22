@@ -17,25 +17,22 @@ See `references/mcp-tool-report.md` for the current usefulness review and reduct
 | Feature area | Tools | Normal use |
 | --- | --- | --- |
 | Diagnostics | `healthcheck`, `doctor` | Check MCP liveness, fatal notebook errors, warnings, private symbol leaks, optional style diagnostics, reconnect hints, and setup failures. |
-| Focused context | `project_context`, `file_context`, `chapter_context`, `symbol_context` | Move from repository orientation to one notebook, one chapter, or one concrete implementation. |
+| Focused context | `context` | Read project, notebook, chapter title, cell id, or public symbol targets. |
 | Notebook editing | `edit_notebook` | Apply deterministic whole-cell, line, insert/delete/move, and notebook-wide text replacement edits atomically with structured diffs. |
 | Verification and review | `exec_nb`, `diff_nb`, `style_check` | Run notebooks safely, review code-cell diffs, and catch structural hygiene/private-symbol issues. |
-| Symbol analysis | `symbol_graph` | Inspect definitions, callers, and callees for one symbol. |
+| Symbol analysis | included in `context(verbose=True)` | Inspect definitions, callers, and callees for a cell or symbol target. |
 | Agentic planning | `agent_workbench` | Run bounded notebook/project edit loops only when direct structured tools are not enough. |
-| Knowledge store | `get_knowledge`, `store_knowledge`, `add_behaviour_steering` | Reuse known local rules, save repeated warning patterns, and surface project memory during style checks. |
-| Conversion | `py2nb`, `py2nbdev` | Migrate Python files/folders or bootstrap nbdev projects. |
+| Reference implementations | `reference` | Add, list, ingest, and query indexed reference implementations. |
+| Conversion | `convert` | Migrate Python files/folders or bootstrap nbdev projects. |
 
 ## Tool Loop
 
 1. `healthcheck` confirms the server is alive and reports concurrency behavior.
-2. `project_context` gives README excerpts, notebook filenames, and notebook file docstrings.
-3. `file_context` shows imports, header docs, Markdown cells, and definition docstrings for one notebook, with regex filters.
-4. `chapter_context` shows the notebook head plus one selected chapter.
-5. `symbol_context` focuses on one implementation with exact source, mentioning Markdown, examples/tests, callers, and callees.
-6. `edit_notebook` applies deterministic edit operations atomically. Use `replace_text`/`replace_texts` with `target="all"` for notebook-level renames, line ops for focused cell edits, and structural ops for insert/delete/move/replace cell changes.
-7. `style_check` reports chkstyle output, notebook hygiene, private symbol warnings, duplicate imports, and global tool usage/problems.
-8. `exec_nb` runs a notebook, a chapter, or cells up to an id. It is safe by default: fresh or changed cells are denied until they have either been run by the user or stamped by a prior nbskill execution. Pass `allow_new=True` only after explicit approval, and use `safe=False` only for deliberate legacy execution.
-9. `diff_nb` reviews notebook changes in a text form.
+2. `context` gives the smallest useful project, notebook, chapter, cell, or symbol view. Use `verbose=True` for symbol graph payloads on cell and symbol targets.
+3. `edit_notebook` applies deterministic edit operations atomically. Use `replace_text`/`replace_texts` with `target="all"` for notebook-level renames, line ops for focused cell edits, and structural ops for insert/delete/move/replace cell changes.
+4. `style_check` reports chkstyle output, notebook hygiene, private symbol warnings, duplicate imports, and global tool usage/problems.
+5. `exec_nb` runs a notebook, a chapter, or cells up to an id. It is safe by default: fresh or changed cells are denied until they have either been run by the user or stamped by a prior nbskill execution.
+6. `diff_nb` reviews notebook changes in a text form.
 
 Use `doctor(scopes="error,warning")` for fatal notebook problems and warnings. Add `style` only when chkstyle output is useful; `doctor` does not run or show chkstyle for error/warning-only scopes. Private symbol reporting is part of the warning scope.
 
@@ -73,24 +70,17 @@ Signature:
 
 ```python
 exec_nb(
-    notebook: str,
-    chapter: str | None = None,
+    path: str,
     up2id: str | None = None,
-    timeout: int = 10,
-    exc_stop: bool = True,
+    chapter: str | None = None,
+    timeout: int = 30,
     show_output: bool = True,
-    safe: bool = True,
-    allow: str | None = None,
-    ok_dests: str | None = None,
-    cache_httpx: bool = False,
-    cache_dir: str | None = None,
-    cache_domains: str | None = None,
     allow_new: bool = False,
     check_only: bool = False,
 ) -> str
 ```
 
-In safe mode, IPython magics and `!` system escapes are rejected, destructive filesystem and subprocess calls are blocked by `safepyrun`, and live `httpx` calls fail. With `check_only=True`, execution reports outputs and failures without writing notebook outputs or metadata. With `cache_httpx=True`, cache hits from `cachy.jsonl`-compatible data are returned and cache misses still fail.
+The MCP wrapper keeps safe defaults and exposes only the common focused-execution controls. Use `check_only=True` to report outputs and failures without writing notebook outputs or metadata. Use the Python or CLI execution API directly for trusted broader execution settings.
 
 ## `agent_workbench`
 

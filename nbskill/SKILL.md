@@ -21,29 +21,21 @@ the client is using stale tool metadata.
 
 1.  Use `healthcheck` before notebook work or after
     reinstalling/exporting tool signatures.
-2.  Use
-    [`project_context`](https://MorsCerta-crypto.github.io/nbskill/read.html#project_context),
-    [`file_context`](https://MorsCerta-crypto.github.io/nbskill/read.html#file_context),
-    [`chapter_context`](https://MorsCerta-crypto.github.io/nbskill/read.html#chapter_context),
-    and
-    [`symbol_context`](https://MorsCerta-crypto.github.io/nbskill/read.html#symbol_context)
-    as context needs become more precise.
-3.  Use
-    [`symbol_graph`](https://MorsCerta-crypto.github.io/nbskill/graph.html#symbol_graph)
-    when you need graph-oriented caller/callee impact beyond
-    `symbol_context`.
-4.  Keep notebook craft in the loop: preserve the story, add rationale
+2.  Use `context` for project, notebook, chapter title, cell id, or
+    public symbol targets. Verbose cell and symbol targets include
+    graph-oriented caller/callee impact.
+3.  Keep notebook craft in the loop: preserve the story, add rationale
     before code, and put examples or tests after the behavior they
     exercise.
-5.  Use `edit_notebook` for notebook edits. It supports whole-cell
+4.  Use `edit_notebook` for notebook edits. It supports whole-cell
     replacement, line edits, cell insertion/deletion/moves, and
     notebook-wide `replace_text`/`replace_texts` refactors with
     expected-hash guards and structured diffs.
-6.  Use
+5.  Use
     [`exec_nb`](https://MorsCerta-crypto.github.io/nbskill/execute.html#exec_nb)
     for the narrowest behavior check, preferably with `check_only=True`
     when outputs do not need to be written.
-7.  Finish with
+6.  Finish with
     [`diff_nb`](https://MorsCerta-crypto.github.io/nbskill/review.html#diff_nb)
     plus `doctor(scopes="error,warning,style")` or
     [`style_check`](https://MorsCerta-crypto.github.io/nbskill/review.html#style_check)
@@ -88,18 +80,6 @@ Notebook directives matter:
 - Cells that should not appear in documentation, such as test cells,
   start with `#| hide`.
 
-## Knowledge Store
-
-Check the knowledge store before solving a notebook or style problem
-from scratch. Use `get_knowledge` to find recorded local rules and
-known warning patterns, `store_knowledge` to save reusable discoveries,
-and `add_behaviour_steering` for recurring guidance that should surface
-during later `style_check` runs.
-
-Treat knowledge warnings as project memory. Read the note, decide
-whether it applies, and either follow it or record why this case is
-different.
-
 ## References
 
 Open references only when the core workflow is not enough:
@@ -108,7 +88,7 @@ Open references only when the core workflow is not enough:
   and concurrency behavior.
 - `references/mcp-tool-report.md` for MCP feature groups and tool-count
   reduction candidates.
-- `references/conversion.md` for converting Python files or folders with
-  [`py2nb`](https://MorsCerta-crypto.github.io/nbskill/convert.html#py2nb).
+- `references/conversion.md` for converting Python files, folders, or
+  projects with `convert`.
 - `references/extended-tools.md` for symbol docs, review, graph reports,
   and edit-interactive plans.

@@ -910,9 +910,9 @@ def _context_cell_matches(target, notebooks):
     matches = []
     for path in notebooks:
         nb = read_nb(path)
-        try: idx, cell = find_cell_by_id(nb.cells, target)
-        except ValueError: continue
-        matches.append({"path": path, "cell_idx": idx, "cell_id": getattr(cell, "id", "")})
+        for idx, cell in enumerate(nb.cells):
+            if getattr(cell, "id", None) == target:
+                matches.append({"path": path, "cell_idx": idx, "cell_id": getattr(cell, "id", "")})
     return matches
 def _context_symbol_matches(target, notebooks):
     matches = []
@@ -939,10 +939,47 @@ def _context_one_match(kind, target, matches):
     raise ValueError(f"Target {target!r} matched multiple {kind} contexts:\n" + "\n".join(shown))
 
 # %% ../nbs/01_read.ipynb #9a40cc35
-def _context_as_single(result, target, scope, resolved_kind, verbose=True):
+def _context_symbol_graphs(path, symbols):
+    symbols = [str(item) for item in dict.fromkeys(symbols or []) if item]
+    if not symbols: return []
+    try:
+        from nbskill.graph import symbol_graph_data, symbol_graph_public_data
+    except Exception:
+        return []
+    graphs = []
+    for symbol in symbols:
+        try: graphs.append(symbol_graph_public_data(symbol_graph_data(path, symbol)))
+        except Exception: pass
+    return graphs
+def _context_graph_text(graphs):
+    if not graphs: return ""
+    lines = ["Symbol graph"]
+    for graph in graphs:
+        symbol = graph.get("symbol", "")
+        callers = graph.get("caller_usages") or graph.get("callers") or []
+        callees = graph.get("callees") or []
+        lines.append(f"- {symbol}: definitions={len(graph.get('definitions', []))}, callers={len(callers)}, callees={len(callees)}")
+        for usage in callers[:5]:
+            line = usage.get("line", "")
+            loc = f"{usage.get('path')} id={usage.get('cell_id')}"
+            lineno = f" line {usage.get('lineno')}" if usage.get("lineno") else ""
+            lines.append(f"  caller: {loc}{lineno}: {line}".rstrip())
+        for callee in callees[:5]:
+            callee_symbol = callee.get("symbol", callee) if isinstance(callee, dict) else callee
+            lines.append(f"  callee: {callee_symbol}")
+    return "\n".join(lines)
+def _context_cell_symbols(path, cell_idx):
+    nb = read_nb(path)
+    return [item["symbol"] for item in _definition_records(path, nb) if item.get("cell_idx") == cell_idx]
+def _context_with_graphs(result, graphs):
+    if not graphs: return result
+    text = result.get("text", "")
+    graph_text = _context_graph_text(graphs)
+    return {**result, "text": f"{text}\n\n{graph_text}".rstrip(), "symbol_graphs": graphs}
+def _context_as_single(result, target, scope, resolved_kind, verbose=True, **extra):
     return _context_result(
         "context", result["text"], verbose=verbose, target=str(target), scope=str(scope),
-        resolved_kind=resolved_kind, selection=result,
+        resolved_kind=resolved_kind, selection=result, **extra,
     )
 def context(
     target: str = "project",  # project, notebook path/name, chapter title, cell id, or Python symbol
@@ -964,11 +1001,15 @@ def context(
     cell = _context_one_match("cell", target, _context_cell_matches(target, notebooks))
     if cell is not None:
         result = chapter_context(cell["path"], any_cell_id=target, verbose=False)
-        return _context_as_single(result, target, scope, "cell", verbose=verbose)
+        graphs = _context_symbol_graphs(cell["path"], _context_cell_symbols(cell["path"], cell["cell_idx"])) if verbose else []
+        result = _context_with_graphs(result, graphs)
+        return _context_as_single(result, target, scope, "cell", verbose=verbose, symbol_graphs=graphs)
     symbol = _context_one_match("symbol", target, _context_symbol_matches(target, notebooks))
     if symbol is not None:
         result = symbol_context(symbol["path"], target, verbose=False)
-        return _context_as_single(result, target, scope, "symbol", verbose=verbose)
+        graphs = _context_symbol_graphs(symbol["path"], [target]) if verbose else []
+        result = _context_with_graphs(result, graphs)
+        return _context_as_single(result, target, scope, "symbol", verbose=verbose, symbol_graphs=graphs)
     chapter = _context_one_match("chapter", target, _context_chapter_matches(target, notebooks))
     if chapter is not None:
         result = chapter_context(chapter["path"], name=chapter["chapter"]["title"], verbose=False)

@@ -49,10 +49,10 @@ The production core is intentionally narrow:
 
 | Area | MCP tools | Public API | Status |
 |----|----|----|----|
-| Reading | [`project_context`](https://MorsCerta-crypto.github.io/nbskill/cli.html#project_context), [`file_context`](https://MorsCerta-crypto.github.io/nbskill/cli.html#file_context), [`chapter_context`](https://MorsCerta-crypto.github.io/nbskill/cli.html#chapter_context), [`symbol_context`](https://MorsCerta-crypto.github.io/nbskill/cli.html#symbol_context) | yes | core |
+| Reading | [`context`](https://MorsCerta-crypto.github.io/nbskill/cli.html#context) | yes | core |
 | Editing | [`edit_notebook`](https://MorsCerta-crypto.github.io/nbskill/edit.html#edit_notebook) | yes | core |
 | Execution and review | [`exec_nb`](https://MorsCerta-crypto.github.io/nbskill/cli.html#exec_nb), [`diff_nb`](https://MorsCerta-crypto.github.io/nbskill/cli.html#diff_nb), [`style_check`](https://MorsCerta-crypto.github.io/nbskill/cli.html#style_check), `doctor` | yes | core |
-| Conversion | [`py2nb`](https://MorsCerta-crypto.github.io/nbskill/cli.html#py2nb), [`py2nbdev`](https://MorsCerta-crypto.github.io/nbskill/cli.html#py2nbdev) | yes | supporting |
+| Conversion | [`convert`](https://MorsCerta-crypto.github.io/nbskill/cli.html#convert) | yes | supporting |
 
 ### Production workflow
 
@@ -84,24 +84,17 @@ _write_nb(new_nb([
 
 ## Reading: choose the smallest useful context
 
-The context API has four deliberate levels.
-[`project_context`](https://MorsCerta-crypto.github.io/nbskill/cli.html#project_context)
-orients you in a repository with README excerpts, notebook filenames,
-and notebook docstrings.
-[`file_context`](https://MorsCerta-crypto.github.io/nbskill/cli.html#file_context)
-shows one notebook’s imports, header docs, Markdown cells, and
-definition summaries, with `include_re` and `exclude_re` filters.
-[`chapter_context`](https://MorsCerta-crypto.github.io/nbskill/cli.html#chapter_context)
-preserves the chapter-focused view for one selected section.
-[`symbol_context`](https://MorsCerta-crypto.github.io/nbskill/cli.html#symbol_context)
-replaces symbol docs with exact implementation context, nearby prose,
-examples/tests, callers, and depth-controlled callees.
+The context API is one deliberate entry point.
+[`context`](https://MorsCerta-crypto.github.io/nbskill/cli.html#context)
+accepts a project, notebook path, chapter title, cell id, or public
+symbol target. Verbose cell and symbol lookups include symbol graph
+payloads for caller/callee impact.
 
 The MCP tools keep printing details hidden unless the returned context
 is useful to the agent.
 
 ``` python
-file_context(str(demo_nb))
+context(str(demo_nb))
 ```
 
     Cell id=2054f7fb: markdown
@@ -138,7 +131,7 @@ write_nb(str(demo_nb), chr(10).join([
     "answer = x * 10",
     "answer",
 ]))
-chapter_context(str(demo_nb), name="Result")
+context("Result", scope=str(demo_nb))
 ```
 
     Wrote 4 cells to /var/folders/6_/45pyyxdd7hz3wz33p813bx_c0000gn/T/nbskill-readme-demo/demo.ipynb
@@ -172,7 +165,7 @@ check.
 ``` python
 answer_cell = next(cell for cell in _read_raw_nb(demo_nb).cells if "answer = x * 10" in cell.source)
 update_cell(str(demo_nb), "answer = x * 12\nanswer", cell_id=answer_cell.id)
-_ = chapter_context(str(demo_nb), any_cell_id=answer_cell.id)
+_ = context(answer_cell.id, scope=str(demo_nb))
 ```
 
     Updated cell id=fcf83b53
@@ -202,40 +195,38 @@ _ = exec_nb(str(demo_nb), timeout=5, show_output=True)
 
 ## Reviewing: look at behavior and code changes
 
-[`symbol_context`](https://MorsCerta-crypto.github.io/nbskill/cli.html#symbol_context)
+[`context`](https://MorsCerta-crypto.github.io/nbskill/cli.html#context)
 answers the question “what should I know before changing this
 implementation?” with exact source, nearby Markdown, examples/tests,
-callers, and optional callee summaries.
+and symbol graph payloads when the target is a public symbol or cell id.
 [`diff_nb`](https://MorsCerta-crypto.github.io/nbskill/cli.html#diff_nb)
 keeps review focused on code-cell source rather than outputs and
 metadata.
 
 These tools keep review at the level a maintainer cares about.
-[`symbol_context`](https://MorsCerta-crypto.github.io/nbskill/cli.html#symbol_context)
-reconstructs the local rationale and impact around a function, while
+`context` reconstructs the local rationale and impact around a function, while
 [`diff_nb`](https://MorsCerta-crypto.github.io/nbskill/cli.html#diff_nb)
 filters out notebook churn so a reviewer can see whether the
 implementation changed.
 
 ``` python
-_ = symbol_context(str(project_root / "nbs/02_write.ipynb"), "write_nb", depth=0)
+_ = context("write_nb", scope=str(project_root / "nbs/02_write.ipynb"))
 _ = diff_nb(str(project_root / "nbs/02_write.ipynb"), ref_a=None)
 ```
 
 ## Converting: bootstrap nbdev notebooks from Python
 
-[`py2nb`](https://MorsCerta-crypto.github.io/nbskill/cli.html#py2nb)
-parses Python with `ast`, creates one nbdev notebook, and keeps exports
-explicit. It is useful when a project starts in `.py` files but wants to
-move toward literate notebooks.
+[`convert`](https://MorsCerta-crypto.github.io/nbskill/cli.html#convert)
+parses Python with `ast`, creates nbdev notebooks, and can also migrate
+a pure-Python package into an nbdev project structure.
 
 ``` python
 sample_py = workspace / "sample_tool.py"
 sample_py.write_text("def double(x):\n    return x * 2\n", encoding="utf-8")
 converted_nb = workspace / "sample_tool.ipynb"
 
-_ = py2nb(str(sample_py), dest=str(converted_nb))
-_ = file_context(str(converted_nb))
+_ = convert(str(sample_py), dest=str(converted_nb))
+_ = context(str(converted_nb))
 ```
 
     Wrote 2 cells to /var/folders/6_/45pyyxdd7hz3wz33p813bx_c0000gn/T/nbskill-readme-demo/sample_tool.ipynb
@@ -264,10 +255,10 @@ the current question.
 
 ``` python
 healthcheck()
-project_context(path=".")
-file_context(path="nbs/02_write.ipynb", include_re="write")
-chapter_context(path="nbs/02_write.ipynb", name="Updating")
-symbol_context(path="nbs/02_write.ipynb", symbol="write_nb", depth=1)
+context(target="project", scope=".")
+context(target="nbs/02_write.ipynb")
+context(target="Updating", scope="nbs/02_write.ipynb")
+context(target="write_nb", scope="nbs/02_write.ipynb")
 ```
 
 Then edit the cell that actually needs to change and run focused
@@ -315,23 +306,16 @@ the client is using stale tool metadata.
 
 1.  Use `healthcheck` before notebook work or after
     reinstalling/exporting tool signatures.
-2.  Use
-    [`project_context`](https://MorsCerta-crypto.github.io/nbskill/cli.html#project_context),
-    [`file_context`](https://MorsCerta-crypto.github.io/nbskill/cli.html#file_context),
-    [`chapter_context`](https://MorsCerta-crypto.github.io/nbskill/cli.html#chapter_context),
-    and
-    [`symbol_context`](https://MorsCerta-crypto.github.io/nbskill/cli.html#symbol_context)
-    as context needs become more precise.
-3.  Use
-    [`symbol_graph`](https://MorsCerta-crypto.github.io/nbskill/cli.html#symbol_graph)
-    when you specifically need graph-oriented caller/callee impact
-    beyond the symbol context payload.
-4.  Keep notebook craft in the loop: preserve the story, add rationale
+2.  Use [`context`](https://MorsCerta-crypto.github.io/nbskill/cli.html#context)
+    for project, notebook, chapter title, cell id, or public symbol
+    targets. Verbose cell and symbol targets include graph-oriented
+    caller/callee impact.
+3.  Keep notebook craft in the loop: preserve the story, add rationale
     before code, and put examples or tests after implementation cells.
-5.  Use
+4.  Use
     [`edit_notebook`](https://MorsCerta-crypto.github.io/nbskill/edit.html#edit_notebook)
     for notebook edits.
-6.  Verify with
+5.  Verify with
     [`exec_nb`](https://MorsCerta-crypto.github.io/nbskill/cli.html#exec_nb),
     [`diff_nb`](https://MorsCerta-crypto.github.io/nbskill/cli.html#diff_nb),
     [`style_check`](https://MorsCerta-crypto.github.io/nbskill/cli.html#style_check),
@@ -368,23 +352,6 @@ Notebook directives matter: cells exported to Python start with
 `#| eval: false`, and cells that should not appear in documentation,
 such as test cells, start with `#| hide`.
 
-## Knowledge Store
-
-Check the knowledge store before solving a notebook or style problem
-from scratch. Use
-[`get_knowledge`](https://MorsCerta-crypto.github.io/nbskill/cli.html#get_knowledge)
-to find recorded local rules and known warning patterns,
-[`store_knowledge`](https://MorsCerta-crypto.github.io/nbskill/cli.html#store_knowledge)
-to save reusable discoveries, and
-[`add_behaviour_steering`](https://MorsCerta-crypto.github.io/nbskill/cli.html#add_behaviour_steering)
-for recurring guidance that should surface during later
-[`style_check`](https://MorsCerta-crypto.github.io/nbskill/cli.html#style_check)
-runs.
-
-Treat knowledge warnings as project memory. Read the note, decide
-whether it applies, and either follow it or record why this case is
-different.
-
 ## References
 
 Open references only when the core workflow is not enough:
@@ -393,8 +360,8 @@ Open references only when the core workflow is not enough:
   and concurrency behavior.
 - `references/mcp-tool-report.md` for MCP feature groups and tool-count
   reduction candidates.
-- `references/conversion.md` for converting Python files or folders with
-  [`py2nb`](https://MorsCerta-crypto.github.io/nbskill/cli.html#py2nb).
+- `references/conversion.md` for converting Python files, folders, or
+  projects with [`convert`](https://MorsCerta-crypto.github.io/nbskill/cli.html#convert).
 - `references/extended-tools.md` for symbol docs, review, graph reports,
   and edit-interactive plans. <!-- nbskill-skill:end -->
 

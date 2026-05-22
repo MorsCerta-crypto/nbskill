@@ -1,18 +1,17 @@
 # Extended Tool Reference
 
-The main `SKILL.md` intentionally stays focused on the core loop: MCP health, focused notebook readers, structured edit tools, and `exec_nb`. Use this reference when a task needs supporting tools.
+The main `SKILL.md` intentionally stays focused on the core loop: MCP health, `context`, structured edit tools, and `exec_nb`. Use this reference when a task needs supporting tools.
 
 ## Reading More Context
 
-- `symbol_context(notebook, symbol, depth=1)` prints exact implementation context with nearby Markdown, examples/tests, callers, and optional callee summaries.
-- `file_context(notebook, include_re=..., exclude_re=...)` narrows one notebook to matching Markdown and definition items.
+- `context(target=..., scope=...)` prints project, notebook, chapter, cell, or symbol context.
+- `context(..., verbose=True)` includes symbol graph payloads for cell and symbol targets in MCP.
 
 ## Review And Analysis
 
 - `diff_nb` prints code-cell diffs without notebook output and metadata noise.
 - `style_report(path)` returns structured notebook hygiene and global usage/problem data.
 - `style_check` prints chkstyle hints, nbskill hygiene warnings, and private-symbol warnings.
-- `symbol_graph` reports definitions, callers, and callees for one symbol.
 - `doctor(scopes="warning")` includes cross-notebook calls to private helpers.
 
 ## Coordinated Editing

@@ -44,7 +44,7 @@ from .knowledge import reference_ingest
 from .knowledge import reference_list
 from .knowledge import reference_query
 from .parallel import notebook_locks
-from .read import context
+from .read import context, filter_context
 
 # %% ../nbs/07_mcp.ipynb #mcpimports5
 from .edit import edit_notebook
@@ -1105,9 +1105,17 @@ _MCP_READ_CONTEXT_TOOL_CATALOG = {
         'feature': 'read_context',
         'usefulness': 'core',
         'tags': ('read', 'context', 'project', 'notebook', 'cell', 'symbol'),
-        'description': 'Single notebook-aware reader for project, notebook, chapter, cell id, or Python symbol targets.',
-        'when_to_use': "Use first: pass target='project', a notebook path/name, chapter title, cell id, or Python symbol; use scope only to narrow lookup.",
+        'description': 'Single notebook-aware reader for project, notebook, chapter, cell id, or Python symbol targets, with overview control.',
+        'when_to_use': "Use first: pass target='project', a notebook path/name, chapter title, cell id, or Python symbol; use overview=False for all notebook cells or related docs/examples/tests, overview=True for exported definitions or full implementation.",
         'combine_with': 'Verbose cell and symbol targets include symbol graph payloads, so no separate symbol graph tool is needed.',
+    },
+    'filter_context': {
+        'feature': 'read_context',
+        'usefulness': 'core',
+        'tags': ('read', 'context', 'project', 'notebook', 'search', 'filter'),
+        'description': 'Project-wide notebook-aware context search that filters cells by query selectors and include/exclude regexes.',
+        'when_to_use': 'Use when you need matching cells across a project or notebook scope instead of one resolved target.',
+        'combine_with': 'Use context on a returned path/cell id when a match needs deeper local rationale or symbol impact.',
     },
 }
 
@@ -1301,6 +1309,7 @@ async def doctor_tool(
 async def _context_tool(
     target: str = "project",
     scope: str = ".",
+    overview: bool = False,
     verbose: bool = True,
     detail: str = "summary",
     ctx: Context = None,
@@ -1311,12 +1320,43 @@ async def _context_tool(
     target_text = str(target)
     target_is_path = target_text.endswith(".ipynb") or "/" in target_text or "\\" in target_text
     if target_is_path: target = _mcp_workspace_path(target, root)
-    arguments = dict(target=target, scope=scope, verbose=verbose, detail=detail, workspace_root=str(root) if root else None)
-    context_args = dict(target=target, scope=scope, verbose=verbose)
+    arguments = dict(target=target, scope=scope, overview=overview, verbose=verbose, detail=detail, workspace_root=str(root) if root else None)
+    context_args = dict(target=target, scope=scope, overview=overview, verbose=verbose)
     with notebook_locks(scope), _CAPTURE_LOCK:
         out, err = StringIO(), StringIO()
         with redirect_stdout(out), redirect_stderr(err): data = context(**context_args)
-    return mcp_tool_result("context", arguments, data["text"], detail=detail, context=data)
+    return mcp_tool_result("context", arguments, data["text"], max_output_chars=None, detail=detail, context=data)
+
+# %% ../nbs/07_mcp.ipynb #0cd3198d
+@mcp.tool(**_mcp_tool_meta("filter_context"))
+async def _filter_context_tool(
+    scope: str = ".",
+    query: str | None = None,
+    include_re: str | None = None,
+    exclude_re: str | None = None,
+    max_matches: int = 50,
+    max_chars_per_cell: int = 1200,
+    verbose: bool = True,
+    detail: str = "summary",
+    ctx: Context = None,
+) -> ToolResult:
+    "Search notebook cells across a scope with query and regex filters."
+    root = await _mcp_workspace_root(ctx)
+    scope = _mcp_workspace_path(scope, root)
+    arguments = dict(
+        scope=scope, query=query, include_re=include_re, exclude_re=exclude_re,
+        max_matches=max_matches, max_chars_per_cell=max_chars_per_cell,
+        verbose=verbose, detail=detail, workspace_root=str(root) if root else None,
+    )
+    with notebook_locks(scope), _CAPTURE_LOCK:
+        out, err = StringIO(), StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            data = filter_context(
+                scope=scope, query=query, include_re=include_re, exclude_re=exclude_re,
+                max_matches=max_matches, max_chars_per_cell=max_chars_per_cell,
+                verbose=verbose,
+            )
+    return mcp_tool_result("filter_context", arguments, data["text"], detail=detail, filter_context=data)
 
 # %% ../nbs/07_mcp.ipynb #mcptool06
 @mcp.tool(**_mcp_tool_meta("edit_notebook"))

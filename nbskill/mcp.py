@@ -21,8 +21,8 @@ from urllib.parse import unquote, urlparse
 
 # %% ../nbs/07_mcp.ipynb #mcpimports2
 from fastcore.nbio import read_nb as _read_raw_nb
-from fastcore.script import _in_call_parse
 from fastmcp import Context, FastMCP
+from fastmcp.server.middleware import Middleware
 from fastmcp.tools import ToolResult
 from mcp.types import TextContent
 
@@ -56,10 +56,6 @@ from .review import run_style_check
 from .review import style_check
 from .review import style_report
 from .review import diff_nb
-from .write import apply_notebook_edit
-from .write import insert_notebook_cells
-from .write import replace_notebook_cell
-from .write import replace_notebook_range
 from .write import should_run_cell_feedback
 from .write import source_lines_cells
 
@@ -253,6 +249,88 @@ def _redact_value(key, value, limit=160):
 # %% ../nbs/07_mcp.ipynb #85f63aa6
 def _redact_arguments(arguments):
     return {key: _redact_value(key, value) for key, value in (arguments or {}).items()}
+
+# %% ../nbs/07_mcp.ipynb #f5b0a105
+_MCP_LOG_ENV = "NBSKILL_MCP_LOG"
+_MCP_LOG_LOCK = threading.RLock()
+_MCP_LOG_DISABLED = {"", "0", "false", "off", "none"}
+
+
+def _mcp_log_path():
+    raw = os.environ.get(_MCP_LOG_ENV)
+    if raw is not None and raw.strip().lower() in _MCP_LOG_DISABLED: return None
+    return Path(raw).expanduser() if raw else Path.home() / ".nbskill-mcp.jsonl"
+
+
+def _mcp_json_safe(value):
+    if isinstance(value, dict): return {str(key): _mcp_json_safe(_redact_value(str(key), val)) for key, val in value.items()}
+    if isinstance(value, (list, tuple, set)): return [_mcp_json_safe(item) for item in value]
+    if isinstance(value, Path): return str(value)
+    if isinstance(value, (str, int, float, bool)) or value is None: return value
+    return as_text(value)
+
+
+def _mcp_log_event(event, **data):
+    path = _mcp_log_path()
+    if path is None: return
+    payload = {
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "pid": os.getpid(),
+        "event": event,
+    }
+    payload.update({key: _mcp_json_safe(value) for key, value in data.items()})
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with _MCP_LOG_LOCK, path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload, sort_keys=True) + "\n")
+    except Exception:
+        pass
+
+
+def _mcp_log_exception(event, exc, **data):
+    _mcp_log_event(event, error_type=type(exc).__name__, error=as_text(exc), **data)
+
+# %% ../nbs/07_mcp.ipynb #7f480c89
+def _mcp_middleware_tool_name(context):
+    return getattr(getattr(context, "message", None), "name", "")
+
+
+def _mcp_middleware_tool_arguments(context):
+    return getattr(getattr(context, "message", None), "arguments", None) or {}
+
+
+class _NbskillMCPLogMiddleware(Middleware):
+    async def on_initialize(self, context, call_next):
+        _mcp_log_event("initialize_start", method=context.method)
+        try: result = await call_next(context)
+        except BaseException as exc:
+            _mcp_log_exception("initialize_error", exc, method=context.method)
+            raise
+        _mcp_log_event("initialize_end", method=context.method)
+        return result
+
+    async def on_list_tools(self, context, call_next):
+        _mcp_log_event("tools_list_start", method=context.method)
+        try: result = await call_next(context)
+        except BaseException as exc:
+            _mcp_log_exception("tools_list_error", exc, method=context.method)
+            raise
+        _mcp_log_event("tools_list_end", method=context.method, count=len(result or []))
+        return result
+
+    async def on_call_tool(self, context, call_next):
+        tool = _mcp_middleware_tool_name(context)
+        arguments = _mcp_middleware_tool_arguments(context)
+        started = time.monotonic()
+        _mcp_log_event("tool_start", tool=tool, arguments=arguments)
+        try: result = await call_next(context)
+        except BaseException as exc:
+            elapsed_ms = int((time.monotonic() - started) * 1000)
+            _mcp_log_exception("tool_error", exc, tool=tool, arguments=arguments, elapsed_ms=elapsed_ms)
+            raise
+        elapsed_ms = int((time.monotonic() - started) * 1000)
+        _mcp_log_event("tool_end", tool=tool, elapsed_ms=elapsed_ms)
+        return result
 
 # %% ../nbs/07_mcp.ipynb #59c01424
 def _warning(code, message, next_action=None, **extra):
@@ -731,14 +809,17 @@ def _status_data(client_roots=None):
     try: version_text = version("nbskill")
     except PackageNotFoundError: version_text = "unknown"
     command = "nbskill_mcp"
+    log_path = _mcp_log_path()
     return {
         "version": version_text,
         "cwd": str(Path.cwd()),
         "workspace_root": workspace_root,
         "client_roots": client_roots,
         "python": sys.executable,
+        "pid": os.getpid(),
         "mcp_command": command,
         "mcp_command_path": shutil.which(command),
+        "mcp_log_path": str(log_path) if log_path is not None else None,
         "cli_tools": {name: shutil.which(name) for name in scripts},
         "reconnect_hint": "Restart or reconnect the MCP client after reinstalling nbskill or changing tool signatures.",
         "install_commands": [
@@ -754,7 +835,6 @@ def _doctor_report(
     detail="summary",
     fix=False,
     reset=False,
-    capabilities="",
     scopes="error,warning",
     skip_folder_re=None,
     skip_path=None,
@@ -1173,6 +1253,7 @@ mcp = FastMCP(
         "after it."
     ),
 )
+mcp.add_middleware(_NbskillMCPLogMiddleware())
 
 # %% ../nbs/07_mcp.ipynb #mcphealthch
 @mcp.tool(**_mcp_tool_meta("healthcheck"))
@@ -1187,6 +1268,7 @@ async def _healthcheck_tool(detail: str = "summary", ctx: Context = None) -> Too
         f"workspace_root={data['workspace_root']}",
         f"python={sys.executable}",
         f"pid={os.getpid()}",
+        f"log_path={data['mcp_log_path']}",
         f"capabilities={_MCP_CAPABILITIES}",
         "parallel=same-notebook operations serialized; different notebooks may run in parallel",
         "execution=global semaphore with one active safe notebook execution",
@@ -1208,7 +1290,7 @@ async def doctor_tool(
     path = _mcp_workspace_path(path, root)
     skip_path = _mcp_workspace_path(skip_path, root) if skip_path else skip_path
     arguments = dict(path=path, scopes=scopes, detail=detail, fix=fix, reset=reset, skip_folder_re=skip_folder_re, skip_path=skip_path, max_output_chars=max_output_chars, max_diagnostics=max_diagnostics, workspace_root=str(root) if root else None)
-    report = _doctor_report(path=path, detail=detail, fix=fix, reset=reset, capabilities=_MCP_CAPABILITIES, scopes=scopes, skip_folder_re=skip_folder_re, skip_path=skip_path, max_output_chars=max_output_chars, max_diagnostics=max_diagnostics)
+    report = _doctor_report(path=path, detail=detail, fix=fix, reset=reset, scopes=scopes, skip_folder_re=skip_folder_re, skip_path=skip_path, max_output_chars=max_output_chars, max_diagnostics=max_diagnostics)
     return mcp_tool_result(
         "doctor", arguments, report["text"], detail=detail,
         warnings=report["issues"], hints=report["hints"], doctor=report,
@@ -1227,11 +1309,13 @@ async def _context_tool(
     root = await _mcp_workspace_root(ctx)
     scope = _mcp_workspace_path(scope, root)
     target_text = str(target)
-    if target_text.endswith(".ipynb") or "/" in target_text or "\\" in target_text:
-        target = _mcp_workspace_path(target, root)
+    target_is_path = target_text.endswith(".ipynb") or "/" in target_text or "\\" in target_text
+    if target_is_path: target = _mcp_workspace_path(target, root)
     arguments = dict(target=target, scope=scope, verbose=verbose, detail=detail, workspace_root=str(root) if root else None)
-    with notebook_locks(scope):
-        data = context(target=target, scope=scope, verbose=verbose)
+    context_args = dict(target=target, scope=scope, verbose=verbose)
+    with notebook_locks(scope), _CAPTURE_LOCK:
+        out, err = StringIO(), StringIO()
+        with redirect_stdout(out), redirect_stderr(err): data = context(**context_args)
     return mcp_tool_result("context", arguments, data["text"], detail=detail, context=data)
 
 # %% ../nbs/07_mcp.ipynb #mcptool06
@@ -1319,22 +1403,22 @@ async def _diff_nb_tool(path: str, ref_a: str | None = "HEAD", ref_b: str | None
 @mcp.tool(**_mcp_tool_meta("execute_plan"))
 async def execute_plan_tool(
     plan: str, notebook: str | None = None, scope: str = "notebook",
-    notebooks: str | None = None, model: str | None = None, max_steps: int = 20,
-    timeout: int = 30,
+    notebooks: str | None = None, model: str | None = None, max_steps: int = 8,
+    timeout: int = 30, symbols: str | None = None,
     detail: str = "summary", ctx: Context = None,
 ) -> ToolResult:
-    "Run a bounded edit-interactive loop against one notebook or a project notebook set."
+    "Run a bounded notebook-editing subagent against one notebook or a project notebook set."
     root = await _mcp_workspace_root(ctx)
     notebook = _mcp_workspace_path(notebook, root) if notebook else notebook
     notebooks = _mcp_workspace_paths(notebooks, root) if notebooks else notebooks
-    arguments = dict(plan=plan, notebook=notebook, scope=scope, notebooks=notebooks, model=model, max_steps=max_steps, timeout=timeout, detail=detail, workspace_root=str(root) if root else None)
+    arguments = dict(plan=plan, notebook=notebook, scope=scope, notebooks=notebooks, model=model, max_steps=max_steps, timeout=timeout, symbols=symbols, detail=detail, workspace_root=str(root) if root else None)
     mode = "project" if scope == "project" or notebooks else "notebook"
     if mode == "project":
-        project_args = dict(plan=plan, notebooks=notebooks, model=model, max_steps=max_steps, timeout=timeout, dry_run=False)
+        project_args = dict(plan=plan, notebooks=notebooks, model=model, max_steps=max_steps, timeout=timeout, dry_run=False, symbols=symbols)
         full_output = capture_call(execute_project_plan, **project_args)
         return mcp_tool_result("execute_plan", arguments, full_output, detail=detail)
     if not notebook: raise ValueError("notebook is required when scope='notebook'")
-    notebook_args = dict(notebook=notebook, plan=plan, model=model, max_steps=max_steps, timeout=timeout, dry_run=False)
+    notebook_args = dict(notebook=notebook, plan=plan, model=model, max_steps=max_steps, timeout=timeout, dry_run=False, symbols=symbols)
     result = execute_plan(**notebook_args)
     full_output = plan_result_text(result)
     tool_result = mcp_tool_result("execute_plan", arguments, full_output, detail=detail)
@@ -1494,4 +1578,11 @@ def main(
     show_banner: bool = False,  # Show FastMCP startup banner
 ):
     "Run the nbskill MCP server."
-    mcp.run(transport=transport, show_banner=show_banner)
+    _mcp_log_event("server_start", transport=transport, show_banner=show_banner, cwd=str(Path.cwd()), python=sys.executable)
+    try:
+        mcp.run(transport=transport, show_banner=show_banner)
+    except BaseException as exc:
+        _mcp_log_exception("server_error", exc, transport=transport)
+        raise
+    finally:
+        _mcp_log_event("server_stop", transport=transport)

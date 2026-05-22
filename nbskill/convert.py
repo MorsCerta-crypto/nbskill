@@ -9,7 +9,6 @@ import fnmatch
 import hashlib
 import json
 import os
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -18,7 +17,7 @@ from fastcore.nbio import mk_cell, new_nb
 from fastcore.nbio import write_nb
 from nbdev.doclinks import nbdev_export as _run_nb_export
 
-from .foundation import cli_return, exported_py_path, is_definition_node, node_start_line, stamp_export_metadata
+from .foundation import cli_return, exported_py_path, stamp_export_metadata
 
 # %% ../nbs/05_convert.ipynb #ac1075c9
 def _node_source(lines, node):

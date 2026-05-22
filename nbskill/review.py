@@ -8,7 +8,6 @@ __all__ = ['skip_style_paths', 'public_function_literacy_problems', 'notebook_va
 # %% ../nbs/04_review.ipynb #3cff0f46
 import ast
 import json
-import os
 import re
 import subprocess
 import sys
@@ -26,7 +25,7 @@ from nbskill.foundation import (
     empty_failure_map, failure_map_path, load_failure_map, cell_class_names,
     cell_source, cli_error, cli_return, exported_py_path, file_hash, file_line_count,
     cap_text, notebook_paths, source_without_directives,
-    is_export_directive, is_exported_code_cell, none_if_string,
+    is_exported_code_cell, none_if_string,
 )
 
 # %% ../nbs/04_review.ipynb #8077f190
@@ -79,19 +78,11 @@ def _assert_count(tree):
 
 # %% ../nbs/04_review.ipynb #1e9b3b0c
 def _test_function_count(tree):
-    return sum(
-        isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("test_")
-        for node in tree.body
-    )
+    return sum(isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("test_") for node in tree.body)
 
 # %% ../nbs/04_review.ipynb #aa771abe
 def _public_functions(tree):
-    return [
-        node for node in tree.body
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-        and not node.name.startswith("_")
-        and not node.name.startswith("test_")
-    ]
+    return [node for node in tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and not node.name.startswith("_") and not node.name.startswith("test_")]
 
 # %% ../nbs/04_review.ipynb #cbba1fcd
 def _docstring_line_count(node):
@@ -202,30 +193,17 @@ def _public_function_literacy_problems_for_nb(nb_path, nb):
         line_count = _docstring_line_count(node)
         if line_count == 0:
             detail = f"public function {node.name!r} needs a one-line docstring for context summaries"
-            problems.append(_public_function_contract_problem(
-                nb_path, cell, node, "public-function-docstring", "one-line docstring",
-                detail, docstring_lines=line_count,
-            ))
+            problems.append(_public_function_contract_problem(nb_path, cell, node, "public-function-docstring", "one-line docstring",detail, docstring_lines=line_count))
         elif line_count != 1:
             detail = f"public function {node.name!r} has {line_count} docstring lines; keep it to one line for context summaries"
-            problems.append(_public_function_contract_problem(
-                nb_path, cell, node, "public-function-docstring", "one-line docstring",
-                detail, docstring_lines=line_count,
-            ))
-        if node.name in call_parse_names:
-            continue
+            problems.append(_public_function_contract_problem(nb_path, cell, node, "public-function-docstring", "one-line docstring",detail, docstring_lines=line_count))
+        if node.name in call_parse_names: continue
         if node.name not in references["markdown"]:
-            problems.append(_public_function_contract_problem(
-                nb_path, cell, node, "public-function-markdown", "Markdown docs cell mentioning the function",
-            ))
+            problems.append(_public_function_contract_problem(nb_path, cell, node, "public-function-markdown", "Markdown docs cell mentioning the function"))
         if node.name not in references["example"]:
-            problems.append(_public_function_contract_problem(
-                nb_path, cell, node, "public-function-example", "example cell that calls the function",
-            ))
+            problems.append(_public_function_contract_problem(nb_path, cell, node, "public-function-example", "example cell that calls the function"))
         if node.name not in references["test"]:
-            problems.append(_public_function_contract_problem(
-                nb_path, cell, node, "public-function-test", "test cell that asserts or checks the function",
-            ))
+            problems.append(_public_function_contract_problem(nb_path, cell, node, "public-function-test", "test cell that asserts or checks the function"))
     return problems
 
 # %% ../nbs/04_review.ipynb #1ec78aa2
@@ -240,10 +218,8 @@ def public_function_literacy_problems(path="."):
     "Return docs/example/test contract warnings for exported public notebook functions."
     problems = []
     for nb_path in notebook_paths(path):
-        try:
-            nb = read_nb(nb_path)
-        except FileNotFoundError:
-            continue
+        try: nb = read_nb(nb_path)
+        except FileNotFoundError: continue
         problems.extend(_public_function_literacy_problems_for_nb(nb_path, nb))
     return problems
 

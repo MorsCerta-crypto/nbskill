@@ -5,41 +5,68 @@ __all__ = ['EDIT_INTERACTIVE_SYSTEM', 'capture_call_text', 'notebook_view', 'Edi
            'response_text', 'plan_result_text', 'final_diff', 'execute_plan', 'execute_project_plan']
 
 # %% ../nbs/08_edit_interactive.ipynb #c7e88003
+import ast
 import difflib
+import json
 import os
+import re
+import traceback
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass, field
 from io import StringIO
 from pathlib import Path
-
+from threading import Lock
 from fastcore.nbio import mk_cell
 from fastcore.nbio import read_nb
 from fastcore.nbio import write_nb
 from nbdev.doclinks import nbdev_export as _run_nb_export
-
-from .execute import exec_nb
 from nbskill.foundation import (
-    cell_source, clear_outputs, exported_py_path, parse_one_cell,
+    cap_text, cell_source, clear_outputs, exported_py_path, parse_one_cell,
     stamp_export_metadata, stamp_notebook_metadata, validate_code_cells,
 )
+from .graph import symbol_usage_summary
+from .knowledge import reference_query
 from .parallel import notebook_locks
 from .review import diff_nb
 
-# %% ../nbs/08_edit_interactive.ipynb #57c2fd65
-EDIT_INTERACTIVE_SYSTEM = """You are nbskill edit-interactive. You edit exactly one notebook.
+_CAPTURE_LOCK = Lock()
 
-You receive a plan and one notebook view. Use only the provided notebook tools.
-Prefer id-based edits when the view gives one. Keep changes small and aligned
-with the plan. Run cells when that is needed to verify the work. Stop when the
-plan is complete. Your final message must summarize what you did and what you
-could not do.
+# %% ../nbs/08_edit_interactive.ipynb #57c2fd65
+EDIT_INTERACTIVE_SYSTEM = """You are an nbskill notebook-editing subagent.
+You edit exactly one notebook in one repository. You receive the project
+description, a focused knowledge summary, optional caller/callee impact for the
+symbols in scope, and one notebook view. There is no project-scope lookup tool
+because that scope is injected into this prompt.
+
+Use only the provided tools: str_replace, edit_cell, add_cell, delete_cell,
+execute_cell, and query_knowledge. Keep the work scoped to one small specific
+task.
+
+For new behavior, use this loop:
+1. Experiment: write the smallest code that explores the idea, execute it, and
+   inspect the result before treating it as correct.
+2. Function: turn the working experiment into a focused function. Add a Markdown
+   cell directly above the exported code explaining why the function is needed
+   and why it is useful.
+3. Example: add an example cell directly below the function showing how it works.
+   If the example is slow or produces artifacts, add `#| eval: false`.
+4. Test: add a focused test cell directly below the example so future changes
+   keep the same output.
+
+Use execute_cell normally to continue from the last executed cell through the
+target cell, like a live notebook kernel. Pass rerun_all=True when earlier cells
+changed and the whole notebook state must be rebuilt. Exceptions are returned to
+you as tool output; inspect them, edit, and execute again. Stop as soon as the
+requested notebook change is complete. Your final message must summarize what
+changed, what was executed, and what could not be completed.
 """
 
 # %% ../nbs/08_edit_interactive.ipynb #155505b9
 def capture_call_text(func, **kwargs):
     "Run `func` and return captured stdout/stderr, or the return value."
     out, err = StringIO(), StringIO()
-    with redirect_stdout(out), redirect_stderr(err):
+    with _CAPTURE_LOCK, redirect_stdout(out), redirect_stderr(err):
         result = func(**kwargs)
     chunks = []
     if out.getvalue(): chunks.append(out.getvalue().rstrip())
@@ -69,12 +96,24 @@ class EditSession:
     path: Path
     timeout: int = 30
     revision: int = 0
+    agent_id: str | None = None
+    log_path: Path | None = None
     log: list[str] = field(default_factory=list)
     tool_log: list[str] = field(default_factory=list)
     history: list[dict] = field(default_factory=list)
+    messages: list[dict] = field(default_factory=list)
+    live_ns: dict = field(default_factory=lambda: {"__name__": "__main__"})
+    executed_until_idx: int = -1
     chat: object | None = None
     notebook_msg_idx: int | None = None
-
+    def __post_init__(self):
+        self.path = Path(self.path)
+        if self.agent_id is None: self.agent_id = _agent_notebook_id(self.path)
+        if self.log_path is None: self.log_path = Path("log") / f"agent-{self.agent_id}.log"
+    def reset_live_state(self):
+        "Reset the live notebook execution namespace."
+        self.live_ns = {"__name__": "__main__"}
+        self.executed_until_idx = -1
     def refresh_view(self):
         "Replace the notebook-view message in the Lisette history."
         if self.chat is None or self.notebook_msg_idx is None: return
@@ -82,11 +121,15 @@ class EditSession:
         view = notebook_view(self.path, self.revision)
         if isinstance(msg, dict): msg["content"] = view
         else: msg.content = view
-
+    def record_message(self, role, content):
+        "Append one agent message to memory and the run log."
+        item = {"revision": self.revision, "role": role, "content": str(content)}
+        self.messages.append(item)
+        _append_agent_log(self, "message", item)
     def record(self, message):
         "Append an operation to the session log."
         self.log.append(f"r{self.revision}: {message}")
-
+        _append_agent_log(self, "operation", {"revision": self.revision, "message": message})
     def record_tool(self, name, detail=""):
         "Append one tool use to the session history."
         suffix = f"({detail})" if detail else "()"
@@ -94,6 +137,7 @@ class EditSession:
         item = {"revision": self.revision, "tool": name}
         if detail: item["detail"] = detail
         self.history.append(item)
+        _append_agent_log(self, "tool", item)
 
 # %% ../nbs/08_edit_interactive.ipynb #eee248a5
 def _export_notebook(nb, nb_path):
@@ -147,10 +191,95 @@ def _validate_cell(cell):
     validate_code_cells([cell])
     return cell
 
+# %% ../nbs/08_edit_interactive.ipynb #0dbff6c2
+def _agent_notebook_id(path):
+    rel = Path(path).with_suffix("").as_posix()
+    rel = re.sub(r"[^A-Za-z0-9_.-]+", "-", rel).strip("-.")
+    return rel or "notebook"
+
+# %% ../nbs/08_edit_interactive.ipynb #2809bf19
+def _append_agent_log(session, kind, payload):
+    path = Path(session.log_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    record = {"kind": kind, "agent_id": session.agent_id, "notebook": str(session.path), "payload": payload}
+    path.open("a", encoding="utf-8").write(json.dumps(record, ensure_ascii=False) + "\n")
+
+# %% ../nbs/08_edit_interactive.ipynb #192289a0
+def _project_description(path):
+    start = Path(path).resolve().parent
+    for root in [start, *start.parents]:
+        readme = root / "README.md"
+        if readme.exists(): return cap_text(readme.read_text(encoding="utf-8"), 2400)
+    return "No README.md project description was found."
+
+# %% ../nbs/08_edit_interactive.ipynb #630fa23f
+def _knowledge_context(query, top_k=3):
+    try: result = reference_query(query, top_k=top_k, current_repo=".")
+    except BaseException as exc: return f"Knowledge query unavailable: {type(exc).__name__}: {exc}"
+    hits = []
+    for hit in result.get("hits", []):
+        label = ".".join(item for item in [hit.get("module"), hit.get("symbol")] if item)
+        source = cap_text(hit.get("source") or hit.get("docstring") or "", 700)
+        hits.append(f"- {label or hit.get('path')}: {source}")
+    return "\n".join(hits) if hits else "No relevant knowledge hits."
+
+# %% ../nbs/08_edit_interactive.ipynb #44364a03
+def _symbol_impact_context(symbols):
+    names = _split_notebooks(symbols)
+    if not names: return "No symbols requested for caller/callee impact."
+    try: return symbol_usage_summary(".", names)
+    except BaseException as exc: return f"Symbol impact unavailable: {type(exc).__name__}: {exc}"
+
+# %% ../nbs/08_edit_interactive.ipynb #7c99b181
+def _subagent_context(path, plan, symbols=None):
+    return "\n\n".join([
+        "Project description:\n" + _project_description(path),
+        "Knowledge summary:\n" + _knowledge_context(plan),
+        "Caller/callee impact:\n" + _symbol_impact_context(symbols),
+    ])
+
 # %% ../nbs/08_edit_interactive.ipynb #8ef57685
 def make_edit_tools(session):
     "Create notebook-scoped tools for one edit-interactive session."
-
+    def str_replace(
+        old_str: str,  # Exact text that must occur once in the notebook
+        new_str: str,  # Replacement text
+    ) -> str:
+        "Replace one exact string occurrence anywhere in the current notebook."
+        with notebook_locks(session.path):
+            nb = read_nb(session.path)
+            matches = []
+            for idx, cell in enumerate(nb.cells):
+                source = cell_source(cell)
+                if old_str in source: matches.append((idx, cell, source))
+            session.record_tool("str_replace", f"matches={len(matches)}")
+            if len(matches) != 1: raise ValueError(f"old_str matched {len(matches)} cells; expected exactly 1")
+            idx, cell, before = matches[0]
+            after = before.replace(old_str, new_str, 1)
+            if cell.cell_type == "code": _validate_cell(mk_cell(after, cell_type="code"))
+            cell.source = after
+            clear_outputs(cell)
+            msg = f"Replaced text in id={cell.id}"
+            return _finish_write(session, nb, msg, _source_diff(before, after, f"cell {cell.id}"))
+    def edit_cell(
+        id: str,  # Cell id to edit
+        old_str: str,  # Exact text that must occur once in this cell
+        new_str: str,  # Replacement text
+    ) -> str:
+        "Replace one exact string occurrence inside one cell."
+        with notebook_locks(session.path):
+            nb = read_nb(session.path)
+            idx, cell = _edit_find_cell_by_id(nb.cells, id)
+            before = cell_source(cell)
+            count = before.count(old_str)
+            session.record_tool("edit_cell", f"id={id!r}, matches={count}")
+            if count != 1: raise ValueError(f"old_str matched {count} times in id={id}; expected exactly 1")
+            after = before.replace(old_str, new_str, 1)
+            if cell.cell_type == "code": _validate_cell(mk_cell(after, cell_type="code"))
+            cell.source = after
+            clear_outputs(cell)
+            msg = f"Edited text id={id}"
+            return _finish_write(session, nb, msg, _source_diff(before, after, f"cell {id}"))
     def add_cell(
         after_id: str | None = None,  # Cell id to insert after; blank/None appends
         content: str = "",  # New cell source; may start with %%markdown, %%code, or %%raw
@@ -170,68 +299,84 @@ def make_edit_tools(session):
             where = f"after id={anchor}" if anchor is not None else "at end"
             msg = f"Added cell id={new_cell.id} {where}"
             return _finish_write(session, nb, msg, _source_diff("", src, f"cell {new_cell.id}"))
-
-    def edit_cell(
-        id: str,  # Cell id to edit
-        new_src: str,  # Replacement source, or substring replacement when old_src is set
-        old_src: str | None = None,  # Optional exact text to replace inside the cell
+    def delete_cell(
+        id: str,  # Cell id to delete
     ) -> str:
-        "Edit one cell in the current notebook."
+        "Delete one cell from the current notebook."
         with notebook_locks(session.path):
             nb = read_nb(session.path)
             idx, cell = _edit_find_cell_by_id(nb.cells, id)
-            before = cell_source(cell)
-            old_src = _none_if_blank(old_src)
-            session.record_tool(
-                "edit_cell",
-                f"id={id!r}, old_src={'yes' if old_src is not None else 'no'}",
-            )
-            if old_src is None:
-                new_cell = _validate_cell(parse_one_cell(new_src, cell.cell_type))
-                clear_outputs(new_cell)
-                new_cell.id = cell.id
-                nb.cells[idx] = new_cell
-                after = cell_source(new_cell)
-                mode = "cell"
-            else:
-                if old_src not in before: raise ValueError(f"old_src was not found in id={id}")
-                after = before.replace(old_src, new_src, 1)
-                if cell.cell_type == "code": _validate_cell(mk_cell(after, cell_type="code"))
-                cell.source = after
-                clear_outputs(cell)
-                mode = "text"
-            msg = f"Edited {mode} id={id}"
-            return _finish_write(session, nb, msg, _source_diff(before, after, f"cell {id}"))
-
-    def run_cell(
-        id: str,  # Cell id to execute through
-    ) -> str:
-        "Run notebook cells up to and including this cell id."
-        with notebook_locks(session.path):
-            _edit_find_cell_by_id(read_nb(session.path).cells, id)
-            session.record_tool("run_cell", f"id={id!r}")
-            text = capture_call_text(
-                exec_nb, path=str(session.path), dest=str(session.path), up2id=str(id),
-                timeout=session.timeout, show_output=True, verbose=False,
-            )
-            status = "error" if "Traceback (most recent call last)" in text else "ok"
-            session.record(f"Ran cells through id={id} ({status})")
-            return f"status={status}\n{text}" if text else f"Executed through id={id} ({status})"
-
-    def remove_cell(
-        id: str,  # Cell id to remove
-    ) -> str:
-        "Remove one cell from the current notebook."
-        with notebook_locks(session.path):
-            nb = read_nb(session.path)
-            idx, cell = _edit_find_cell_by_id(nb.cells, id)
-            session.record_tool("remove_cell", f"id={id!r}")
+            session.record_tool("delete_cell", f"id={id!r}")
             before = cell_source(cell)
             del nb.cells[idx]
-            msg = f"Removed cell id={id}"
+            msg = f"Deleted cell id={id}"
             return _finish_write(session, nb, msg, _source_diff(before, "", f"cell {id}"))
-
-    return [add_cell, edit_cell, run_cell, remove_cell]
+    def _exec_python(source, filename):
+        tree = ast.parse(source, filename=filename, mode="exec")
+        if not tree.body: return None
+        if not isinstance(tree.body[-1], ast.Expr):
+            exec(compile(tree, filename, "exec"), session.live_ns)
+            return None
+        prefix = ast.Module(body=tree.body[:-1], type_ignores=[])
+        expr = ast.Expression(tree.body[-1].value)
+        ast.fix_missing_locations(prefix)
+        ast.fix_missing_locations(expr)
+        if prefix.body: exec(compile(prefix, filename, "exec"), session.live_ns)
+        return eval(compile(expr, filename, "eval"), session.live_ns)
+    def _eval_false(source):
+        return any(re.match(r"#\|\s*eval:\s*false\b", line.strip(), re.I) for line in source.splitlines()[:5])
+    def _execute_one(idx, cell):
+        source = cell_source(cell)
+        header = f"CELL {idx} id={cell.id}"
+        if cell.cell_type != "code": return f"{header} status=skipped reason=non-code"
+        if _eval_false(source): return f"{header} status=skipped reason=eval-false"
+        out, err = StringIO(), StringIO()
+        status, display, tb = "ok", None, ""
+        filename = f"{session.path}::{cell.id}"
+        with _CAPTURE_LOCK, redirect_stdout(out), redirect_stderr(err):
+            try: display = _exec_python(source, filename)
+            except BaseException:
+                status = "error"
+                tb = traceback.format_exc()
+        chunks = [f"{header} status={status}"]
+        if out.getvalue(): chunks.append("stdout:\n" + out.getvalue().rstrip())
+        if err.getvalue(): chunks.append("stderr:\n" + err.getvalue().rstrip())
+        if display is not None: chunks.append("display:\n" + repr(display))
+        if tb: chunks.append("traceback:\n" + tb.rstrip())
+        return "\n".join(chunks)
+    def execute_cell(
+        id: str,  # Cell id to execute through
+        rerun_all: bool = False,  # Reset state and execute from the first cell through id
+    ) -> str:
+        "Execute through one cell in the live notebook state."
+        with notebook_locks(session.path):
+            nb = read_nb(session.path)
+            target_idx, _ = _edit_find_cell_by_id(nb.cells, id)
+            cells = list(nb.cells)
+        if rerun_all: session.reset_live_state()
+        start = session.executed_until_idx + 1
+        if target_idx < start: start = target_idx
+        session.record_tool("execute_cell", f"id={id!r}, rerun_all={rerun_all}, start={start}, target={target_idx}")
+        reports, status = [], "ok"
+        for idx in range(start, target_idx + 1):
+            report = _execute_one(idx, cells[idx])
+            reports.append(report)
+            session.executed_until_idx = idx
+            if " status=error" in report:
+                status = "error"
+                break
+        if not reports:
+            reports.append(f"CELL {target_idx} id={id} status=skipped reason=already-executed")
+        session.record(f"Executed cells {start}:{target_idx} ({status})")
+        return "\n\n".join([f"status={status}", *reports])
+    def query_knowledge(
+        query: str,  # Focused implementation or project-memory query
+        top_k: int = 3,  # Number of knowledge hits
+    ) -> str:
+        "Search the reference knowledge base."
+        session.record_tool("query_knowledge", f"top_k={top_k}")
+        return _knowledge_context(query, top_k=top_k)
+    return [str_replace, edit_cell, add_cell, delete_cell, execute_cell, query_knowledge]
 
 # %% ../nbs/08_edit_interactive.ipynb #3540e8d9
 def make_chat(model, tools, hist, system_prompt=EDIT_INTERACTIVE_SYSTEM):
@@ -288,18 +433,21 @@ def execute_plan(
     notebook: str,  # Path to the one notebook the inner agent may edit
     plan: str,  # Plan for the inner agent to execute
     model: str | None = None,  # Lisette/LiteLLM model; defaults via NBSKILL_AGENT then a Codex model
-    max_steps: int = 20,  # Maximum Lisette tool-loop steps
-    timeout: int = 30,  # Per-cell execution timeout for run_cell
+    max_steps: int = 8,  # Maximum Lisette tool-loop steps
+    timeout: int = 30,  # Reserved for external execution callers
     dry_run: bool = False,  # Return proposal context without invoking the inner agent
+    symbols: str | None = None,  # Optional comma-separated symbols for caller/callee impact
+    injected_context: str | None = None,  # Prebuilt project context for framework-launched subagents
 ) -> dict:
-    "Execute `plan` against one notebook using a Lisette edit-interactive loop."
+    "Execute `plan` against one notebook using a bounded subagent loop."
     path = Path(notebook)
     if not path.exists(): raise ValueError(f"Notebook does not exist: {notebook}")
     model = model or os.environ.get("NBSKILL_AGENT") or "chatgpt/gpt-5.4-mini"
+    project_context = injected_context or _subagent_context(path, plan, symbols=symbols)
     initial_view = notebook_view(path, revision=0)
     if dry_run:
         text = "\n".join([
-            "edit-interactive dry run",
+            "notebook subagent dry run",
             "",
             f"Notebook: {path}",
             f"Model: {model}",
@@ -307,34 +455,44 @@ def execute_plan(
             "Plan:",
             plan,
             "",
+            "Injected project context:",
+            project_context,
+            "",
             "Initial notebook view:",
             initial_view,
         ]).rstrip()
-        return {"summary": "Dry run only; no agent was invoked and no notebook edits were made.", "history": [], "text": text}
+        return {"summary": "Dry run only; no subagent was invoked and no notebook edits were made.", "history": [], "text": text}
     session = EditSession(path=path, timeout=timeout)
     hist = [
+        {"role": "user", "content": "Injected project context:\n" + project_context},
         {"role": "user", "content": f"Plan:\n{plan}"},
         {"role": "user", "content": initial_view},
     ]
+    for item in hist: session.record_message(item["role"], item["content"])
     tools = make_edit_tools(session)
     chat = make_chat(model, tools=tools, hist=hist)
     session.chat = chat
     session.notebook_msg_idx = len(chat.hist) - 1
     session.refresh_view()
+    prompt = (
+        "Execute the plan with the experiment, function, example, and test loop from the system prompt. "
+        "Use execute_cell to validate the experiment and the final example or test when practical. "
+        "Stop when the notebook change is complete."
+    )
+    session.record_message("user", prompt)
     try:
-        result = chat(
-            "Execute the plan using only the notebook tools. Stop when the plan is complete. "
-            "Your final answer must say what you did and what you could not do.",
-            max_steps=max_steps, return_all=True,
-        )
+        result = chat(prompt, max_steps=max_steps, return_all=True)
     except BaseException as exc:
-        result = f"edit-interactive failed: {type(exc).__name__}: {exc}"
+        result = f"notebook subagent failed: {type(exc).__name__}: {exc}"
     if not isinstance(result, (list, str, bytes, dict)) and hasattr(result, "__next__"):
         result = list(result)
     summary = response_text(result).strip() or "(no final response)"
+    session.record_message("assistant", summary)
+    _save_notebook(read_nb(path), path)
+    session.record("Exported notebook after subagent run")
     diff = final_diff(path).strip()
     text = "\n".join([
-        "edit-interactive complete",
+        "notebook subagent complete",
         "",
         "Final response:",
         summary,
@@ -346,6 +504,7 @@ def execute_plan(
         "\n".join(session.log) if session.log else "(no notebook operations)",
         "",
         f"Final revision: {session.revision}",
+        f"Agent log: {session.log_path}",
         "",
         "Notebook diff:",
         diff,
@@ -353,11 +512,13 @@ def execute_plan(
     return {
         "summary": summary,
         "history": session.history,
+        "messages": session.messages,
         "text": text,
         "model": model,
         "notebook": str(path),
         "revision": session.revision,
         "operations": list(session.log),
+        "log_path": str(session.log_path),
         "diff": diff,
     }
 
@@ -372,22 +533,35 @@ def execute_project_plan(
     plan: str,  # Broad project plan to split into notebook-scoped executions
     notebooks: str | None = None,  # Comma-separated notebooks to target
     model: str | None = None,  # Lisette/LiteLLM model
-    max_steps: int = 20,  # Maximum steps per notebook
-    timeout: int = 30,  # Per-cell execution timeout
+    max_steps: int = 8,  # Maximum steps per notebook subagent
+    timeout: int = 30,  # Reserved for callers that enforce per-step timeouts
     dry_run: bool = True,  # Return per-notebook proposals without mutation by default
+    symbols: str | None = None,  # Optional comma-separated symbols for caller/callee impact
 ) -> str:
-    "Coordinate a broad plan as notebook-scoped execute_plan calls."
+    "Launch notebook-scoped subagents for a broad project plan."
     targets = _split_notebooks(notebooks)
     if not targets: raise ValueError("Pass one or more notebooks to execute_project_plan.")
     seen = set()
     repeated = sorted({path for path in targets if path in seen or seen.add(path)})
     if repeated: raise ValueError(f"Duplicate notebook target(s): {', '.join(repeated)}")
-    chunks = ["project execute_plan coordinator", "", f"Dry run: {dry_run}", f"Targets: {len(targets)}"]
-    for notebook in targets:
+    chunks = ["project subagent coordinator", "", f"Dry run: {dry_run}", f"Targets: {len(targets)}"]
+    shared_context = _subagent_context(targets[0], plan, symbols=symbols)
+
+    def _run_target(notebook):
         subplan = f"{plan}\n\nScope: edit only {notebook}."
-        result = execute_plan(
+        return execute_plan(
             notebook=notebook, plan=subplan, model=model, max_steps=max_steps,
-            timeout=timeout, dry_run=dry_run,
+            timeout=timeout, dry_run=dry_run, symbols=symbols, injected_context=shared_context,
         )
-        chunks.extend(["", f"## {notebook}", plan_result_text(result)])
+
+    if len(targets) == 1:
+        results = {targets[0]: _run_target(targets[0])}
+    else:
+        results = {}
+        with ThreadPoolExecutor(max_workers=len(targets)) as pool:
+            futures = {pool.submit(_run_target, notebook): notebook for notebook in targets}
+            for future in as_completed(futures):
+                results[futures[future]] = future.result()
+    for notebook in targets:
+        chunks.extend(["", f"## {notebook}", plan_result_text(results[notebook])])
     return "\n".join(chunks).rstrip()

@@ -4,7 +4,7 @@
 __all__ = ['reference_home', 'reference_add', 'reference_ingest', 'reference_list', 'reference_query']
 
 # %% ../nbs/12_knowledge.ipynb #911ef06b
-import ast, glob, hashlib, importlib.util, json, math, os, re, shutil, subprocess, tempfile, time
+import ast, hashlib, importlib.util, json, math, os, re, shutil, subprocess, tempfile, time
 
 try:
     import tomllib

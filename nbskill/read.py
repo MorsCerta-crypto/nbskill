@@ -15,9 +15,8 @@ from fastcore.nbio import read_nb
 
 from nbskill.foundation import (
     cell_matches_type, cell_prefix, cell_source, chapter_index_set,
-    cli_return, find_cell_by_id, first_line, is_definition_node,
-    is_export_directive, is_exported_code_cell, matches_filter,
-    notebook_paths, source_without_directives, with_context,
+    find_cell_by_id, first_line, is_exported_code_cell, matches_filter,
+    notebook_paths, source_without_directives,
 )
 
 # %% ../nbs/01_read.ipynb #3876f40e

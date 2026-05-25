@@ -183,11 +183,12 @@ def _format_status(data):
 @call_parse
 @tracked_call
 def context(
-    target: str = "project",  # project, notebook path/name, chapter title, cell id, or Python symbol
+    target: str = "project",  # project, notebook path/name, chapter title, cell id, Python symbol, or literal search text
     scope: str = ".",  # Project, folder, glob, or notebook used to narrow target lookup
+    overview: bool = False,  # True keeps compact overview; False shows fuller notebook markdown or related symbol context
 ):
     "Show the best notebook-aware context for one target."
-    nbskill.read.context(target=target, scope=scope)
+    nbskill.read.context(target=target, scope=scope, overview=overview)
 
 # %% ../nbs/13_cli.ipynb #50cde442
 @call_parse

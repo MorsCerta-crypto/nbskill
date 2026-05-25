@@ -312,7 +312,7 @@ if ! git diff --quiet -- .; then
   echo "nbskill: nbdev-clean changed notebooks. Review and stage those changes before committing." >&2
   exit 1
 fi
-run_nbdev_cmd nbdev-test
+run_nbdev_cmd nbdev-test --n_workers 0
 {_NBSKILL_HOOKS_MARKER_END}
 """
 

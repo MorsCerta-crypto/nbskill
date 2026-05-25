@@ -87,7 +87,7 @@ _write_nb(new_nb([
 The context API is one deliberate entry point.
 [`context`](https://MorsCerta-crypto.github.io/nbskill/cli.html#context)
 accepts a project, notebook path, chapter title, cell id, or public
-symbol target. Verbose cell and symbol lookups include symbol graph
+symbol target. Cell and symbol lookups include symbol graph
 payloads for caller/callee impact.
 
 The MCP tools keep printing details hidden unless the returned context
@@ -308,7 +308,7 @@ the client is using stale tool metadata.
     reinstalling/exporting tool signatures.
 2.  Use [`context`](https://MorsCerta-crypto.github.io/nbskill/cli.html#context)
     for project, notebook, chapter title, cell id, or public symbol
-    targets. Verbose cell and symbol targets include graph-oriented
+    targets. Cell and symbol targets include graph-oriented
     caller/callee impact.
 3.  Keep notebook craft in the loop: preserve the story, add rationale
     before code, and put examples or tests after implementation cells.

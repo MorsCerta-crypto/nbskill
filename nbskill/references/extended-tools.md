@@ -5,7 +5,7 @@ The main `SKILL.md` intentionally stays focused on the core loop: MCP health, `c
 ## Reading More Context
 
 - `context(target=..., scope=...)` prints project, notebook, chapter, cell, or symbol context.
-- `context(..., verbose=True)` includes symbol graph payloads for cell and symbol targets in MCP.
+- `context(...)` includes symbol graph payloads for cell and symbol targets in MCP.
 
 ## Review And Analysis
 

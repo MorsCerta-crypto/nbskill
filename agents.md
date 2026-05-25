@@ -35,6 +35,27 @@ Keep edits surgical. Read the nearby notebook context, edit one coherent piece, 
 
 When editing cells after reading them, use the MCP server's stale-context protections when available, such as expected hashes, so newer user or agent edits are not overwritten.
 
+## Search Before Writing
+
+Before implementing a helper, first search for the behavior in this package and then in indexed reference implementations. Do not write a second near-copy just because the existing helper is private or lives in another notebook; decide whether to reuse it, promote it, import it, or intentionally keep a local variant.
+
+Same-package searches:
+
+- Use `context(target="<likely_symbol>", scope="nbs", overview=True)` when a likely symbol name exists.
+- Use `filter_context(scope="nbs", include_re="<domain terms>")` when only behavior is known. Search by nouns, error text, data keys, AST node names, regexes, or library calls.
+- Use `context` on the returned symbol to inspect callers and callees before deciding to add code.
+
+Reference searches:
+
+- Use `reference(action="query", query="<behavior and domain terms>", top_k=5)` before building nontrivial parsing, notebook, AST, CLI, filesystem, or formatting behavior.
+- If a reference hit is from an already-direct dependency, prefer importing or adapting its pattern. If it would add a new dependency, treat it as prior art unless the dependency is explicitly acceptable.
+
+Examples found in this repo:
+
+- `nbs/01_read.ipynb` has chapter helpers (`_chapter_title_from_cell`, `_chapter_spans_for_nb`, `_chapter_matches`, `_selected_chapter_span`) that are very similar to `nbs/00_foundation.ipynb` helpers (`_chapter_title`, `_chapter_spans`, `_matching_chapters`, `one_chapter`, `chapter_index_set`). Queries that would have found the existing code: `context(target="_chapter_spans", scope="nbs", overview=True)` and `filter_context(scope="nbs", include_re="chapter.*span|_chapter_spans|one_chapter|chapter_index_set")`.
+- `nbs/01_read.ipynb` repeats AST definition checks around `ast.FunctionDef`, `ast.AsyncFunctionDef`, and `ast.ClassDef` even though `nbs/00_foundation.ipynb` defines `is_definition_node`. Queries that would have found it: `context(target="is_definition_node", scope="nbs", overview=True)` and `filter_context(scope="nbs", include_re="is_definition_node|FunctionDef|AsyncFunctionDef|ClassDef")`.
+- For external prior art, queries like `reference(action="query", query="notebook cells markdown headings chapter spans start end title", top_k=5)` and `reference(action="query", query="ast FunctionDef AsyncFunctionDef ClassDef definition node helper", top_k=5)` surface useful implementations from indexed packages such as `fastaistyle`, `dialoghelper`, and `fastcore`.
+
 ## Knowledge Store
 
 Use the nbskill knowledge store before solving a problem from scratch. Someone may already have recorded the local rule, warning pattern, or preferred fix.

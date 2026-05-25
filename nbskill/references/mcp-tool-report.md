@@ -10,7 +10,7 @@ The MCP server exposes focused tools after merging the obvious context, referenc
 | Focused context | `context` | Core | One reader accepts project, notebook, chapter title, cell id, or symbol targets. |
 | Notebook editing | `edit_notebook` | Core | One atomic edit surface now covers whole-cell edits, partial edits, insertion, deletion, moves, and coordinated notebook-level text replacements. |
 | Verification and review | `exec_nb`, `diff_nb`, `style_check` | Core | Each answers a different post-edit question: behavior, changed code, and structural/private-symbol hygiene. |
-| Symbol analysis | included in `context(verbose=True)` | Core | Verbose cell and symbol context includes symbol graph payloads. |
+| Symbol analysis | included in `context(...)` | Core | Cell and symbol context includes symbol graph payloads. |
 | Agentic planning | `agent_workbench` | Advanced | Covers bounded notebook/project edit plans when direct structured tools are not enough. |
 | Reference implementations | `reference` | Core | Add, list, ingest, and query indexed reference implementations. |
 | Conversion | `convert` | Situational | Handles single-file, folder, and project conversion modes. |

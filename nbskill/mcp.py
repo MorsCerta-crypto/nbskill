@@ -1106,8 +1106,8 @@ _MCP_READ_CONTEXT_TOOL_CATALOG = {
         'usefulness': 'core',
         'tags': ('read', 'context', 'project', 'notebook', 'cell', 'symbol'),
         'description': 'Single notebook-aware reader for project, notebook, chapter, cell id, or Python symbol targets, with overview control.',
-        'when_to_use': "Use first: pass target='project', a notebook path/name, chapter title, cell id, or Python symbol; use overview=False for all notebook cells or related docs/examples/tests, overview=True for exported definitions or full implementation.",
-        'combine_with': 'Verbose cell and symbol targets include symbol graph payloads, so no separate symbol graph tool is needed.',
+        'when_to_use': "Use first: pass target='project', a notebook path/name, chapter title, cell id, or Python symbol; use overview=False for fuller notebook markdown or related symbol cells, overview=True for notebook summaries or full implementation.",
+        'combine_with': 'Cell and symbol targets include symbol graph payloads, so no separate symbol graph tool is needed.',
     },
     'filter_context': {
         'feature': 'read_context',
@@ -1247,7 +1247,7 @@ mcp = FastMCP(
         "Work notebook-first in nbdev projects. Feature areas are diagnostics, focused context, "
         "notebook edits, verification/review, symbol impact, agentic planning, reference search, "
         "and conversion. For reading, use context with a project, notebook, chapter title, cell id, "
-        "or public symbol target; verbose cell and symbol lookups include symbol graph payloads. "
+        "or public symbol target; overview controls compact notebook summaries or implementation focus. "
         "For edits, use edit_notebook as the single production mutation tool. It supports whole-cell, "
         "line-range, insert/delete/move, and notebook-wide replace_text/replace_texts operations with "
         "expected_hash guards and structured diffs. Edit tools default to auto_feedback=True, which runs "
@@ -1310,7 +1310,6 @@ async def _context_tool(
     target: str = "project",
     scope: str = ".",
     overview: bool = False,
-    verbose: bool = True,
     detail: str = "summary",
     ctx: Context = None,
 ) -> ToolResult:
@@ -1320,8 +1319,8 @@ async def _context_tool(
     target_text = str(target)
     target_is_path = target_text.endswith(".ipynb") or "/" in target_text or "\\" in target_text
     if target_is_path: target = _mcp_workspace_path(target, root)
-    arguments = dict(target=target, scope=scope, overview=overview, verbose=verbose, detail=detail, workspace_root=str(root) if root else None)
-    context_args = dict(target=target, scope=scope, overview=overview, verbose=verbose)
+    arguments = dict(target=target, scope=scope, overview=overview, detail=detail, workspace_root=str(root) if root else None)
+    context_args = dict(target=target, scope=scope, overview=overview)
     with notebook_locks(scope), _CAPTURE_LOCK:
         out, err = StringIO(), StringIO()
         with redirect_stdout(out), redirect_stderr(err): data = context(**context_args)

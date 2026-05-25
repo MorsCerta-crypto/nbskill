@@ -20,7 +20,7 @@ See `references/mcp-tool-report.md` for the current usefulness review and reduct
 | Focused context | `context` | Read project, notebook, chapter title, cell id, or public symbol targets. |
 | Notebook editing | `edit_notebook` | Apply deterministic whole-cell, line, insert/delete/move, and notebook-wide text replacement edits atomically with structured diffs. |
 | Verification and review | `exec_nb`, `diff_nb`, `style_check` | Run notebooks safely, review code-cell diffs, and catch structural hygiene/private-symbol issues. |
-| Symbol analysis | included in `context(verbose=True)` | Inspect definitions, callers, and callees for a cell or symbol target. |
+| Symbol analysis | included in `context(...)` | Inspect definitions, callers, and callees for a cell or symbol target. |
 | Agentic planning | `agent_workbench` | Run bounded notebook/project edit loops only when direct structured tools are not enough. |
 | Reference implementations | `reference` | Add, list, ingest, and query indexed reference implementations. |
 | Conversion | `convert` | Migrate Python files/folders or bootstrap nbdev projects. |
@@ -28,7 +28,7 @@ See `references/mcp-tool-report.md` for the current usefulness review and reduct
 ## Tool Loop
 
 1. `healthcheck` confirms the server is alive and reports concurrency behavior.
-2. `context` gives the smallest useful project, notebook, chapter, cell, or symbol view. Use `verbose=True` for symbol graph payloads on cell and symbol targets.
+2. `context` gives the smallest useful project, notebook, chapter, cell, or symbol view. Cell and symbol targets include symbol graph payloads.
 3. `edit_notebook` applies deterministic edit operations atomically. Use `replace_text`/`replace_texts` with `target="all"` for notebook-level renames, line ops for focused cell edits, and structural ops for insert/delete/move/replace cell changes.
 4. `style_check` reports chkstyle output, notebook hygiene, private symbol warnings, duplicate imports, and global tool usage/problems.
 5. `exec_nb` runs a notebook, a chapter, or cells up to an id. It is safe by default: fresh or changed cells are denied until they have either been run by the user or stamped by a prior nbskill execution.

@@ -7,6 +7,7 @@ __all__ = ['project_context', 'chapter_context', 'file_context', 'filter_context
 import ast
 import copy
 import json
+import os
 import re
 import shlex
 from pathlib import Path
@@ -1029,6 +1030,32 @@ def _markdown_heading_level(source):
         match = re.match(r"^(#{1,6})\s+", line.strip())
         if match: return len(match.group(1))
     return None
+
+def _notebook_markdown_records(cells):
+    return [
+        {
+            "cell_id": getattr(cell, "id", ""),
+            "cell_idx": idx,
+            "source": cell_source(cell).strip(),
+            "heading_level": _markdown_heading_level(cell_source(cell)),
+        }
+        for idx, cell in enumerate(cells)
+        if getattr(cell, "cell_type", None) == "markdown" and cell_source(cell).strip()
+    ]
+
+def _notebook_overview_markdown_records(cells):
+    records = _notebook_markdown_records(cells)
+    first_chapter = next((item["cell_idx"] for item in records if item["heading_level"] == 2), None)
+    if first_chapter is None: return records
+    return [item for item in records if item["cell_idx"] <= first_chapter or item["heading_level"] == 2]
+
+def _render_markdown_record(item):
+    return f"Cell id={item['cell_id']}\n{item['source']}"
+
+def _render_definition_record(item):
+    nl = chr(10)
+    return f"Cell id={item['cell_id']} {item['kind']} {item['symbol']}{nl}{item['text']}"
+
 def _notebook_context(
     path: str,
     scope: str = ".",
@@ -1036,24 +1063,34 @@ def _notebook_context(
     verbose: bool = True,
     readme_sections: int = 2,
 ):
-    "Show all notebook cells, or exported definition overviews when overview=True."
+    "Show notebook markdown and definitions; overview keeps main docs, chapters, and exported signatures."
     nb = read_nb(path)
     root = _context_root(scope if scope not in (None, "") else path)
-    definitions = _exported_definition_records(path, nb)
+    definitions = _definition_records(path, nb)
+    exported_definitions = _exported_definition_records(path, nb)
+    markdown = _notebook_markdown_records(nb.cells)
     nl = chr(10)
     title = f"Notebook context: {Path(path).name}{nl}Path: {path}{nl}Project: {root}"
     if overview:
-        blocks = [("Definitions", [f"Cell id={item['cell_id']} {item['kind']} {item['symbol']}{nl}{item['text']}" for item in definitions])]
+        overview_markdown = _notebook_overview_markdown_records(nb.cells)
+        blocks = [
+            ("Markdown overview", [_render_markdown_record(item) for item in overview_markdown]),
+            ("Function signatures", [_render_definition_record(item) for item in exported_definitions]),
+        ]
         text = _format_context_blocks(title, blocks)
         return _context_result(
             "notebook_context", text, verbose=verbose, path=str(path), scope=str(scope), root=str(root),
-            overview=overview, definitions=definitions, cells=[], readme_sections=[], imports=[], markdown=[],
+            overview=overview, definitions=exported_definitions, cells=[], readme_sections=[], imports=[],
+            markdown=overview_markdown, all_definitions=definitions,
         )
-    cells = [_context_cell_record(idx, cell) for idx, cell in enumerate(nb.cells)]
-    text = _format_context_blocks(title, [("Cells", [_render_context_cell(item) for item in cells])])
+    blocks = [
+        ("Markdown", [_render_markdown_record(item) for item in markdown]),
+        ("Function signatures", [_render_definition_record(item) for item in definitions]),
+    ]
+    text = _format_context_blocks(title, blocks)
     return _context_result(
         "notebook_context", text, verbose=verbose, path=str(path), scope=str(scope), root=str(root),
-        overview=overview, definitions=definitions, cells=cells, readme_sections=[], imports=[], markdown=[],
+        overview=overview, definitions=definitions, cells=[], readme_sections=[], imports=[], markdown=markdown,
     )
 
 # %% ../nbs/01_read.ipynb #7c0cb5ca
@@ -1088,6 +1125,91 @@ def _context_one_match(kind, target, matches):
         detail = item.get("cell_id") or item.get("symbol") or item.get("chapter", {}).get("title", "")
         shown.append(f"- {kind}: {item['path']} {detail}".rstrip())
     raise ValueError(f"Target {target!r} matched multiple {kind} contexts:\n" + "\n".join(shown))
+
+# %% ../nbs/01_read.ipynb #153bbc70
+_CONTEXT_SEARCH_SKIP_DIRS = set(".git .hg .svn .venv venv env __pycache__ .ipynb_checkpoints .pytest_cache .mypy_cache .ruff_cache .quarto .tox .nox node_modules dist build".split())
+_CONTEXT_SEARCH_SKIP_SUFFIXES = set(".ipynb .pyc .pyo .so .dylib .dll .png .jpg .jpeg .gif .webp .ico .pdf .zip .tar .gz .bz2 .xz .7z .sqlite .db".split())
+
+
+def _context_search_root(scope):
+    raw = "." if scope in (None, "") else str(scope)
+    path = Path(raw).expanduser()
+    candidates = [path] if path.is_absolute() else [path, Path.cwd() / path]
+    for candidate in candidates:
+        if candidate.exists(): return candidate.parent.resolve() if candidate.is_file() else candidate.resolve()
+    if any(char in raw for char in "*?[]"):
+        parent = path.parent if str(path.parent) else Path(".")
+        if not parent.is_absolute(): parent = Path.cwd() / parent
+        if parent.exists(): return parent.resolve()
+    return _context_root(raw)
+
+# %% ../nbs/01_read.ipynb #c139ba95
+def _context_display_path(path, root):
+    try: return Path(path).resolve().relative_to(Path(root).resolve()).as_posix()
+    except (OSError, ValueError): return str(path)
+
+# %% ../nbs/01_read.ipynb #452a86b3
+def _context_file_paths(root):
+    root = Path(root)
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [name for name in dirnames if name not in _CONTEXT_SEARCH_SKIP_DIRS]
+        for filename in filenames:
+            path = Path(dirpath) / filename
+            if path.suffix.lower() in _CONTEXT_SEARCH_SKIP_SUFFIXES: continue
+            yield path
+
+
+def _context_line_snippet(lines, idx, radius=1):
+    start = max(0, idx - radius)
+    stop = min(len(lines), idx + radius + 1)
+    return "\n".join(f"{pos + 1} | {lines[pos]}" for pos in range(start, stop))
+
+# %% ../nbs/01_read.ipynb #63b187b1
+def _context_plain_file_matches(target, root, max_matches):
+    matches, total = [], 0
+    for path in _context_file_paths(root):
+        try: text = path.read_text(encoding="utf-8", errors="ignore")
+        except OSError: continue
+        if target not in text: continue
+        lines = text.splitlines() or [""]
+        for idx, line in enumerate(lines):
+            if target not in line: continue
+            total += 1
+            if len(matches) >= max_matches: continue
+            matches.append(dict(path=_context_display_path(path, root), line=idx + 1, snippet=_context_line_snippet(lines, idx)))
+    return matches, total
+
+# %% ../nbs/01_read.ipynb #af52cb2a
+def _context_notebook_text_matches(target, notebooks, max_matches):
+    matches, total = [], 0
+    for path in notebooks:
+        nb = read_nb(path)
+        for idx, cell in enumerate(nb.cells):
+            source = cell_source(cell)
+            if target not in source: continue
+            total += 1
+            if len(matches) >= max_matches: continue
+            matches.append(dict(path=str(path), cell_id=getattr(cell, "id", ""), cell_idx=idx, cell_type=getattr(cell, "cell_type", ""), source=source.strip()))
+    return matches, total
+
+# %% ../nbs/01_read.ipynb #1ba187bf
+def _literal_search_context(target, scope, notebooks, max_matches=50, max_chars_per_match=1200, verbose=True):
+    root = _context_search_root(scope)
+    notebook_matches, notebook_total = _context_notebook_text_matches(target, notebooks, max_matches)
+    file_budget = max(0, max_matches - len(notebook_matches))
+    file_matches, file_total = _context_plain_file_matches(target, root, file_budget)
+    total, nl = notebook_total + file_total, chr(10)
+    notebook_lines, file_lines = [], []
+    for item in notebook_matches:
+        header = f"{item['path']} id={item['cell_id']} idx={item['cell_idx']} type={item['cell_type']}{nl}"
+        notebook_lines.append(header + _trim_context_source(item["source"], max_chars_per_match))
+    for item in file_matches: file_lines.append(f"{item['path']}:{item['line']}{nl}{_trim_context_source(item['snippet'], max_chars_per_match)}")
+    shown = len(notebook_matches) + len(file_matches)
+    title = f"Search context: {target}{nl}Scope: {scope}{nl}Matches: {shown} shown of {total}"
+    text = _format_context_blocks(title, [("Notebook cells", notebook_lines), ("Files", file_lines)])
+    if not total: text = f"{title}{nl}{nl}No text matches found."
+    data = dict(root=str(root), total_matches=total, notebook_matches=notebook_matches, file_matches=file_matches)
+    return _context_result("search_context", text, verbose=verbose, target=str(target), scope=str(scope), **data)
 
 # %% ../nbs/01_read.ipynb #9a40cc35
 def _context_symbol_graphs(path, symbols):
@@ -1127,43 +1249,44 @@ def _context_with_graphs(result, graphs):
     text = result.get("text", "")
     graph_text = _context_graph_text(graphs)
     return {**result, "text": f"{text}\n\n{graph_text}".rstrip(), "symbol_graphs": graphs}
-def _context_as_single(result, target, scope, resolved_kind, verbose=True, **extra):
+def _context_as_single(result, target, scope, resolved_kind, **extra):
     return _context_result(
-        "context", result["text"], verbose=verbose, target=str(target), scope=str(scope),
+        "context", result["text"], verbose=True, target=str(target), scope=str(scope),
         resolved_kind=resolved_kind, selection=result, **extra,
     )
 def context(
-    target: str = "project",  # project, notebook path/name, chapter title, cell id, or Python symbol
+    target: str = "project",  # project, notebook path/name, chapter title, cell id, Python symbol, or literal search text
     scope: str = ".",  # Project, folder, glob, or notebook used to narrow target lookup
-    overview: bool = False,  # False shows structural/related cells; True shows definitions or implementation
-    verbose: bool = True,  # Print rendered context; pass False to only return structured data
+    overview: bool = False,  # True keeps compact overview; False shows fuller notebook markdown or related symbol context
 ):
     "Return the best notebook-aware context for one target."
     target = "project" if target in (None, "") else str(target)
     scope = "." if scope in (None, "") else str(scope)
     if target == "project":
         result = project_context(scope, verbose=False)
-        return _context_as_single(result, target, scope, "project", verbose=verbose, overview=overview)
+        return _context_as_single(result, target, scope, "project", overview=overview)
     path = _context_existing_notebook(target)
-    notebooks = _context_notebooks(scope)
+    try: notebooks = _context_notebooks(scope)
+    except ValueError: notebooks = []
     path = path or _context_named_notebook(target, notebooks)
     if path is not None:
         result = _notebook_context(path, scope=scope, overview=overview, verbose=False)
-        return _context_as_single(result, target, scope, "notebook", verbose=verbose, overview=overview)
+        return _context_as_single(result, target, scope, "notebook", overview=overview)
     cell = _context_one_match("cell", target, _context_cell_matches(target, notebooks))
     if cell is not None:
         result = _cell_context(cell["path"], cell["cell_idx"], overview=overview, verbose=False)
-        graphs = _context_symbol_graphs(cell["path"], result.get("symbols", [])) if verbose else []
+        graphs = _context_symbol_graphs(cell["path"], result.get("symbols", []))
         result = _context_with_graphs(result, graphs)
-        return _context_as_single(result, target, scope, "cell", verbose=verbose, overview=overview, symbol_graphs=graphs)
+        return _context_as_single(result, target, scope, "cell", overview=overview, symbol_graphs=graphs)
     symbol = _context_one_match("symbol", target, _context_symbol_matches(target, notebooks))
     if symbol is not None:
         result = _symbol_focus_context(symbol["path"], target, overview=overview, verbose=False)
-        graphs = _context_symbol_graphs(symbol["path"], result.get("symbols", [target])) if verbose else []
+        graphs = _context_symbol_graphs(symbol["path"], result.get("symbols", [target]))
         result = _context_with_graphs(result, graphs)
-        return _context_as_single(result, target, scope, "symbol", verbose=verbose, overview=overview, symbol_graphs=graphs)
+        return _context_as_single(result, target, scope, "symbol", overview=overview, symbol_graphs=graphs)
     chapter = _context_one_match("chapter", target, _context_chapter_matches(target, notebooks))
     if chapter is not None:
         result = chapter_context(chapter["path"], name=chapter["chapter"]["title"], verbose=False)
-        return _context_as_single(result, target, scope, "chapter", verbose=verbose, overview=overview)
-    raise ValueError(f"Could not resolve context target {target!r} inside scope {scope!r}")
+        return _context_as_single(result, target, scope, "chapter", overview=overview)
+    result = _literal_search_context(target, scope, notebooks, verbose=False)
+    return _context_as_single(result, target, scope, "search", overview=overview)

@@ -21,7 +21,7 @@ uv run context train --scope notebook.ipynb
 Reader behavior:
 
 - `context`: project, notebook, chapter title, cell id, or public symbol context through one command.
-- Verbose cell and symbol targets include symbol graph payloads in MCP.
+- Cell and symbol targets include symbol graph payloads in MCP.
 
 ## Writing
 

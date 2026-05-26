@@ -425,27 +425,6 @@ def _parse_write_target(value):
         return slice(value[0], value[1])
     return int(value)
 
-# %% ../nbs/00_foundation.ipynb #f87b234f
-def _select_cells(cells, selector):
-    items = list(enumerate(cells))
-    if selector is None: return items
-    selector = _parse_read_selector(selector)
-    if isinstance(selector, slice): return items[selector]
-    if isinstance(selector, list):
-        return [(idx, cells[idx]) for idx in (_as_index(o, len(cells)) for o in selector)]
-    idx = _as_index(selector, len(cells))
-    return [(idx, cells[idx])]
-
-# %% ../nbs/00_foundation.ipynb #3aed849d
-def _delete_cells(cells, selector):
-    if selector is None: return
-    target = _parse_write_target(selector)
-    if isinstance(target, slice):
-        del cells[target]
-        return
-    idx = _as_index(target, len(cells))
-    del cells[idx]
-
 # %% ../nbs/00_foundation.ipynb #da118f0d
 def _split_blocks(text):
     text = "" if text is None else str(text)
@@ -461,6 +440,22 @@ def _coerce_cell(cell, default_type="code"):
     return mk_cell(str(cell), cell_type=default_type)
 
 # %% ../nbs/00_foundation.ipynb #d8b43be3
+def _symbol_short_name(symbol): return str(symbol).rsplit(".", 1)[-1]
+
+# %% ../nbs/00_foundation.ipynb #ede47273
+def _name_parts(node):
+    if isinstance(node, ast.Name): return [node.id]
+    if isinstance(node, ast.Attribute):
+        base = _name_parts(node.value)
+        return [*base, node.attr] if base else [node.attr]
+    return []
+
+# %% ../nbs/00_foundation.ipynb #eff4079d
+def _call_name(node):
+    parts = _name_parts(node)
+    return ".".join(parts) if parts else None
+
+# %% ../nbs/00_foundation.ipynb #d4e663d2
 def is_definition_node(node):
     return isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
 
@@ -760,14 +755,6 @@ def first_line(source):
 # %% ../nbs/00_foundation.ipynb #f4e29752
 def cell_prefix(idx, cell, show_ids=False): return f"Cell id={cell.id}: {cell.cell_type}"
 
-# %% ../nbs/00_foundation.ipynb #45af5771
-def _format_chapter_spans(spans, cells):
-    lines = []
-    for span in spans:
-        cell = cells[span["start"]]
-        lines.append(f"Chapter id={cell.id}: ## {span['title']}")
-    return "\n".join(lines)
-
 # %% ../nbs/00_foundation.ipynb #a8d23e87
 def matches_filter(source, pattern):
     pattern = str(pattern)
@@ -982,16 +969,22 @@ def with_context(cells, items, include=False):
 
 
 # %% ../nbs/00_foundation.ipynb #dd511845
-def _chapter_title(cell):
+def _heading_title(cell, levels=(2,)):
     if getattr(cell, "cell_type", None) != "markdown": return None
+    level_set = {int(level) for level in levels}
     for line in cell_source(cell).splitlines():
-        match = re.match(r"^##\s+(.+?)\s*$", line.strip())
-        if match: return match.group(1).strip()
+        match = re.match(r"^(#{1,6})\s+(.+?)\s*$", line.strip())
+        if match and len(match.group(1)) in level_set: return match.group(2).strip()
     return None
 
+
+def _chapter_title(cell):
+    return _heading_title(cell, levels=(2,))
+
 # %% ../nbs/00_foundation.ipynb #af4ae045
-def _chapter_spans(cells):
-    starts = [(idx, title) for idx, cell in enumerate(cells) if (title := _chapter_title(cell))]
+def _chapter_spans(cells, levels=(2,), fallback=None):
+    starts = [(idx, title) for idx, cell in enumerate(cells) if (title := _heading_title(cell, levels=levels))]
+    if not starts and fallback is not None: return [dict(title=fallback, start=0, end=len(cells))]
     spans = []
     for pos, (start, title) in enumerate(starts):
         end = starts[pos + 1][0] if pos + 1 < len(starts) else len(cells)
@@ -1033,29 +1026,3 @@ def _chapter_body_slice(span, target):
     start, stop, step = target.indices(body_len)
     if step != 1: raise ValueError("chapter ranges do not support steps")
     return slice(body_start + start, body_start + stop)
-
-# %% ../nbs/00_foundation.ipynb #69e65d1e
-def _chapter_delete(cells, span, selector):
-    if selector is None: return
-    target = _parse_write_target(selector)
-    body_start = span["start"] + 1
-    body_len = _chapter_body_len(span)
-    if isinstance(target, slice):
-        del cells[_chapter_body_slice(span, target)]
-        return
-    idx = int(target)
-    if idx < 0: idx += body_len
-    if idx < 0 or idx >= body_len: raise IndexError(target)
-    del cells[body_start + idx]
-
-# %% ../nbs/00_foundation.ipynb #601577d2
-def _chapter_insert_target(span, target):
-    body_start = span["start"] + 1
-    body_len = _chapter_body_len(span)
-    if target is None: return slice(body_start, body_start + body_len)
-    if isinstance(target, slice): return _chapter_body_slice(span, target)
-    idx = int(target)
-    if idx == -1: return body_start + body_len
-    if idx < 0: idx += body_len
-    if idx < 0 or idx > body_len: raise IndexError(target)
-    return body_start + idx

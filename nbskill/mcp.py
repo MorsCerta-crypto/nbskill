@@ -1689,6 +1689,39 @@ async def edit_notebook_tool(
         edit_notebook=result if isinstance(result, dict) else {},
     )
 
+# %% ../nbs/07_mcp.ipynb #5a228570
+def _exec_approval_request(path, full_output):
+    "Return structured approval details for a safe-exec unapproved-cell block."
+    text = as_text(full_output)
+    match = re.search(r"unapproved cell id=([A-Za-z0-9_-]+)", text)
+    cell_id = match.group(1) if match else None
+    request = dict(kind="safe_execution", path=str(path), cell_id=cell_id, source_hash=None, reason="Safe execution refused an unapproved notebook cell.", approval_argument={"allow_new": True}, risk="Runs notebook code that has not yet been stamped by nbskill safe execution.")
+    if cell_id:
+        try: request["source_hash"] = _mcp_cell_source_hash(path, cell_id)
+        except Exception as exc: request["source_hash_error"] = f"{type(exc).__name__}: {exc}"
+    return request
+
+# %% ../nbs/07_mcp.ipynb #e29ff2fc
+async def _elicit_exec_approval(ctx, request):
+    "Ask the MCP client for permission to rerun safe execution with allow_new=True."
+    if ctx is None or not hasattr(ctx, "elicit"):
+        return False, dict(action="unavailable", reason="MCP context does not support elicitation.")
+    cell = f" cell {request['cell_id']}" if request.get("cell_id") else " an unapproved cell"
+    source_hash = f" source hash {request['source_hash']}" if request.get("source_hash") else ""
+    message = (
+        f"nbskill safe-mode blocked{cell} in {request['path']}{source_hash}. "
+        "Approve one rerun with allow_new=True? Only approve if you trust this notebook source."
+    )
+    try:
+        result = await ctx.elicit(
+            message, bool, response_title="Approve notebook execution",
+            response_description="Allow nbskill to rerun once with allow_new=True for this blocked cell.")
+    except Exception as exc: return False, dict(action="error", error_type=type(exc).__name__, message=str(exc))
+    action = getattr(result, "action", None)
+    if action != "accept": return False, dict(action=action or "unknown")
+    approved = bool(getattr(result, "data", False))
+    return approved, dict(action="accept", approved=approved)
+
 # %% ../nbs/07_mcp.ipynb #mcptool10
 @mcp.tool(**_mcp_tool_meta("exec_nb"))
 async def exec_nb_tool(
@@ -1716,19 +1749,50 @@ async def exec_nb_tool(
     )
     full_output = capture_notebook_call(exec_nb, path, **call_args)
     warnings = []
+    approval_request = None
+    elicitation = None
     if "PermissionError: Audit:" in full_output:
         warnings.append(_warning(
             "safe-exec-audit-block",
             "Safe execution blocked an audited operation.",
             "Use an explicit CLI run for trusted notebooks that need broader execution permissions.",
         ))
-    if "_ExecutionApprovalRequired" in full_output or "refusing to execute unapproved cell" in full_output:
+    approval_blocked = "_ExecutionApprovalRequired" in full_output or "refusing to execute unapproved cell" in full_output
+    if approval_blocked and not allow_new:
+        approval_request = _exec_approval_request(path, full_output)
+        approved, elicitation = await _elicit_exec_approval(ctx, approval_request)
+        approval_request["elicited"] = True
+        approval_request["approved"] = approved
+        if approved:
+            retry_args = dict(call_args, allow_new=True)
+            full_output = capture_notebook_call(exec_nb, path, **retry_args)
+            arguments["allow_new"] = True
+            arguments["elicited_allow_new"] = True
+            approval_blocked = "_ExecutionApprovalRequired" in full_output or "refusing to execute unapproved cell" in full_output
+        else:
+            warnings.append(_warning(
+                "safe-exec-approval-required",
+                "Safe execution refused an unapproved notebook cell.",
+                "Approve the MCP elicitation or rerun with allow_new=True only if you approve the notebook source.",
+                **approval_request,
+            ))
+            if elicitation and elicitation.get("action") == "error":
+                warnings.append(_warning(
+                    "mcp-elicitation-unavailable",
+                    "The MCP client did not complete the execution approval prompt.",
+                    "Ask the user in chat before rerunning with allow_new=True.",
+                    **elicitation,
+                ))
+    if approval_blocked and allow_new:
         warnings.append(_warning(
             "safe-exec-approval-required",
             "Safe execution refused an unapproved notebook cell.",
             "Rerun with allow_new=True only if you approve the notebook source.",
         ))
-    return mcp_tool_result("exec_nb", arguments, full_output, detail=detail, warnings=warnings)
+    return mcp_tool_result(
+        "exec_nb", arguments, full_output, detail=detail, warnings=warnings,
+        approval_required=approval_request, elicitation=elicitation,
+    )
 
 # %% ../nbs/07_mcp.ipynb #mcpdiffnb
 @mcp.tool(**_mcp_tool_meta("diff_nb"))

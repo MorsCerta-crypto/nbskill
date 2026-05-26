@@ -51,9 +51,6 @@ def _reference_db(path=None):
 def _lancedb_path(path=None):
     return reference_home(path) / "lancedb"
 
-def _reference_items_table(path=None):
-    return _reference_table(path, "items")
-
 # %% ../nbs/12_knowledge.ipynb #c2724539
 _REFERENCE_SYNONYM_GROUPS = [
     {"route", "endpoint", "handler", "url", "page"},
@@ -154,10 +151,6 @@ def _write_lance_table(path, key, rows):
         try: table.create_fts_index("search_text", replace=True)
         except Exception: pass
     return table
-
-# %% ../nbs/12_knowledge.ipynb #d00c0d7c
-def _reference_storage_note():
-    return "Reference knowledge is stored only in LanceDB tables."
 
 # %% ../nbs/12_knowledge.ipynb #66ccbdf5
 def _stable_item_id(*parts):
@@ -845,10 +838,6 @@ def _repo_filter(repos):
 # %% ../nbs/12_knowledge.ipynb #6811672f
 def _query_tokens(query):
     return [token for token in re.findall(r"[A-Za-z0-9_]+", query.lower()) if len(token) > 1]
-
-# %% ../nbs/12_knowledge.ipynb #5bbbb0ee
-def _reference_query_note():
-    return "Reference queries use LanceDB vector and full-text search."
 
 # %% ../nbs/12_knowledge.ipynb #48b429cf
 def _current_dependencies(current_repo):

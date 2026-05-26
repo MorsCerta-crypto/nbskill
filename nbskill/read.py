@@ -14,6 +14,7 @@ from pathlib import Path
 
 from fastcore.nbio import read_nb
 
+from . import foundation as _foundation
 from nbskill.foundation import (
     cell_matches_type, cell_prefix, cell_source, chapter_index_set,
     find_cell_by_id, first_line, is_exported_code_cell, matches_filter,
@@ -83,16 +84,6 @@ def _code_overview(cell):
         if lines and lines[-1] != "": lines.append("")
     if lines and lines[-1] == "": lines.pop()
     return lines
-
-# %% ../nbs/01_read.ipynb #8d5cdcf7
-def _format_headers(items, include_docs=False):
-    chunks = []
-    for idx, cell in items:
-        if cell.cell_type == "markdown": lines = _markdown_overview(cell, include_docs=include_docs)
-        elif cell.cell_type == "code": lines = _code_overview(cell)
-        else: lines = []
-        if lines: chunks.append(f"{cell_prefix(idx, cell, True)}\n" + "\n".join(lines))
-    return "\n\n".join(chunks)
 
 # %% ../nbs/01_read.ipynb #f204f489
 def _format_source(source, line_numbers=False):
@@ -186,22 +177,6 @@ def _cell_defined_symbols(cell):
             for child in node.body:
                 if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)): symbols.append(f"{node.name}.{child.name}")
     return symbols
-
-# %% ../nbs/01_read.ipynb #aaa009d2
-def _format_usage_for_items(path, items, max_symbols=4):
-    symbols = []
-    for _, cell in items: symbols.extend(_cell_defined_symbols(cell))
-    symbols = list(dict.fromkeys(symbols))
-    if not symbols: return ""
-    shown = symbols[:max_symbols]
-    try:
-        from nbskill.graph import symbol_usage_summary
-        text = symbol_usage_summary(path, shown)
-    except Exception as exc:
-        return f"Usage unavailable: {type(exc).__name__}: {exc}"
-    if len(symbols) > len(shown):
-        text = f"{text}\n... {len(symbols) - len(shown)} more symbols omitted ..."
-    return text
 
 # %% ../nbs/01_read.ipynb #contextbase
 def _context_result(kind, text, verbose=True, **data):
@@ -342,20 +317,10 @@ def _source_for_node(cell, node):
 
 
 # %% ../nbs/01_read.ipynb #contextcalls
-def _symbol_short_name(symbol): return str(symbol).rsplit(".", 1)[-1]
+def _symbol_short_name(symbol): return _foundation._symbol_short_name(symbol)
 
 
-def _name_parts(node):
-    if isinstance(node, ast.Name): return [node.id]
-    if isinstance(node, ast.Attribute):
-        base = _name_parts(node.value)
-        return [*base, node.attr] if base else [node.attr]
-    return []
-
-
-def _call_name(node):
-    parts = _name_parts(node)
-    return ".".join(parts) if parts else None
+def _call_name(node): return _foundation._call_name(node)
 
 
 def _call_matches_context_symbol(name, symbol):
@@ -371,7 +336,6 @@ def _cell_calls_symbol(cell, symbol):
     for node in ast.walk(tree):
         if isinstance(node, ast.Call) and _call_matches_context_symbol(_call_name(node.func), symbol): return True
     return False
-
 
 # %% ../nbs/01_read.ipynb #contextsymbol
 def _markdown_mentions(nb, symbol):
@@ -454,11 +418,7 @@ def _format_callee_items(items, indent=""):
 
 # %% ../nbs/01_read.ipynb #76e0d320
 def _chapter_title_from_cell(cell):
-    if getattr(cell, "cell_type", None) != "markdown": return None
-    for line in cell_source(cell).splitlines():
-        match = re.match(r"^#{1,6}\s+(.+?)\s*$", line.strip())
-        if match: return match.group(1).strip()
-    return None
+    return _foundation._heading_title(cell, levels=range(1, 7))
 
 # %% ../nbs/01_read.ipynb #37ae8575
 def _normalize_chapter_title(value):
@@ -466,13 +426,7 @@ def _normalize_chapter_title(value):
 
 # %% ../nbs/01_read.ipynb #411b4891
 def _chapter_spans_for_nb(cells):
-    starts = [(idx, title) for idx, cell in enumerate(cells) if (title := _chapter_title_from_cell(cell))]
-    if not starts: return [dict(title="Notebook", start=0, end=len(cells))]
-    spans = []
-    for pos, (start, title) in enumerate(starts):
-        end = starts[pos + 1][0] if pos + 1 < len(starts) else len(cells)
-        spans.append(dict(title=title, start=start, end=end))
-    return spans
+    return _foundation._chapter_spans(cells, levels=range(1, 7), fallback="Notebook")
 
 # %% ../nbs/01_read.ipynb #fa91bd16
 def _notebook_head_items(cells):

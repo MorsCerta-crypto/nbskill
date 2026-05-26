@@ -16,7 +16,7 @@ from pathlib import Path
 
 from fastcore.nbio import read_nb
 
-
+from . import foundation as _foundation
 from .foundation import cell_source, cli_error, cli_return, notebook_paths, path_candidates, source_without_directives
 
 # %% ../nbs/10_graph.ipynb #c5547d77
@@ -34,18 +34,8 @@ def _parse_cell(cell):
     try: return ast.parse(source_without_directives(cell_source(cell)))
     except SyntaxError: return None
 
-# %% ../nbs/10_graph.ipynb #3a330f91
-def _name_parts(node):
-    if isinstance(node, ast.Name): return [node.id]
-    if isinstance(node, ast.Attribute):
-        base = _name_parts(node.value)
-        return [*base, node.attr] if base else [node.attr]
-    return []
-
 # %% ../nbs/10_graph.ipynb #261715f8
-def _call_name(node):
-    parts = _name_parts(node)
-    return ".".join(parts) if parts else None
+def _call_name(node): return _foundation._call_name(node)
 
 # %% ../nbs/10_graph.ipynb #fd22b01f
 def _call_site_records(node, source=""):
@@ -381,8 +371,7 @@ def notebook_order_problem_lines(path="nbs"):
     return [_format_order_problem(problem) for problem in notebook_order_problems(path)]
 
 # %% ../nbs/10_graph.ipynb #3f8ebe48
-def _symbol_short_name(symbol):
-    return str(symbol).rsplit(".", 1)[-1]
+def _symbol_short_name(symbol): return _foundation._symbol_short_name(symbol)
 
 # %% ../nbs/10_graph.ipynb #1f13ada8
 def _call_matches_symbol(call, symbol):

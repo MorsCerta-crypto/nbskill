@@ -14,11 +14,11 @@ from pathlib import Path
 
 from fastcore.nbio import read_nb
 
-from . import foundation as _foundation
 from nbskill.foundation import (
-    cell_matches_type, cell_prefix, cell_source, chapter_index_set,
-    find_cell_by_id, first_line, is_exported_code_cell, matches_filter,
-    notebook_paths, source_without_directives,
+    call_name, cell_matches_type, cell_prefix, cell_source, chapter_index_set,
+    chapter_spans, find_cell_by_id, first_line, heading_title,
+    is_exported_code_cell, matches_filter, notebook_paths,
+    source_without_directives, symbol_short_name,
 )
 
 # %% ../nbs/01_read.ipynb #3876f40e
@@ -317,15 +317,9 @@ def _source_for_node(cell, node):
 
 
 # %% ../nbs/01_read.ipynb #contextcalls
-def _symbol_short_name(symbol): return _foundation._symbol_short_name(symbol)
-
-
-def _call_name(node): return _foundation._call_name(node)
-
-
 def _call_matches_context_symbol(name, symbol):
     name = str(name or "")
-    short = _symbol_short_name(symbol)
+    short = symbol_short_name(symbol)
     return name == symbol or name.rsplit(".", 1)[-1] == short
 
 
@@ -334,12 +328,12 @@ def _cell_calls_symbol(cell, symbol):
     try: tree = ast.parse(source_without_directives(cell_source(cell)))
     except SyntaxError: return False
     for node in ast.walk(tree):
-        if isinstance(node, ast.Call) and _call_matches_context_symbol(_call_name(node.func), symbol): return True
+        if isinstance(node, ast.Call) and _call_matches_context_symbol(call_name(node.func), symbol): return True
     return False
 
 # %% ../nbs/01_read.ipynb #contextsymbol
 def _markdown_mentions(nb, symbol):
-    short = _symbol_short_name(symbol)
+    short = symbol_short_name(symbol)
     items = []
     for idx, cell in enumerate(nb.cells):
         if getattr(cell, "cell_type", None) != "markdown": continue
@@ -418,7 +412,7 @@ def _format_callee_items(items, indent=""):
 
 # %% ../nbs/01_read.ipynb #76e0d320
 def _chapter_title_from_cell(cell):
-    return _foundation._heading_title(cell, levels=range(1, 7))
+    return heading_title(cell, levels=range(1, 7))
 
 # %% ../nbs/01_read.ipynb #37ae8575
 def _normalize_chapter_title(value):
@@ -426,7 +420,7 @@ def _normalize_chapter_title(value):
 
 # %% ../nbs/01_read.ipynb #411b4891
 def _chapter_spans_for_nb(cells):
-    return _foundation._chapter_spans(cells, levels=range(1, 7), fallback="Notebook")
+    return chapter_spans(cells, levels=range(1, 7), fallback="Notebook")
 
 # %% ../nbs/01_read.ipynb #fa91bd16
 def _notebook_head_items(cells):
@@ -922,7 +916,7 @@ def _symbol_source(path, nb, symbol):
     return idx, cell, node, source
 def _source_mentions_symbols(source, symbols):
     for symbol in symbols:
-        short = _symbol_short_name(symbol)
+        short = symbol_short_name(symbol)
         if symbol in source or re.search(rf"\b{re.escape(short)}\b", source): return True
     return False
 def _related_cell_records(nb, symbols, definition_cell_idx=None):

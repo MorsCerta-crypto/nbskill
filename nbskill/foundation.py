@@ -5,12 +5,12 @@ __all__ = ['remove_demo_path', 'demo_path', 'path_candidates', 'is_valid_ipynb',
            'failure_map_path', 'empty_failure_map', 'load_failure_map', 'git_run', 'git_root', 'git_status_paths',
            'git_tracked_paths', 'git_diff_stats', 'notebook_paths', 'source_without_directives', 'file_line_count',
            'cap_text', 'generated_owner', 'install_nbdev_pre_commit_hooks', 'parse_literal', 'none_if_string',
-           'is_definition_node', 'node_start_line', 'is_export_directive', 'cell_source', 'cell_metadata',
-           'notebook_metadata', 'file_hash', 'exported_py_path', 'stamp_export_metadata', 'parse_one_cell',
-           'find_cell_by_id', 'find_cell_by_text', 'replace_cell', 'clear_outputs', 'load_cells_text',
-           'validate_code_cells', 'parse_cells', 'first_line', 'cell_prefix', 'matches_filter', 'is_exported_code_cell',
-           'stamp_notebook_metadata', 'cell_class_names', 'cell_matches_type', 'with_context', 'chapter_index_set',
-           'one_chapter']
+           'symbol_short_name', 'call_name', 'is_definition_node', 'node_start_line', 'is_export_directive',
+           'cell_source', 'cell_metadata', 'notebook_metadata', 'file_hash', 'exported_py_path',
+           'stamp_export_metadata', 'parse_one_cell', 'find_cell_by_id', 'find_cell_by_text', 'replace_cell',
+           'clear_outputs', 'load_cells_text', 'validate_code_cells', 'parse_cells', 'first_line', 'cell_prefix',
+           'matches_filter', 'is_exported_code_cell', 'stamp_notebook_metadata', 'cell_class_names',
+           'cell_matches_type', 'with_context', 'heading_title', 'chapter_spans', 'chapter_index_set', 'one_chapter']
 
 # %% ../nbs/00_foundation.ipynb #2500639f
 import ast,hashlib,json,os,re
@@ -440,7 +440,9 @@ def _coerce_cell(cell, default_type="code"):
     return mk_cell(str(cell), cell_type=default_type)
 
 # %% ../nbs/00_foundation.ipynb #d8b43be3
-def _symbol_short_name(symbol): return str(symbol).rsplit(".", 1)[-1]
+def symbol_short_name(symbol):
+    "Return the final dotted component of a symbol name."
+    return str(symbol).rsplit(".", 1)[-1]
 
 # %% ../nbs/00_foundation.ipynb #ede47273
 def _name_parts(node):
@@ -451,7 +453,8 @@ def _name_parts(node):
     return []
 
 # %% ../nbs/00_foundation.ipynb #eff4079d
-def _call_name(node):
+def call_name(node):
+    "Return dotted name text for an AST name, attribute, or call expression."
     parts = _name_parts(node)
     return ".".join(parts) if parts else None
 
@@ -969,7 +972,8 @@ def with_context(cells, items, include=False):
 
 
 # %% ../nbs/00_foundation.ipynb #dd511845
-def _heading_title(cell, levels=(2,)):
+def heading_title(cell, levels=(2,)):
+    "Return the first markdown heading title whose level is allowed."
     if getattr(cell, "cell_type", None) != "markdown": return None
     level_set = {int(level) for level in levels}
     for line in cell_source(cell).splitlines():
@@ -979,11 +983,12 @@ def _heading_title(cell, levels=(2,)):
 
 
 def _chapter_title(cell):
-    return _heading_title(cell, levels=(2,))
+    return heading_title(cell, levels=(2,))
 
 # %% ../nbs/00_foundation.ipynb #af4ae045
-def _chapter_spans(cells, levels=(2,), fallback=None):
-    starts = [(idx, title) for idx, cell in enumerate(cells) if (title := _heading_title(cell, levels=levels))]
+def chapter_spans(cells, levels=(2,), fallback=None):
+    "Return contiguous notebook cell spans opened by markdown headings."
+    starts = [(idx, title) for idx, cell in enumerate(cells) if (title := heading_title(cell, levels=levels))]
     if not starts and fallback is not None: return [dict(title=fallback, start=0, end=len(cells))]
     spans = []
     for pos, (start, title) in enumerate(starts):
@@ -993,7 +998,7 @@ def _chapter_spans(cells, levels=(2,), fallback=None):
 
 # %% ../nbs/00_foundation.ipynb #3ea4e21f
 def _matching_chapters(cells, chapter=None):
-    spans = _chapter_spans(cells)
+    spans = chapter_spans(cells)
     if chapter is None: return spans
     return [span for span in spans if matches_filter(span["title"], chapter)]
 

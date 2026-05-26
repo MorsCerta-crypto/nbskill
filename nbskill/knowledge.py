@@ -713,8 +713,9 @@ def _infer_package(root, repo):
     pyproject = Path(root) / "pyproject.toml"
     if pyproject.exists():
         text = pyproject.read_text(encoding="utf-8", errors="replace")
-        if match := re.search(r"(?m)^name\s*=\s*['\"]([^'\"]+)['\"]", text):
-            return match.group(1)
+        name_match = re.search(r"(?m)^name\s*=\s*['\"]([^'\"]+)['\"]", text)
+        if name_match:
+            return name_match.group(1)
     for child in Path(root).iterdir():
         if child.is_dir() and (child / "__init__.py").exists(): return child.name
     return repo["name"].replace("-", "_")

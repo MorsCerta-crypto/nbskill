@@ -16,8 +16,10 @@ from pathlib import Path
 
 from fastcore.nbio import read_nb
 
-from . import foundation as _foundation
-from .foundation import cell_source, cli_error, cli_return, notebook_paths, path_candidates, source_without_directives
+from nbskill.foundation import (
+    call_name, cell_source, cli_error, cli_return, notebook_paths,
+    path_candidates, source_without_directives, symbol_short_name,
+)
 
 # %% ../nbs/10_graph.ipynb #c5547d77
 def _graph_scope(path):
@@ -34,21 +36,18 @@ def _parse_cell(cell):
     try: return ast.parse(source_without_directives(cell_source(cell)))
     except SyntaxError: return None
 
-# %% ../nbs/10_graph.ipynb #261715f8
-def _call_name(node): return _foundation._call_name(node)
-
 # %% ../nbs/10_graph.ipynb #fd22b01f
 def _call_site_records(node, source=""):
     source_lines = str(source or "").splitlines()
     records = []
     for child in ast.walk(node):
         if not isinstance(child, ast.Call): continue
-        name = _call_name(child.func)
+        name = call_name(child.func)
         if not name: continue
         lineno = getattr(child, "lineno", None)
         line = source_lines[lineno - 1].strip() if lineno and lineno <= len(source_lines) else ""
-        for call_name in dict.fromkeys([name, name.rsplit(".", 1)[-1]]):
-            records.append({"name": call_name, "lineno": lineno, "line": line})
+        for called_name in dict.fromkeys([name, name.rsplit(".", 1)[-1]]):
+            records.append({"name": called_name, "lineno": lineno, "line": line})
     return tuple(records)
 
 # %% ../nbs/10_graph.ipynb #f7f6a22e
@@ -370,18 +369,15 @@ def notebook_order_problem_lines(path="nbs"):
     "Return style-check lines for calls before definitions/imports and missing callable imports."
     return [_format_order_problem(problem) for problem in notebook_order_problems(path)]
 
-# %% ../nbs/10_graph.ipynb #3f8ebe48
-def _symbol_short_name(symbol): return _foundation._symbol_short_name(symbol)
-
 # %% ../nbs/10_graph.ipynb #1f13ada8
 def _call_matches_symbol(call, symbol):
     call = str(call)
     symbol = str(symbol)
-    return call == symbol or _symbol_short_name(call) == _symbol_short_name(symbol)
+    return call == symbol or symbol_short_name(call) == symbol_short_name(symbol)
 
 # %% ../nbs/10_graph.ipynb #b047d309
 def _definitions_for_symbol(graph, symbol):
-    return [record for record in graph["definitions"] if record["symbol"] == symbol or _symbol_short_name(record["symbol"]) == symbol]
+    return [record for record in graph["definitions"] if record["symbol"] == symbol or symbol_short_name(record["symbol"]) == symbol]
 
 # %% ../nbs/10_graph.ipynb #7c9f2f39
 def _caller_records_for_symbol(graph, symbol):
@@ -631,7 +627,7 @@ def private_symbol_report(
     lines = ["Cross-notebook private symbol calls"]
     for imported in graph["imports"]:
         symbol = imported["symbol"]
-        if not _symbol_short_name(symbol).startswith("_"): continue
+        if not symbol_short_name(symbol).startswith("_"): continue
         definition = definitions.get((imported["module"], symbol))
         if not definition or definition["path"] == imported["path"]: continue
         for caller in graph["callers"]:
@@ -1017,7 +1013,7 @@ def _normalized_ast_shape(node):
 
 
 def _decorator_names(node):
-    return sorted(filter(None, (_call_name(item) for item in getattr(node, "decorator_list", []))))
+    return sorted(filter(None, (call_name(item) for item in getattr(node, "decorator_list", []))))
 
 
 def _cell_import_names(tree):
@@ -1080,7 +1076,7 @@ def _catalog_record(path, module, idx, cell, node, symbol, kind, heading, import
         "cell_id": getattr(cell, "id", ""),
         "cell_idx": idx,
         "exported": exported,
-        "private": _symbol_short_name(symbol).startswith("_"),
+        "private": symbol_short_name(symbol).startswith("_"),
         "docstring": docstring,
         "heading": heading,
         "tokens": _tokens_from_text(text),
@@ -1123,7 +1119,7 @@ def _source_record_from_node(source, imports, symbol, symbol_node, kind):
         "cell_id": "",
         "cell_idx": 0,
         "exported": False,
-        "private": _symbol_short_name(symbol).startswith("_"),
+        "private": symbol_short_name(symbol).startswith("_"),
         "docstring": docstring,
         "heading": "",
         "tokens": _tokens_from_text(text),
@@ -1181,8 +1177,8 @@ def _reuse_score(target, record):
     name_score = 20 * _jaccard(_tokens_from_text(target.get("symbol", "")), record.get("tokens", []))
     token_score = 18 * _jaccard(target.get("tokens", []), record.get("tokens", []))
     call_score = 18 * _jaccard(
-        map(_symbol_short_name, target.get("calls", [])),
-        map(_symbol_short_name, record.get("calls", [])),
+        map(symbol_short_name, target.get("calls", [])),
+        map(symbol_short_name, record.get("calls", [])),
     )
     import_score = 10 * _jaccard(target.get("imports", []), record.get("imports", []))
     decorator_score = 8 * _jaccard(target.get("decorators", []), record.get("decorators", []))
@@ -1195,8 +1191,8 @@ def _reuse_score(target, record):
 def _reuse_reasons(target, record):
     reasons = []
     shared_tokens = set(target.get("tokens", [])) & set(record.get("tokens", []))
-    shared_calls = set(map(_symbol_short_name, target.get("calls", []))) & set(
-        map(_symbol_short_name, record.get("calls", []))
+    shared_calls = set(map(symbol_short_name, target.get("calls", []))) & set(
+        map(symbol_short_name, record.get("calls", []))
     )
     if shared_tokens: reasons.append("shared tokens: " + ", ".join(sorted(shared_tokens)[:6]))
     if shared_calls: reasons.append("shared calls: " + ", ".join(sorted(shared_calls)[:6]))
@@ -1270,8 +1266,8 @@ def _score_notebook_for_target(target, notebook, graph):
     symbol_tokens = _tokens_from_text(" ".join(symbols))
     heading_tokens = _tokens_from_text(" ".join(notebook.get("headings", [])))
     import_tokens = _tokens_from_text(" ".join(notebook.get("imports", [])))
-    calls = set(map(_symbol_short_name, target.get("calls", [])))
-    short_symbols = set(map(_symbol_short_name, symbols))
+    calls = set(map(symbol_short_name, target.get("calls", [])))
+    short_symbols = set(map(symbol_short_name, symbols))
     caller_paths = _caller_paths_for_symbol(graph, target_symbol) if target_symbol else []
     caller_count = caller_paths.count(notebook.get("path"))
     score = 0
@@ -1294,7 +1290,7 @@ def _score_notebook_for_target(target, notebook, graph):
 def _target_record(catalog, symbol=None, source=None):
     if symbol:
         for record in catalog["symbols"]:
-            if record["symbol"] == symbol or _symbol_short_name(record["symbol"]) == symbol:
+            if record["symbol"] == symbol or symbol_short_name(record["symbol"]) == symbol:
                 return dict(record)
     return _advice_target(source=source or "")
 
@@ -1402,7 +1398,7 @@ def _private_boundary_problems(catalog):
     seen = set()
     for imported in graph["imports"]:
         symbol = imported["symbol"]
-        if not _symbol_short_name(symbol).startswith("_"): continue
+        if not symbol_short_name(symbol).startswith("_"): continue
         definition = definitions.get((imported["module"], symbol))
         if not definition or definition["path"] == imported["path"]: continue
         for caller in graph["callers"]:

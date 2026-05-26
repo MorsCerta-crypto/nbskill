@@ -31,7 +31,9 @@ def _coerce_lines(lines):
     if lines is None: return []
     if isinstance(lines, str): return lines.splitlines()
     out = []
-    for line in lines: out.extend(str(line).splitlines())
+    for line in lines:
+        parts = str(line).splitlines()
+        out.extend(parts if parts else [""])
     return out
 
 
@@ -73,13 +75,13 @@ def _unified_diff(before, after, fromfile="before", tofile="after", context=2):
 
 
 def insert_lines(text, insert_line, new_lines):
-    """Insert `new_lines` before a zero-based line boundary in `text`."""
+    """Insert `new_lines` before a 1-based line boundary in `text`; use n+1 to append."""
     lines = str(text).splitlines()
     try: idx = int(insert_line)
     except (TypeError, ValueError) as err: raise ValueError("insert_line must be an integer") from err
-    if idx < 0: idx = len(lines) + idx + 1
-    if idx < 0 or idx > len(lines): raise ValueError(f"insert_line must be within 0:{len(lines)}; got {insert_line!r}")
-    return _join_lines([*lines[:idx], *_coerce_lines(new_lines), *lines[idx:]])
+    if idx < 0: idx = len(lines) + idx + 2
+    if idx < 1 or idx > len(lines) + 1: raise ValueError(f"insert_line must be within 1:{len(lines) + 1}; got {insert_line!r}")
+    return _join_lines([*lines[:idx - 1], *_coerce_lines(new_lines), *lines[idx - 1:]])
 
 
 def replace_lines(text, start_line, end_line=None, replacement_lines=None):
@@ -322,6 +324,7 @@ def _apply_structural_edit(nb, edit, diffs, affected, default_cell_type):
     if op == "move_cells":
         indices = _selected_indices(nb, edit)
         if not indices: raise ValueError("move_cells matched no cells")
+        before_order = [getattr(cell, "id", "") for cell in nb.cells]
         moving = [nb.cells[idx] for idx in indices]
         moving_ids = [getattr(cell, "id", "") for cell in moving]
         remaining = [cell for idx, cell in enumerate(nb.cells) if idx not in set(indices)]
@@ -331,8 +334,19 @@ def _apply_structural_edit(nb, edit, diffs, affected, default_cell_type):
         if anchor_id not in anchor_positions: raise ValueError(f"unknown anchor_id {anchor_id!r}")
         target = anchor_positions[anchor_id] + (1 if where == "after" else 0)
         nb.cells[:] = [*remaining[:target], *moving, *remaining[target:]]
+        after_order = [getattr(cell, "id", "") for cell in nb.cells]
         affected.extend(moving_ids)
-        diffs.append({"op": op, "cell_id": "", "changed": True, "moved_cell_ids": moving_ids, "diff": ""})
+        diff = "\n".join([
+            f"moved cells: {', '.join(moving_ids)}",
+            f"anchor: {where} {anchor_id}",
+            "before order: " + " -> ".join(before_order),
+            "after order: " + " -> ".join(after_order),
+        ])
+        diffs.append({
+            "op": op, "cell_id": "", "changed": True, "moved_cell_ids": moving_ids,
+            "anchor_id": anchor_id, "where": where, "before_order": before_order,
+            "after_order": after_order, "diff": diff,
+        })
         return
     raise ValueError(f"unsupported structural op {op!r}")
 

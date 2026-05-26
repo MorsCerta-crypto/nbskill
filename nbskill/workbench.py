@@ -22,7 +22,7 @@ from nbskill.foundation import (
     generated_owner, git_diff_stats, git_root, git_status_paths,
     git_tracked_paths, notebook_paths, source_without_directives,
 )
-from .graph import notebook_order_problems, symbol_usage_summary
+from .graph import notebook_order_problems, placement_advice, reuse_advice, symbol_usage_summary
 from .read import file_context
 from .review import notebook_validation_problems, style_report
 
@@ -300,6 +300,8 @@ def compile_context(goal, path="nbs", contract=None, taste=None) -> dict:
             evidence.append({**cell, "context": cap_text(context, 2200)})
         symbols.extend(_symbol_candidates(nb_path, tokens))
     symbol_summary = symbol_usage_summary(path, symbols) if symbols else ""
+    reuse = reuse_advice(goal, path=path, top_k=5)
+    placement = placement_advice(path=path, source=goal, top_k=5)
     state = capture_state(path)
     return {
         "goal": goal,
@@ -309,6 +311,8 @@ def compile_context(goal, path="nbs", contract=None, taste=None) -> dict:
         "evidence": evidence,
         "symbols": symbols,
         "symbol_summary": cap_text(symbol_summary, 2000),
+        "reuse_advice": reuse,
+        "placement_advice": placement,
         "doctor_warnings": {
             "validation_problem_count": state["validation_problem_count"],
             "order_problem_count": state["order_problem_count"],
@@ -316,7 +320,6 @@ def compile_context(goal, path="nbs", contract=None, taste=None) -> dict:
         "style_summary": state["style"].get("summary", {}),
         "verification_hints": contract.get("verification", []),
     }
-
 
 # %% ../nbs/11_agent_workbench.ipynb #902e700d
 def _changed_files(baseline, current):
@@ -464,6 +467,18 @@ def _render_context_lines(context):
     )
     lines.extend(["", "Evidence cells:"])
     lines.extend(f"- {item['path']} id={item['id']}" for item in context.get("evidence", []))
+    reuse = context.get("reuse_advice") or {}
+    if reuse.get("matches") or reuse.get("notebooks"):
+        lines.extend(["", "Search-before-write:"])
+        for item in reuse.get("matches", [])[:3]:
+            lines.append(f"- reuse {item['symbol']} in {item['path']} id={item['cell_id']} score={item['score']}")
+        for item in reuse.get("notebooks", [])[:3]:
+            lines.append(f"- inspect {item['path']} score={item['score']}")
+    placement = context.get("placement_advice") or {}
+    if placement.get("candidates"):
+        lines.extend(["", "Placement candidates:"])
+        for item in placement.get("candidates", [])[:3]:
+            lines.append(f"- {item['path']} score={item['score']} reasons={'; '.join(item.get('reasons', []))}")
     if context.get("symbol_summary"):
         lines.extend(["", "Symbol consequences:", context["symbol_summary"]])
     return lines

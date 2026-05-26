@@ -927,7 +927,7 @@ def symbol_context(
     return _context_result(
         "symbol_context", text, verbose=verbose, path=str(path), symbol=symbol,
         depth=depth, location={"cell_id": getattr(cell, "id", ""), "cell_idx": idx},
-        source=source, markdown=markdown, examples=examples, callers=callers, callees=callees,
+        source=source, markdown=markdown, examples=examples, callers=callers, callees=callees, symbols=[symbol],
     )
 
 # %% ../nbs/01_read.ipynb #1ef3e16c
@@ -1016,13 +1016,13 @@ def _cell_context(path, cell_idx, overview=False, verbose=True):
     symbol = definition["symbol"]
     idx, cell, node, source = _symbol_source(path, nb, symbol)
     if overview: return _implementation_context(path, idx, cell, symbol, source, verbose=verbose)
-    return _mentions_context(path, nb, [symbol], definition_cell_idx=cell_idx, verbose=verbose)
+    return symbol_context(path, symbol, depth=1, verbose=verbose)
 def _symbol_focus_context(path, symbol, overview=False, verbose=True):
     nb = read_nb(path)
     idx, cell, node, source = _symbol_source(path, nb, symbol)
     definition_node = isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
     if overview or not definition_node: return _implementation_context(path, idx, cell, symbol, source, verbose=verbose)
-    return _mentions_context(path, nb, [symbol], definition_cell_idx=idx, verbose=verbose)
+    return symbol_context(path, symbol, depth=1, verbose=verbose)
 
 # %% ../nbs/01_read.ipynb #302689a7
 def _markdown_heading_level(source):

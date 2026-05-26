@@ -21,12 +21,14 @@ from urllib.parse import unquote, urlparse
 
 # %% ../nbs/07_mcp.ipynb #mcpimports2
 from fastcore.nbio import read_nb as _read_raw_nb
+from fastcore.nbio import write_nb as _write_raw_nb
 from fastmcp import Context, FastMCP
 from fastmcp.server.middleware import Middleware
 from fastmcp.tools import ToolResult
 from mcp.types import TextContent
 
 # %% ../nbs/07_mcp.ipynb #mcpimports3
+from nbdev.doclinks import nbdev_export as _run_nb_export
 from .convert import convert
 from .edit_interactive import execute_plan
 from .edit_interactive import execute_project_plan
@@ -34,7 +36,8 @@ from .edit_interactive import plan_result_text
 from .execute import exec_nb
 from .workbench import agent_workbench_result
 from .foundation import empty_failure_map, failure_map_path, load_failure_map
-from .foundation import cell_source, exported_py_path, generated_owner, git_root, git_status_paths, notebook_paths, path_candidates
+from .foundation import cell_source, exported_py_path, generated_owner, git_root, git_status_paths
+from .foundation import notebook_paths, path_candidates, stamp_export_metadata
 
 # %% ../nbs/07_mcp.ipynb #mcpimports4
 from .graph import notebook_order_problems
@@ -56,6 +59,7 @@ from .review import run_style_check
 from .review import style_check
 from .review import style_report
 from .review import diff_nb
+from .review import _notebook_autofix
 from .write import should_run_cell_feedback
 from .write import source_lines_cells
 
@@ -473,6 +477,27 @@ def _generated_pairs_for_scope(root, path):
         if py_path is not None and Path(py_path).exists(): pairs.append((Path(py_path), nb_path.resolve()))
     return pairs
 
+# %% ../nbs/07_mcp.ipynb #875cf63d
+def _repair_export_hash_metadata(path="."):
+    root = git_root(path) or _git_base(path).resolve()
+    diagnostic_path = _resolve_diagnostic_scope(path, root)
+    repairs = []
+    repair_codes = {"exported-py-hash-mismatch", "missing-exported-py-hash"}
+    for problem in notebook_validation_problems(diagnostic_path):
+        if problem.get("code") not in repair_codes: continue
+        nb_path = Path(problem["path"])
+        with notebook_locks(nb_path):
+            nb = _read_raw_nb(nb_path)
+            py_path = exported_py_path(nb_path, nb)
+            if py_path is None: continue
+            _run_nb_export(path=str(nb_path))
+            if not py_path.exists(): continue
+            nb = _read_raw_nb(nb_path)
+            stamp_export_metadata(nb, py_path)
+            _write_raw_nb(nb, nb_path)
+        repairs.append(dict(path=str(nb_path), generated=str(py_path), code=problem.get("code")))
+    return repairs
+
 # %% ../nbs/07_mcp.ipynb #dfcb6cd7
 def _cell_source_text(cell):
     if isinstance(cell, dict):
@@ -754,8 +779,8 @@ def _response_warnings(tool, arguments, preview):
     return _dedupe_warnings(warnings)[:3]
 
 # %% ../nbs/07_mcp.ipynb #4a32f9e9
-def _brief_call(tool, arguments, preview):
-    lines = [f"{tool} completed"]
+def _brief_call(tool, arguments, preview, status="completed"):
+    lines = [f"{tool} {status}"]
     for key in ("path", "nb_path", "cell_id", "id", "chapter", "name", "any_cell_id", "symbol"):
         if arguments.get(key) not in (None, ""):
             lines.append(f"{key}={arguments[key]}")
@@ -764,14 +789,15 @@ def _brief_call(tool, arguments, preview):
     return lines
 
 # %% ../nbs/07_mcp.ipynb #efed7008
-def mcp_tool_result(tool, arguments, full_output, max_output_chars=12000, detail="summary", warnings=None, hints=None, **structured):
+def mcp_tool_result(tool, arguments, full_output, max_output_chars=12000, detail="summary", warnings=None, hints=None, status="completed", **structured):
     "Return concise visible MCP text plus structured data for clients that inspect it."
     detail = detail or "summary"
-    if detail == "debug": max_output_chars = max(max_output_chars, 50000)
+    if detail == "debug" and max_output_chars is not None: max_output_chars = max(max_output_chars, 50000)
     preview = _text_preview(full_output or "", limit=max_output_chars)
-    warnings = _dedupe_warnings([*(warnings or []), *_response_warnings(tool, arguments or {}, preview)])
+    auto_warnings = [] if status != "completed" else _response_warnings(tool, arguments or {}, preview)
+    warnings = _dedupe_warnings([*(warnings or []), *auto_warnings])
     hints = list(hints or [])
-    lines = _brief_call(tool, arguments or {}, preview)
+    lines = _brief_call(tool, arguments or {}, preview, status=status)
     if preview["text"]:
         lines += ["", "Result:", preview["text"]]
     if warnings:
@@ -796,6 +822,19 @@ def mcp_tool_result(tool, arguments, full_output, max_output_chars=12000, detail
     data.update(structured)
     return ToolResult(content=[TextContent(type="text", text=summary)], structured_content=data)
 
+
+def _mcp_tool_error_result(tool, arguments, exc, max_output_chars=12000, detail="summary", **structured):
+    "Return an MCP result for a tool failure without raising through the transport."
+    message = f"{tool} failed: {type(exc).__name__}: {exc}"
+    warning = _warning(
+        "tool_failed", message,
+        "Treat this call as failed, but the MCP transport remains usable; fix the input or run a narrower diagnostic.",
+    )
+    return mcp_tool_result(
+        tool, arguments, message, max_output_chars=max_output_chars, detail=detail,
+        warnings=[warning], status="failed", ok=False,
+        error={"type": type(exc).__name__, "message": str(exc)}, **structured,
+    )
 
 # %% ../nbs/07_mcp.ipynb #d696afd1
 def _status_data(client_roots=None):
@@ -829,6 +868,14 @@ def _status_data(client_roots=None):
         ],
     }
 
+# %% ../nbs/07_mcp.ipynb #71601335
+def _doctor_fix_line(item, root):
+    path = _rel_to_root(item.get("path"), root)
+    if item.get("cell_id"):
+        return f"- {path} cell {item['cell_id']}: {item.get('description', item.get('code', 'fixed'))}"
+    if item.get("generated"): return f"- refreshed export hash for {path}"
+    return f"- {path}: {item.get('description', item.get('code', 'fixed'))}"
+
 # %% ../nbs/07_mcp.ipynb #7a5dcc61
 def _doctor_report(
     path=".",
@@ -842,8 +889,11 @@ def _doctor_report(
     max_diagnostics=200,
 ):
     root = git_root(path) or _git_base(path).resolve()
-    status = _status_data()
     selected = _doctor_scope_set(scopes)
+    export_fixes = _repair_export_hash_metadata(path) if fix else []
+    style_fixes = _notebook_autofix(path) if fix and "style" in selected else []
+    fixes = [*export_fixes, *style_fixes]
+    status = _status_data()
     errors = _doctor_error_items(path, status) if "error" in selected else []
     warnings, private_text = _doctor_warning_items(path) if "warning" in selected else ([], "")
     style = (
@@ -868,6 +918,9 @@ def _doctor_report(
     if "style" in selected: summary += f", {style_count} style diagnostic(s)"
     if not issue_count and "style" not in selected: summary = "nbskill doctor: no actionable errors or warnings"
     text_lines = [summary]
+    if fixes:
+        text_lines.append("\nFixes:")
+        text_lines.extend(_doctor_fix_line(item, root) for item in fixes)
     if errors:
         text_lines.append("\nErrors:")
         text_lines.extend(f"- {item['message']}" + (f" Next: {item['next_action']}" if item.get("next_action") else "") for item in errors)
@@ -894,7 +947,7 @@ def _doctor_report(
         "recent_events": failure_map.get("events", [])[-20:] if detail == "debug" else [],
         "counts": failure_map.get("counts", {}),
         "reset": bool(reset),
-        "fix": {"requested": bool(fix), "applied": []},
+        "fix": {"requested": bool(fix), "applied": fixes},
         "text": "\n".join(text_lines),
     }
     return report
@@ -1298,7 +1351,10 @@ async def doctor_tool(
     path = _mcp_workspace_path(path, root)
     skip_path = _mcp_workspace_path(skip_path, root) if skip_path else skip_path
     arguments = dict(path=path, scopes=scopes, detail=detail, fix=fix, reset=reset, skip_folder_re=skip_folder_re, skip_path=skip_path, max_output_chars=max_output_chars, max_diagnostics=max_diagnostics, workspace_root=str(root) if root else None)
-    report = _doctor_report(path=path, detail=detail, fix=fix, reset=reset, scopes=scopes, skip_folder_re=skip_folder_re, skip_path=skip_path, max_output_chars=max_output_chars, max_diagnostics=max_diagnostics)
+    try:
+        report = _doctor_report(path=path, detail=detail, fix=fix, reset=reset, scopes=scopes, skip_folder_re=skip_folder_re, skip_path=skip_path, max_output_chars=max_output_chars, max_diagnostics=max_diagnostics)
+    except Exception as exc:
+        return _mcp_tool_error_result("doctor", arguments, exc, max_output_chars=max_output_chars, detail=detail)
     return mcp_tool_result(
         "doctor", arguments, report["text"], detail=detail,
         warnings=report["issues"], hints=report["hints"], doctor=report,
@@ -1321,9 +1377,12 @@ async def _context_tool(
     if target_is_path: target = _mcp_workspace_path(target, root)
     arguments = dict(target=target, scope=scope, overview=overview, detail=detail, workspace_root=str(root) if root else None)
     context_args = dict(target=target, scope=scope, overview=overview)
-    with notebook_locks(scope), _CAPTURE_LOCK:
-        out, err = StringIO(), StringIO()
-        with redirect_stdout(out), redirect_stderr(err): data = context(**context_args)
+    try:
+        with notebook_locks(scope), _CAPTURE_LOCK:
+            out, err = StringIO(), StringIO()
+            with redirect_stdout(out), redirect_stderr(err): data = context(**context_args)
+    except Exception as exc:
+        return _mcp_tool_error_result("context", arguments, exc, max_output_chars=None, detail=detail)
     return mcp_tool_result("context", arguments, data["text"], max_output_chars=None, detail=detail, context=data)
 
 # %% ../nbs/07_mcp.ipynb #0cd3198d
@@ -1433,9 +1492,12 @@ async def _diff_nb_tool(path: str, ref_a: str | None = "HEAD", ref_b: str | None
     root = await _mcp_workspace_root(ctx)
     path = _mcp_workspace_path(path, root)
     arguments = dict(path=path, ref_a=ref_a, ref_b=ref_b, adds=adds, changes=changes, dels=dels, cell_id=cell_id, after_id=after_id, show_owner=show_owner, detail=detail, workspace_root=str(root) if root else None)
-    if show_owner and Path(path).suffix == ".py":
-        return mcp_tool_result("diff_nb", arguments, _owner_output(path), detail=detail)
-    full_output = capture_notebook_call(diff_nb, path, **{k: v for k, v in arguments.items() if k not in {"show_owner", "detail", "workspace_root"}})
+    try:
+        if show_owner and Path(path).suffix == ".py":
+            return mcp_tool_result("diff_nb", arguments, _owner_output(path), detail=detail)
+        full_output = capture_notebook_call(diff_nb, path, **{k: v for k, v in arguments.items() if k not in {"show_owner", "detail", "workspace_root"}})
+    except Exception as exc:
+        return _mcp_tool_error_result("diff_nb", arguments, exc, detail=detail)
     return mcp_tool_result("diff_nb", arguments, full_output, detail=detail)
 
 # %% ../nbs/07_mcp.ipynb #mcptool12
@@ -1502,14 +1564,17 @@ async def style_check_tool(
     path = _mcp_workspace_path(path, root)
     skip_path = _mcp_workspace_path(skip_path, root) if skip_path else skip_path
     arguments = dict(path=path, skip_folder_re=skip_folder_re, skip_path=skip_path, strict=strict, delete_after_output=delete_after_output, max_output_chars=max_output_chars, max_diagnostics=max_diagnostics, fix=fix, changed_only=changed_only, ref_a=ref_a, ref_b=ref_b, detail=detail, workspace_root=str(root) if root else None)
-    style_output = capture_call(style_check, **{k: v for k, v in arguments.items() if k not in {"detail", "workspace_root"}})
-    private_output = _private_symbol_report_text(path)
-    full_output = "\n\n".join(chunk for chunk in [private_output, style_output] if chunk)
-    report = style_report(
-        path, max_output_chars=max_output_chars, max_diagnostics=max_diagnostics,
-        changed_only=changed_only, ref_a=ref_a, ref_b=ref_b,
-        skip_folder_re=skip_folder_re, skip_path=skip_path,
-    )
+    try:
+        style_output = capture_call(style_check, **{k: v for k, v in arguments.items() if k not in {"detail", "workspace_root"}})
+        private_output = _private_symbol_report_text(path)
+        full_output = "\n\n".join(chunk for chunk in [private_output, style_output] if chunk)
+        report = style_report(
+            path, max_output_chars=max_output_chars, max_diagnostics=max_diagnostics,
+            changed_only=changed_only, ref_a=ref_a, ref_b=ref_b,
+            skip_folder_re=skip_folder_re, skip_path=skip_path,
+        )
+    except Exception as exc:
+        return _mcp_tool_error_result("style_check", arguments, exc, max_output_chars=max_output_chars, detail=detail)
     report["private_symbol_report"] = private_output
     return mcp_tool_result("style_check", arguments, full_output, max_output_chars=max_output_chars, detail=detail, style_report=report)
 

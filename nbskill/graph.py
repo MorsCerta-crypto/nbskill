@@ -2,12 +2,15 @@
 
 # %% auto #0
 __all__ = ['notebook_order_problems', 'notebook_order_problem_lines', 'symbol_graph_data', 'symbol_graph_public_data',
-           'symbol_usage_summary', 'symbol_graph', 'private_symbol_report', 'symbol_connection']
+           'symbol_usage_summary', 'symbol_graph', 'private_symbol_report', 'symbol_connection', 'symbol_catalog',
+           'reuse_advice', 'placement_advice', 'notebook_advice_problems']
 
 # %% ../nbs/10_graph.ipynb #09416808
 import ast
 import builtins
+import copy
 import json
+import re
 from pathlib import Path
 
 from fastcore.nbio import read_nb
@@ -672,3 +675,461 @@ def symbol_connection(
     text = _format_symbol_connection_data(data)
     print(text)
     return cli_return(text)
+
+# %% ../nbs/10_graph.ipynb #2ceeb556
+class _ShapeNormalizer(ast.NodeTransformer):
+    def visit_FunctionDef(self, node):
+        node.name = "_"
+        return self.generic_visit(node)
+
+    def visit_AsyncFunctionDef(self, node):
+        node.name = "_"
+        return self.generic_visit(node)
+
+    def visit_ClassDef(self, node):
+        node.name = "_"
+        return self.generic_visit(node)
+
+    def visit_arg(self, node):
+        node.arg = "_"
+        return self.generic_visit(node)
+
+    def visit_Name(self, node):
+        node.id = "_"
+        return node
+
+    def visit_Constant(self, node):
+        node.value = "_"
+        return node
+
+
+def _tokens_from_text(text):
+    return sorted(set(re.findall(r"[a-z0-9]+", str(text).lower())))
+
+
+def _normalized_ast_shape(node):
+    normalized = copy.deepcopy(node)
+    normalized = _ShapeNormalizer().visit(normalized)
+    ast.fix_missing_locations(normalized)
+    return ast.dump(normalized, annotate_fields=False, include_attributes=False)
+
+
+def _decorator_names(node):
+    return sorted(filter(None, (_call_name(item) for item in getattr(node, "decorator_list", []))))
+
+
+def _cell_import_names(tree):
+    names = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            names.extend(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            for alias in node.names:
+                names.append(f"{module}.{alias.name}" if module else alias.name)
+    return sorted(set(names))
+
+# %% ../nbs/10_graph.ipynb #77466f65
+def _markdown_heading(cell):
+    if getattr(cell, "cell_type", "") != "markdown": return ""
+    lines = str(cell_source(cell)).splitlines()
+    headings = [line.strip("# ").strip() for line in lines if line.lstrip().startswith("#")]
+    return " ".join(headings)
+
+
+def _heading_before(cells, idx):
+    for cell in reversed(cells[:idx]):
+        heading = _markdown_heading(cell)
+        if heading: return heading
+    return ""
+
+
+def _notebook_text_profile(path, nb, module):
+    headings = [_markdown_heading(cell) for cell in nb.cells]
+    headings = [heading for heading in headings if heading]
+    imports = []
+    symbols = []
+    for idx, cell in enumerate(nb.cells):
+        tree = _parse_cell(cell)
+        if tree is None: continue
+        imports.extend(_cell_import_names(tree))
+        for node in tree.body:
+            symbols.extend(symbol for symbol, _, _ in _node_definitions(node))
+    text = " ".join([module, Path(path).stem, *headings, *symbols, *imports])
+    return {
+        "path": str(path),
+        "module": module,
+        "headings": headings,
+        "symbols": sorted(set(symbols)),
+        "imports": sorted(set(imports)),
+        "tokens": _tokens_from_text(text),
+    }
+
+
+def _catalog_record(path, module, idx, cell, node, symbol, kind, heading, imports):
+    docstring = ast.get_docstring(node) or ""
+    text = " ".join([symbol, kind, module, heading, docstring, " ".join(imports)])
+    exported = str(cell_source(cell)).lstrip().startswith("#| export")
+    return {
+        "symbol": symbol,
+        "kind": kind,
+        "module": module,
+        "path": str(path),
+        "cell_id": getattr(cell, "id", ""),
+        "cell_idx": idx,
+        "exported": exported,
+        "private": _symbol_short_name(symbol).startswith("_"),
+        "docstring": docstring,
+        "heading": heading,
+        "tokens": _tokens_from_text(text),
+        "calls": sorted(set(_call_names(node))),
+        "imports": imports,
+        "decorators": _decorator_names(node),
+        "ast_shape": _normalized_ast_shape(node),
+    }
+
+# %% ../nbs/10_graph.ipynb #e02e7d4c
+def symbol_catalog(path="nbs"):
+    "Return notebook symbols with placement and reuse evidence."
+    symbols = []
+    notebooks = []
+    for nb_path in notebook_paths(path):
+        nb = read_nb(nb_path)
+        module = _notebook_module_name(nb_path, nb)
+        notebooks.append(_notebook_text_profile(nb_path, nb, module))
+        for idx, cell in enumerate(nb.cells):
+            tree = _parse_cell(cell)
+            if tree is None: continue
+            heading = _heading_before(nb.cells, idx)
+            imports = _cell_import_names(tree)
+            for node in tree.body:
+                for symbol, symbol_node, kind in _node_definitions(node):
+                    symbols.append(
+                        _catalog_record(nb_path, module, idx, cell, symbol_node, symbol, kind, heading, imports)
+                    )
+    return {"symbols": symbols, "notebooks": notebooks, "graph": _collect_graph(path)}
+
+
+def _source_record_from_node(source, imports, symbol, symbol_node, kind):
+    docstring = ast.get_docstring(symbol_node) or ""
+    text = " ".join([source, symbol, kind, docstring, " ".join(imports)])
+    return {
+        "symbol": symbol,
+        "kind": kind,
+        "module": "",
+        "path": "<source>",
+        "cell_id": "",
+        "cell_idx": 0,
+        "exported": False,
+        "private": _symbol_short_name(symbol).startswith("_"),
+        "docstring": docstring,
+        "heading": "",
+        "tokens": _tokens_from_text(text),
+        "calls": sorted(set(_call_names(symbol_node))),
+        "imports": imports,
+        "decorators": _decorator_names(symbol_node),
+        "ast_shape": _normalized_ast_shape(symbol_node),
+    }
+
+
+def _source_advice_record(source):
+    tree = ast.parse(source_without_directives(source))
+    imports = _cell_import_names(tree)
+    for node in tree.body:
+        for symbol, symbol_node, kind in _node_definitions(node):
+            return _source_record_from_node(source, imports, symbol, symbol_node, kind)
+    return {
+        "symbol": "",
+        "kind": "source",
+        "path": "<source>",
+        "cell_id": "",
+        "cell_idx": 0,
+        "exported": False,
+        "private": False,
+        "docstring": "",
+        "heading": "",
+        "tokens": _tokens_from_text(source),
+        "calls": [],
+        "imports": imports,
+        "decorators": [],
+        "ast_shape": "",
+    }
+
+
+def _advice_target(goal="", source=None, record=None):
+    if record is not None: return dict(record)
+    if source:
+        try:
+            target = _source_advice_record(source)
+        except SyntaxError:
+            target = _source_advice_record("pass")
+            target["tokens"] = _tokens_from_text(source)
+        target["tokens"] = sorted(set(target.get("tokens", [])) | set(_tokens_from_text(goal)))
+        return target
+    return {"symbol": "", "tokens": _tokens_from_text(goal), "calls": [], "imports": [], "ast_shape": ""}
+
+# %% ../nbs/10_graph.ipynb #347b4662
+def _jaccard(left, right):
+    left, right = set(left), set(right)
+    if not left and not right: return 0.0
+    return len(left & right) / max(1, len(left | right))
+
+
+def _reuse_score(target, record):
+    name_score = 20 * _jaccard(_tokens_from_text(target.get("symbol", "")), record.get("tokens", []))
+    token_score = 18 * _jaccard(target.get("tokens", []), record.get("tokens", []))
+    call_score = 18 * _jaccard(
+        map(_symbol_short_name, target.get("calls", [])),
+        map(_symbol_short_name, record.get("calls", [])),
+    )
+    import_score = 10 * _jaccard(target.get("imports", []), record.get("imports", []))
+    decorator_score = 8 * _jaccard(target.get("decorators", []), record.get("decorators", []))
+    shape_score = 0
+    if target.get("ast_shape") and target.get("ast_shape") == record.get("ast_shape"):
+        shape_score = 45
+    return round(name_score + token_score + call_score + import_score + decorator_score + shape_score, 2)
+
+
+def _reuse_reasons(target, record):
+    reasons = []
+    shared_tokens = set(target.get("tokens", [])) & set(record.get("tokens", []))
+    shared_calls = set(map(_symbol_short_name, target.get("calls", []))) & set(
+        map(_symbol_short_name, record.get("calls", []))
+    )
+    if shared_tokens: reasons.append("shared tokens: " + ", ".join(sorted(shared_tokens)[:6]))
+    if shared_calls: reasons.append("shared calls: " + ", ".join(sorted(shared_calls)[:6]))
+    if target.get("ast_shape") and target.get("ast_shape") == record.get("ast_shape"):
+        reasons.append("normalized AST shape matches")
+    if set(target.get("imports", [])) & set(record.get("imports", [])):
+        reasons.append("shared imports")
+    if set(target.get("decorators", [])) & set(record.get("decorators", [])):
+        reasons.append("shared decorators")
+    return reasons or ["name or notebook text overlap"]
+
+
+def _reuse_match(target, record, score):
+    return {
+        "symbol": record["symbol"],
+        "kind": record["kind"],
+        "path": record["path"],
+        "cell_id": record["cell_id"],
+        "score": score,
+        "exported": record.get("exported", False),
+        "private": record.get("private", False),
+        "reasons": _reuse_reasons(target, record),
+    }
+
+# %% ../nbs/10_graph.ipynb #7485be4a
+def _notebook_relevance(goal_tokens, notebook):
+    token_score = 12 * _jaccard(goal_tokens, notebook.get("tokens", []))
+    heading_tokens = _tokens_from_text(" ".join(notebook.get("headings", [])))
+    heading_score = 10 * _jaccard(goal_tokens, heading_tokens)
+    return round(token_score + heading_score, 2)
+
+
+def reuse_advice(goal, path="nbs", source=None, top_k=5):
+    "Return existing symbols and notebooks to inspect before implementing code."
+    catalog = symbol_catalog(path)
+    target = _advice_target(goal=goal, source=source)
+    matches = []
+    for record in catalog["symbols"]:
+        score = _reuse_score(target, record)
+        if score <= 0: continue
+        matches.append(_reuse_match(target, record, score))
+    matches = sorted(matches, key=lambda item: (-item["score"], item["path"], item["symbol"]))[:top_k]
+    notebooks = []
+    goal_tokens = set(_tokens_from_text(goal)) | set(target.get("tokens", []))
+    for notebook in catalog["notebooks"]:
+        score = _notebook_relevance(goal_tokens, notebook)
+        if score <= 0: continue
+        notebooks.append({
+            "path": notebook["path"],
+            "module": notebook["module"],
+            "score": score,
+            "reasons": ["goal overlaps notebook headings, default_exp, imports, or symbols"],
+        })
+    notebooks = sorted(notebooks, key=lambda item: (-item["score"], item["path"]))[:top_k]
+    return {"goal": goal, "matches": matches, "notebooks": notebooks, "top_k": top_k}
+
+# %% ../nbs/10_graph.ipynb #96c37528
+def _caller_paths_for_symbol(graph, symbol):
+    callers = []
+    for caller in graph.get("callers", []):
+        if any(_call_matches_symbol(call, symbol) for call in caller.get("calls", [])):
+            callers.append(caller.get("path", ""))
+    return callers
+
+
+def _score_notebook_for_target(target, notebook, graph):
+    target_symbol = target.get("symbol", "")
+    symbols = set(notebook.get("symbols", []))
+    if notebook.get("path") == target.get("path"):
+        symbols.discard(target_symbol)
+    symbol_tokens = _tokens_from_text(" ".join(symbols))
+    heading_tokens = _tokens_from_text(" ".join(notebook.get("headings", [])))
+    import_tokens = _tokens_from_text(" ".join(notebook.get("imports", [])))
+    calls = set(map(_symbol_short_name, target.get("calls", [])))
+    short_symbols = set(map(_symbol_short_name, symbols))
+    caller_paths = _caller_paths_for_symbol(graph, target_symbol) if target_symbol else []
+    caller_count = caller_paths.count(notebook.get("path"))
+    score = 0
+    score += 14 * _jaccard(target.get("tokens", []), heading_tokens)
+    score += 8 * _jaccard(target.get("tokens", []), symbol_tokens)
+    score += 4 * _jaccard(target.get("imports", []), notebook.get("imports", []))
+    score += 12 * _jaccard(calls, short_symbols)
+    score += min(8, caller_count * 4)
+    if target.get("private") and notebook.get("path") != target.get("path"): score -= 3
+    if target.get("exported") and not symbols and notebook.get("path") == target.get("path"): score -= 2
+    reasons = []
+    if set(target.get("tokens", [])) & set(heading_tokens): reasons.append("heading text matches")
+    if set(target.get("tokens", [])) & set(symbol_tokens): reasons.append("public symbols match")
+    if calls & short_symbols: reasons.append("target calls symbols in this notebook")
+    if caller_count: reasons.append(f"{caller_count} caller(s) already live here")
+    if set(target.get("imports", [])) & set(notebook.get("imports", [])): reasons.append("imports match")
+    return round(score, 2), reasons or ["weak notebook text match"]
+
+# %% ../nbs/10_graph.ipynb #21f81616
+def _target_record(catalog, symbol=None, source=None):
+    if symbol:
+        for record in catalog["symbols"]:
+            if record["symbol"] == symbol or _symbol_short_name(record["symbol"]) == symbol:
+                return dict(record)
+    return _advice_target(source=source or "")
+
+
+def _placement_advice_from_catalog(catalog, target, notebook=None, top_k=5):
+    target = dict(target)
+    if notebook: target["path"] = str(notebook)
+    candidates = []
+    for nb_profile in catalog["notebooks"]:
+        score, reasons = _score_notebook_for_target(target, nb_profile, catalog["graph"])
+        candidates.append({
+            "path": nb_profile["path"],
+            "module": nb_profile["module"],
+            "score": score,
+            "reasons": reasons,
+        })
+    candidates = sorted(candidates, key=lambda item: (-item["score"], item["path"]))[:top_k]
+    current = next((item for item in candidates if item["path"] == target.get("path")), None)
+    best = candidates[0] if candidates else None
+    current_score = current["score"] if current else 0
+    gap = round((best["score"] if best else 0) - current_score, 2)
+    return {
+        "target": {
+            "symbol": target.get("symbol", ""),
+            "path": target.get("path", ""),
+            "cell_id": target.get("cell_id", ""),
+        },
+        "current": current,
+        "best": best,
+        "gap": gap,
+        "candidates": candidates,
+    }
+
+
+def placement_advice(path="nbs", symbol=None, source=None, notebook=None, top_k=5):
+    "Return ranked notebook candidates plus evidence for a symbol or source snippet."
+    catalog = symbol_catalog(path)
+    target = _target_record(catalog, symbol=symbol, source=source)
+    return _placement_advice_from_catalog(catalog, target, notebook=notebook, top_k=top_k)
+
+# %% ../nbs/10_graph.ipynb #f394e665
+def _advice_problem(code, record, detail="", **kwargs):
+    return {
+        "code": code,
+        "path": record.get("path", ""),
+        "cell_id": record.get("cell_id", ""),
+        "detail": detail,
+        "severity": "warning",
+        "source": "nbskill",
+        **kwargs,
+    }
+
+
+def _similar_function_problems(catalog, threshold=55):
+    problems = []
+    for record in catalog["symbols"]:
+        if not record.get("exported") or record.get("private"): continue
+        best = None
+        for other in catalog["symbols"]:
+            if other is record or other.get("cell_id") == record.get("cell_id"): continue
+            score = _reuse_score(record, other)
+            if score < threshold: continue
+            match = _reuse_match(record, other, score)
+            if best is None or match["score"] > best["score"]: best = match
+        if best is None: continue
+        problems.append(_advice_problem(
+            "similar-function",
+            record,
+            "inspect the existing symbol before keeping another helper",
+            symbol=record["symbol"],
+            candidate=best["symbol"],
+            target_path=best["path"],
+            target_cell_id=best["cell_id"],
+            score=best["score"],
+            confidence="high" if best["score"] >= 80 else "medium",
+        ))
+    return problems
+
+
+def _misplaced_function_problems(catalog, min_gap=1.5):
+    problems = []
+    for record in catalog["symbols"]:
+        if not record.get("exported") or record.get("private"): continue
+        advice = _placement_advice_from_catalog(catalog, record, top_k=5)
+        best = advice.get("best") or {}
+        if not best or best.get("path") == record.get("path"): continue
+        if advice.get("gap", 0) < min_gap or best.get("score", 0) < 5: continue
+        problems.append(_advice_problem(
+            "misplaced-function",
+            record,
+            "another notebook is a stronger home for this symbol",
+            symbol=record["symbol"],
+            target_path=best.get("path"),
+            score=best.get("score"),
+            gap=advice.get("gap"),
+            confidence="medium",
+        ))
+    return problems
+
+# %% ../nbs/10_graph.ipynb #7dc1a400
+def _private_boundary_problems(catalog):
+    graph = catalog["graph"]
+    definitions = {(record.get("module"), record["symbol"]): record for record in graph["definitions"]}
+    problems = []
+    seen = set()
+    for imported in graph["imports"]:
+        symbol = imported["symbol"]
+        if not _symbol_short_name(symbol).startswith("_"): continue
+        definition = definitions.get((imported["module"], symbol))
+        if not definition or definition["path"] == imported["path"]: continue
+        for caller in graph["callers"]:
+            if caller["path"] != imported["path"]: continue
+            if not any(_call_matches_symbol(call, imported["local"]) for call in caller["calls"]): continue
+            key = (caller["path"], caller["cell_id"], symbol)
+            if key in seen: continue
+            seen.add(key)
+            problems.append({
+                "code": "private-boundary-reuse",
+                "path": caller["path"],
+                "cell_id": caller["cell_id"],
+                "detail": "promote or move the helper instead of reusing it across notebooks privately",
+                "severity": "warning",
+                "source": "nbskill",
+                "symbol": imported["local"],
+                "candidate": symbol,
+                "target_path": definition["path"],
+                "target_cell_id": definition["cell_id"],
+                "confidence": "high",
+            })
+    return problems
+
+
+def notebook_advice_problems(path="nbs"):
+    "Return reuse and placement advisory diagnostics for notebook style reports."
+    catalog = symbol_catalog(path)
+    problems = []
+    problems.extend(_similar_function_problems(catalog))
+    problems.extend(_misplaced_function_problems(catalog))
+    problems.extend(_private_boundary_problems(catalog))
+    return problems

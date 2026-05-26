@@ -17,16 +17,19 @@ from io import StringIO
 from pathlib import Path
 
 from chkstyle.core import main as _chkstyle_main
-from fastcore.nbio import read_nb
+from fastcore.nbio import mk_cell, read_nb
+from fastcore.nbio import write_nb as _write_nb
 from fastcore.script import Param
 from nbdev.diff import nbs_pair, source_diff
+from nbdev.doclinks import nbdev_export as _run_nb_export
 
 from nbskill.foundation import (
     empty_failure_map, failure_map_path, load_failure_map, cell_class_names,
-    cell_source, cli_error, cli_return, exported_py_path, file_hash, file_line_count,
-    cap_text, notebook_paths, source_without_directives,
+    cell_source, clear_outputs, cli_error, cli_return, exported_py_path, file_hash, file_line_count,
+    cap_text, notebook_paths, source_without_directives, stamp_notebook_metadata,
     is_exported_code_cell, none_if_string,
 )
+from .parallel import notebook_locks
 
 # %% ../nbs/04_review.ipynb #8077f190
 skip_style_paths = "_proc __pycache__ src assets examples tests archive".split(" ")
@@ -291,12 +294,17 @@ def _format_problem(problem):
     for key in (
         "scope", "symbol", "missing", "import_key", "cells", "semantic_types", "confidence", "hint",
         "exported_py_path", "line_count", "function_count", "docstring_lines",
-        "regex", "note", "match",
+        "regex", "note", "match", "candidate", "target_path", "target_cell_id",
+        "score", "gap", "reason",
     ):
         if key in problem:
             value = problem[key]
             if isinstance(value, list): value = ", ".join(map(str, value))
-            quoted = {"symbol", "missing", "import_key", "exported_py_path", "regex", "note", "match"}
+            quoted = {
+                "symbol", "missing", "import_key", "exported_py_path", "regex",
+                "note", "match", "candidate", "target_path", "target_cell_id",
+                "reason",
+            }
             fields.append(f"{key}={value!r}" if key in quoted else f"{key}={value}")
     suffix = " ".join(fields + ([problem.get("detail", "")] if problem.get("detail") else []))
     return f"- {problem['code']}: {problem['path']}{cell}{line} {suffix}".rstrip()
@@ -535,6 +543,215 @@ def _fix_suggestions(diagnostics):
             })
     return fixes
 
+# %% ../nbs/04_review.ipynb #ecfc9b0c
+def _merge_line_to_previous(lines, idx, sep=""):
+    if idx <= 0 or idx >= len(lines): return False
+    lines[idx - 1] = f"{lines[idx - 1].rstrip()}{sep}{lines[idx].strip()}"
+    del lines[idx]
+    return True
+
+
+def _add_fix_count(counts, code, value=1):
+    if value: counts[code] = counts.get(code, 0) + value
+
+# %% ../nbs/04_review.ipynb #58c73632
+def _split_directive_lines(source):
+    lines = str(source or "").splitlines()
+    idx = 0
+    while idx < len(lines) and lines[idx].lstrip().startswith("#|"): idx += 1
+    return lines[:idx], lines[idx:]
+
+
+def _source_ast_dump(source):
+    try: tree = ast.parse(source_without_directives(source))
+    except SyntaxError: return None
+    return ast.dump(tree, include_attributes=False)
+
+# %% ../nbs/04_review.ipynb #2fe9ebf4
+def _string_literal_lines(tree):
+    lines = set()
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Constant) and isinstance(node.value, str)): continue
+        start = getattr(node, "lineno", 0)
+        end = getattr(node, "end_lineno", start)
+        lines.update(range(start, end + 1))
+    return lines
+
+
+def _function_body_lines(tree):
+    lines = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            lines.update(range(node.lineno + 1, getattr(node, "end_lineno", node.lineno) + 1))
+    return lines
+
+# %% ../nbs/04_review.ipynb #90021a04
+def _remove_function_blank_lines(lines):
+    try: tree = ast.parse("\n".join(lines))
+    except SyntaxError: return 0
+    body_lines = _function_body_lines(tree)
+    protected = _string_literal_lines(tree)
+    removed = 0
+    for idx in range(len(lines) - 1, -1, -1):
+        line_no = idx + 1
+        if line_no in body_lines and line_no not in protected and not lines[idx].strip():
+            del lines[idx]
+            removed += 1
+    return removed
+
+# %% ../nbs/04_review.ipynb #04fed3b8
+_SIMPLE_IF_BODY_TYPES = (ast.Assign, ast.AnnAssign, ast.AugAssign, ast.Expr, ast.Return, ast.Raise, ast.Pass, ast.Break, ast.Continue, ast.Delete)
+
+
+def _merge_single_line_ifs(lines, max_len=180):
+    try: tree = ast.parse("\n".join(lines))
+    except SyntaxError: return 0
+    merged = 0
+    candidates = sorted((node for node in ast.walk(tree) if isinstance(node, ast.If)), key=lambda node: node.lineno, reverse=True)
+    for node in candidates:
+        if node.orelse or len(node.body) != 1 or not isinstance(node.body[0], _SIMPLE_IF_BODY_TYPES): continue
+        body = node.body[0]
+        if body.lineno != node.lineno + 1 or getattr(body, "end_lineno", body.lineno) != body.lineno: continue
+        header_line, body_line = lines[node.lineno - 1].rstrip(), lines[body.lineno - 1]
+        if not header_line.endswith(":") or not re.match(r"\s+\S", body_line): continue
+        combined = f"{header_line} {body_line.strip()}"
+        if len(combined) > max_len: continue
+        lines[node.lineno - 1] = combined
+        del lines[body.lineno - 1]
+        merged += 1
+    return merged
+
+# %% ../nbs/04_review.ipynb #369f13b6
+def _merge_paren_only_lines(lines):
+    merged = 0
+    idx = 1
+    while idx < len(lines):
+        if lines[idx].strip() in {")", "]", "}"} and lines[idx - 1].strip():
+            if _merge_line_to_previous(lines, idx):
+                merged += 1
+                continue
+        idx += 1
+    return merged
+
+# %% ../nbs/04_review.ipynb #66d67e27
+def _normalize_code_lines(lines):
+    counts = {}
+    stripped = [line.rstrip() for line in lines]
+    _add_fix_count(counts, "trailing-whitespace", sum(old != new for old, new in zip(lines, stripped)))
+    lines[:] = stripped
+    compacted, blank_run, removed = [], 0, 0
+    for line in lines:
+        if line.strip():
+            blank_run = 0
+            compacted.append(line)
+        else:
+            blank_run += 1
+            if blank_run <= 2: compacted.append("")
+            else: removed += 1
+    lines[:] = compacted
+    _add_fix_count(counts, "excess-blank-lines", removed)
+    return counts
+
+# %% ../nbs/04_review.ipynb #4617eed7
+def _fix_code_cell_source(source):
+    original = str(source or "")
+    directives, lines = _split_directive_lines(original)
+    body = "\n".join(lines)
+    if not body.strip(): return {"source": original, "fixes": {}, "changed": False}
+    if any(line.lstrip().startswith(("%", "!", "?")) for line in lines if line.strip()):
+        return {"source": original, "fixes": {}, "changed": False}
+    before_dump = _source_ast_dump(original)
+    if before_dump is None: return {"source": original, "fixes": {}, "changed": False}
+    counts = _normalize_code_lines(lines)
+    _add_fix_count(counts, "function-blank-line", _remove_function_blank_lines(lines))
+    _add_fix_count(counts, "single-line-if", _merge_single_line_ifs(lines))
+    _add_fix_count(counts, "paren-only-line", _merge_paren_only_lines(lines))
+    if not original.endswith("\n"): _add_fix_count(counts, "final-newline")
+    new_source = "\n".join([*directives, *lines]).rstrip("\n") + "\n"
+    if new_source == original: return {"source": original, "fixes": {}, "changed": False}
+    if _source_ast_dump(new_source) != before_dump:
+        return {"source": original, "fixes": {}, "changed": False}
+    return {"source": new_source, "fixes": {key: value for key, value in counts.items() if value}, "changed": True}
+
+# %% ../nbs/04_review.ipynb #17a4ad54
+def _pure_function_split_sources(source):
+    directives, lines = _split_directive_lines(source)
+    if any(line.lstrip().startswith(("%", "!", "?")) for line in lines if line.strip()): return []
+    text = "\n".join(lines).strip("\n")
+    try: tree = ast.parse(text)
+    except SyntaxError: return []
+    funcs = [node for node in tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))]
+    if len(funcs) < 2 or len(funcs) != len(tree.body): return []
+    if any(getattr(node, "decorator_list", []) for node in funcs): return []
+    chunks, previous_end = [], 0
+    for index, node in enumerate(funcs):
+        start, end = node.lineno - 1, getattr(node, "end_lineno", node.lineno)
+        if any(line.strip() for line in lines[previous_end:start]): return []
+        chunk_lines = lines[start:end]
+        if index == 0: chunk_lines = [*directives, *chunk_lines]
+        chunk = "\n".join(chunk_lines).strip("\n") + "\n"
+        try: ast.parse(source_without_directives(chunk))
+        except SyntaxError: return []
+        chunks.append(chunk)
+        previous_end = end
+    if any(line.strip() for line in lines[previous_end:]): return []
+    return chunks
+
+# %% ../nbs/04_review.ipynb #1bfc40bd
+_AUTOFIX_LABELS = {
+    "trailing-whitespace": "removed trailing whitespace",
+    "excess-blank-lines": "collapsed excessive blank lines",
+    "function-blank-line": "removed function-body blank lines",
+    "single-line-if": "merged single-line if statements",
+    "paren-only-line": "merged parenthesis-only lines",
+    "final-newline": "added final newline",
+    "split-functions": "split multi-function cell"}
+
+
+def _autofix_record(path, cell_id, code, count=1):
+    record = {"path": str(path), "cell_id": str(cell_id), "code": code, "count": count}
+    record["description"] = f"{_AUTOFIX_LABELS.get(code, code)} ({count})"
+    return record
+
+# %% ../nbs/04_review.ipynb #23fd608a
+def _notebook_autofix(path=".", dry_run=False):
+    records = []
+    for nb_path in notebook_paths(path):
+        with notebook_locks(nb_path):
+            nb = read_nb(nb_path)
+            changed, idx = False, 0
+            while idx < len(nb.cells):
+                cell = nb.cells[idx]
+                if getattr(cell, "cell_type", None) != "code":
+                    idx += 1
+                    continue
+                source = cell_source(cell)
+                fixed = _fix_code_cell_source(source)
+                if fixed["changed"]:
+                    source = fixed["source"]
+                    records.extend(_autofix_record(nb_path, cell.id, code, count) for code, count in fixed["fixes"].items())
+                    if not dry_run:
+                        cell.source = source
+                        clear_outputs(cell)
+                    changed = True
+                split_sources = _pure_function_split_sources(source)
+                if split_sources:
+                    records.append(_autofix_record(nb_path, cell.id, "split-functions", len(split_sources)))
+                    if not dry_run:
+                        new_cells = [mk_cell(chunk, cell_type="code") for chunk in split_sources]
+                        new_cells[0].id = cell.id
+                        for new_cell in new_cells: clear_outputs(new_cell)
+                        nb.cells[idx:idx + 1] = new_cells
+                    changed = True
+                    idx += len(split_sources)
+                else:
+                    idx += 1
+            if changed and not dry_run:
+                stamp_notebook_metadata(nb)
+                _write_nb(nb, nb_path)
+                if exported_py_path(nb_path, nb) is not None: _run_nb_export(path=str(nb_path))
+    return records
+
 # %% ../nbs/04_review.ipynb #06616c3e
 def style_report(
     path: str = ".",  # File or folder to check
@@ -549,14 +766,24 @@ def style_report(
 ):
     "Return structured style diagnostics, problem chart, and global nbskill usage data."
     notebook_problems = _notebook_style_problems(path, skip_folder_re=skip_folder_re, skip_path=skip_path)
+    changed_cell_ids = _changed_code_cell_ids(path, ref_a=ref_a, ref_b=ref_b) if changed_only else None
+    if changed_cell_ids is not None and notebook_paths(path):
+        skip_paths = _style_skip_paths(skip_path)
+        from nbskill.graph import notebook_advice_problems
+        advice_problems = [
+            problem for problem in notebook_advice_problems(path)
+            if problem.get("cell_id") in changed_cell_ids
+            and not _style_path_is_skipped(problem.get("path", ""), skip_paths, skip_folder_re)
+        ]
+        notebook_problems = [
+            item for item in notebook_problems if item.get("cell_id") in changed_cell_ids
+        ] + advice_problems
     usage = _global_usage_summary_data()
     chkstyle = chkstyle or {"status": 0, "output": ""}
     capped = cap_text(chkstyle.get("output", ""), max_output_chars=max_output_chars)
     diagnostics = _chkstyle_diagnostics(chkstyle.get("output", ""), max_diagnostics=max_diagnostics) + notebook_problems
-    changed_cell_ids = _changed_code_cell_ids(path, ref_a=ref_a, ref_b=ref_b) if changed_only else None
     if changed_cell_ids is not None:
         diagnostics = [item for item in diagnostics if item.get("cell_id") in changed_cell_ids]
-        notebook_problems = [item for item in notebook_problems if item.get("cell_id") in changed_cell_ids]
     notebook_text = _format_notebook_style_report(path, skip_folder_re=skip_folder_re, skip_path=skip_path)
     usage_text = _format_global_usage_summary(usage)
     chkstyle_text = capped["text"].strip()
@@ -664,6 +891,15 @@ def code_source(cell):
     "Return source for code cells; ignore markdown and raw cells."
     return cell.source if cell.cell_type == "code" else None
 
+
+def _working_tree_code_sources(path):
+    nb = read_nb(path)
+    return {
+        getattr(cell, "id", str(idx)): source
+        for idx, cell in enumerate(nb.cells)
+        if (source := code_source(cell)) is not None
+    }
+
 # %% ../nbs/04_review.ipynb #e672839a
 def _git_ref_path_error(path, ref):
     if ref is None: return None
@@ -673,7 +909,11 @@ def _git_ref_path_error(path, ref):
         capture_output=True, text=True,
     )
     if root_cmd.returncode != 0:
-        return f"No git repository found for {str(path)!r}."
+        return (
+            f"No git repository found for {str(path)!r}. "
+            "For a temp/disposable notebook, call diff_nb(path, ref_a=None, ref_b=None) "
+            "to review current code cells as additions."
+        )
     root = Path(root_cmd.stdout.strip())
     try:
         rel = path.resolve().relative_to(root.resolve()).as_posix()
@@ -688,7 +928,8 @@ def _git_ref_path_error(path, ref):
     return (
         f"Could not find notebook {rel!r} at git ref {ref!r}. "
         "The notebook may be new relative to that ref, or the repository may not have a HEAD commit yet. "
-        "Commit the notebook first, choose an existing ref/path, or pass --ref_a None to compare against the working tree."
+        "Commit the notebook first, choose an existing ref/path, or pass ref_a=None and ref_b=None "
+        "to review a disposable notebook as current working-tree additions."
     )
 
 # %% ../nbs/04_review.ipynb #c5efa64e
@@ -787,17 +1028,20 @@ def diff_nb(
 ):
     "Print nbdev-style diffs for code cells only; summarize nbskill metadata-only changes."
     ref_a, ref_b = none_if_string(ref_a), none_if_string(ref_b)
-    if msg := (_git_ref_path_error(path, ref_a) or _git_ref_path_error(path, ref_b)):
-        cli_error(msg)
-    try: old, new = nbs_pair(path, ref_a=ref_a, ref_b=ref_b, f=code_source)
-    except Exception as exc:
-        detail = str(exc)
-        hint = (
-            f"Could not diff {path!r} against {ref_a!r}. "
-            "The notebook may be new relative to that git ref, or the repository may not have a HEAD commit yet. "
-            "Commit the notebook first, or pass --ref_a None to compare against the working tree.")
-        if detail: hint += f"\nUnderlying error: {detail}"
-        cli_error(hint)
+    if ref_a is None and ref_b is None and _git_root_rel(path)[0] is None:
+        old, new = {}, _working_tree_code_sources(path)
+    else:
+        if msg := (_git_ref_path_error(path, ref_a) or _git_ref_path_error(path, ref_b)):
+            cli_error(msg)
+        try: old, new = nbs_pair(path, ref_a=ref_a, ref_b=ref_b, f=code_source)
+        except Exception as exc:
+            detail = str(exc)
+            hint = (
+                f"Could not diff {path!r} against {ref_a!r}. "
+                "The notebook may be new relative to that git ref, or the repository may not have a HEAD commit yet. "
+                "Commit the notebook first, or pass ref_a=None and ref_b=None to review a disposable notebook as current working-tree additions.")
+            if detail: hint += f"\nUnderlying error: {detail}"
+            cli_error(hint)
     old = {cid: src for cid, src in old.items() if src is not None}
     new = {cid: src for cid, src in new.items() if src is not None}
     blocks = []

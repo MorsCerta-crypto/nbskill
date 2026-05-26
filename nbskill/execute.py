@@ -342,6 +342,34 @@ def _magic_error(source):
     return None
 
 
+# %% ../nbs/03_execute.ipynb #823ba097
+def _sync_safe_callable_globals(value, namespace):
+    if hasattr(value, "__globals__"):
+        value.__globals__.update(namespace)
+    if isinstance(value, type):
+        for item in vars(value).values():
+            if hasattr(item, "__globals__"): item.__globals__.update(namespace)
+
+
+def _sync_safe_globals(namespace):
+    for value in list(namespace.values()):
+        _sync_safe_callable_globals(value, namespace)
+
+
+def _module_source(node):
+    return ast.unparse(ast.Module(body=[node], type_ignores=[]))
+
+
+async def _run_safe_source(runner, namespace, source):
+    tree = ast.parse(source)
+    result = None
+    for idx, node in enumerate(tree.body):
+        last_expr = idx == len(tree.body) - 1 and isinstance(node, ast.Expr)
+        chunk = ast.unparse(ast.Expression(node.value)) if last_expr else _module_source(node)
+        result = await runner(chunk)
+        _sync_safe_globals(namespace)
+    return result
+
 # %% ../nbs/03_execute.ipynb #170861e4
 class _SafeShell:
     def __init__(self, path, extra_paths=None, allow=None, ok_dests=None, cache_httpx=False, cache_dir=None, cache_domains=None):
@@ -371,7 +399,7 @@ class _SafeShell:
                 with _temporary_sys_path(self.paths), _httpx_guard(
                     self.path, cache_httpx=self.cache_httpx, cache_dir=self.cache_dir, cache_domains=self.cache_domains,
                 ), redirect_stdout(out), redirect_stderr(err):
-                    return await self.runner(source)
+                    return await _run_safe_source(self.runner, self.g, source)
             coro = call_runner()
             if timeout and timeout > 0: coro = asyncio.wait_for(coro, timeout=timeout)
             result = _run_async(coro)

@@ -40,6 +40,7 @@ from .foundation import cell_source, exported_py_path, generated_owner, git_root
 from .foundation import notebook_paths, path_candidates, stamp_export_metadata
 
 # %% ../nbs/07_mcp.ipynb #mcpimports4
+from .graph import notebook_knowledge_graph_data
 from .graph import notebook_order_problems
 from .graph import private_symbol_report
 from .knowledge import reference_add
@@ -781,28 +782,197 @@ def _response_warnings(tool, arguments, preview):
 # %% ../nbs/07_mcp.ipynb #4a32f9e9
 def _brief_call(tool, arguments, preview, status="completed"):
     lines = [f"{tool} {status}"]
-    for key in ("path", "nb_path", "cell_id", "id", "chapter", "name", "any_cell_id", "symbol"):
-        if arguments.get(key) not in (None, ""):
-            lines.append(f"{key}={arguments[key]}")
+    keys = (
+        "path", "target", "scope", "notebook", "notebooks", "cell_id", "id",
+        "chapter", "name", "any_cell_id", "symbol", "action", "query", "mode",
+    )
+    for key in keys:
+        value = arguments.get(key)
+        if value not in (None, ""): lines.append(f"{key}={value}")
     if arguments.get("dry_run") is True: lines.append("dry_run=True")
     if preview.get("truncated"): lines.append(f"output_truncated=True omitted_chars={preview['omitted_chars']}")
     return lines
 
 # %% ../nbs/07_mcp.ipynb #efed7008
+def _first_nonblank(text):
+    for line in as_text(text).splitlines():
+        if line.strip(): return line.strip()
+    return ""
+
+
+def _short_item(text, limit=120):
+    text = " ".join(_first_nonblank(text).split())
+    return text if len(text) <= limit else text[:limit - 3].rstrip() + "..."
+
+
+def _warning_summary_lines(warnings, limit=5):
+    lines = []
+    for item in (warnings or [])[:limit]:
+        message = item.get("message") or item.get("detail") or str(item)
+        next_action = item.get("next_action")
+        suffix = f" Next: {next_action}" if next_action else ""
+        lines.append(f"- {message}{suffix}")
+    return lines
+
+
+def _diagnostic_line(item):
+    path = item.get("path") or ""
+    cell = f" id={item.get('cell_id')}" if item.get("cell_id") else ""
+    code = item.get("code") or item.get("severity") or "diagnostic"
+    detail = item.get("detail") or item.get("message") or ""
+    where = f"{path}{cell}".strip()
+    return f"- {code}: {where} {detail}".rstrip()
+
+
+def _top_code_counts(chart, limit=5):
+    by_code = (chart or {}).get("by_code", {})
+    return ", ".join(f"{code}={count}" for code, count in list(by_code.items())[:limit])
+
+
+def _context_summary_lines(data):
+    data = data or {}
+    selection = data.get("selection") or {}
+    cells = data.get("cells") or selection.get("cells") or []
+    notebooks = data.get("notebooks") or selection.get("notebooks") or []
+    symbols = data.get("symbols") or selection.get("symbols") or []
+    lines = [f"resolved={data.get('resolved_kind') or data.get('kind')}"]
+    if data.get("path"): lines.append(f"path={data['path']}")
+    if data.get("symbol"): lines.append(f"symbol={data['symbol']}")
+    if notebooks: lines.append(f"notebooks={len(notebooks)}")
+    if cells: lines.append(f"cells={len(cells)}")
+    if symbols: lines.append(f"symbols={len(symbols)}")
+    for cell in cells[:3]:
+        label = f"{cell.get('path', data.get('path', ''))} id={cell.get('cell_id', '')}".strip()
+        lines.append(f"- {label}: {_short_item(cell.get('source', ''))}")
+    return lines
+
+
+def _filter_context_summary_lines(data):
+    data = data or {}
+    matches = data.get("matches", [])
+    lines = [f"matches={len(matches)} shown of {data.get('total_matches', len(matches))}"]
+    for item in matches[:5]:
+        label = f"{item.get('path')} id={item.get('cell_id')} idx={item.get('cell_idx')}"
+        lines.append(f"- {label}: {_short_item(item.get('source', ''))}")
+    return lines
+
+
+def _doctor_summary_lines(report):
+    report = report or {}
+    errors, warnings = report.get("errors", []), report.get("warnings", [])
+    lines = [f"errors={len(errors)} warnings={len(warnings)}"]
+    issues = [*errors, *warnings] or report.get("issues", [])
+    lines.extend(_diagnostic_line(item) for item in issues[:5])
+    return lines
+
+
+def _style_summary_lines(report):
+    report = report or {}
+    summary = report.get("summary", {})
+    lines = [
+        f"diagnostics={summary.get('diagnostic_count', 0)}",
+        f"notebook_problems={summary.get('notebook_problem_count', 0)}",
+        f"chkstyle_problems={summary.get('chkstyle_problem_count', 0)}",
+    ]
+    counts = _top_code_counts(report.get("problem_chart"))
+    if counts: lines.append(f"top_codes={counts}")
+    diagnostics = report.get("diagnostics") or report.get("notebook_problems") or []
+    lines.extend(_diagnostic_line(item) for item in diagnostics[:5])
+    return lines
+
+
+def _diff_summary_lines(text):
+    text = as_text(text)
+    cells = re.findall(r"--- code cell ([^\s-]+) ---", text)
+    added = sum(1 for line in text.splitlines() if line.startswith("+") and not line.startswith("+++"))
+    deleted = sum(1 for line in text.splitlines() if line.startswith("-") and not line.startswith("---"))
+    lines = [f"changed_cells={len(cells)} added_lines={added} deleted_lines={deleted}"]
+    if cells: lines.append("cells=" + ", ".join(cells[:8]))
+    first = _first_nonblank(text)
+    if not cells and first: lines.append(_short_item(first))
+    return lines
+
+
+def _reference_summary_lines(data):
+    data = data or {}
+    hits = data.get("hits", [])
+    lines = [f"hits={len(hits)} backend={data.get('backend', '')}".rstrip()]
+    for hit in hits[:5]:
+        label = ".".join(item for item in [hit.get("module"), hit.get("symbol")] if item)
+        dep = hit.get("dependency_status")
+        score = hit.get("score")
+        score_text = f" score={score:.2f}" if isinstance(score, (int, float)) else ""
+        lines.append(f"- {label or hit.get('path')}: {dep}{score_text}")
+    return lines
+
+
+def _edit_summary_lines(data):
+    data = data or {}
+    diffs = [item for item in data.get("diffs", []) if item.get("changed")]
+    affected = data.get("affected_cell_ids") or []
+    lines = [
+        f"changed={data.get('changed')}",
+        f"dry_run={data.get('dry_run', False)}",
+        f"affected_cells={len(affected)}",
+        f"changed_ops={len(diffs)}",
+    ]
+    if affected: lines.append("cells=" + ", ".join(affected[:8]))
+    return lines
+
+
+def _exec_summary_lines(text):
+    text = as_text(text)
+    outputs = re.findall(r"--- output id=([^\s]+) ---", text)
+    lines = [f"outputs={len(outputs)}"]
+    if outputs: lines.append("ids=" + ", ".join(outputs[:8]))
+    first = _first_nonblank(text)
+    if first: lines.append(_short_item(first))
+    return lines
+
+
+def _workbench_summary_lines(data):
+    data = data or {}
+    contract = data.get("contract") or {}
+    context_data = data.get("context") or {}
+    notebooks = context_data.get("selected_notebooks") or []
+    lines = [f"goal={_short_item(contract.get('goal') or data.get('summary') or '')}"]
+    if notebooks: lines.append("notebooks=" + ", ".join(item.get("path", "") for item in notebooks[:5]))
+    if data.get("expected_gates"): lines.append("gates=" + ", ".join(data["expected_gates"].get("hard", [])[:5]))
+    return [line for line in lines if line and not line.endswith("=")]
+
+
+def _tool_summary_lines(tool, arguments, full_text, preview, status, structured, warnings):
+    lines = _brief_call(tool, arguments or {}, preview, status=status)
+    if tool == "context": lines.extend(_context_summary_lines(structured.get("context")))
+    elif tool == "filter_context": lines.extend(_filter_context_summary_lines(structured.get("filter_context")))
+    elif tool == "doctor": lines.extend(_doctor_summary_lines(structured.get("doctor")))
+    elif tool == "style_check": lines.extend(_style_summary_lines(structured.get("style_report")))
+    elif tool == "diff_nb": lines.extend(_diff_summary_lines(full_text))
+    elif tool == "reference": lines.extend(_reference_summary_lines(structured.get("reference")))
+    elif tool == "edit_notebook": lines.extend(_edit_summary_lines(structured.get("edit_notebook") or structured))
+    elif tool == "exec_nb": lines.extend(_exec_summary_lines(full_text))
+    elif tool == "agent_workbench": lines.extend(_workbench_summary_lines(structured.get("agent_workbench")))
+    else:
+        first = _first_nonblank(full_text)
+        if first and status != "completed": lines.append(_short_item(first))
+    if warnings:
+        lines += ["", "Warnings:"]
+        lines.extend(_warning_summary_lines(warnings))
+    return lines
+
+
 def mcp_tool_result(tool, arguments, full_output, max_output_chars=12000, detail="summary", warnings=None, hints=None, status="completed", **structured):
     "Return concise visible MCP text plus structured data for clients that inspect it."
     detail = detail or "summary"
-    if detail == "debug" and max_output_chars is not None: max_output_chars = max(max_output_chars, 50000)
-    preview = _text_preview(full_output or "", limit=max_output_chars)
+    if detail in {"debug", "full"} and max_output_chars is not None:
+        max_output_chars = max(max_output_chars, 50000) if detail == "debug" else max_output_chars
+    full_text = as_text(full_output or "")
+    preview = _text_preview(full_text, limit=max_output_chars)
     auto_warnings = [] if status != "completed" else _response_warnings(tool, arguments or {}, preview)
     warnings = _dedupe_warnings([*(warnings or []), *auto_warnings])
     hints = list(hints or [])
-    lines = _brief_call(tool, arguments or {}, preview, status=status)
-    if preview["text"]:
-        lines += ["", "Result:", preview["text"]]
-    if warnings:
-        lines += ["", "Warnings:"]
-        lines.extend(f"- {item['message']}" + (f" Next: {item['next_action']}" if item.get("next_action") else "") for item in warnings)
+    lines = _tool_summary_lines(tool, arguments or {}, full_text, preview, status, structured, warnings)
+    if detail in {"debug", "full"} and preview["text"]: lines += ["", "Result:", preview["text"]]
     if detail == "debug" and hints:
         lines += ["", "Hints:"]
         lines.extend(f"- {hint}" for hint in hints)
@@ -810,16 +980,17 @@ def mcp_tool_result(tool, arguments, full_output, max_output_chars=12000, detail
     data = {
         "summary": summary,
         "call": {"tool": tool, "arguments": _redact_arguments(arguments or {})},
-        "full_output": preview["text"],
+        "full_output": full_text,
+        "preview_output": preview["text"],
         "output_truncated": preview["truncated"],
         "output_chars": preview["chars"],
         "omitted_chars": preview["omitted_chars"],
         "warnings": warnings,
         "hints": hints if detail == "debug" else [],
     }
-    if detail == "debug":
-        data["debug"] = {"arguments": arguments or {}, "raw_output": as_text(full_output or "")}
-    data.update(structured)
+    if detail == "debug": data["debug"] = {"arguments": arguments or {}, "raw_output": full_text}
+    for key, value in structured.items():
+        data["result_summary" if key == "summary" else key] = value
     return ToolResult(content=[TextContent(type="text", text=summary)], structured_content=data)
 
 
@@ -1157,10 +1328,10 @@ _MCP_READ_CONTEXT_TOOL_CATALOG = {
     'context': {
         'feature': 'read_context',
         'usefulness': 'core',
-        'tags': ('read', 'context', 'project', 'notebook', 'cell', 'symbol'),
-        'description': 'Single notebook-aware reader for project, notebook, chapter, cell id, or Python symbol targets, with overview control.',
-        'when_to_use': "Use first: pass target='project', a notebook path/name, chapter title, cell id, or Python symbol; use overview=False for fuller notebook markdown or related symbol cells, overview=True for notebook summaries or full implementation.",
-        'combine_with': 'Cell and symbol targets include symbol graph payloads, so no separate symbol graph tool is needed.',
+        'tags': ('read', 'context', 'project', 'notebook', 'cell', 'symbol', 'graph'),
+        'description': 'Single notebook-aware reader for project, notebook, chapter, cell id, or Python symbol targets, with optional project graph context.',
+        'when_to_use': "Use first: pass target='project', a notebook path/name, chapter title, cell id, or Python symbol; add include_graph=True with target='project' when placement, reuse, or structure advice needs the notebook knowledge graph.",
+        'combine_with': 'Project graph context is embedded with include_graph=True; cell and symbol targets include symbol graph payloads, so no separate symbol graph tool is needed.',
     },
     'filter_context': {
         'feature': 'read_context',
@@ -1336,7 +1507,10 @@ async def _healthcheck_tool(detail: str = "summary", ctx: Context = None) -> Too
         "diagnostics=run doctor(scopes='error,warning') for fatal problems and warnings; add style for chkstyle",
         "schema_refresh=restart or reconnect the MCP client after reinstall/export to refresh tool schemas",
     ])
-    return mcp_tool_result("healthcheck", {"detail": detail}, full_output, detail=detail, status=data, capabilities=_MCP_CAPABILITIES.split(","))
+    return mcp_tool_result(
+        "healthcheck", {"detail": detail}, full_output, detail=detail,
+        status_data=data, capabilities=_MCP_CAPABILITIES.split(","),
+    )
 
 # %% ../nbs/07_mcp.ipynb #mcptool01
 @mcp.tool(**_mcp_tool_meta("doctor"))
@@ -1360,22 +1534,47 @@ async def doctor_tool(
         warnings=report["issues"], hints=report["hints"], doctor=report,
     )
 
+# %% ../nbs/07_mcp.ipynb #4989e3e7
+def _mcp_graph_summary(graph):
+    project = graph.get("project", {})
+    lines = [
+        f"Notebook knowledge graph: {project.get('notebook_count', 0)} notebook(s), {len(graph.get('nodes', []))} node(s), {len(graph.get('edges', []))} edge(s)"
+    ]
+    if graph.get("issues"):
+        lines.append(f"Issues: {len(graph['issues'])}")
+    lines.append("Layers:")
+    for layer in graph.get("layers", [])[:8]:
+        lines.append(f"- {layer.get('name')}: {len(layer.get('node_ids', []))} node(s)")
+    lines.append("Tour:")
+    for item in graph.get("tour", [])[:8]:
+        lines.append(f"- {item.get('order')}. {item.get('title')}: {len(item.get('node_ids', []))} node(s)")
+    return "\n".join(lines)
+
 # %% ../nbs/07_mcp.ipynb #5450e1be
 @mcp.tool(**_mcp_tool_meta("context"))
 async def _context_tool(
     target: str = "project",
     scope: str = ".",
     overview: bool = False,
+    include_graph: bool = False,
     detail: str = "summary",
     ctx: Context = None,
 ) -> ToolResult:
     "Resolve one target to project, notebook, chapter, cell, or symbol context."
     root = await _mcp_workspace_root(ctx)
     scope = _mcp_workspace_path(scope, root)
-    target_text = str(target)
+    target_text = str(target or "")
+    target_is_project = target_text in {"project", ".", ""}
     target_is_path = target_text.endswith(".ipynb") or "/" in target_text or "\\" in target_text
     if target_is_path: target = _mcp_workspace_path(target, root)
-    arguments = dict(target=target, scope=scope, overview=overview, detail=detail, workspace_root=str(root) if root else None)
+    arguments = dict(
+        target=target,
+        scope=scope,
+        overview=overview,
+        include_graph=include_graph,
+        detail=detail,
+        workspace_root=str(root) if root else None,
+    )
     context_args = dict(target=target, scope=scope, overview=overview)
     try:
         with notebook_locks(scope), _CAPTURE_LOCK:
@@ -1383,7 +1582,42 @@ async def _context_tool(
             with redirect_stdout(out), redirect_stderr(err): data = context(**context_args)
     except Exception as exc:
         return _mcp_tool_error_result("context", arguments, exc, max_output_chars=None, detail=detail)
-    return mcp_tool_result("context", arguments, data["text"], max_output_chars=None, detail=detail, context=data)
+
+    warnings = []
+    graph = None
+    if include_graph and target_is_project:
+        try:
+            with notebook_locks(scope):
+                graph = notebook_knowledge_graph_data(scope)
+        except Exception as exc:
+            warnings.append(_warning(
+                "knowledge_graph_failed",
+                f"Notebook knowledge graph failed: {type(exc).__name__}: {exc}",
+                "Call notebook_knowledge_graph locally or narrow the context scope.",
+                scope=str(scope),
+            ))
+    elif include_graph:
+        warnings.append(_warning(
+            "knowledge_graph_requires_project",
+            "Knowledge graph context is only attached for project-level context targets.",
+            "Call context with target='project' and include_graph=True.",
+        ))
+
+    full_output = data["text"]
+    structured = {"context": data}
+    if graph is not None:
+        full_output = "\n\n".join([full_output, "Project graph:", _mcp_graph_summary(graph)])
+        structured["knowledge_graph"] = graph
+
+    return mcp_tool_result(
+        "context",
+        arguments,
+        full_output,
+        max_output_chars=None,
+        detail=detail,
+        warnings=warnings,
+        **structured,
+    )
 
 # %% ../nbs/07_mcp.ipynb #0cd3198d
 @mcp.tool(**_mcp_tool_meta("filter_context"))
@@ -1421,34 +1655,39 @@ async def _filter_context_tool(
 async def edit_notebook_tool(
     path: str, edits: list[dict], validate_code: bool = True,
     default_cell_type: str = "code", auto_feedback: bool = True,
-    feedback_timeout: int = 10, feedback_safe: bool = True, detail: str = "summary",
-    ctx: Context = None,
+    feedback_timeout: int = 10, feedback_safe: bool = True, dry_run: bool = False,
+    detail: str = "summary", ctx: Context = None,
 ) -> ToolResult:
     "Apply deterministic notebook edit operations atomically."
     if not edits: raise ValueError("Pass at least one edit")
     root = await _mcp_workspace_root(ctx)
     path = _mcp_workspace_path(path, root)
     edits = _mcp_workspace_edit_paths(edits, root)
-    arguments = dict(path=path, edits=edits, validate_code=validate_code, default_cell_type=default_cell_type, auto_feedback=auto_feedback, feedback_timeout=feedback_timeout, feedback_safe=feedback_safe, detail=detail, workspace_root=str(root) if root else None)
+    arguments = dict(
+        path=path, edits=edits, validate_code=validate_code, default_cell_type=default_cell_type,
+        auto_feedback=auto_feedback, feedback_timeout=feedback_timeout, feedback_safe=feedback_safe,
+        dry_run=dry_run, detail=detail, workspace_root=str(root) if root else None,
+    )
     result = edit_notebook(
         path, edits, validate_code=validate_code, default_cell_type=default_cell_type,
         auto_feedback=auto_feedback, feedback_timeout=feedback_timeout,
-        feedback_safe=feedback_safe, detail=detail,
+        feedback_safe=feedback_safe, detail=detail, dry_run=dry_run,
     )
     warnings = result.get("warnings", []) if isinstance(result, dict) else []
     full_output = result.get("text", str(result)) if isinstance(result, dict) else str(result)
-    tool_result = mcp_tool_result(
+    return mcp_tool_result(
         "edit_notebook", arguments, full_output, detail=detail, warnings=warnings,
         ok=bool(result.get("ok", False)) if isinstance(result, dict) else True,
         changed=result.get("changed") if isinstance(result, dict) else None,
         no_change=result.get("no_change") if isinstance(result, dict) else None,
+        dry_run=result.get("dry_run") if isinstance(result, dict) else dry_run,
         affected_cell_ids=result.get("affected_cell_ids", []) if isinstance(result, dict) else [],
         before_hash=result.get("before_hash") if isinstance(result, dict) else None,
         after_hash=result.get("after_hash") if isinstance(result, dict) else None,
+        planned_hash=result.get("planned_hash") if isinstance(result, dict) else None,
         exported=result.get("exported") if isinstance(result, dict) else None,
+        edit_notebook=result if isinstance(result, dict) else {},
     )
-    if isinstance(result, dict): tool_result.structured_content["edit_notebook"] = result
-    return tool_result
 
 # %% ../nbs/07_mcp.ipynb #mcptool10
 @mcp.tool(**_mcp_tool_meta("exec_nb"))
@@ -1483,6 +1722,12 @@ async def exec_nb_tool(
             "Safe execution blocked an audited operation.",
             "Use an explicit CLI run for trusted notebooks that need broader execution permissions.",
         ))
+    if "_ExecutionApprovalRequired" in full_output or "refusing to execute unapproved cell" in full_output:
+        warnings.append(_warning(
+            "safe-exec-approval-required",
+            "Safe execution refused an unapproved notebook cell.",
+            "Rerun with allow_new=True only if you approve the notebook source.",
+        ))
     return mcp_tool_result("exec_nb", arguments, full_output, detail=detail, warnings=warnings)
 
 # %% ../nbs/07_mcp.ipynb #mcpdiffnb
@@ -1505,29 +1750,38 @@ async def _diff_nb_tool(path: str, ref_a: str | None = "HEAD", ref_b: str | None
 async def execute_plan_tool(
     plan: str, notebook: str | None = None, scope: str = "notebook",
     notebooks: str | None = None, model: str | None = None, max_steps: int = 8,
-    timeout: int = 30, symbols: str | None = None,
+    timeout: int = 30, symbols: str | None = None, dry_run: bool = True,
     detail: str = "summary", ctx: Context = None,
 ) -> ToolResult:
     "Run a bounded notebook-editing subagent against one notebook or a project notebook set."
     root = await _mcp_workspace_root(ctx)
     notebook = _mcp_workspace_path(notebook, root) if notebook else notebook
     notebooks = _mcp_workspace_paths(notebooks, root) if notebooks else notebooks
-    arguments = dict(plan=plan, notebook=notebook, scope=scope, notebooks=notebooks, model=model, max_steps=max_steps, timeout=timeout, symbols=symbols, detail=detail, workspace_root=str(root) if root else None)
+    arguments = dict(
+        plan=plan, notebook=notebook, scope=scope, notebooks=notebooks, model=model, max_steps=max_steps,
+        timeout=timeout, symbols=symbols, dry_run=dry_run, detail=detail, workspace_root=str(root) if root else None,
+    )
     mode = "project" if scope == "project" or notebooks else "notebook"
     if mode == "project":
-        project_args = dict(plan=plan, notebooks=notebooks, model=model, max_steps=max_steps, timeout=timeout, dry_run=False, symbols=symbols)
+        project_args = dict(
+            plan=plan, notebooks=notebooks, model=model, max_steps=max_steps, timeout=timeout,
+            dry_run=dry_run, symbols=symbols,
+        )
         full_output = capture_call(execute_project_plan, **project_args)
         return mcp_tool_result("execute_plan", arguments, full_output, detail=detail)
     if not notebook: raise ValueError("notebook is required when scope='notebook'")
-    notebook_args = dict(notebook=notebook, plan=plan, model=model, max_steps=max_steps, timeout=timeout, dry_run=False, symbols=symbols)
+    notebook_args = dict(
+        notebook=notebook, plan=plan, model=model, max_steps=max_steps, timeout=timeout,
+        dry_run=dry_run, symbols=symbols,
+    )
     result = execute_plan(**notebook_args)
     full_output = plan_result_text(result)
-    tool_result = mcp_tool_result("execute_plan", arguments, full_output, detail=detail)
-    if isinstance(result, dict):
-        tool_result.structured_content["history"] = result.get("history", [])
-        tool_result.structured_content["summary"] = result.get("summary", "")
-        tool_result.structured_content["execute_plan"] = result
-    return tool_result
+    return mcp_tool_result(
+        "execute_plan", arguments, full_output, detail=detail,
+        execute_plan=result if isinstance(result, dict) else {},
+        history=result.get("history", []) if isinstance(result, dict) else [],
+        result_summary=result.get("summary", "") if isinstance(result, dict) else "",
+    )
 
 # %% ../nbs/07_mcp.ipynb #mcptool13
 @mcp.tool(**_mcp_tool_meta("agent_workbench"))
@@ -1546,9 +1800,10 @@ async def agent_workbench_tool(
         max_steps=max_steps, timeout=timeout,
     )
     full_output = result.get("rendered_plan") or result.get("summary", "")
-    tool_result = mcp_tool_result("agent_workbench", arguments, full_output, detail=detail)
-    if isinstance(result, dict): tool_result.structured_content["agent_workbench"] = result
-    return tool_result
+    return mcp_tool_result(
+        "agent_workbench", arguments, full_output, detail=detail,
+        agent_workbench=result if isinstance(result, dict) else {},
+    )
 
 # %% ../nbs/07_mcp.ipynb #mcptool15
 @mcp.tool(**_mcp_tool_meta("style_check"))
@@ -1595,6 +1850,9 @@ async def _reference_tool(
     kind: str | None = None,
     module: str | None = None,
     symbol: str | None = None,
+    include_local: bool = True,
+    candidate_k: int | None = None,
+    explain: bool = True,
     all: bool = False,
     force: bool = False,
     detail: str = "summary",
@@ -1608,6 +1866,7 @@ async def _reference_tool(
     arguments = dict(
         action=action, query=query, top_k=top_k, include_branch=include_branch, current_repo=current_repo, repos=repos,
         url=url, name=name, version=version, package=package, path=path, kind=kind, module=module, symbol=symbol,
+        include_local=include_local, candidate_k=candidate_k, explain=explain,
         all=all, force=force, detail=detail, workspace_root=str(root) if root else None,
     )
     if action == "add":
@@ -1622,13 +1881,12 @@ async def _reference_tool(
         result_data = reference_query(
             query, top_k=top_k, include_branch=include_branch, current_repo=current_repo, repos=repos, path=path,
             kind=kind, package=package, module=module, symbol=symbol,
+            include_local=include_local, candidate_k=candidate_k, explain=explain,
         )
     else:
         raise ValueError("action must be add, list, ingest, or query")
     full_output = json.dumps(result_data, indent=2, sort_keys=True)
-    result = mcp_tool_result("reference", arguments, full_output, detail=detail)
-    result.structured_content["reference"] = result_data
-    return result
+    return mcp_tool_result("reference", arguments, full_output, detail=detail, reference=result_data)
 
 # %% ../nbs/07_mcp.ipynb #mcptool19
 @mcp.tool(**_mcp_tool_meta("convert"))
@@ -1649,6 +1907,7 @@ async def convert_tool(
     include_tests: bool = False,
     force: bool = True,
     run_validation: bool = True,
+    dry_run: bool = True,
     detail: str = "summary",
     ctx: Context = None,
 ) -> ToolResult:
@@ -1661,12 +1920,12 @@ async def convert_tool(
         path=path, mode=mode, dest=dest, nbs_path=nbs_path, recursive=recursive, maxdepth=maxdepth,
         preserve_tree=preserve_tree, class_lines=class_lines, method_lines=method_lines, package=package,
         include=include, exclude=exclude, skip_init=skip_init, include_tests=include_tests, force=force,
-        run_validation=run_validation, detail=detail, workspace_root=str(root) if root else None,
+        run_validation=run_validation, dry_run=dry_run, detail=detail, workspace_root=str(root) if root else None,
     )
     full_output = capture_call(
         convert, path=path, mode=mode, dest=dest, nbs_path=nbs_path, recursive=recursive, maxdepth=maxdepth,
         preserve_tree=preserve_tree, class_lines=class_lines, method_lines=method_lines, package=package,
-        include=include, exclude=exclude, skip_init=skip_init, include_tests=include_tests, dry_run=False,
+        include=include, exclude=exclude, skip_init=skip_init, include_tests=include_tests, dry_run=dry_run,
         force=force, run_validation=run_validation,
     )
     return mcp_tool_result("convert", arguments, full_output, detail=detail)

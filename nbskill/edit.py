@@ -360,6 +360,7 @@ def edit_notebook(
     feedback_timeout=10,
     feedback_safe=True,
     detail="summary",
+    dry_run=False,
 ):
     """Apply structured notebook edits atomically and return MCP-friendly details."""
     if not edits: raise ValueError("edits must be a non-empty list")
@@ -377,10 +378,11 @@ def edit_notebook(
             if op in _TEXT_OPS: _apply_text_edit(trial, edit, diffs, affected)
             else: _apply_structural_edit(trial, edit, diffs, affected, default_cell_type)
         affected = [cell_id for cell_id in dict.fromkeys(affected) if cell_id]
-        changed = before_hash != _notebook_hash(trial)
+        planned_hash = _notebook_hash(trial)
+        changed = before_hash != planned_hash
         if validate_code and changed: validate_code_cells(trial.cells)
         exported = False
-        if changed:
+        if changed and not dry_run:
             for cell in trial.cells:
                 if getattr(cell, "id", None) in set(affected): clear_outputs(cell)
             stamp_notebook_metadata(trial)
@@ -392,14 +394,14 @@ def edit_notebook(
                     stamp_export_metadata(trial, py_path)
                     _write_nb(trial, path)
                     exported = True
-        after_hash = _notebook_hash(read_nb(path)) if changed else before_hash
+        after_hash = _notebook_hash(read_nb(path)) if changed and not dry_run else before_hash
 
     changed_diffs = [item for item in diffs if item.get("changed")]
-    status = "changed" if changed else "no_change"
+    status = "dry_run" if dry_run and changed else ("changed" if changed else "no_change")
     text = f"edit_notebook {status}: {len(changed_diffs)} changed operation(s), {len(affected)} affected cell(s)"
     diff_text = "\n\n".join(item["diff"] for item in changed_diffs if item.get("diff"))
     if diff_text: text = f"{text}\n\n{diff_text}"
-    if changed:
+    if changed and not dry_run:
         text = append_notebook_edit_feedback(
             text, path, affected, auto_feedback=auto_feedback, feedback_timeout=feedback_timeout, feedback_safe=feedback_safe
         )
@@ -407,10 +409,12 @@ def edit_notebook(
         "ok": True,
         "changed": changed,
         "no_change": not changed,
+        "dry_run": dry_run,
         "affected_cell_ids": affected,
         "diffs": diffs,
         "before_hash": before_hash,
         "after_hash": after_hash,
+        "planned_hash": planned_hash,
         "exported": exported,
         "warnings": [],
         "text": text,

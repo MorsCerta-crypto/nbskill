@@ -2,8 +2,9 @@
 
 # %% auto #0
 __all__ = ['notebook_order_problems', 'notebook_order_problem_lines', 'symbol_graph_data', 'symbol_graph_public_data',
-           'symbol_usage_summary', 'symbol_graph', 'private_symbol_report', 'symbol_connection', 'symbol_catalog',
-           'reuse_advice', 'placement_advice', 'notebook_advice_problems']
+           'symbol_usage_summary', 'symbol_graph', 'private_symbol_report', 'symbol_connection',
+           'notebook_knowledge_graph_data', 'notebook_knowledge_graph', 'symbol_catalog', 'reuse_advice',
+           'placement_advice', 'notebook_advice_problems']
 
 # %% ../nbs/10_graph.ipynb #09416808
 import ast
@@ -673,6 +674,318 @@ def symbol_connection(
         print(text)
         return cli_return(result)
     text = _format_symbol_connection_data(data)
+    print(text)
+    return cli_return(text)
+
+# %% ../nbs/10_graph.ipynb #fd7d73c2
+_KG_NODE_TYPES = {"notebook", "cell", "symbol", "import", "heading"}
+_KG_EDGE_TYPES = {"contains", "defines", "calls", "imports", "documents", "precedes", "similar_to"}
+_KG_REQUIRED_TOP_KEYS = {"version", "kind", "project", "nodes", "edges", "layers", "tour", "issues"}
+_KG_REQUIRED_NODE_KEYS = {"id", "type", "name"}
+_KG_REQUIRED_EDGE_KEYS = {"source", "target", "type", "confidence", "evidence"}
+
+
+def _kg_id(*parts):
+    return "::".join(str(part).replace("::", ":") for part in parts if part not in (None, ""))
+
+
+def _kg_clean(extra):
+    return {key: value for key, value in extra.items() if value is not None and value != ""}
+
+# %% ../nbs/10_graph.ipynb #9dee544b
+def _kg_node(node_id, kind, name, **extra):
+    data = {"id": node_id, "type": kind, "name": str(name)}
+    data.update(_kg_clean(extra))
+    return data
+
+
+def _kg_edge(source, target, kind, confidence="high", evidence=""):
+    return {"source": source, "target": target, "type": kind, "confidence": confidence, "evidence": evidence}
+
+
+def _kg_issue(code, detail, severity="warning", **extra):
+    data = {"code": code, "detail": detail, "severity": severity}
+    data.update(_kg_clean(extra))
+    return data
+
+# %% ../nbs/10_graph.ipynb #e8d1b7e0
+def _notebook_node_id(path):
+    return _kg_id("notebook", path)
+
+
+def _cell_node_id(path, cell_idx, cell_id=None):
+    return _kg_id("cell", path, cell_id or cell_idx)
+
+
+def _symbol_node_id(record):
+    return _kg_id("symbol", record.get("module"), record.get("symbol"), record.get("cell_id"))
+
+# %% ../nbs/10_graph.ipynb #c0cbf180
+def _import_node_id(record):
+    return _kg_id("import", record.get("path"), record.get("cell_id"), record.get("local") or record.get("symbol"))
+
+
+def _heading_node_id(path, cell_idx, title):
+    return _kg_id("heading", path, cell_idx, title)
+
+# %% ../nbs/10_graph.ipynb #37dc0407
+def _add_kg_node(nodes, node):
+    nodes.setdefault(node["id"], node)
+    return node["id"]
+
+
+def _add_kg_edge(edges, seen, edge):
+    key = (edge["source"], edge["target"], edge["type"], edge.get("evidence", ""))
+    if key not in seen:
+        edges.append(edge)
+        seen.add(key)
+
+
+def _append_layer_node(layers, layer_id, name, node_id, kind="notebook"):
+    layer = layers.setdefault(layer_id, {"id": layer_id, "type": kind, "name": name, "node_ids": []})
+    if node_id not in layer["node_ids"]:
+        layer["node_ids"].append(node_id)
+    return layer
+
+
+def _kg_records_by_cell(records):
+    by_cell = {}
+    for record in records:
+        by_cell.setdefault((record.get("path"), record.get("cell_id")), []).append(record)
+    return by_cell
+
+
+def _symbol_ids_by_name(nodes):
+    by_name = {}
+    for node in nodes.values():
+        if node.get("type") == "symbol":
+            by_name.setdefault(node.get("name"), []).append(node["id"])
+    return by_name
+
+# %% ../nbs/10_graph.ipynb #f04f3060
+def _validate_kg_top_level(data):
+    return [
+        _kg_issue("missing-top-level-field", f"Missing top-level field: {key}.", field=key)
+        for key in sorted(_KG_REQUIRED_TOP_KEYS - set(data))
+    ]
+
+
+def _validate_kg_nodes(nodes):
+    issues, node_ids, duplicate_ids = [], set(), set()
+    for idx, node in enumerate(nodes):
+        missing = _KG_REQUIRED_NODE_KEYS - set(node)
+        if missing:
+            issues.append(_kg_issue("missing-node-field", f"Node {idx} is missing: {', '.join(sorted(missing))}.", node_index=idx))
+        node_id = node.get("id")
+        if node_id in node_ids:
+            duplicate_ids.add(node_id)
+        if node_id:
+            node_ids.add(node_id)
+        if node.get("type") and node.get("type") not in _KG_NODE_TYPES:
+            issues.append(_kg_issue("unknown-node-type", f"Unknown node type: {node.get('type')}.", node_id=node_id))
+    for node_id in sorted(duplicate_ids):
+        issues.append(_kg_issue("duplicate-node-id", f"Duplicate node id: {node_id}.", node_id=node_id))
+    return issues, node_ids
+
+# %% ../nbs/10_graph.ipynb #dcf92a77
+def _validate_kg_edges(edges, node_ids):
+    issues = []
+    for idx, edge in enumerate(edges):
+        missing = _KG_REQUIRED_EDGE_KEYS - set(edge)
+        if missing:
+            issues.append(_kg_issue("missing-edge-field", f"Edge {idx} is missing: {', '.join(sorted(missing))}.", edge_index=idx))
+            continue
+        if edge.get("type") not in _KG_EDGE_TYPES:
+            issues.append(_kg_issue("unknown-edge-type", f"Unknown edge type: {edge.get('type')}.", edge_index=idx))
+        for field in ("source", "target"):
+            ref = edge.get(field)
+            if ref not in node_ids:
+                issues.append(_kg_issue("dangling-edge", f"Edge {idx} has unknown {field}: {ref}.", edge_index=idx, field=field, node_id=ref))
+    return issues
+
+
+def _validate_kg_node_refs(items, node_ids, code, label):
+    issues = []
+    for item in items:
+        for node_id in item.get("node_ids", []):
+            if node_id not in node_ids:
+                detail = f"{label} {item.get('id', item.get('order'))} references unknown node: {node_id}."
+                issues.append(_kg_issue(code, detail, item_id=item.get("id"), order=item.get("order"), node_id=node_id))
+    return issues
+
+
+def _notebook_knowledge_graph_validate(data):
+    if not isinstance(data, dict):
+        return [_kg_issue("invalid-graph", "Graph data must be a dictionary.", severity="error")]
+    node_issues, node_ids = _validate_kg_nodes(data.get("nodes", []))
+    issues = _validate_kg_top_level(data) + node_issues
+    issues.extend(_validate_kg_edges(data.get("edges", []), node_ids))
+    issues.extend(_validate_kg_node_refs(data.get("layers", []), node_ids, "dangling-layer-node", "Layer"))
+    issues.extend(_validate_kg_node_refs(data.get("tour", []), node_ids, "dangling-tour-node", "Tour item"))
+    return issues
+
+# %% ../nbs/10_graph.ipynb #6882c9d2
+def _kg_state():
+    return {"nodes": {}, "edges": [], "edge_seen": set(), "layers": {}, "tour": [], "symbol_nodes_by_name": {}}
+
+
+def _kg_cell_base(state, nb_path, module, notebook_id, layer_id, cell_idx, cell, previous_cell_id, heading_layer):
+    cell_id = getattr(cell, "id", "")
+    node_id = _add_kg_node(state["nodes"], _kg_node(_cell_node_id(nb_path, cell_idx, cell_id), "cell", f"{Path(nb_path).name}#{cell_idx}", path=nb_path, cell_id=cell_id, cell_idx=cell_idx, cell_type=cell.cell_type))
+    _append_layer_node(state["layers"], layer_id, module, node_id, kind="module")
+    if heading_layer:
+        _append_layer_node(state["layers"], heading_layer["id"], heading_layer["name"], node_id, kind="heading")
+    _add_kg_edge(state["edges"], state["edge_seen"], _kg_edge(notebook_id, node_id, "contains", evidence=f"cell {cell_idx}"))
+    if previous_cell_id:
+        _add_kg_edge(state["edges"], state["edge_seen"], _kg_edge(previous_cell_id, node_id, "precedes", evidence="notebook cell order"))
+    return node_id, cell_id
+
+
+def _kg_heading(state, nb_path, notebook_id, cell_idx, cell, cell_id, node_id, heading_layer):
+    heading = _markdown_heading(cell)
+    if not heading:
+        return heading_layer, None
+    heading_id = _add_kg_node(state["nodes"], _kg_node(_heading_node_id(nb_path, cell_idx, heading), "heading", heading, path=nb_path, cell_id=cell_id, cell_idx=cell_idx))
+    _add_kg_edge(state["edges"], state["edge_seen"], _kg_edge(notebook_id, heading_id, "contains", evidence=f"heading at cell {cell_idx}"))
+    _add_kg_edge(state["edges"], state["edge_seen"], _kg_edge(heading_id, node_id, "documents", evidence="markdown heading cell"))
+    layer = _append_layer_node(state["layers"], _kg_id("heading", nb_path, cell_idx), heading, heading_id, kind="heading")
+    _append_layer_node(state["layers"], layer["id"], layer["name"], node_id, kind="heading")
+    return layer, heading_id
+
+# %% ../nbs/10_graph.ipynb #ee6f7d8f
+def _kg_definition_nodes(state, nb_path, module, layer_id, cell_idx, cell_id, node_id, records, heading_layer):
+    for record in records:
+        symbol_id = _add_kg_node(state["nodes"], _kg_node(_symbol_node_id(record), "symbol", record["symbol"], symbol_kind=record.get("kind"), module=record.get("module"), path=nb_path, cell_id=cell_id, cell_idx=cell_idx, private=record.get("symbol", "").startswith("_")))
+        state["symbol_nodes_by_name"].setdefault(record["symbol"], []).append(symbol_id)
+        _append_layer_node(state["layers"], layer_id, module, symbol_id, kind="module")
+        if heading_layer:
+            _append_layer_node(state["layers"], heading_layer["id"], heading_layer["name"], symbol_id, kind="heading")
+        _add_kg_edge(state["edges"], state["edge_seen"], _kg_edge(node_id, symbol_id, "defines", evidence=f"definition in cell {cell_idx}"))
+
+
+def _kg_import_nodes(state, nb_path, module, layer_id, cell_idx, cell_id, node_id, records, heading_layer):
+    for record in records:
+        label = record.get("local") or record.get("symbol") or record.get("module")
+        import_id = _add_kg_node(state["nodes"], _kg_node(_import_node_id(record), "import", label, module=record.get("module"), symbol=record.get("symbol"), local=record.get("local"), path=nb_path, cell_id=cell_id, cell_idx=cell_idx))
+        _append_layer_node(state["layers"], layer_id, module, import_id, kind="module")
+        if heading_layer:
+            _append_layer_node(state["layers"], heading_layer["id"], heading_layer["name"], import_id, kind="heading")
+        _add_kg_edge(state["edges"], state["edge_seen"], _kg_edge(node_id, import_id, "imports", evidence=f"import in cell {cell_idx}"))
+
+# %% ../nbs/10_graph.ipynb #71ce3563
+def _kg_add_notebook(state, nb_path, nb_order, graph):
+    nb = read_nb(nb_path)
+    module = _notebook_module_name(nb_path, nb)
+    notebook_id = _add_kg_node(state["nodes"], _kg_node(_notebook_node_id(nb_path), "notebook", Path(nb_path).name, path=nb_path, module=module, cell_count=len(nb.cells)))
+    layer_id = _kg_id("module", module)
+    _append_layer_node(state["layers"], layer_id, module, notebook_id, kind="module")
+    definitions = _kg_records_by_cell(graph["definitions"])
+    imports = _kg_records_by_cell(graph["imports"])
+    heading_layer, previous_cell_id, first_heading_id = None, None, None
+    for cell_idx, cell in enumerate(nb.cells):
+        node_id, cell_id = _kg_cell_base(state, nb_path, module, notebook_id, layer_id, cell_idx, cell, previous_cell_id, heading_layer)
+        previous_cell_id = node_id
+        heading_layer, heading_id = _kg_heading(state, nb_path, notebook_id, cell_idx, cell, cell_id, node_id, heading_layer)
+        first_heading_id = first_heading_id or heading_id
+        records_key = (nb_path, cell_id)
+        _kg_definition_nodes(state, nb_path, module, layer_id, cell_idx, cell_id, node_id, definitions.get(records_key, []), heading_layer)
+        _kg_import_nodes(state, nb_path, module, layer_id, cell_idx, cell_id, node_id, imports.get(records_key, []), heading_layer)
+    tour_nodes = [notebook_id]
+    if first_heading_id:
+        tour_nodes.append(first_heading_id)
+    state["tour"].append({"order": nb_order, "title": module, "node_ids": tour_nodes, "description": f"{module}: {Path(nb_path).name}"})
+
+# %% ../nbs/10_graph.ipynb #1c2cf45d
+def _merge_symbol_nodes_by_name(state):
+    for name, ids in _symbol_ids_by_name(state["nodes"]).items():
+        bucket = state["symbol_nodes_by_name"].setdefault(name, [])
+        for node_id in ids:
+            if node_id not in bucket:
+                bucket.append(node_id)
+
+
+def _kg_add_call_edges(state, graph):
+    _merge_symbol_nodes_by_name(state)
+    for record in graph["definitions"]:
+        source_id = _symbol_node_id(record)
+        for call in record.get("calls", []):
+            for callee in _resolve_callees(graph, [call]):
+                for target_id in state["symbol_nodes_by_name"].get(callee, []):
+                    if source_id != target_id:
+                        _add_kg_edge(state["edges"], state["edge_seen"], _kg_edge(source_id, target_id, "calls", confidence="high", evidence=f"{record['symbol']} calls {call}"))
+    for record in graph["callers"]:
+        source_id = _cell_node_id(record.get("path"), record.get("cell_idx"), record.get("cell_id"))
+        for call in record.get("calls", []):
+            for callee in _resolve_callees(graph, [call]):
+                for target_id in state["symbol_nodes_by_name"].get(callee, []):
+                    _add_kg_edge(state["edges"], state["edge_seen"], _kg_edge(source_id, target_id, "calls", confidence="high", evidence=f"cell calls {call}"))
+
+# %% ../nbs/10_graph.ipynb #5df9cc1b
+def _add_similarity_edges(catalog, nodes, edges, seen):
+    symbols = catalog.get("symbols", catalog) if isinstance(catalog, dict) else catalog
+    records = [record for record in symbols if record.get("ast_shape")]
+    ids_by_key = {(node.get("module"), node.get("name")): node["id"] for node in nodes.values() if node.get("type") == "symbol"}
+    for idx, left in enumerate(records):
+        for right in records[idx + 1:]:
+            if left.get("symbol") == right.get("symbol"):
+                continue
+            if left.get("ast_shape") != right.get("ast_shape"):
+                continue
+            source = ids_by_key.get((left.get("module"), left.get("symbol")))
+            target = ids_by_key.get((right.get("module"), right.get("symbol")))
+            if source and target:
+                _add_kg_edge(edges, seen, _kg_edge(source, target, "similar_to", confidence="medium", evidence="normalized AST shape matches"))
+
+
+def _format_notebook_knowledge_graph(data):
+    project = data.get("project", {})
+    lines = [
+        f"Notebook knowledge graph: {project.get('notebook_count', 0)} notebook(s), {len(data.get('nodes', []))} node(s), {len(data.get('edges', []))} edge(s)"
+    ]
+    if data.get("issues"):
+        lines.append(f"Issues: {len(data['issues'])}")
+    lines.append("Layers:")
+    for layer in data.get("layers", [])[:8]:
+        lines.append(f"- {layer.get('name')}: {len(layer.get('node_ids', []))} node(s)")
+    lines.append("Tour:")
+    for item in data.get("tour", [])[:8]:
+        lines.append(f"- {item.get('order')}. {item.get('title')}: {len(item.get('node_ids', []))} node(s)")
+    return "\n".join(lines)
+
+# %% ../nbs/10_graph.ipynb #3ec7743f
+def notebook_knowledge_graph_data(path="nbs"):
+    """Return a typed graph of notebook, cell, symbol, import, and heading structure."""
+    scope = _graph_scope(path)
+    graph = _collect_graph(scope)
+    catalog = symbol_catalog(scope)
+    state = _kg_state()
+    ordered_paths = [str(path) for path in notebook_paths(scope)]
+    for nb_order, nb_path in enumerate(ordered_paths):
+        _kg_add_notebook(state, nb_path, nb_order, graph)
+    _kg_add_call_edges(state, graph)
+    _add_similarity_edges(catalog, state["nodes"], state["edges"], state["edge_seen"])
+    data = {
+        "version": 1,
+        "kind": "nbskill_notebook_graph",
+        "project": {"path": str(scope), "notebook_count": len(ordered_paths), "node_count": len(state["nodes"]), "edge_count": len(state["edges"])},
+        "nodes": list(state["nodes"].values()),
+        "edges": state["edges"],
+        "layers": list(state["layers"].values()),
+        "tour": state["tour"],
+        "issues": [],
+    }
+    data["issues"] = _notebook_knowledge_graph_validate(data)
+    return data
+
+
+def notebook_knowledge_graph(path="nbs", json_output=False):
+    """Print a typed notebook knowledge graph summary, or JSON when requested."""
+    data = notebook_knowledge_graph_data(path)
+    if json_output:
+        text = json.dumps(data, indent=2, sort_keys=True)
+        print(text)
+        return cli_return(data)
+    text = _format_notebook_knowledge_graph(data)
     print(text)
     return cli_return(text)
 

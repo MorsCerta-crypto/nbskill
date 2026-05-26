@@ -428,6 +428,9 @@ def reference(
     kind: str | None = None,  # Optional query filter: readme, module, function, class, method
     module: str | None = None,  # Optional module filter for action=query
     symbol: str | None = None,  # Optional symbol filter for action=query
+    include_local: bool = True,  # Include current repository reuse_advice matches
+    candidate_k: int | None = None,  # Candidate pool size before final reranking
+    explain: bool = True,  # Include score breakdowns and why text
     all: bool = False,  # Ingest all registered references
     force: bool = False,  # Re-ingest even when the indexed version matches
 ):
@@ -445,6 +448,7 @@ def reference(
         result = nbskill.knowledge.reference_query(
             query, top_k=top_k, include_branch=include_branch, current_repo=current_repo, repos=repos, path=path,
             kind=kind, package=package, module=module, symbol=symbol,
+            include_local=include_local, candidate_k=candidate_k, explain=explain,
         )
     else:
         raise ValueError("action must be add, list, ingest, or query")

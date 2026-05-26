@@ -288,30 +288,158 @@ def _row_matches_reference_filter(row, repos=None, kind=None, package=None, modu
         if value and row.get(field) != value: return False
     return True
 
-def _reference_rank_score(row, query=""):
-    base = float(row.get("_relevance_score") or row.get("_score") or row.get("_reference_score") or 0)
-    score = math.log1p(max(base, 0.0))
+_GENERIC_REFERENCE_SYMBOLS = {
+    "get", "set", "run", "find", "search", "before", "after", "main", "test", "call", "build", "make", "do",
+}
+_IMPLEMENTATION_KINDS = {"function", "method", "class"}
+_REFERENCE_KIND_TERMS = {
+    "function": {"function", "helper", "def", "implementation", "endpoint", "handler", "parser", "query", "search", "route", "page"},
+    "method": {"method", "self", "class method"},
+    "class": {"class", "object", "model", "dataclass"},
+    "readme": {"readme", "overview", "docs", "documentation"},
+    "test": {"test", "tests", "pytest", "fixture", "assert"},
+}
+_REFERENCE_LIBRARY_HINTS = {
+    "asyncio", "click", "fastapi", "fastcore", "fasthtml", "httpx", "jinja2", "lancedb", "numpy", "pandas",
+    "pathlib", "pydantic", "pytest", "requests", "rich", "sqlite", "sqlalchemy", "tomllib", "typer",
+}
+_REFERENCE_CALL_WORDS = {"endpoint", "route", "page", "button", "handler", "query", "search", "parse", "render", "click"}
+
+def _reference_list_value(value):
+    if value is None: return []
+    if isinstance(value, str):
+        if not value: return []
+        try: parsed = json.loads(value)
+        except json.JSONDecodeError: parsed = None
+        if isinstance(parsed, (list, tuple, set)): return [str(item) for item in parsed if item]
+        return [value]
+    if isinstance(value, (list, tuple, set)): return [str(item) for item in value if item]
+    try: return [str(item) for item in list(value) if item]
+    except TypeError: return [str(value)]
+
+def _feature_terms(values):
+    terms = set()
+    for value in _reference_list_value(values):
+        term = str(value or "").strip().lower()
+        if not term: continue
+        terms.add(term)
+        terms.add(term.replace("_", "-"))
+        terms.add(term.replace("-", "_"))
+        terms.update(part for part in re.split(r"[._\-/]+", term) if len(part) > 1)
+    return terms
+
+def _row_feature_set(row, field, fallback_tags=False):
+    values = row.get(field)
+    terms = _feature_terms(values)
+    if fallback_tags and not terms:
+        terms |= _feature_terms(row.get("tags"))
+    return terms
+
+def _row_import_terms(row):
+    values = [row.get("package"), row.get("repo"), *_reference_list_value(row.get("imports"))]
+    return _feature_terms(values) | _row_feature_set(row, "imports", fallback_tags=True)
+
+def _row_call_terms(row):
+    terms = _row_feature_set(row, "calls")
+    if not terms:
+        terms |= _feature_terms(re.findall(r"\b([A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)?)\s*\(", str(row.get("source", "") or "")))
+    return terms
+
+def _row_decorator_terms(row):
+    return _row_feature_set(row, "decorators", fallback_tags=True)
+
+def _query_feature_plan(query, kind=None, candidate_k=None):
+    text = str(query or "")
+    tokens = _query_tokens(text)
+    token_set = set(tokens)
+    identifiers = [item for item in re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*\b", text) if len(item) > 1]
+    symbol_like = sorted({item for item in identifiers if "_" in item or "." in item or re.search(r"[a-z][A-Z]", item)})
+    import_hints = set(re.findall(r"\b(?:import|from)\s+([A-Za-z_][\w.]*)", text))
+    dotted_heads = {item.split(".")[0] for item in identifiers if "." in item}
+    libraries = sorted((token_set & _REFERENCE_LIBRARY_HINTS) | {item.lower() for item in import_hints | dotted_heads})
+    call_hints = set(re.findall(r"\b([A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)?)\s*\(", text))
+    call_hints |= token_set & _REFERENCE_CALL_WORDS
+    kind_hints = set()
+    if kind: kind_hints.add(kind)
+    for hint, words in _REFERENCE_KIND_TERMS.items():
+        if token_set & words: kind_hints.add(hint)
+    if {"endpoint", "handler", "route", "page", "button", "parser", "query", "search"} & token_set:
+        kind_hints |= {"function", "method"}
+    wants_tests = bool(token_set & _REFERENCE_KIND_TERMS["test"])
+    wants_docs = bool(token_set & _REFERENCE_KIND_TERMS["readme"])
+    return {
+        "tokens": sorted(token_set),
+        "symbol_like": symbol_like,
+        "library_hints": sorted(libraries),
+        "call_hints": sorted({item.lower() for item in call_hints}),
+        "kind_hints": sorted(kind_hints),
+        "wants_tests": wants_tests,
+        "wants_docs": wants_docs,
+        "wants_implementation": not wants_docs or bool(kind_hints & _IMPLEMENTATION_KINDS),
+        "candidate_k": candidate_k,
+        "applied_search_passes": ["hybrid", "vector", "bm25_fts", "feature_rerank"],
+    }
+
+def _reference_base_score(row, query=""):
+    base = row.get("_relevance_score") or row.get("_score")
+    if not query: base = base or row.get("_reference_score")
+    try: score = math.log1p(max(float(base or 0), 0.0))
+    except (TypeError, ValueError): score = 0.0
     if row.get("_distance") is not None:
         try: score += 1.0 / (1.0 + max(float(row["_distance"]), 0.0))
         except (TypeError, ValueError): pass
-    tokens = set(_reference_tokens(query))
-    symbol = str(row.get("symbol", "") or "").lower().replace("_", " ")
-    module = str(row.get("module", "") or "").lower()
-    doc = str(row.get("docstring", "") or "").lower()
-    sig = str(row.get("signature", "") or "").lower()
-    src = str(row.get("source", "") or "").lower()
-    symbol_parts = set(re.findall(r"[a-z0-9]+", symbol))
-    for token in tokens:
-        if token in {symbol, symbol.replace(" ", "_")}: score += 10.0
-        elif token in symbol_parts: score += 3.0
-        elif token in symbol: score += 1.5
-        if token in doc: score += 1.0
-        if token in sig: score += 0.6
-        if token in module: score += 0.3
-        if token in src: score += 0.1
-    if tokens and all(token in doc or token in symbol or token in sig for token in tokens): score += 2.0
-    if len(symbol.replace(' ', '')) <= 1 and not doc: score -= 8.0
     return score
+
+def _is_test_reference_row(row):
+    bits = " ".join(str(row.get(key, "") or "") for key in ("kind", "path", "module", "symbol"))
+    bits = bits.lower()
+    return bool(re.search(r"(^|[/_.-])tests?([/_.-]|$)", bits) or str(row.get("symbol", "")).startswith("test_"))
+
+def _reference_score_breakdown(row, query="", query_plan=None, current_repo=None):
+    plan = query_plan or _query_feature_plan(query)
+    tokens = set(plan.get("tokens") or _reference_tokens(query))
+    symbol = str(row.get("symbol", "") or "").lower()
+    symbol_text = symbol.replace("_", " ")
+    symbol_terms = set(re.findall(r"[a-z0-9]+", symbol_text))
+    text = "\n".join(str(row.get(key, "") or "") for key in ("module", "signature", "docstring", "source")).lower()
+    text_terms = set(_reference_tokens(text))
+    imports = _row_import_terms(row)
+    calls = _row_call_terms(row) | _row_decorator_terms(row)
+    library_hits = set(plan.get("library_hints") or []) & imports
+    call_hits = set(plan.get("call_hints") or []) & calls
+    symbol_hits = set(plan.get("symbol_like") or []) & ({symbol} | {symbol.replace("_", "-")})
+    token_symbol_hits = tokens & symbol_terms
+    text_hits = tokens & text_terms
+    breakdown = {
+        "base": _reference_base_score(row, query=query),
+        "symbol": min(12.0, 8.0 * len(symbol_hits) + 2.5 * len(token_symbol_hits)),
+        "text": min(9.0, 0.7 * len(text_hits)),
+        "imports": min(10.0, 4.0 * len(library_hits)),
+        "calls": min(8.0, 4.0 * len(call_hits)),
+        "kind": 0.0,
+        "dependency": 0.0,
+        "penalty": 0.0,
+    }
+    row_kind = str(row.get("kind", "") or "")
+    kind_hints = set(plan.get("kind_hints") or [])
+    if row_kind in kind_hints: breakdown["kind"] += 4.0
+    elif row_kind in _IMPLEMENTATION_KINDS and plan.get("wants_implementation"): breakdown["kind"] += 2.0
+    if current_repo is not None and "_dependency_status" in globals():
+        status = _dependency_status(row.get("package"), current_repo=current_repo)
+        if status == "direct_import": breakdown["dependency"] += 2.0
+    generic = symbol in _GENERIC_REFERENCE_SYMBOLS
+    weak_evidence = breakdown["text"] + breakdown["imports"] + breakdown["calls"] + breakdown["kind"] < 4.0
+    if _is_test_reference_row(row) and not plan.get("wants_tests"): breakdown["penalty"] -= 8.0
+    if generic and weak_evidence: breakdown["penalty"] -= 6.0
+    if row_kind in {"readme", "module", "notebook_doc"} and plan.get("wants_implementation"):
+        breakdown["penalty"] -= 4.0
+    return {key: round(value, 3) for key, value in breakdown.items()}
+
+def _reference_rank_score(row, query="", query_plan=None, current_repo=None):
+    breakdown = _reference_score_breakdown(row, query=query, query_plan=query_plan, current_repo=current_repo)
+    score = sum(breakdown.values())
+    row["_score_breakdown"] = breakdown
+    return round(score, 6)
 
 def _prefer_reference_row(current, candidate):
     if current is None: return candidate
@@ -336,10 +464,13 @@ def _search_rows(builder, limit, filter_expr=None):
     try: return builder.limit(limit).to_list()
     except Exception: return []
 
-def _lancedb_search(query, top_k=3, repos=None, path=None, kind=None, package=None, module=None, symbol=None):
+def _lancedb_search(
+    query, top_k=3, repos=None, path=None, kind=None, package=None, module=None, symbol=None,
+    candidate_k=None, current_repo=None, query_plan=None,
+):
     table = _reference_table(path, "items")
     if table is None: return [], None, "lancedb"
-    limit = max(top_k * 20, 80)
+    limit = max(candidate_k or top_k * 25, top_k, 80)
     items = _lance_rows(path, "items")
     dims = next((len(row.get("vector") or []) for row in items if row.get("vector")), None)
     vector = _reference_vector(query, dims=dims)
@@ -353,7 +484,9 @@ def _lancedb_search(query, top_k=3, repos=None, path=None, kind=None, package=No
     fts_rows = _search_rows(table.search(text_query, query_type="fts"), limit, filter_expr)
     rows = _merge_lancedb_rows(("hybrid", hybrid), ("vector", vector_rows), ("bm25_fts", fts_rows))
     rows = [row for row in rows if _row_matches_reference_filter(row, repos=repos, kind=kind, package=package, module=module, symbol=symbol)]
-    for row in rows: row["_reference_score"] = _reference_rank_score(row, query=query)
+    plan = query_plan or _query_feature_plan(query, kind=kind, candidate_k=candidate_k)
+    for row in rows:
+        row["_reference_score"] = _reference_rank_score(row, query=query, query_plan=plan, current_repo=current_repo)
     rows = _dedupe_reference_rows(sorted(rows, key=lambda row: row.get("_reference_score", 0), reverse=True))
     note = _reference_embedding_note()
     backend = "lancedb_hybrid_bm25_vector"
@@ -421,14 +554,18 @@ def _item_row(repo, version, package, kind, module, symbol, rel_path, source, **
     search_text = "\n".join(str(extra.get(key, "") or "") for key in ("signature", "docstring"))
     search_text = "\n".join([repo, package or "", kind, module or "", symbol or "", search_text, source or ""])
     item_id = _stable_item_id(repo, version, rel_path, extra.get("cell_id"), kind, symbol, extra.get("start_line"))
-    tags = _row_tags(repo, package, module, kind, symbol, extra.get("decorators"), extra.get("imports"))
+    imports = _reference_list_value(extra.get("imports"))
+    decorators = _reference_list_value(extra.get("decorators"))
+    calls = _reference_list_value(extra.get("calls"))
+    tags = _row_tags(repo, package, module, kind, symbol, decorators, imports)
     return {
         "item_id": item_id, "repo": repo, "version": version, "package": package or "",
         "kind": kind, "module": module or "", "symbol": symbol or "", "path": str(rel_path),
         "cell_id": extra.get("cell_id", ""), "start_line": extra.get("start_line", 1),
         "end_line": extra.get("end_line", 1), "signature": extra.get("signature", ""),
         "docstring": extra.get("docstring", ""), "source": _source_excerpt(source),
-        "search_text": search_text, "tags": tags, "calls": extra.get("calls", []),
+        "search_text": search_text, "tags": tags, "imports": imports,
+        "decorators": decorators, "calls": calls,
         "vector": _reference_vector(search_text), "embedding_backend": _reference_embedding_backend(),
         "returned_count": int(extra.get("returned_count") or 0),
     }
@@ -757,16 +894,10 @@ def _branch_for_item(item_id, path=None, limit=8):
 
 # %% ../nbs/12_knowledge.ipynb #2415a5b7
 def _first_docstring_line(docstring):
-    for line in str(docstring or "").strip().splitlines():
-        text = line.strip()
-        if text: return text
-    return ""
+    return next((line.strip() for line in str(docstring or "").splitlines() if line.strip()), "")
 
 def _public_reference_hit(row):
-    tags = row.get("tags") or []
-    if isinstance(tags, str):
-        try: tags = json.loads(tags)
-        except json.JSONDecodeError: tags = [tags]
+    tags = _reference_list_value(row.get("tags"))
     docstring = row.get("docstring") or ""
     return {
         "repo": row.get("repo"), "version": row.get("version"), "package": row.get("package") or None,
@@ -774,8 +905,10 @@ def _public_reference_hit(row):
         "path": row.get("path"), "cell_id": row.get("cell_id") or None,
         "line": row.get("start_line"), "signature": row.get("signature"),
         "docstring": docstring, "docstring_first_line": _first_docstring_line(docstring),
-        "source": row.get("source"), "tags": list(tags), "returned_count": int(row.get("returned_count") or 0),
-        "score": row.get("_reference_score"), "search_sources": row.get("_search_sources") or [],
+        "source": row.get("source"), "tags": tags, "imports": _reference_list_value(row.get("imports")),
+        "decorators": _reference_list_value(row.get("decorators")), "calls": _reference_list_value(row.get("calls")),
+        "returned_count": int(row.get("returned_count") or 0), "score": row.get("_reference_score"),
+        "score_breakdown": row.get("_score_breakdown") or {}, "search_sources": row.get("_search_sources") or [],
         "embedding_backend": row.get("embedding_backend"),
     }
 
@@ -803,28 +936,143 @@ def _bump_reference_return_counts(rows, path=None):
             time.sleep(0.05 * (attempt + 1))
     raise last_exc
 
+def _reference_lookup_hints(hit):
+    symbol, path = hit.get("symbol"), hit.get("path")
+    if hit.get("dependency_status") == "local_repo":
+        hints = []
+        if symbol: hints.append(f"context(target={symbol!r}, scope='nbs', overview=False)")
+        if path: hints.append(f"context(target={path!r}, scope='nbs', overview=False)")
+        return hints
+    hints = []
+    if hit.get("repo") and symbol:
+        hints.append(f"reference(action='query', repos={hit['repo']!r}, symbol={symbol!r}, include_branch=True)")
+    if hit.get("repo") and hit.get("module"):
+        hints.append(f"reference(action='query', repos={hit['repo']!r}, module={hit['module']!r})")
+    return hints
+
+def _reference_quality(hit):
+    try: score = float(hit.get("score") or 0)
+    except (TypeError, ValueError): score = 0.0
+    penalty = float((hit.get("score_breakdown") or {}).get("penalty") or 0)
+    if score >= 12 and penalty > -6: return "high"
+    if score >= 6 and penalty > -8: return "medium"
+    return "low"
+
+def _reference_why(hit):
+    if hit.get("dependency_status") == "local_repo":
+        reasons = hit.get("reasons") or []
+        return "; ".join(reasons[:3]) or "current repository reuse_advice match"
+    breakdown = hit.get("score_breakdown") or {}
+    positive = [name for name in ("symbol", "imports", "calls", "kind", "dependency", "text") if breakdown.get(name, 0) > 0]
+    parts = []
+    if positive: parts.append("matched " + ", ".join(positive))
+    if hit.get("docstring_first_line"): parts.append(hit["docstring_first_line"])
+    if breakdown.get("penalty", 0) < 0: parts.append("penalized for likely generic/test/doc-only evidence")
+    return "; ".join(parts) or "semantic/vector match"
+
+def _finish_reference_hit(hit, explain=True):
+    hit["lookup_hints"] = _reference_lookup_hints(hit)
+    hit["quality"] = _reference_quality(hit)
+    hit["why"] = _reference_why(hit) if explain else ""
+    if not explain: hit["score_breakdown"] = {}
+    return hit
+
+def _local_reference_hits(query, current_repo=".", top_k=3, explain=True):
+    root = Path(current_repo or ".").expanduser()
+    nbs_path = root / "nbs"
+    if not nbs_path.exists(): return []
+    try:
+        from nbskill.graph import reuse_advice
+    except Exception:
+        return []
+    try:
+        advice = reuse_advice(query, path=str(nbs_path), top_k=top_k)
+    except Exception:
+        return []
+    hits = []
+    for match in advice.get("matches", [])[:top_k]:
+        try: score = min(30.0, float(match.get("score") or 0) / 3.0)
+        except (TypeError, ValueError): score = 0.0
+        hit = {
+            "repo": "current_repo", "version": None, "package": None, "repo_kind": "local", "kind": match.get("kind"),
+            "module": None, "symbol": match.get("symbol"), "path": match.get("path"), "cell_id": match.get("cell_id"),
+            "line": None, "signature": None, "docstring": "", "docstring_first_line": "", "source": "",
+            "tags": ["local"], "imports": [], "decorators": [], "calls": [], "returned_count": 0,
+            "score": round(score, 6), "score_breakdown": {"local_reuse": round(score, 3)},
+            "search_sources": ["reuse_advice"], "embedding_backend": None, "dependency_status": "local_repo",
+            "reasons": match.get("reasons") or [], "private": match.get("private", False), "exported": match.get("exported", False),
+        }
+        hits.append(_finish_reference_hit(hit, explain=explain))
+    return hits
+
+def _reference_group_name(hit):
+    status = hit.get("dependency_status")
+    if status == "local_repo": return "local repo"
+    if status == "direct_import": return "direct dependency"
+    return "new dependency"
+
+def _reference_context_markdown(hits):
+    if not hits: return "No reusable code context found for this query."
+    lines = ["Best code context:"]
+    for group in ("local repo", "direct dependency", "new dependency"):
+        group_hits = [hit for hit in hits if _reference_group_name(hit) == group]
+        if not group_hits: continue
+        lines.append(f"\n{group}:")
+        for hit in group_hits[:5]:
+            target = hit.get("symbol") or hit.get("path") or "<unknown>"
+            path = hit.get("path") or ""
+            why = hit.get("why") or hit.get("quality") or "match"
+            lookup = (hit.get("lookup_hints") or [""])[0]
+            lines.append(f"- {target} ({path}): {why}. Next: {lookup}")
+    low_conf = [hit for hit in hits if hit.get("quality") == "low"]
+    if len(low_conf) == len(hits):
+        lines.append("\nLow confidence: all returned hits look weak after feature reranking; inspect before reusing.")
+    elif any((hit.get("score_breakdown") or {}).get("penalty", 0) < 0 for hit in hits):
+        lines.append("\nNote: some candidates were penalized as generic, test-only, or documentation-only matches.")
+    return "\n".join(lines)
+
 def reference_query(
     query: str,  # Natural-language implementation query
     top_k: int = 3,  # Number of implementation hits to return
     include_branch: bool = False,  # Include direct same-repo callers and callees
-    current_repo: str = ".",  # Current project for dependency status
+    current_repo: str = ".",  # Current project for dependency status and local reuse advice
     repos=None,  # Optional repo name or comma-separated names to search
     path: str | None = None,  # Override reference home
     kind: str | None = None,  # Optional item kind filter: readme, module, function, class, method
     package: str | None = None,  # Optional package filter
     module: str | None = None,  # Optional module filter
     symbol: str | None = None,  # Optional symbol filter
+    include_local: bool = True,  # Include current repository reuse_advice matches
+    candidate_k: int | None = None,  # Candidate pool size before final reranking
+    explain: bool = True,  # Include score breakdowns and why text
 ):
-    "Search indexed reference implementations."
+    "Search indexed reference implementations and return a high-level reuse context."
     repo_names = _repo_filter(repos)
-    rows, reason, backend = _lancedb_search(query, top_k=top_k, repos=repo_names, path=path, kind=kind, package=package, module=module, symbol=symbol)
-    counts = _bump_reference_return_counts(rows[:top_k], path=path)
-    hits = []
-    for row in rows[:top_k]:
-        if row.get("item_id") in counts: row["returned_count"] = counts[row["item_id"]]
+    plan = _query_feature_plan(query, kind=kind, candidate_k=candidate_k)
+    if include_local: plan["applied_search_passes"] = [*plan["applied_search_passes"], "local_reuse"]
+    rows, reason, backend = _lancedb_search(
+        query, top_k=top_k, repos=repo_names, path=path, kind=kind, package=package, module=module, symbol=symbol,
+        candidate_k=candidate_k, current_repo=current_repo, query_plan=plan,
+    )
+    row_by_id, reference_hits = {}, []
+    for row in rows:
+        item_id = row.get("item_id")
+        if item_id: row_by_id[item_id] = row
         hit = _public_reference_hit(row)
         hit["dependency_status"] = _dependency_status(hit.get("package"), current_repo=current_repo)
-        if include_branch: hit["branch"] = _branch_for_item(row["item_id"], path=path)
-        hits.append(hit)
+        hit["score_breakdown"] = row.get("_score_breakdown") or _reference_score_breakdown(row, query, plan, current_repo=current_repo)
+        if include_branch and item_id: hit["branch"] = _branch_for_item(item_id, path=path)
+        hit["_item_id"] = item_id
+        reference_hits.append(_finish_reference_hit(hit, explain=explain))
+    local_hits = _local_reference_hits(query, current_repo=current_repo, top_k=top_k, explain=explain) if include_local else []
+    hits = sorted([*local_hits, *reference_hits], key=lambda hit: hit.get("score") or 0, reverse=True)[:top_k]
+    returned_rows = [row_by_id[hit["_item_id"]] for hit in hits if hit.get("_item_id") in row_by_id]
+    counts = _bump_reference_return_counts(returned_rows, path=path)
+    for hit in hits:
+        item_id = hit.pop("_item_id", None)
+        if item_id in counts: hit["returned_count"] = counts[item_id]
     filters = {"repos": repo_names, "kind": kind, "package": package, "module": module, "symbol": symbol}
-    return {"query": query, "backend": backend, "note": reason, "filters": filters, "count": len(hits), "hits": hits}
+    return {
+        "query": query, "backend": backend, "note": reason, "filters": filters, "count": len(hits),
+        "context": _reference_context_markdown(hits), "query_plan": plan, "hits": hits,
+    }

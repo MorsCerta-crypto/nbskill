@@ -72,4 +72,5 @@ allowed_cell_metadata_keys = ["nbskill","nbskill_timeout_hash","nbskill_executed
 [dependency-groups]
 dev = [
     "ipykernel>=7.2.0",
+    "jupyter>=1.1.1",
 ]

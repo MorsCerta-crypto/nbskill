@@ -14,11 +14,12 @@ import json
 import re
 from pathlib import Path
 
+from fastcore.basics import patch
 from fastcore.nbio import read_nb
 
 from nbskill.foundation import (
-    call_name, cell_source, cli_error, cli_return, notebook_paths,
-    path_candidates, source_without_directives, symbol_short_name,
+    NotebookSymbol, call_name, cell_source, cli_error, cli_return, notebook_paths,
+    path_candidates, source_without_directives, symbol_short_name, xml_attrs, xml_escape,
 )
 
 # %% ../nbs/10_graph.ipynb #c5547d77
@@ -496,6 +497,62 @@ def symbol_graph_data(path, symbol):
         "graph": graph,
     }
 
+# %% ../nbs/10_graph.ipynb #a4f1382b
+@patch(cls_method=True, nm="from_graph_data")
+def _from_graph_data(cls: NotebookSymbol, data):
+    "Build a symbol model from `symbol_graph_data` output."
+    definitions = data.get("definitions") or []
+    record = definitions[0] if definitions else {"symbol": data.get("symbol", "")}
+    return cls.from_record(record, data=data)
+
+
+@patch
+def definitions(self: NotebookSymbol):
+    "Return definition records for this symbol."
+    return self.data.get("definitions", [])
+
+# %% ../nbs/10_graph.ipynb #23a7c5f3
+@patch
+def callers(self: NotebookSymbol):
+    "Return call records that reference this symbol."
+    return self.data.get("callers", [])
+
+
+@patch
+def caller_usages(self: NotebookSymbol):
+    "Return formatted caller usage snippets for this symbol."
+    return self.data.get("caller_usages", [])
+
+# %% ../nbs/10_graph.ipynb #3c338ccc
+@patch
+def callees(self: NotebookSymbol):
+    "Return symbols called by this symbol."
+    return self.data.get("callees", [])
+
+# %% ../nbs/10_graph.ipynb #11caa042
+@patch
+def relationships_to_record(self: NotebookSymbol):
+    "Return this symbol with caller and callee relationship data."
+    return {**self.to_record(), "definitions": self.definitions(), "callers": self.callers(), "callees": self.callees()}
+
+# %% ../nbs/10_graph.ipynb #817f4ec3
+@patch
+def relationships_to_xml(self: NotebookSymbol):
+    "Return an XML-shaped symbol relationship view for LLM context."
+    attrs = xml_attrs(symbol=self.name, path=self.path, cell_id=self.cell_id, cell_idx=self.cell_idx,
+                       module=self.module, kind=self.kind)
+    blocks = ["<definitions>"]
+    blocks.extend(f"<location>{xml_escape(loc)}</location>" for loc in _locations(self.definitions()))
+    blocks.append("</definitions>")
+    blocks.append("<callers>")
+    blocks.extend(f"<location>{xml_escape(loc)}</location>" for loc in _locations(self.callers()))
+    blocks.extend(f"<usage>{xml_escape(item.get('line', ''))}</usage>" for item in self.caller_usages())
+    blocks.append("</callers>")
+    blocks.append("<callees>")
+    blocks.extend(f"<symbol>{xml_escape(symbol)}</symbol>" for symbol in self.callees())
+    blocks.append("</callees>")
+    return f"<symbol_graph {attrs}>\n" + "\n".join(blocks) + "\n</symbol_graph>"
+
 # %% ../nbs/10_graph.ipynb #4296c733
 def _caller_usage_records(records, symbol):
     items, seen = [], set()
@@ -538,18 +595,19 @@ def symbol_graph_public_data(data):
 
 # %% ../nbs/10_graph.ipynb #c3d1d403
 def _format_symbol_graph_data(data):
-    lines = [f"Symbol {data['symbol']}"]
+    model = NotebookSymbol.from_graph_data(data)
+    lines = [f"Symbol {model.name}"]
     lines.append("Definitions:")
-    lines.extend([f"- {loc}" for loc in _locations(data["definitions"]) ] or ["- (none)"])
+    lines.extend([f"- {loc}" for loc in _locations(model.definitions())] or ["- (none)"])
     lines.append("Callers:")
-    lines.extend([f"- {loc}" for loc in _locations(data["callers"]) ] or ["- (none)"])
-    caller_usage = _caller_usage_lines(data["callers"], data["symbol"])
+    lines.extend([f"- {loc}" for loc in _locations(model.callers())] or ["- (none)"])
+    caller_usage = _caller_usage_lines(model.callers(), model.name)
     if caller_usage:
         lines.append("Caller usages:")
         lines.extend(caller_usage)
     lines.append("Callees:")
-    if data["callees"]:
-        for symbol in data["callees"]:
+    if model.callees():
+        for symbol in model.callees():
             locs = "; ".join(_callee_locations(data["graph"], symbol)) or "unknown location"
             lines.append(f"- {symbol}: {locs}")
     else:

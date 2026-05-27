@@ -6,18 +6,19 @@ __all__ = ['remove_demo_path', 'demo_path', 'path_candidates', 'is_valid_ipynb',
            'git_tracked_paths', 'git_diff_stats', 'notebook_paths', 'source_without_directives', 'file_line_count',
            'cap_text', 'generated_owner', 'install_nbdev_pre_commit_hooks', 'parse_literal', 'none_if_string',
            'symbol_short_name', 'call_name', 'is_definition_node', 'node_start_line', 'is_export_directive',
-           'cell_source', 'cell_metadata', 'notebook_metadata', 'file_hash', 'exported_py_path',
-           'stamp_export_metadata', 'parse_one_cell', 'find_cell_by_id', 'find_cell_by_text', 'replace_cell',
-           'clear_outputs', 'load_cells_text', 'validate_code_cells', 'parse_cells', 'first_line', 'cell_prefix',
-           'matches_filter', 'is_exported_code_cell', 'stamp_notebook_metadata', 'cell_class_names',
-           'cell_matches_type', 'with_context', 'heading_title', 'chapter_spans', 'chapter_index_set', 'one_chapter']
+           'cell_source', 'NotebookCell', 'NotebookChapter', 'NotebookDocument', 'NotebookSymbol', 'xml_escape',
+           'xml_attrs', 'cell_metadata', 'notebook_metadata', 'file_hash', 'exported_py_path', 'stamp_export_metadata',
+           'parse_one_cell', 'find_cell_by_id', 'find_cell_by_text', 'replace_cell', 'clear_outputs', 'load_cells_text',
+           'validate_code_cells', 'parse_cells', 'first_line', 'cell_prefix', 'matches_filter', 'is_exported_code_cell',
+           'stamp_notebook_metadata', 'cell_class_names', 'cell_matches_type', 'with_context', 'heading_title',
+           'chapter_spans', 'chapter_index_set', 'one_chapter']
 
 # %% ../nbs/00_foundation.ipynb #2500639f
 import ast,hashlib,json,os,re
 import shutil,subprocess,sys
 from contextlib import contextmanager
 from pathlib import Path
-from fastcore.basics import in_jupyter
+from fastcore.basics import in_jupyter, patch
 from fastcore.nbio import mk_cell, new_nb, write_nb
 from fastcore.script import _in_call_parse
 
@@ -531,6 +532,270 @@ def cell_source(cell):
     if isinstance(source, list): return "".join(source)
     return str(source)
 
+# %% ../nbs/00_foundation.ipynb #aaecccd3
+class NotebookCell:
+    "A focused view of one notebook cell plus its optional location."
+
+    def __init__(self, cell, idx=None, path=None):
+        self.cell = cell
+        self.idx = idx
+        self.path = None if path is None else str(path)
+
+
+class NotebookChapter:
+    "A contiguous heading-owned span inside a notebook."
+
+    def __init__(self, title, start, end, cells=None):
+        self.title = str(title)
+        self.start = int(start)
+        self.end = int(end)
+        self.cells = list(cells or [])
+
+
+class NotebookDocument:
+    "A notebook plus the path it was read from."
+
+    def __init__(self, nb, path=None):
+        self.nb = nb
+        self.path = None if path is None else str(path)
+
+
+class NotebookSymbol:
+    "A named notebook symbol plus optional placement and graph data."
+
+    def __init__(self, name, path=None, cell_id="", cell_idx=None, module="", kind="", data=None):
+        self.name = str(name)
+        self.path = None if path is None else str(path)
+        self.cell_id = cell_id or ""
+        self.cell_idx = cell_idx
+        self.module = module or ""
+        self.kind = kind or ""
+        self.data = data or {}
+
+# %% ../nbs/00_foundation.ipynb #a56bf02d
+def xml_escape(text):
+    "Escape text for simple XML-shaped context snippets."
+    return (str(text).replace("&", "&amp;").replace("<", "&lt;")
+            .replace(">", "&gt;").replace('"', "&quot;"))
+
+
+def xml_attrs(**kwargs):
+    "Render non-empty keyword values as XML attributes."
+    attrs = []
+    for key, value in kwargs.items():
+        if value in (None, "", ()): continue
+        attrs.append(f'{key}="{xml_escape(value)}"')
+    return " ".join(attrs)
+
+# %% ../nbs/00_foundation.ipynb #72c2cbcf
+@patch(cls_method=True)
+def from_source(cls: NotebookCell, source, default_type="code", idx=None, path=None):
+    "Build a cell model from editable source text."
+    return cls(parse_one_cell(source, default_type=default_type), idx=idx, path=path)
+
+# %% ../nbs/00_foundation.ipynb #45fe02d5
+@patch(as_prop=True)
+def id(self: NotebookCell):
+    "Return the notebook cell id."
+    return getattr(self.cell, "id", "")
+
+
+@patch(as_prop=True)
+def cell_type(self: NotebookCell):
+    "Return the notebook cell type."
+    return getattr(self.cell, "cell_type", "") or "unknown"
+
+# %% ../nbs/00_foundation.ipynb #58ae04d7
+@patch(as_prop=True)
+def source(self: NotebookCell):
+    "Return the cell source as one string."
+    return cell_source(self.cell)
+
+# %% ../nbs/00_foundation.ipynb #465bfb0d
+@patch(as_prop=True)
+def code(self: NotebookCell):
+    "Return source without nbdev directives."
+    return source_without_directives(self.source)
+
+
+@patch(as_prop=True)
+def metadata(self: NotebookCell):
+    "Return mutable cell metadata."
+    return cell_metadata(self.cell)
+
+# %% ../nbs/00_foundation.ipynb #389c3ee6
+@patch
+def directives(self: NotebookCell):
+    "Return nbdev directive lines without the leading marker."
+    return [line.strip()[2:].strip() for line in self.source.splitlines() if line.strip().startswith("#|")]
+
+
+@patch
+def directive(self: NotebookCell, name=None):
+    "Return the first directive, or the value for one directive name."
+    for value in self.directives():
+        if name is None: return value
+        if value == name: return ""
+        if value.startswith(f"{name} "): return value[len(name):].strip()
+        if value.startswith(f"{name}:"): return value[len(name) + 1:].strip()
+    return None
+
+# %% ../nbs/00_foundation.ipynb #bcb55cee
+@patch
+def class_names(self: NotebookCell):
+    "Return semantic class names for the cell."
+    return cell_class_names(self.cell)
+
+
+@patch
+def heading_title(self: NotebookCell, levels=(2,)):
+    "Return the first markdown heading title whose level is allowed."
+    if self.cell_type != "markdown": return None
+    level_set = {int(level) for level in levels}
+    for line in self.source.splitlines():
+        match = re.match(r"^(#{1,6})\s+(.+?)\s*$", line.strip())
+        if match and len(match.group(1)) in level_set: return match.group(2).strip()
+    return None
+
+# %% ../nbs/00_foundation.ipynb #b57f3d3c
+@patch
+def prefix(self: NotebookCell, show_ids=False):
+    "Return the compact rendered cell prefix used in context output."
+    return f"Cell id={self.id}: {self.cell_type}"
+
+# %% ../nbs/00_foundation.ipynb #8a42e872
+@patch
+def to_record(self: NotebookCell):
+    "Return a small structured record for this cell."
+    return {
+        "cell_id": self.id,
+        "cell_idx": self.idx,
+        "cell_type": self.cell_type,
+        "path": self.path,
+        "directives": self.directives(),
+        "class_names": self.class_names(),
+        "source": self.source,
+    }
+
+
+@patch
+def to_xml(self: NotebookCell, include_output=False):
+    "Return an XML-shaped cell view for LLM context."
+    attrs = xml_attrs(id=self.id, idx=self.idx, type=self.cell_type, path=self.path,
+                       directive=self.directive(), classes=" ".join(self.class_names()))
+    body = [f"<source>{xml_escape(self.source)}</source>"]
+    if include_output and _has_cell_output(self.cell):
+        body.append(f"<outputs>{xml_escape(json.dumps(_cell_outputs(self.cell), default=str))}</outputs>")
+    return f"<cell {attrs}>\n" + "\n".join(body) + "\n</cell>"
+
+# %% ../nbs/00_foundation.ipynb #f2702634
+@patch(cls_method=True)
+def from_span(cls: NotebookChapter, span, cells=None):
+    "Build a chapter model from a span dictionary."
+    return cls(span["title"], span["start"], span["end"], cells=cells)
+
+
+@patch(cls_method=True)
+def all(cls: NotebookChapter, cells, levels=(2,), fallback=None):
+    "Return all chapter models opened by markdown headings."
+    starts = [(idx, NotebookCell(cell, idx=idx).heading_title(levels=levels)) for idx, cell in enumerate(cells)]
+    starts = [(idx, title) for idx, title in starts if title]
+    if not starts and fallback is not None: return [cls(fallback, 0, len(cells), cells=cells)]
+    chapters = []
+    for pos, (start, title) in enumerate(starts):
+        end = starts[pos + 1][0] if pos + 1 < len(starts) else len(cells)
+        chapters.append(cls(title, start, end, cells=cells))
+    return chapters
+
+# %% ../nbs/00_foundation.ipynb #f5c3f8b3
+@patch(as_prop=True)
+def body(self: NotebookChapter):
+    "Return cells inside this chapter span."
+    return self.cells[self.start:self.end]
+
+# %% ../nbs/00_foundation.ipynb #0551eca6
+@patch
+def to_span(self: NotebookChapter):
+    "Return the dictionary span shape used by existing APIs."
+    return {"title": self.title, "start": self.start, "end": self.end}
+
+# %% ../nbs/00_foundation.ipynb #eb00455f
+@patch
+def to_record(self: NotebookChapter):
+    "Return structured chapter metadata."
+    return {**self.to_span(), "cell_count": max(0, self.end - self.start)}
+
+# %% ../nbs/00_foundation.ipynb #8c218a00
+@patch
+def to_xml(self: NotebookChapter, include_cells=True):
+    "Return an XML-shaped chapter view for LLM context."
+    attrs = xml_attrs(title=self.title, start=self.start, end=self.end)
+    if not include_cells: return f"<chapter {attrs} />"
+    cells = [NotebookCell(cell, idx=self.start + offset).to_xml() for offset, cell in enumerate(self.body)]
+    return f"<chapter {attrs}>\n" + "\n".join(cells) + "\n</chapter>"
+
+# %% ../nbs/00_foundation.ipynb #c01b9ef5
+@patch(cls_method=True)
+def from_path(cls: NotebookDocument, path):
+    "Read a notebook path into a notebook document model."
+    from fastcore.nbio import read_nb
+    return cls(read_nb(path), path=path)
+
+
+@patch(as_prop=True)
+def cells(self: NotebookDocument):
+    "Return notebook cells as cell models."
+    return [NotebookCell(cell, idx=idx, path=self.path) for idx, cell in enumerate(getattr(self.nb, "cells", []))]
+
+# %% ../nbs/00_foundation.ipynb #f49dab47
+@patch
+def chapters(self: NotebookDocument, levels=(2,), fallback=None):
+    "Return notebook chapters as chapter models."
+    return NotebookChapter.all(getattr(self.nb, "cells", []), levels=levels, fallback=fallback)
+
+
+@patch
+def to_xml(self: NotebookDocument, levels=(2,), include_cells=True):
+    "Return an XML-shaped notebook view for LLM context."
+    attrs = xml_attrs(path=self.path)
+    chapters = [chapter.to_xml(include_cells=include_cells) for chapter in self.chapters(levels=levels, fallback="Notebook")]
+    return f"<notebook {attrs}>\n" + "\n".join(chapters) + "\n</notebook>"
+
+# %% ../nbs/00_foundation.ipynb #86756e3b
+@patch(cls_method=True)
+def from_record(cls: NotebookSymbol, record, data=None):
+    "Build a symbol model from a graph or definition record."
+    return cls(
+        record.get("symbol") or record.get("name", ""),
+        path=record.get("path"),
+        cell_id=record.get("cell_id", ""),
+        cell_idx=record.get("cell_idx"),
+        module=record.get("module", ""),
+        kind=record.get("kind", ""),
+        data=data,
+    )
+
+# %% ../nbs/00_foundation.ipynb #93afeb43
+@patch
+def to_record(self: NotebookSymbol):
+    "Return a small structured record for this symbol."
+    return {
+        "symbol": self.name,
+        "path": self.path,
+        "cell_id": self.cell_id,
+        "cell_idx": self.cell_idx,
+        "module": self.module,
+        "kind": self.kind,
+    }
+
+# %% ../nbs/00_foundation.ipynb #364758c5
+@patch
+def to_xml(self: NotebookSymbol):
+    "Return an XML-shaped symbol view for LLM context."
+    attrs = xml_attrs(symbol=self.name, path=self.path, cell_id=self.cell_id,
+                       cell_idx=self.cell_idx, module=self.module, kind=self.kind)
+    return f"<symbol {attrs} />"
+
 # %% ../nbs/00_foundation.ipynb #c41f3416
 _NBSKILL_METADATA_KEY = "nbskill"
 
@@ -756,7 +1021,7 @@ def first_line(source):
     return ""
 
 # %% ../nbs/00_foundation.ipynb #f4e29752
-def cell_prefix(idx, cell, show_ids=False): return f"Cell id={cell.id}: {cell.cell_type}"
+def cell_prefix(idx, cell, show_ids=False): return NotebookCell(cell, idx=idx).prefix(show_ids=show_ids)
 
 # %% ../nbs/00_foundation.ipynb #a8d23e87
 def matches_filter(source, pattern):
@@ -974,12 +1239,7 @@ def with_context(cells, items, include=False):
 # %% ../nbs/00_foundation.ipynb #dd511845
 def heading_title(cell, levels=(2,)):
     "Return the first markdown heading title whose level is allowed."
-    if getattr(cell, "cell_type", None) != "markdown": return None
-    level_set = {int(level) for level in levels}
-    for line in cell_source(cell).splitlines():
-        match = re.match(r"^(#{1,6})\s+(.+?)\s*$", line.strip())
-        if match and len(match.group(1)) in level_set: return match.group(2).strip()
-    return None
+    return NotebookCell(cell).heading_title(levels=levels)
 
 
 def _chapter_title(cell):
@@ -988,13 +1248,7 @@ def _chapter_title(cell):
 # %% ../nbs/00_foundation.ipynb #af4ae045
 def chapter_spans(cells, levels=(2,), fallback=None):
     "Return contiguous notebook cell spans opened by markdown headings."
-    starts = [(idx, title) for idx, cell in enumerate(cells) if (title := heading_title(cell, levels=levels))]
-    if not starts and fallback is not None: return [dict(title=fallback, start=0, end=len(cells))]
-    spans = []
-    for pos, (start, title) in enumerate(starts):
-        end = starts[pos + 1][0] if pos + 1 < len(starts) else len(cells)
-        spans.append(dict(title=title, start=start, end=end))
-    return spans
+    return [chapter.to_span() for chapter in NotebookChapter.all(cells, levels=levels, fallback=fallback)]
 
 # %% ../nbs/00_foundation.ipynb #3ea4e21f
 def _matching_chapters(cells, chapter=None):

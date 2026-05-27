@@ -1002,12 +1002,13 @@ def _notebook_context(
     verbose: bool = True,
     readme_sections: int = 2,
 ):
-    "Show notebook markdown and definitions; overview keeps main docs, chapters, and exported signatures."
+    "Show one notebook; overview stays compact, while default output includes every cell."
     nb = read_nb(path)
     root = _context_root(scope if scope not in (None, "") else path)
     definitions = _definition_records(path, nb)
     exported_definitions = _exported_definition_records(path, nb)
     markdown = _notebook_markdown_records(nb.cells)
+    cells = [_context_cell_record(idx, cell) for idx, cell in enumerate(nb.cells)]
     nl = chr(10)
     title = f"Notebook context: {Path(path).name}{nl}Path: {path}{nl}Project: {root}"
     if overview:
@@ -1023,13 +1024,13 @@ def _notebook_context(
             markdown=overview_markdown, all_definitions=definitions,
         )
     blocks = [
-        ("Markdown", [_render_markdown_record(item) for item in markdown]),
+        ("Full cells", [_render_context_cell(item) for item in cells]),
         ("Function signatures", [_render_definition_record(item) for item in definitions]),
     ]
     text = _format_context_blocks(title, blocks)
     return _context_result(
         "notebook_context", text, verbose=verbose, path=str(path), scope=str(scope), root=str(root),
-        overview=overview, definitions=definitions, cells=[], readme_sections=[], imports=[], markdown=markdown,
+        overview=overview, definitions=definitions, cells=cells, readme_sections=[], imports=[], markdown=markdown,
     )
 
 # %% ../nbs/01_read.ipynb #7c0cb5ca

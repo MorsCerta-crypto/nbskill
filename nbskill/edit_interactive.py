@@ -20,10 +20,9 @@ from threading import Lock
 from fastcore.nbio import mk_cell
 from fastcore.nbio import read_nb
 from fastcore.nbio import write_nb
-from nbdev.doclinks import nbdev_export as _run_nb_export
 from nbskill.foundation import (
-    cap_text, cell_source, clear_outputs, exported_py_path, parse_one_cell,
-    stamp_export_metadata, stamp_notebook_metadata, validate_code_cells,
+    cap_text, cell_source, clear_outputs, export_notebook, parse_one_cell,
+    stamp_notebook_metadata, validate_code_cells,
 )
 from .graph import symbol_usage_summary
 from .knowledge import reference_query
@@ -31,6 +30,13 @@ from .parallel import notebook_locks
 from .review import diff_nb
 
 _CAPTURE_LOCK = Lock()
+
+# %% ../nbs/08_edit_interactive.ipynb #0b709792
+def _save_notebook(nb, path):
+    with notebook_locks(path):
+        stamp_notebook_metadata(nb)
+        write_nb(nb, path)
+        export_notebook(nb, path)
 
 # %% ../nbs/08_edit_interactive.ipynb #57c2fd65
 EDIT_INTERACTIVE_SYSTEM = """You are an nbskill notebook-editing subagent.
@@ -138,23 +144,6 @@ class EditSession:
         if detail: item["detail"] = detail
         self.history.append(item)
         _append_agent_log(self, "tool", item)
-
-# %% ../nbs/08_edit_interactive.ipynb #eee248a5
-def _export_notebook(nb, nb_path):
-    py_path = exported_py_path(nb_path, nb)
-    if py_path is None: return None
-    _run_nb_export(path=str(nb_path))
-    if py_path.exists():
-        stamp_export_metadata(nb, py_path)
-        write_nb(nb, nb_path)
-    return py_path
-
-
-def _save_notebook(nb, path):
-    with notebook_locks(path):
-        stamp_notebook_metadata(nb)
-        write_nb(nb, path)
-        _export_notebook(nb, path)
 
 # %% ../nbs/08_edit_interactive.ipynb #7e5f19b2
 def _none_if_blank(value):

@@ -15,9 +15,9 @@ from pathlib import Path
 from fastcore.nbio import read_nb
 
 from nbskill.foundation import (
-    call_name, cell_matches_type, cell_prefix, cell_source, chapter_index_set,
-    chapter_spans, find_cell_by_id, first_line, heading_title,
-    is_exported_code_cell, matches_filter, notebook_paths,
+    NotebookCell, call_name, cell_matches_type, cell_output_text, cell_prefix,
+    cell_source, chapter_index_set, chapter_spans, find_cell_by_id, first_line,
+    heading_title, is_exported_code_cell, matches_filter, notebook_paths,
     source_without_directives, symbol_short_name,
 )
 
@@ -285,27 +285,6 @@ def _definition_records(path, nb):
 
 
 # %% ../nbs/01_read.ipynb #contextoutput
-def _output_value_text(value):
-    if isinstance(value, list): return "".join(str(item) for item in value)
-    return "" if value is None else str(value)
-
-
-def _output_text(output):
-    otype = output.get("output_type")
-    if otype == "stream": return _output_value_text(output.get("text", ""))
-    if otype == "error": return chr(10).join(output.get("traceback") or [f"{output.get('ename', '')}: {output.get('evalue', '')}"])
-    if otype in {"execute_result", "display_data"}:
-        data = output.get("data") or {}
-        for mime in ("text/plain", "text/markdown", "text/html"):
-            value = data.get(mime)
-            if value is not None: return _output_value_text(value)
-    return ""
-
-
-def _cell_output_text(cell):
-    return "".join(_output_text(output) for output in getattr(cell, "outputs", []) or []).strip()
-
-
 def _source_for_node(cell, node):
     source = source_without_directives(cell_source(cell))
     segment = ast.get_source_segment(source, node)
@@ -314,7 +293,6 @@ def _source_for_node(cell, node):
     start = max(getattr(node, "lineno", 1) - 1, 0)
     end = getattr(node, "end_lineno", start + 1)
     return chr(10).join(lines[start:end]).strip()
-
 
 # %% ../nbs/01_read.ipynb #contextcalls
 def _call_matches_context_symbol(name, symbol):
@@ -352,7 +330,7 @@ def _example_test_records(nb, symbol):
             "cell_idx": idx,
             "kind": kind,
             "source": cell_source(cell).strip(),
-            "output": _cell_output_text(cell),
+            "output": cell_output_text(cell),
         })
     return records
 
@@ -880,45 +858,42 @@ def symbol_context(
 
 # %% ../nbs/01_read.ipynb #1ef3e16c
 def _context_cell_semantic_type(cell):
-    cell_type = getattr(cell, "cell_type", "")
-    if cell_type == "markdown": return "markdown"
-    if cell_type != "code": return cell_type or "unknown"
-    if cell_matches_type(cell, "test"): return "test"
-    if cell_matches_type(cell, "example"): return "example"
-    if is_exported_code_cell(cell): return "exported code"
-    source = cell_source(cell)
-    if re.search(r"^\s*assert\b", source, re.MULTILINE): return "test"
-    if re.search(r"^\s*#\|\s*hide\b", source, re.MULTILINE): return "hidden"
-    return "example"
+    return NotebookCell(cell).semantic_type()
+
+
 def _context_cell_record(idx, cell):
-    cell_type = getattr(cell, "cell_type", "") or "unknown"
-    return {
-        "cell_id": getattr(cell, "id", ""),
-        "cell_idx": idx,
-        "cell_type": cell_type,
-        "semantic_type": _context_cell_semantic_type(cell),
-        "source": cell_source(cell).strip(),
-        "output": _cell_output_text(cell),
-    }
+    return NotebookCell(cell, idx=idx).context_record()
+
+
 def _render_context_cell(item):
     nl = chr(10)
     header = f"Cell id={item['cell_id']} idx={item['cell_idx']} [{item['cell_type']}] ({item['semantic_type']})"
     text = f"{header}{nl}{item['source']}".rstrip()
     if item.get("output"): text = f"{text}{nl}Output:{nl}{item['output']}"
     return text
+
+# %% ../nbs/01_read.ipynb #e0e1f163
 def _exported_definition_records(path, nb):
     return [item for item in _definition_records(path, nb) if is_exported_code_cell(nb.cells[item["cell_idx"]])]
+
+
 def _definition_records_for_cell(path, nb, cell_idx):
     return [item for item in _definition_records(path, nb) if item.get("cell_idx") == cell_idx]
+
+
 def _symbol_source(path, nb, symbol):
     idx, cell, node = _symbol_location(path, nb, symbol)
     source = _source_for_node(cell, node) if node is not None else cell_source(cell).strip()
     return idx, cell, node, source
+
+
 def _source_mentions_symbols(source, symbols):
     for symbol in symbols:
         short = symbol_short_name(symbol)
         if symbol in source or re.search(rf"\b{re.escape(short)}\b", source): return True
     return False
+
+# %% ../nbs/01_read.ipynb #11f4acf9
 def _related_cell_records(nb, symbols, definition_cell_idx=None):
     records = []
     for idx, cell in enumerate(nb.cells):
@@ -927,12 +902,16 @@ def _related_cell_records(nb, symbols, definition_cell_idx=None):
         if semantic not in {"markdown", "example", "test"}: continue
         if _source_mentions_symbols(cell_source(cell), symbols): records.append(_context_cell_record(idx, cell))
     return records
+
+
 def _single_definition_for_cell(path, nb, cell_idx):
     definitions = _definition_records_for_cell(path, nb, cell_idx)
     if len(definitions) > 1:
         names = ", ".join(item["symbol"] for item in definitions)
         raise ValueError(f"Cell id={getattr(nb.cells[cell_idx], 'id', '')} contains multiple definitions: {names}")
     return definitions[0] if definitions else None
+
+# %% ../nbs/01_read.ipynb #8cf4dba4
 def _implementation_context(path, idx, cell, symbol, source, verbose=True):
     nl = chr(10)
     text = _format_context_blocks(
@@ -943,6 +922,8 @@ def _implementation_context(path, idx, cell, symbol, source, verbose=True):
         "implementation_context", text, verbose=verbose, path=str(path), symbol=symbol,
         location={"cell_id": getattr(cell, "id", ""), "cell_idx": idx}, source=source, symbols=[symbol],
     )
+
+
 def _mentions_context(path, nb, symbols, definition_cell_idx=None, verbose=True):
     records = _related_cell_records(nb, symbols, definition_cell_idx=definition_cell_idx)
     label = ", ".join(symbols)
@@ -953,6 +934,8 @@ def _mentions_context(path, nb, symbols, definition_cell_idx=None, verbose=True)
         "mentions_context", text, verbose=verbose, path=str(path), symbols=symbols,
         definition_cell_idx=definition_cell_idx, mentions=records,
     )
+
+# %% ../nbs/01_read.ipynb #ae2a548b
 def _cell_context(path, cell_idx, overview=False, verbose=True):
     nb = read_nb(path)
     cell = nb.cells[cell_idx]
@@ -965,6 +948,8 @@ def _cell_context(path, cell_idx, overview=False, verbose=True):
     idx, cell, node, source = _symbol_source(path, nb, symbol)
     if overview: return _implementation_context(path, idx, cell, symbol, source, verbose=verbose)
     return symbol_context(path, symbol, depth=1, verbose=verbose)
+
+
 def _symbol_focus_context(path, symbol, overview=False, verbose=True):
     nb = read_nb(path)
     idx, cell, node, source = _symbol_source(path, nb, symbol)

@@ -19,7 +19,8 @@ from fastcore.nbio import read_nb
 
 from nbskill.foundation import (
     NotebookSymbol, call_name, cell_source, cli_error, cli_return, notebook_paths,
-    path_candidates, source_without_directives, symbol_short_name, xml_attrs, xml_escape,
+    parse_code_cell, path_candidates, source_without_directives, symbol_short_name,
+    xml_attrs, xml_escape,
 )
 
 # %% ../nbs/10_graph.ipynb #c5547d77
@@ -30,12 +31,6 @@ def _graph_scope(path):
         return pth.parent if pth.is_file() else pth
     pth = path_candidates(path)[-1]
     return pth.parent if pth.is_file() else pth
-
-# %% ../nbs/10_graph.ipynb #52b8a16e
-def _parse_cell(cell):
-    if getattr(cell, "cell_type", None) != "code": return None
-    try: return ast.parse(source_without_directives(cell_source(cell)))
-    except SyntaxError: return None
 
 # %% ../nbs/10_graph.ipynb #fd22b01f
 def _call_site_records(node, source=""):
@@ -68,7 +63,7 @@ def _node_definitions(node):
 
 # %% ../nbs/10_graph.ipynb #06bc0d6f
 def _cell_definition_records(path, module, idx, cell):
-    tree = _parse_cell(cell)
+    tree = parse_code_cell(cell)
     if tree is None: return []
     records = []
     for node in tree.body:
@@ -87,7 +82,7 @@ def _cell_definition_records(path, module, idx, cell):
 # %% ../nbs/10_graph.ipynb #9f9de949
 def _cell_call_record(path, idx, cell):
     source = source_without_directives(cell_source(cell))
-    tree = _parse_cell(cell)
+    tree = parse_code_cell(cell)
     if tree is None: return None
     calls = _call_names(tree)
     if not calls: return None
@@ -108,7 +103,7 @@ def _import_module_name(node):
 
 # %% ../nbs/10_graph.ipynb #c10cccf9
 def _cell_import_records(path, idx, cell):
-    tree = _parse_cell(cell)
+    tree = parse_code_cell(cell)
     if tree is None: return []
     records = []
     for node in ast.walk(tree):
@@ -275,7 +270,7 @@ class _CallRootVisitor(ast.NodeVisitor):
 
 # %% ../nbs/10_graph.ipynb #f5ac828d
 def _cell_call_root_records(cell):
-    tree = _parse_cell(cell)
+    tree = parse_code_cell(cell)
     if tree is None: return []
     visitor = _CallRootVisitor()
     visitor.visit(tree)
@@ -291,7 +286,7 @@ def _cell_order_data(path):
             continue
         cells = []
         for idx, cell in enumerate(nb.cells):
-            tree = _parse_cell(cell)
+            tree = parse_code_cell(cell)
             bindings = set() if tree is None else _cell_binding_names(tree)
             calls = _cell_call_root_records(cell)
             cells.append({"idx": idx, "cell": cell, "bindings": bindings, "calls": calls})
@@ -1106,7 +1101,7 @@ def _notebook_text_profile(path, nb, module):
     imports = []
     symbols = []
     for idx, cell in enumerate(nb.cells):
-        tree = _parse_cell(cell)
+        tree = parse_code_cell(cell)
         if tree is None: continue
         imports.extend(_cell_import_names(tree))
         for node in tree.body:
@@ -1154,7 +1149,7 @@ def symbol_catalog(path="nbs"):
         module = _notebook_module_name(nb_path, nb)
         notebooks.append(_notebook_text_profile(nb_path, nb, module))
         for idx, cell in enumerate(nb.cells):
-            tree = _parse_cell(cell)
+            tree = parse_code_cell(cell)
             if tree is None: continue
             heading = _heading_before(nb.cells, idx)
             imports = _cell_import_names(tree)

@@ -26,8 +26,8 @@ from safepyrun import RunPython
 from safepyrun.core import allow as _safepyrun_allow
 
 from nbskill.foundation import (
-    cell_metadata, cell_source, cli_error, cli_return, one_chapter, parse_literal,
-    stamp_notebook_metadata,
+    cell_metadata, cell_source, cli_error, cli_return, one_chapter, output_text,
+    output_value_text, parse_literal, source_hash, stamp_notebook_metadata,
 )
 from .parallel import execution_slot, notebook_locks
 
@@ -447,16 +447,11 @@ _TIMEOUT_SECONDS_KEY = "nbskill_timeout_seconds"
 
 _EXECUTED_HASH_KEY = "nbskill_executed_hash"
 
-# %% ../nbs/03_execute.ipynb #13c9bf5d
-def _source_hash(source):
-    return hashlib.sha256(str(source).encode("utf-8")).hexdigest()
-
 # %% ../nbs/03_execute.ipynb #94178ce7
 # _cell_metadata is imported from nbskill.foundation.
 
 # %% ../nbs/03_execute.ipynb #131a6131
-def _cell_source_hash(cell): return _source_hash(cell.get("source", ""))
-
+def _cell_source_hash(cell): return source_hash(cell.get("source", ""), length=None)
 
 # %% ../nbs/03_execute.ipynb #65a44288
 class _ExecutionApprovalRequired(RuntimeError): pass
@@ -596,32 +591,10 @@ def _execute_nb(
             if first_exc: raise first_exc
             return nb
 
-# %% ../nbs/03_execute.ipynb #114ae0b1
-def _text_output(value):
-    if value is None: return ""
-    if isinstance(value, list): return "".join(map(str, value))
-    return str(value)
-
-
-# %% ../nbs/03_execute.ipynb #ef2b7483
-def _output_text(output):
-    otype = output.get("output_type")
-    if otype == "stream": return _text_output(output.get("text"))
-    if otype == "error":
-        tb = output.get("traceback")
-        if tb: return _text_output(tb)
-        return f"{output.get('ename', 'Error')}: {output.get('evalue', '')}"
-    if otype in {"execute_result", "display_data"}:
-        data = output.get("data", {})
-        for mime in ("text/plain", "text/markdown", "text/html"):
-            if mime in data: return _text_output(data[mime])
-    return ""
-
-
 # %% ../nbs/03_execute.ipynb #03e0f4fd
 def _is_rich_traceback_stream(output):
     if output.get("output_type") != "stream": return False
-    text = _text_output(output.get("text"))
+    text = output_value_text(output.get("text"))
     return "Traceback" in text and "\x1b[" in text
 
 
@@ -644,7 +617,7 @@ def _print_outputs_from_nb(nb, up2id=None):
         has_error = any(output.get("output_type") == "error" for output in outputs)
         for output in outputs:
             if has_error and _is_rich_traceback_stream(output): continue
-            text = _output_text(output)
+            text = output_text(output)
             if not text: continue
             print(f"--- output id={cell.id} ---")
             print(text, end="" if text.endswith("\n") else "\n")
@@ -719,7 +692,7 @@ def _print_uncalled_function_warnings(nb, up2id=None):
 def _safe_mode_audit_blocked(nb, up2id=None):
     for cell in _executed_cells(nb, up2id=up2id):
         for output in getattr(cell, "outputs", ()):
-            if "PermissionError: Audit:" in _output_text(output): return True
+            if "PermissionError: Audit:" in output_text(output): return True
     return False
 
 # %% ../nbs/03_execute.ipynb #26e1ea68

@@ -6,7 +6,6 @@ __all__ = ['insert_lines', 'replace_lines', 'delete_lines', 'replace_text', 'rep
 # %% ../nbs/02_edit.ipynb #256e7289
 import copy
 import difflib
-import hashlib
 import re
 from pathlib import Path
 
@@ -19,6 +18,7 @@ from nbskill.foundation import (
     clear_outputs,
     exported_py_path,
     find_cell_by_id,
+    source_hash,
     stamp_export_metadata,
     stamp_notebook_metadata,
     validate_code_cells,
@@ -135,13 +135,10 @@ _STRUCTURAL_OPS = {"replace_cell", "insert_cells", "delete_cells", "move_cells"}
 _EDIT_OPS = _TEXT_OPS | _STRUCTURAL_OPS
 
 
-def _source_hash(source):
-    return hashlib.sha256(str(source).encode("utf-8")).hexdigest()[:12]
-
 
 def _notebook_hash(nb):
     payload = chr(30).join(f"{getattr(cell, 'id', '')}:{cell_source(cell)}" for cell in nb.cells)
-    return _source_hash(payload)
+    return source_hash(payload)
 
 
 def _path_inside_cwd(path):
@@ -219,12 +216,12 @@ def _check_expected_hash(nb, edit, indices):
             cell = nb.cells[idx]
             cell_id = getattr(cell, "id", "")
             want = expected.get(cell_id)
-            if want is not None and want != _source_hash(cell_source(cell)):
+            if want is not None and want != source_hash(cell_source(cell)):
                 raise ValueError(f"expected_hash mismatch for cell {cell_id}")
         return
     if len(indices) != 1: raise ValueError("single expected_hash only works with one selected cell")
     cell = nb.cells[indices[0]]
-    if str(expected) != _source_hash(cell_source(cell)):
+    if str(expected) != source_hash(cell_source(cell)):
         raise ValueError(f"expected_hash mismatch for cell {getattr(cell, 'id', '')}")
 
 
@@ -251,8 +248,8 @@ def _append_cell_diff(diffs, cell, before, after, op):
         "cell_type": getattr(cell, "cell_type", ""),
         "changed": before != after,
         "matches": 0 if before == after else 1,
-        "before_hash": _source_hash(before),
-        "after_hash": _source_hash(after),
+        "before_hash": source_hash(before),
+        "after_hash": source_hash(after),
         "diff": diff,
     })
 
@@ -307,7 +304,7 @@ def _apply_structural_edit(nb, edit, diffs, affected, default_cell_type):
             "changed": True,
             "inserted_cell_ids": inserted,
             "before_hash": "",
-            "after_hash": _source_hash(inserted_source),
+            "after_hash": source_hash(inserted_source),
             "diff": _unified_diff("", inserted_source, fromfile="insert:before", tofile="insert:after"),
         })
         return
@@ -318,7 +315,7 @@ def _apply_structural_edit(nb, edit, diffs, affected, default_cell_type):
         for idx in sorted(indices, reverse=True):
             cell = nb.cells[idx]
             affected.append(getattr(cell, "id", ""))
-            diffs.append({"op": op, "cell_id": getattr(cell, "id", ""), "changed": True, "before_hash": _source_hash(cell_source(cell)), "after_hash": "", "diff": _unified_diff(cell_source(cell), "")})
+            diffs.append({"op": op, "cell_id": getattr(cell, "id", ""), "changed": True, "before_hash": source_hash(cell_source(cell)), "after_hash": "", "diff": _unified_diff(cell_source(cell), "")})
             del nb.cells[idx]
         return
     if op == "move_cells":

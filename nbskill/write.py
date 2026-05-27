@@ -12,7 +12,6 @@ import builtins
 import copy
 import difflib
 import glob
-import hashlib
 import json
 import re
 from contextlib import redirect_stdout
@@ -23,27 +22,21 @@ from fastcore.nbio import mk_cell, new_nb
 from fastcore.nbio import read_nb
 from fastcore.nbio import write_nb as _write_nb
 from fastcore.script import Param
-from nbdev.doclinks import nbdev_export as _run_nb_export
 
 from .execute import exec_nb, run_notebook_test
 from .review import style_check
 from nbskill.foundation import (
     cell_class_names, cell_source, clear_outputs, cli_error,
-    cli_return, find_cell_by_id, find_cell_by_text, is_exported_code_cell,
-    load_cells_text, exported_py_path, one_chapter, parse_cells, parse_one_cell,
-    replace_cell, stamp_export_metadata, stamp_notebook_metadata,
-    validate_code_cells,
+    cli_return, export_notebook, find_cell_by_id, find_cell_by_text,
+    is_exported_code_cell, load_cells_text, one_chapter, parse_cells,
+    parse_one_cell, replace_cell, short_call_name, source_hash,
+    stamp_notebook_metadata, validate_code_cells,
 )
 from .parallel import notebook_locks
 
 # %% ../nbs/02_write.ipynb #c1e8be42
 def _literal_replacement_mode(old_str, new_str):
     return old_str is not None or new_str is not None
-
-
-# %% ../nbs/02_write.ipynb #12538d69
-def _source_hash(source):
-    return hashlib.sha256(str(source).encode("utf-8")).hexdigest()[:12]
 
 
 # %% ../nbs/02_write.ipynb #94630199
@@ -72,17 +65,6 @@ def _literal_cell_diff(before, after, limit=24):
     return "\n".join(lines)
 
 
-# %% ../nbs/02_write.ipynb #49c794d0
-def _export_notebook(nb, nb_path):
-    py_path = exported_py_path(nb_path, nb)
-    if py_path is None: return None
-    _run_nb_export(path=str(nb_path))
-    if py_path.exists():
-        stamp_export_metadata(nb, py_path)
-        _write_nb(nb, nb_path)
-    return py_path
-
-
 # %% ../nbs/02_write.ipynb #10cef51d
 def _replace_literal_in_notebook(nb, old_str, new_str, validate_code=True, collect_details=False):
     changed_cells, matches, details = 0, 0, []
@@ -97,8 +79,8 @@ def _replace_literal_in_notebook(nb, old_str, new_str, validate_code=True, colle
                 "cell_id": getattr(cell, "id", ""),
                 "cell_type": getattr(cell, "cell_type", ""),
                 "matches": count,
-                "before_hash": _source_hash(before),
-                "after_hash": _source_hash(after),
+                "before_hash": source_hash(before),
+                "after_hash": source_hash(after),
                 "diff": _literal_cell_diff(before, after),
             })
         cell.source = after
@@ -137,7 +119,7 @@ def _write_literal_replacements(path, old_str, new_str, run_test=False, validate
             changed.append((nb_path, cells_changed, matches, details))
             if not dry_run:
                 _write_nb(nb, nb_path)
-                exported = _export_notebook(nb, nb_path) is not None or exported
+                exported = export_notebook(nb, nb_path) is not None or exported
                 if run_test: run_notebook_test(nb_path)
     total_matches = sum(matches for _, _, matches, _ in changed)
     total_cells = sum(cells for _, cells, _, _ in changed)
@@ -210,7 +192,7 @@ def write_nb(
 
         stamp_notebook_metadata(nb)
         _write_nb(nb, path)
-        exported = _export_notebook(nb, path) is not None
+        exported = export_notebook(nb, path) is not None
         msg = f"Wrote {len(nb.cells)} cells to {path}"
         if replace: msg += " using replace"
         if chapter is not None: msg += f" in chapter {chapter!r}"
@@ -230,7 +212,7 @@ def _save_nb(nb, path):
     with notebook_locks(path):
         stamp_notebook_metadata(nb)
         _write_nb(nb, path)
-        _export_notebook(nb, path)
+        export_notebook(nb, path)
 
 # %% ../nbs/02_write.ipynb #f7ce9319
 def _parse_line_range(line_range, n_lines):
@@ -372,7 +354,7 @@ def update_cell(
             return cli_return(path)
         stamp_notebook_metadata(nb)
         _write_nb(nb, path)
-        if _export_notebook(nb, path) is not None:
+        if export_notebook(nb, path) is not None:
             msg += " and exported with nbdev"
         print(msg)
         if run_test: run_notebook_test(path)
@@ -430,16 +412,10 @@ def source_lines_cells(cell, default_cell_type="code"):
 # %% ../nbs/02_write.ipynb #32eb9fe4
 _FEEDBACK_OUTPUT_CALLS = {"display", "print"}
 
-# %% ../nbs/02_write.ipynb #a0092953
-def _call_name(node):
-    if isinstance(node, ast.Name): return node.id
-    if isinstance(node, ast.Attribute): return node.attr
-    return ""
-
 # %% ../nbs/02_write.ipynb #8d5448d9
 def _statement_has_output_call(node):
     if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)): return False
-    return any(isinstance(child, ast.Call) and _call_name(child.func) in _FEEDBACK_OUTPUT_CALLS for child in ast.walk(node))
+    return any(isinstance(child, ast.Call) and short_call_name(child.func, default='') in _FEEDBACK_OUTPUT_CALLS for child in ast.walk(node))
 
 # %% ../nbs/02_write.ipynb #9ca11712
 def _source_has_output_feedback(source):
@@ -490,7 +466,7 @@ def save_notebook_edit(nb, path):
     "Stamp, write, export, and report whether nbdev produced Python."
     stamp_notebook_metadata(nb)
     _write_nb(nb, path)
-    return _export_notebook(nb, path) is not None
+    return export_notebook(nb, path) is not None
 
 # %% ../nbs/02_write.ipynb #8699e6a7
 def replace_notebook_cell(
@@ -629,7 +605,7 @@ def _op_diff(before, after, limit=24):
 
 # %% ../nbs/02_write.ipynb #fd6543d8
 def _cell_source_hash(cell):
-    return _source_hash(cell_source(cell))
+    return source_hash(cell_source(cell))
 
 
 def _batch_detail(op, path, cell_id="", before="", after=""):
@@ -637,8 +613,8 @@ def _batch_detail(op, path, cell_id="", before="", after=""):
         "op": op.get("op"),
         "path": str(path),
         "cell_id": cell_id,
-        "before_hash": _source_hash(before) if before else "",
-        "after_hash": _source_hash(after) if after else "",
+        "before_hash": source_hash(before) if before else "",
+        "after_hash": source_hash(after) if after else "",
         "status": "planned",
         "diff": _op_diff(before, after) if before != after else "",
     }
@@ -798,7 +774,7 @@ def batch_edit_nb(
             for nb_path, nb in notebooks.items():
                 stamp_notebook_metadata(nb)
                 _write_nb(nb, nb_path)
-                exported = _export_notebook(nb, nb_path) is not None or exported
+                exported = export_notebook(nb, nb_path) is not None or exported
             failed = _verify_batch_details(details)
             if failed:
                 for item in failed:
@@ -1072,7 +1048,7 @@ def split_nb_chapter(
         dest.parent.mkdir(parents=True, exist_ok=True)
         _write_nb(source_nb, path)
         _write_nb(dest_nb, dest)
-        _export_notebook(source_nb, path)
-        _export_notebook(dest_nb, dest)
+        export_notebook(source_nb, path)
+        export_notebook(dest_nb, dest)
     return cli_return(plan)
 

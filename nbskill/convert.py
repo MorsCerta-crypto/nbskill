@@ -15,9 +15,8 @@ from pathlib import Path
 
 from fastcore.nbio import mk_cell, new_nb
 from fastcore.nbio import write_nb
-from nbdev.doclinks import nbdev_export as _run_nb_export
 
-from .foundation import cli_return, exported_py_path, stamp_export_metadata
+from .foundation import cli_return
 
 # %% ../nbs/05_convert.ipynb #ac1075c9
 def _node_source(lines, node):
@@ -162,17 +161,6 @@ def _py2nb_file(path, nbs_path="nbs", dest=None, class_lines=100, method_lines=1
 def _new_notebook_path(name, nbs_path="nbs"):
     pth = Path(name)
     return pth if pth.suffix == ".ipynb" else Path(nbs_path) / f"{str(name).removesuffix('.ipynb')}.ipynb"
-
-
-# %% ../nbs/05_convert.ipynb #a90e5c89
-def _export_new_notebook(nb, nb_path):
-    py_path = exported_py_path(nb_path, nb)
-    if py_path is None: return None
-    _run_nb_export(path=str(nb_path))
-    if py_path.exists():
-        stamp_export_metadata(nb, py_path)
-        write_nb(nb, nb_path)
-    return py_path
 
 
 # %% ../nbs/05_convert.ipynb #080f32b3

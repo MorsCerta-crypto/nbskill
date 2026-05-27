@@ -26,8 +26,8 @@ from nbdev.doclinks import nbdev_export as _run_nb_export
 from nbskill.foundation import (
     empty_failure_map, failure_map_path, load_failure_map, cell_class_names,
     cell_source, clear_outputs, cli_error, cli_return, exported_py_path, file_hash, file_line_count,
-    cap_text, notebook_paths, source_without_directives, stamp_notebook_metadata,
-    is_exported_code_cell, none_if_string,
+    cap_text, notebook_paths, parse_code_cell, short_call_name, source_without_directives,
+    stamp_notebook_metadata, is_exported_code_cell, none_if_string,
 )
 from .parallel import notebook_locks
 
@@ -64,12 +64,6 @@ def _style_check_argv(path=".", skip_folder_re=None, skip_path=None):
     if skip_folder_re: argv += ["--skip-path-re", str(skip_folder_re)]
     for item in _style_skip_paths(skip_path): argv += ["--skip-path", item]
     return argv
-
-# %% ../nbs/04_review.ipynb #14593fb3
-def _parse_code_cell(cell):
-    if getattr(cell, "cell_type", None) != "code": return None
-    try: return ast.parse(source_without_directives(cell_source(cell)))
-    except SyntaxError: return None
 
 # %% ../nbs/04_review.ipynb #e67245c1
 def _top_level_function_count(tree):
@@ -110,12 +104,6 @@ def _public_function_docstring_problems(nb_path, cell, tree):
         ))
     return problems
 
-# %% ../nbs/04_review.ipynb #a3a08077
-def _call_name(node):
-    if isinstance(node, ast.Name): return node.id
-    if isinstance(node, ast.Attribute): return node.attr
-    return None
-
 # %% ../nbs/04_review.ipynb #fd0a5028
 def _public_names_in_node(node, public_names):
     names = set()
@@ -131,7 +119,7 @@ def _called_public_names(tree, public_names):
     names = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Call):
-            name = _call_name(node.func)
+            name = short_call_name(node.func)
             if name in public_names: names.add(name)
     return names
 
@@ -142,7 +130,7 @@ def _tested_public_names(tree, public_names):
     for node in ast.walk(tree):
         if isinstance(node, ast.Assert):
             names.update(_public_names_in_node(node.test, public_names))
-        elif isinstance(node, ast.Call) and _call_name(node.func) in test_call_names:
+        elif isinstance(node, ast.Call) and short_call_name(node.func) in test_call_names:
             for arg in [*node.args, *[kw.value for kw in node.keywords]]:
                 names.update(_public_names_in_node(arg, public_names))
     return names
@@ -157,7 +145,7 @@ def _public_function_reference_sets(nb, public_names):
                 if re.search(rf"\b{re.escape(name)}\b", source):
                     references["markdown"].add(name)
             continue
-        tree = _parse_code_cell(cell)
+        tree = parse_code_cell(cell)
         if tree is None or is_exported_code_cell(cell): continue
         tested = _tested_public_names(tree, public_names)
         if tested:
@@ -185,7 +173,7 @@ def _public_function_literacy_problems_for_nb(nb_path, nb):
     public_functions = []
     call_parse_names = set()
     for cell in nb.cells:
-        tree = _parse_code_cell(cell)
+        tree = parse_code_cell(cell)
         if tree is None or not is_exported_code_cell(cell): continue
         public_functions.extend((cell, node) for node in _public_functions(tree))
         call_parse_names.update(_call_parse_wrapped_public_functions(tree))
@@ -263,7 +251,7 @@ def _large_cell_problems(nb_path, cell, function_limit=_LARGE_CELL_FUNCTION_LIMI
     problems = []
     line_count = _cell_content_line_count(cell)
     cell_type = getattr(cell, "cell_type", "cell")
-    tree = _parse_code_cell(cell)
+    tree = parse_code_cell(cell)
     code_cell = cell_type == "code" and tree is not None
     line_limit = _LARGE_CODE_CELL_LINE_LIMIT if code_cell else _LARGE_MARKDOWN_CELL_LINE_LIMIT
     allow_long_cell = code_cell and _single_top_level_function_cell(tree)
@@ -405,7 +393,7 @@ def _notebook_style_problems(path=".", skip_folder_re=None, skip_path=None):
             if "unclean_cell" in classes:
                 visible = [name for name in classes if name != "unclean_cell"]
                 problems.append(_problem("unclean-cell", nb_path, cell, semantic_types=visible))
-            tree = _parse_code_cell(cell)
+            tree = parse_code_cell(cell)
             if tree is None: continue
             if "test_cell" in classes:
                 problem_count = _assert_count(tree) + _test_function_count(tree)

@@ -6,7 +6,8 @@ __all__ = ['mcp', 'as_text', 'capture_call', 'capture_notebook_call', 'mcp_tool_
            'convert_tool', 'create_mcp', 'main']
 
 # %% ../nbs/07_mcp.ipynb #mcpimports1
-import hashlib,json,os
+import asyncio
+import json,os
 import re
 import shutil
 import subprocess
@@ -37,7 +38,7 @@ from .execute import exec_nb
 from .workbench import agent_workbench_result
 from .foundation import empty_failure_map, failure_map_path, load_failure_map
 from .foundation import cell_source, exported_py_path, generated_owner, git_root, git_status_paths
-from .foundation import notebook_paths, path_candidates, stamp_export_metadata
+from .foundation import notebook_paths, path_candidates, source_hash, stamp_export_metadata
 
 # %% ../nbs/07_mcp.ipynb #mcpimports4
 from .graph import notebook_knowledge_graph_data
@@ -121,13 +122,9 @@ def _mcp_find_cell(path, cell_id):
         if getattr(cell, "id", None) == cell_id: return cell
     raise ValueError(f"Cell id {cell_id!r} was not found in {path}")
 
-# %% ../nbs/07_mcp.ipynb #e190c674
-def _mcp_source_hash(source):
-    return hashlib.sha256(str(source).encode("utf-8")).hexdigest()[:12]
-
 # %% ../nbs/07_mcp.ipynb #edb5273c
 def _mcp_cell_source_hash(path, cell_id):
-    return _mcp_source_hash(cell_source(_mcp_find_cell(path, cell_id)))
+    return source_hash(cell_source(_mcp_find_cell(path, cell_id)))
 
 # %% ../nbs/07_mcp.ipynb #e13bac02
 def _mcp_expected_hash_warning(path, cell_id, expected_hash):
@@ -979,6 +976,7 @@ def mcp_tool_result(tool, arguments, full_output, max_output_chars=12000, detail
     summary = chr(10).join(lines)
     data = {
         "summary": summary,
+        "status": status,
         "call": {"tool": tool, "arguments": _redact_arguments(arguments or {})},
         "full_output": full_text,
         "preview_output": preview["text"],
@@ -1656,7 +1654,7 @@ async def edit_notebook_tool(
     path: str, edits: list[dict], validate_code: bool = True,
     default_cell_type: str = "code", auto_feedback: bool = True,
     feedback_timeout: int = 10, feedback_safe: bool = True, dry_run: bool = False,
-    detail: str = "summary", ctx: Context = None,
+    tool_timeout: float = 150.0, detail: str = "summary", ctx: Context = None,
 ) -> ToolResult:
     "Apply deterministic notebook edit operations atomically."
     if not edits: raise ValueError("Pass at least one edit")
@@ -1666,13 +1664,23 @@ async def edit_notebook_tool(
     arguments = dict(
         path=path, edits=edits, validate_code=validate_code, default_cell_type=default_cell_type,
         auto_feedback=auto_feedback, feedback_timeout=feedback_timeout, feedback_safe=feedback_safe,
-        dry_run=dry_run, detail=detail, workspace_root=str(root) if root else None,
+        dry_run=dry_run, tool_timeout=tool_timeout, detail=detail, workspace_root=str(root) if root else None,
     )
-    result = edit_notebook(
-        path, edits, validate_code=validate_code, default_cell_type=default_cell_type,
-        auto_feedback=auto_feedback, feedback_timeout=feedback_timeout,
-        feedback_safe=feedback_safe, detail=detail, dry_run=dry_run,
-    )
+    try:
+        result = await asyncio.wait_for(
+            asyncio.to_thread(
+                edit_notebook,
+                path, edits, validate_code=validate_code, default_cell_type=default_cell_type,
+                auto_feedback=auto_feedback, feedback_timeout=feedback_timeout,
+                feedback_safe=feedback_safe, detail=detail, dry_run=dry_run,
+            ),
+            timeout=tool_timeout,
+        )
+    except TimeoutError as exc:
+        message = f"edit_notebook exceeded its MCP timeout of {tool_timeout:g}s before Codex's client timeout."
+        return _mcp_tool_error_result("edit_notebook", arguments, TimeoutError(message), detail=detail)
+    except (Exception, SystemExit) as exc:
+        return _mcp_tool_error_result("edit_notebook", arguments, exc, detail=detail)
     warnings = result.get("warnings", []) if isinstance(result, dict) else []
     full_output = result.get("text", str(result)) if isinstance(result, dict) else str(result)
     return mcp_tool_result(

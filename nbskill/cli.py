@@ -227,20 +227,38 @@ def update_cell(
     new_file: str | None = None,  # Read replacement text from a UTF-8 file
     decode_newlines: bool = True,  # Decode literal \n sequences from CLI text
     cell_id: str | None = None,  # Stable cell id
-    old_str: str | None = None,  # Literal text to replace in the selected cell
+    old_str: str | None = None,  # Literal text to replace in the target cell, or used to locate it when cell_id is absent
     line_range: str | None = None,  # 1-based line or range, such as 2 or 2:4
-    split: bool = False,  # Split a multi-cell replacement into separate cells
-    split_before: str | None = None,  # Split the existing cell before the first matching line
     cell_type: str = "code",  # Replacement cell type when parsing text
     run_test: bool = False,  # Execute the notebook after writing
     validate_code: bool = True,  # Validate replacement Python
     dry_run: bool = False,  # Show the edit without writing
 ):
-    "Update one notebook cell by id, replace text/ranges, or split one cell."
+    "Update one notebook cell: replace whole cell, a text substring, or a line range."
     return nbskill.write.update_cell(
         path, new=new, new_file=new_file, decode_newlines=decode_newlines, cell_id=cell_id, old_str=old_str,
-        line_range=line_range, split=split, split_before=split_before, cell_type=cell_type, run_test=run_test,
-        validate_code=validate_code, dry_run=dry_run,
+        line_range=line_range, cell_type=cell_type, run_test=run_test, validate_code=validate_code, dry_run=dry_run,
+    )
+
+# %% ../nbs/13_cli.ipynb
+@call_parse
+@tracked_call
+def split_cell(
+    path: str,  # Notebook path
+    new: Param("Multi-cell replacement text separated by ---", str, opt=False, nargs="?") = "",
+    new_file: str | None = None,  # Read replacement text from a UTF-8 file
+    decode_newlines: bool = True,  # Decode literal \n sequences from CLI text
+    cell_id: str = "",  # Stable cell id to split
+    split_before: str | None = None,  # Split existing cell before the first line matching this text
+    cell_type: str = "code",  # Default cell type for replacement cells without %% marker
+    run_test: bool = False,  # Execute the notebook after writing
+    validate_code: bool = True,  # Validate replacement Python
+    dry_run: bool = False,  # Show the split plan without writing
+):
+    "Split one notebook cell into multiple cells, either at a matching line or by supplying replacement content."
+    return nbskill.write.split_cell(
+        path, cell_id=cell_id, new=new, new_file=new_file, decode_newlines=decode_newlines,
+        split_before=split_before, cell_type=cell_type, run_test=run_test, validate_code=validate_code, dry_run=dry_run,
     )
 
 # %% ../nbs/13_cli.ipynb #6f173c62

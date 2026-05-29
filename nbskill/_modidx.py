@@ -1201,5 +1201,4 @@ d = { 'settings': { 'branch': 'main',
                                'nbskill.write.split_nb_chapter': ('write.html#split_nb_chapter', 'nbskill/write.py'),
                                'nbskill.write.split_source_lines': ('write.html#split_source_lines', 'nbskill/write.py'),
                                'nbskill.write.update_cell': ('write.html#update_cell', 'nbskill/write.py'),
-                               'nbskill.write.valid_split_line_numbers': ('write.html#valid_split_line_numbers', 'nbskill/write.py'),
-                               'nbskill.write.write_nb': ('write.html#write_nb', 'nbskill/write.py')}}}
+                               'nbskill.write.valid_split_line_numbers': ('write.html#valid_split_line_numbers', 'nbskill/write.py')}}}

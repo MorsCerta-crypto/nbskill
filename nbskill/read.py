@@ -486,12 +486,17 @@ def project_context(
     docstrings = [_notebook_docstring(item) for item in notebooks]
     readme_sections = _readme_context(root)
     nl = chr(10)
+    def _first_line(src): return src.strip().splitlines()[0].lstrip("#").strip() if src.strip() else ""
+    def _nb_summary(item):
+        cells = item["cells"]
+        if not cells: return None
+        title = _first_line(cells[0]["source"])
+        tagline = _first_line(cells[1]["source"]) if len(cells) > 1 else ""
+        name = Path(item["path"]).name
+        return f"- {name}: {title}" + (f" — {tagline}" if tagline else "")
+    summaries = [s for item in docstrings for s in [_nb_summary(item)] if s]
     blocks = [
-        ("Notebooks", [f"- {item}" for item in notebooks]),
-        ("Notebook Docstrings", [
-            f"{item['path']}{nl}" + (nl * 2).join(cell["source"] for cell in item["cells"])
-            for item in docstrings if item["cells"]
-        ]),
+        ("Notebooks", summaries),
         ("README", (nl * 2).join(readme_sections)),
     ]
     text = _format_context_blocks(f"Project context: {root}{nl}Requested path: {path}", blocks)

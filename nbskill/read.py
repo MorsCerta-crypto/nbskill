@@ -215,8 +215,10 @@ def _notebook_header_items(cells):
             if started: break
             continue
         source = cell_source(cell).strip()
-        if re.search(r"^##\s+", source, flags=re.MULTILINE): break
-        if re.search(r"^#\s+", source, flags=re.MULTILINE): started = True
+        is_h1 = bool(re.search(r"^#\s+", source, flags=re.MULTILINE))
+        is_h2 = bool(re.search(r"^##\s+", source, flags=re.MULTILINE))
+        if is_h2 and started: break
+        if is_h1 or is_h2: started = True
         if started: items.append((idx, cell))
     return items
 
@@ -248,7 +250,6 @@ def _format_context_blocks(title, blocks):
         if isinstance(body, str): lines.append(body)
         else: lines.extend(body)
     return "\n".join(lines).rstrip()
-
 
 # %% ../nbs/01_read.ipynb #contextdefs
 def _import_lines(cell):

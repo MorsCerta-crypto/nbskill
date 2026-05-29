@@ -3,17 +3,17 @@
 # %% auto #0
 __all__ = ['output_text', 'remove_demo_path', 'demo_path', 'path_candidates', 'is_valid_ipynb', 'write_demo_notebook',
            'cli_return', 'cli_error', 'failure_map_path', 'empty_failure_map', 'load_failure_map', 'git_run',
-           'git_root', 'git_status_paths', 'git_tracked_paths', 'git_diff_stats', 'notebook_paths',
-           'source_without_directives', 'source_hash', 'file_line_count', 'cap_text', 'generated_owner',
-           'install_nbdev_pre_commit_hooks', 'parse_literal', 'none_if_string', 'symbol_short_name', 'call_name',
-           'short_call_name', 'is_definition_node', 'node_start_line', 'is_export_directive', 'cell_source',
-           'parse_code_cell', 'NotebookCell', 'NotebookChapter', 'NotebookDocument', 'NotebookSymbol', 'xml_escape',
-           'xml_attrs', 'cell_metadata', 'notebook_metadata', 'file_hash', 'exported_py_path', 'stamp_export_metadata',
-           'export_notebook', 'parse_one_cell', 'find_cell_by_id', 'find_cell_by_text', 'replace_cell', 'clear_outputs',
-           'load_cells_text', 'validate_code_cells', 'parse_cells', 'first_line', 'cell_prefix', 'matches_filter',
-           'is_exported_code_cell', 'output_value_text', 'cell_output_text', 'stamp_notebook_metadata',
-           'cell_class_names', 'cell_matches_type', 'with_context', 'heading_title', 'chapter_spans',
-           'chapter_index_set', 'one_chapter']
+           'git_root', 'git_status_paths', 'git_tracked_paths', 'git_diff_stats', 'load_nbskill_config',
+           'notebook_paths', 'source_without_directives', 'source_hash', 'file_line_count', 'cap_text',
+           'generated_owner', 'install_nbdev_pre_commit_hooks', 'parse_literal', 'none_if_string', 'symbol_short_name',
+           'call_name', 'short_call_name', 'is_definition_node', 'node_start_line', 'is_export_directive',
+           'cell_source', 'parse_code_cell', 'NotebookCell', 'NotebookChapter', 'NotebookDocument', 'NotebookSymbol',
+           'xml_escape', 'xml_attrs', 'cell_metadata', 'notebook_metadata', 'file_hash', 'exported_py_path',
+           'stamp_export_metadata', 'export_notebook', 'parse_one_cell', 'find_cell_by_id', 'find_cell_by_text',
+           'replace_cell', 'clear_outputs', 'load_cells_text', 'validate_code_cells', 'parse_cells', 'first_line',
+           'cell_prefix', 'matches_filter', 'is_exported_code_cell', 'output_value_text', 'cell_output_text',
+           'stamp_notebook_metadata', 'cell_class_names', 'cell_matches_type', 'with_context', 'heading_title',
+           'chapter_spans', 'chapter_index_set', 'one_chapter']
 
 # %% ../nbs/00_foundation.ipynb #2500639f
 import ast,hashlib,json,os,re
@@ -199,14 +199,33 @@ def _is_notebook_path(path):
 def _has_glob_chars(path):
     return any(char in str(path) for char in "*?[]")
 
+# %% ../nbs/00_foundation.ipynb #f614115f
+from fastcore.basics import AttrDict
+
+_DEFAULT_CONFIG = AttrDict(exclude_dirs=["data", "dev", ".ipynb_checkpoints"])
+
+def load_nbskill_config(path="."):
+    "Load .nbskill.py config from project root, merged over defaults."
+    cfg = AttrDict(**_DEFAULT_CONFIG)
+    root = git_root(path)
+    if root is None: root = Path(path).resolve()
+    cfg_path = Path(root) / ".nbskill.py"
+    if cfg_path.exists():
+        ns = {}
+        exec(cfg_path.read_text(encoding="utf-8"), ns)
+        cfg.update({k: v for k, v in ns.items() if not k.startswith("_")})
+    return cfg
+
 # %% ../nbs/00_foundation.ipynb #108a4e3f
 def _glob_notebook_paths(path):
     try:
         from fastcore.xtras import globtastic
+        cfg = load_nbskill_config(path)
+        skip_re = r"(^[_.]|" + "|".join(re.escape(d) for d in cfg.exclude_dirs) + r")"
         if _has_glob_chars(path):
             import glob
             return [Path(item) for item in glob.glob(str(path), recursive=True)]
-        return [Path(item) for item in globtastic(path, file_glob="*.ipynb", skip_folder_re=r"(^[_.]|\.ipynb_checkpoints)", skip_file_re=r"^[_.]", func=Path)]
+        return [Path(item) for item in globtastic(path, file_glob="*.ipynb", skip_folder_re=skip_re, skip_file_re=r"^[_.]", func=Path)]
     except Exception:
         return sorted(Path(path).rglob("*.ipynb")) if Path(path).is_dir() else []
 
@@ -222,17 +241,19 @@ def _nbdev_notebook_paths(path):
 def notebook_paths(path="nbs"):
     "Return visible notebook paths for a file, directory, glob, or nbdev project path."
     raw = "." if path is None else str(path)
+    cfg = load_nbskill_config(raw)
+    exclude = set(cfg.exclude_dirs)
+    def _excluded(p):
+        try: rel = p.relative_to(Path(raw).expanduser().resolve())
+        except ValueError: return False
+        return any(part in exclude for part in rel.parts)
     for candidate in path_candidates(raw):
         pth = Path(candidate).expanduser()
-        if pth.is_file():
-            paths = [pth]
-        elif _has_glob_chars(raw):
-            paths = _glob_notebook_paths(pth)
-        elif pth.is_dir():
-            paths = _nbdev_notebook_paths(pth) or _glob_notebook_paths(pth)
-        else:
-            paths = []
-        paths = sorted({item for item in paths if _is_notebook_path(item)})
+        if pth.is_file(): paths = [pth]
+        elif _has_glob_chars(raw): paths = _glob_notebook_paths(pth)
+        elif pth.is_dir(): paths = _nbdev_notebook_paths(pth) or _glob_notebook_paths(pth)
+        else: paths = []
+        paths = sorted({item for item in paths if _is_notebook_path(item) and not _excluded(item)})
         if paths: return paths
     return []
 

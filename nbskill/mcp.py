@@ -1034,6 +1034,7 @@ def _status_data(client_roots=None):
             "uv tool install --editable . --force",
             "codex mcp add nbskill -- nbskill_mcp",
             "claude mcp add nbskill -- nbskill_mcp",
+            "install_nbskill --target cursor --cursor_workspace .",
         ],
     }
 

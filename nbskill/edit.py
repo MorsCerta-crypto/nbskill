@@ -9,8 +9,7 @@ import difflib
 import re
 from pathlib import Path
 
-from fastcore.nbio import mk_cell, read_nb
-from fastcore.nbio import write_nb as _write_nb
+from fastcore.nbio import mk_cell, read_nb, write_nb 
 from nbdev.doclinks import nbdev_export as _run_nb_export
 
 from nbskill.foundation import (
@@ -383,13 +382,13 @@ def edit_notebook(
             for cell in trial.cells:
                 if getattr(cell, "id", None) in set(affected): clear_outputs(cell)
             stamp_notebook_metadata(trial)
-            _write_nb(trial, path)
+            write_nb(trial, path)
             py_path = exported_py_path(path, trial)
             if py_path is not None and _path_inside_cwd(path):
                 _run_nb_export(path=str(path))
                 if py_path.exists():
                     stamp_export_metadata(trial, py_path)
-                    _write_nb(trial, path)
+                    write_nb(trial, path)
                     exported = True
         after_hash = _notebook_hash(read_nb(path)) if changed and not dry_run else before_hash
 

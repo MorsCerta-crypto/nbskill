@@ -4,7 +4,7 @@
 __all__ = ['build_skill_from_readme', 'nbskill_mcp_restart_notice', 'install_nbskill']
 
 # %% ../nbs/06_skill.ipynb #a23594cd
-import subprocess
+import json, subprocess
 from importlib.resources import files
 from pathlib import Path
 
@@ -83,22 +83,72 @@ def nbskill_mcp_restart_notice():
     return {"running": True, "processes": running, "message": message}
 
 
+# %% ../nbs/06_skill.ipynb #4c71a41f
+def _nbskill_source_project():
+    """Return the current checkout when running from the nbskill source tree."""
+    for root in [Path.cwd(), *Path.cwd().parents]:
+        pyproject = root / "pyproject.toml"
+        if not pyproject.exists(): continue
+        try: text = pyproject.read_text(encoding="utf-8")
+        except OSError: continue
+        if 'name = "nbskill"' in text and (root / "nbskill" / "mcp.py").exists():
+            return root.resolve()
+    return None
+
+# %% ../nbs/06_skill.ipynb #5a143636
+def _cursor_mcp_path(workspace=None):
+    root = Path(workspace).expanduser() if workspace else Path.home()
+    return root / ".cursor" / "mcp.json"
+
+# %% ../nbs/06_skill.ipynb #cfe66977
+def _cursor_nbskill_server_config():
+    project = _nbskill_source_project()
+    args = ["run"]
+    if project: args += ["--with-editable", str(project)]
+    else: args += ["--with", "nbskill"]
+    args.append("nbskill_mcp")
+    return {"command": "uv", "args": args}
+
+# %% ../nbs/06_skill.ipynb #feab9338
+def _install_cursor_mcp(workspace=None, overwrite=True):
+    """Install nbskill's MCP server into Cursor's mcp.json."""
+    path = _cursor_mcp_path(workspace)
+    if path.exists():
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict): raise ValueError(f"Cursor MCP config must be a JSON object: {path}")
+    else: data = {}
+    servers = data.setdefault("mcpServers", {})
+    if not isinstance(servers, dict): raise ValueError(f"Cursor MCP config mcpServers must be an object: {path}")
+    if "nbskill" in servers and not overwrite: raise FileExistsError(path)
+    servers["nbskill"] = _cursor_nbskill_server_config()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return {
+        "installed": True,
+        "path": path,
+        "server": "nbskill",
+        "workspace": str(Path(workspace).expanduser()) if workspace else None,
+    }
+
 # %% ../nbs/06_skill.ipynb #dab79c19
 def install_nbskill(
-    target: str = "codex",  # codex, claude, both, or custom when skills_dir is set
+    target: str = "codex",  # codex, claude, cursor, both, or custom when skills_dir is set
     skills_dir: str | None = None,  # Parent skills directory; skill is installed below jupyter-notebooks
     skill_name: str = "jupyter-notebooks",  # Skill folder name
-    overwrite: bool = True,  # Overwrite an existing SKILL.md
+    overwrite: bool = True,  # Overwrite an existing SKILL.md or Cursor server entry
     install_hooks: bool = False,  # Install nbdev-clean/nbdev-test pre-commit hooks in the current repo
-    restart_mcp: bool = True,  # Detect running Codex nbskill MCP server and print restart guidance
+    restart_mcp: bool = True,  # Detect running nbskill MCP server and print restart guidance
+    cursor_workspace: str | None = None,  # Cursor workspace for .cursor/mcp.json; omit for global ~/.cursor/mcp.json
 ):
-    "Install the bundled SKILL.md into a Codex or Claude Code skills directory."
+    "Install nbskill agent instructions or Cursor MCP configuration."
     target = target.lower()
-    if skills_dir: roots = [Path(skills_dir).expanduser()]
+    cursor_mcp = {"installed": False, "reason": "target-not-cursor"}
+    if target == "cursor": roots = []
+    elif skills_dir: roots = [Path(skills_dir).expanduser()]
     elif target == "codex": roots = [Path.home() / ".codex" / "skills"]
     elif target in {"claude", "claude-code", "claude_code"}: roots = [Path.home() / ".claude" / "skills"]
     elif target == "both": roots = [Path.home() / ".codex" / "skills", Path.home() / ".claude" / "skills"]
-    else: raise ValueError("target must be codex, claude, both, or use skills_dir")
+    else: raise ValueError("target must be codex, claude, cursor, both, or use skills_dir")
     package = files("nbskill")
     skill_text = package.joinpath("SKILL.md").read_text(encoding="utf-8")
     references = package.joinpath("references")
@@ -116,11 +166,13 @@ def install_nbskill(
                 if ref.is_file():
                     (ref_dir / ref.name).write_text(ref.read_text(encoding="utf-8"), encoding="utf-8")
         installed.append(dst)
+    if target == "cursor": cursor_mcp = _install_cursor_mcp(workspace=cursor_workspace, overwrite=overwrite)
     hooks = install_nbdev_pre_commit_hooks(Path.cwd()) if install_hooks else {"installed": False, "reason": "disabled"}
     mcp_notice = {"running": False, "message": "not checked"}
-    if restart_mcp and not skills_dir and target in {"codex", "both"}:
+    if restart_mcp and not skills_dir and target in {"codex", "both", "cursor"}:
         mcp_notice = nbskill_mcp_restart_notice()
     for path in installed: print(f"Installed {path}")
+    if cursor_mcp.get("installed"): print(f"Installed Cursor MCP config at {cursor_mcp['path']}")
     if hooks.get("installed"): print(f"Installed nbdev pre-commit hook at {hooks['hook']}")
     else: print(f"Skipped nbdev pre-commit hook: {hooks.get('reason')}")
     if mcp_notice.get("running"):
@@ -128,5 +180,4 @@ def install_nbskill(
         print(mcp_notice["message"])
         for proc in mcp_notice.get("processes", []):
             print(f"- pid={proc['pid']} command={proc['command']}")
-    return cli_return({"installed": installed, "hooks": hooks, "mcp_restart": mcp_notice})
-
+    return cli_return({"installed": installed, "cursor_mcp": cursor_mcp, "hooks": hooks, "mcp_restart": mcp_notice})

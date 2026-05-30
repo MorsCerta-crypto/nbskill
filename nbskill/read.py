@@ -13,9 +13,10 @@ import shlex
 from pathlib import Path
 
 from fastcore.nbio import read_nb
+from fastcore.basics import patch
 
 from nbskill.foundation import (
-    NotebookCell, call_name, cell_matches_type, cell_output_text, cell_prefix,
+    Notebook, NotebookCell, call_name, cell_matches_type, cell_output_text, cell_prefix,
     cell_source, chapter_index_set, chapter_spans, find_cell_by_id, first_line,
     heading_title, is_exported_code_cell, matches_filter, notebook_paths,
     source_without_directives, symbol_short_name,
@@ -861,6 +862,18 @@ def symbol_context(
         depth=depth, location={"cell_id": getattr(cell, "id", ""), "cell_idx": idx},
         source=source, markdown=markdown, examples=examples, callers=callers, callees=callees, symbols=[symbol],
     )
+
+# %% ../nbs/01_read.ipynb #b4ef8123
+@patch
+def context(self: Notebook, **kw):
+    'Show this notebook file context (see `file_context`).'
+    return file_context(self.path, **kw)
+
+
+@patch
+def symbol(self: Notebook, symbol, **kw):
+    'Show implementation context for `symbol` (see `symbol_context`).'
+    return symbol_context(self.path, symbol, **kw)
 
 # %% ../nbs/01_read.ipynb #1ef3e16c
 def _context_cell_semantic_type(cell):

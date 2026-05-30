@@ -802,6 +802,15 @@ def _short_item(text, limit=120):
     return text if len(text) <= limit else text[:limit - 3].rstrip() + "..."
 
 
+def _definition_items(text, limit=120):
+    items = []
+    for line in as_text(text).splitlines():
+        stripped = line.strip()
+        if not re.match(r"^(async\s+def|def|class)\s+", stripped): continue
+        items.append(stripped if len(stripped) <= limit else stripped[:limit - 3].rstrip() + "...")
+    return items
+
+
 def _warning_summary_lines(warnings, limit=5):
     lines = []
     for item in (warnings or [])[:limit]:
@@ -844,13 +853,18 @@ def _context_summary_lines(data):
     return lines
 
 
+def _filter_context_match_summary(item):
+    label = f"{item.get('path')} id={item.get('cell_id')} idx={item.get('cell_idx')}"
+    definitions = _definition_items(item.get("source", ""))
+    if not definitions: return [f"- {label}: {_short_item(item.get('source', ''))}"]
+    return [f"- {label}:", *[f"  {line}" for line in definitions]]
+
+
 def _filter_context_summary_lines(data):
     data = data or {}
     matches = data.get("matches", [])
     lines = [f"matches={len(matches)} shown of {data.get('total_matches', len(matches))}"]
-    for item in matches[:5]:
-        label = f"{item.get('path')} id={item.get('cell_id')} idx={item.get('cell_idx')}"
-        lines.append(f"- {label}: {_short_item(item.get('source', ''))}")
+    for item in matches[:5]: lines.extend(_filter_context_match_summary(item))
     return lines
 
 

@@ -2,8 +2,8 @@
 
 # %% auto #0
 __all__ = ['skip_style_paths', 'public_function_literacy_problems', 'notebook_validation_problems', 'notebook_size_problems',
-           'reset_global_usage_summary', 'style_report', 'run_style_check', 'style_check', 'validate_nbs',
-           'code_source', 'diff_nb']
+           'reset_global_usage_summary', 'notebook_autofix', 'style_report', 'run_style_check', 'style_check',
+           'validate_nbs', 'code_source', 'diff_nb']
 
 # %% ../nbs/04_review.ipynb #3cff0f46
 import ast
@@ -32,7 +32,8 @@ from nbskill.foundation import (
 from .parallel import notebook_locks
 
 # %% ../nbs/04_review.ipynb #8077f190
-skip_style_paths = "_proc __pycache__ src assets examples tests archive".split(" ")
+skip_style_paths = "_proc __pycache__ src assets data examples tests archive manage.ipynb".split(" ")
+_validation_skip_paths = "_proc __pycache__ src assets examples tests archive manage.ipynb".split(" ")
 
 # %% ../nbs/04_review.ipynb #9d09a4cd
 _LARGE_CODE_CELL_LINE_LIMIT = 30
@@ -56,6 +57,10 @@ def _style_skip_paths(skip_path=None):
 def _style_root_is_skipped(path, skip_paths):
     parts = Path("." if path is None else path).expanduser().parts
     return any(part in skip_paths for part in parts)
+
+
+def _explicit_notebook_path(path):
+    return Path("." if path is None else path).expanduser().suffix == ".ipynb"
 
 # %% ../nbs/04_review.ipynb #fa2a6012
 def _style_check_argv(path=".", skip_folder_re=None, skip_path=None):
@@ -343,7 +348,7 @@ def notebook_validation_problems(path="."):
     "Return invalid nbskill metadata problems for notebooks under `path`."
     problems = []
     for nb_path in notebook_paths(path):
-        if _style_root_is_skipped(nb_path, skip_style_paths): continue
+        if _style_root_is_skipped(nb_path, _validation_skip_paths): continue
         try: nb = read_nb(nb_path)
         except FileNotFoundError: continue
         problems.extend(_notebook_export_hash_problems(nb_path, nb))
@@ -362,8 +367,9 @@ def _notebook_size_problems_for_nb(nb_path, nb):
 def notebook_size_problems(path="."):
     "Return size warnings for notebook cells and generated Python files."
     problems = []
+    explicit = _explicit_notebook_path(path)
     for nb_path in notebook_paths(path):
-        if _style_root_is_skipped(nb_path, skip_style_paths): continue
+        if not explicit and _style_root_is_skipped(nb_path, skip_style_paths): continue
         try: nb = read_nb(nb_path)
         except FileNotFoundError: continue
         problems.extend(_notebook_size_problems_for_nb(nb_path, nb))
@@ -377,10 +383,11 @@ def _style_path_is_skipped(path, skip_paths, skip_folder_re=None):
 # %% ../nbs/04_review.ipynb #6871fee3
 def _notebook_style_problems(path=".", skip_folder_re=None, skip_path=None):
     skip_paths = _style_skip_paths(skip_path)
+    explicit = _explicit_notebook_path(path)
     problems = notebook_validation_problems(path)
     duplicate_imports = {}
     for nb_path in notebook_paths(path):
-        if _style_path_is_skipped(nb_path, skip_paths, skip_folder_re): continue
+        if not explicit and _style_path_is_skipped(nb_path, skip_paths, skip_folder_re): continue
         try:
             nb = read_nb(nb_path)
         except FileNotFoundError:
@@ -413,7 +420,7 @@ def _notebook_style_problems(path=".", skip_folder_re=None, skip_path=None):
         from nbskill.graph import notebook_order_problems
         problems.extend(
             problem for problem in notebook_order_problems(path)
-            if not _style_path_is_skipped(problem["path"], skip_paths, skip_folder_re)
+            if explicit or not _style_path_is_skipped(problem["path"], skip_paths, skip_folder_re)
         )
     return problems
 
@@ -702,7 +709,7 @@ def _autofix_record(path, cell_id, code, count=1):
     return record
 
 # %% ../nbs/04_review.ipynb #23fd608a
-def _notebook_autofix(path=".", dry_run=False):
+def notebook_autofix(path=".", dry_run=False):
     records = []
     for nb_path in notebook_paths(path):
         with notebook_locks(nb_path):
@@ -757,11 +764,12 @@ def style_report(
     changed_cell_ids = _changed_code_cell_ids(path, ref_a=ref_a, ref_b=ref_b) if changed_only else None
     if changed_cell_ids is not None and notebook_paths(path):
         skip_paths = _style_skip_paths(skip_path)
+        explicit = _explicit_notebook_path(path)
         from nbskill.graph import notebook_advice_problems
         advice_problems = [
             problem for problem in notebook_advice_problems(path)
             if problem.get("cell_id") in changed_cell_ids
-            and not _style_path_is_skipped(problem.get("path", ""), skip_paths, skip_folder_re)
+            and (explicit or not _style_path_is_skipped(problem.get("path", ""), skip_paths, skip_folder_re))
         ]
         notebook_problems = [
             item for item in notebook_problems if item.get("cell_id") in changed_cell_ids

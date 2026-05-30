@@ -10,11 +10,11 @@ __all__ = ['NotebookCell', 'NotebookDocument', 'output_text', 'remove_demo_path'
            'is_export_directive', 'cell_source', 'parse_code_cell', 'CellType', 'SemanticType', 'Directive',
            'directive_lines', 'apply_directives', 'Cell', 'NotebookChapter', 'Notebook', 'NotebookSymbol', 'xml_escape',
            'xml_attrs', 'cell_metadata', 'notebook_metadata', 'file_hash', 'exported_py_path', 'stamp_export_metadata',
-           'export_notebook', 'parse_one_cell', 'find_cell_by_id', 'find_cell_by_text', 'replace_cell', 'clear_outputs',
-           'load_cells_text', 'validate_code_cells', 'parse_cells', 'first_line', 'cell_prefix', 'matches_filter',
-           'is_exported_code_cell', 'output_value_text', 'cell_output_text', 'stamp_notebook_metadata',
-           'cell_class_names', 'cell_matches_type', 'with_context', 'heading_title', 'chapter_spans',
-           'chapter_index_set', 'one_chapter']
+           'run_nbdev_export_from_project', 'export_notebook', 'parse_one_cell', 'find_cell_by_id', 'find_cell_by_text',
+           'replace_cell', 'clear_outputs', 'load_cells_text', 'validate_code_cells', 'parse_cells', 'first_line',
+           'cell_prefix', 'matches_filter', 'is_exported_code_cell', 'output_value_text', 'cell_output_text',
+           'stamp_notebook_metadata', 'cell_class_names', 'cell_matches_type', 'with_context', 'heading_title',
+           'chapter_spans', 'chapter_index_set', 'one_chapter']
 
 # %% ../nbs/00_foundation.ipynb #2500639f
 import ast,hashlib,json,os,re
@@ -245,8 +245,12 @@ def notebook_paths(path="nbs"):
     raw = "." if path is None else str(path)
     cfg = load_nbskill_config(raw)
     exclude = set(cfg.exclude_dirs)
+    base = Path(raw).expanduser().resolve()
     def _excluded(p):
-        try: rel = p.relative_to(Path(raw).expanduser().resolve())
+        p = Path(p).expanduser()
+        if not p.is_absolute():
+            p = p.resolve() if p.exists() else (base / p).resolve()
+        try: rel = p.relative_to(base)
         except ValueError: return False
         return any(part in exclude for part in rel.parts)
     for candidate in path_candidates(raw):
@@ -1027,7 +1031,7 @@ def _temporary_cwd(path):
     finally: os.chdir(previous)
 
 
-def _run_nbdev_export_from_project(nb_path):
+def run_nbdev_export_from_project(nb_path):
     from nbdev.doclinks import nbdev_export as _run_nb_export
 
     nb_path = Path(nb_path).expanduser()
@@ -1048,7 +1052,7 @@ def export_notebook(nb, nb_path, writer=write_nb):
     nb_path = Path(nb_path)
     py_path = exported_py_path(nb_path, nb)
     if py_path is None: return None
-    _run_nbdev_export_from_project(nb_path)
+    run_nbdev_export_from_project(nb_path)
     if py_path.exists():
         stamp_export_metadata(nb, py_path)
         writer(nb, nb_path)

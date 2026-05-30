@@ -61,7 +61,7 @@ from .review import run_style_check
 from .review import style_check
 from .review import style_report
 from .review import diff_nb
-from .review import _notebook_autofix
+from .review import notebook_autofix
 from .write import should_run_cell_feedback
 from .write import source_lines_cells
 
@@ -650,7 +650,6 @@ def _doctor_warnings(path=".", scope_path=None, scope_cell_ids=None):
             "Run nbskill_validate or export the notebook through nbskill write tools.",
             path=problem.get("path"), generated=problem.get("exported_py_path"),
         ))
-    warnings.extend(_style_problem_warnings(diagnostic_path, root))
     if project_scope:
         warnings.extend(_doc_script_warnings(root))
         failures = _failure_data().get("events", [])[-10:]
@@ -1075,7 +1074,7 @@ def _doctor_report(
     root = git_root(path) or _git_base(path).resolve()
     selected = _doctor_scope_set(scopes)
     export_fixes = _repair_export_hash_metadata(path) if fix else []
-    style_fixes = _notebook_autofix(path) if fix and "style" in selected else []
+    style_fixes = notebook_autofix(path) if fix and "style" in selected else []
     fixes = [*export_fixes, *style_fixes]
     status = _status_data()
     errors = _doctor_error_items(path, status) if "error" in selected else []
@@ -1189,7 +1188,11 @@ def _doctor_order_errors(path):
             "Remove stale notebook references or recreate the missing notebook before rerunning doctor.",
             severity="error", scope="error", path=exc.filename,
         )]
+    root = git_root(path) or _git_base(path).resolve()
+    diagnostic_path = _resolve_diagnostic_scope(path, root)
+    project_scope = _is_project_scope(diagnostic_path, root)
     for problem in problems:
+        if project_scope and Path(problem.get("path", "")).name == "manage.ipynb": continue
         errors.append(_warning(
             problem.get("code", "notebook-order"),
             _problem_message(problem),

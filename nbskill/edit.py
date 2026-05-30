@@ -14,7 +14,7 @@ from fastcore.basics import patch
 from fastcore.nbio import mk_cell, read_nb, write_nb 
 
 from nbskill.foundation import (
-    _run_nbdev_export_from_project,
+    run_nbdev_export_from_project,
     Notebook,
     apply_directives,
     cell_source,
@@ -406,7 +406,7 @@ def edit_notebook(
             try:
                 write_nb(trial, path)
                 if py_path is not None and _path_inside_cwd(path):
-                    _run_nbdev_export_from_project(path)
+                    run_nbdev_export_from_project(path)
                     if py_path.exists():
                         stamp_export_metadata(trial, py_path)
                         write_nb(trial, path)

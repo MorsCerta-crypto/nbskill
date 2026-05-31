@@ -7,7 +7,7 @@ __all__ = ['tracked_call', 'context', 'write_nb', 'replace_str_nb', 'update_cell
            'nbskill_mcp_stop', 'nbskill_mcp_restart']
 
 # %% ../nbs/13_cli.ipynb #bb21ab3c
-import json, os, re, signal, subprocess, time, traceback
+import json, os, shlex, signal, subprocess, time, traceback
 
 from contextlib import contextmanager
 from functools import wraps
@@ -26,7 +26,6 @@ import nbskill.skill
 import nbskill.workbench
 import nbskill.write
 from .foundation import failure_map_path, install_nbdev_pre_commit_hooks, load_failure_map
-
 
 # %% ../nbs/13_cli.ipynb #7a1bf0d2
 _NBSKILL_HOOK_ROOTS = set()
@@ -508,6 +507,7 @@ def nbskill_mcp(
     return nbskill.mcp.main(transport=transport, show_banner=show_banner)
 
 # %% ../nbs/13_cli.ipynb #35576b91
+_MCP_CONTROL_COMMANDS = {"nbskill_mcp_start", "nbskill_mcp_stop", "nbskill_mcp_restart"}
 def _mcp_process_rows():
     proc = subprocess.run(["ps", "-axo", "pid=,ppid=,command="], text=True, capture_output=True)
     if proc.returncode:
@@ -520,6 +520,28 @@ def _mcp_process_rows():
         except ValueError: continue
         rows.append({"pid": pid, "ppid": ppid, "command": parts[2]})
     return rows
+def _process_cwd(pid):
+    proc_cwd = Path("/proc") / str(pid) / "cwd"
+    try:
+        if proc_cwd.exists(): return str(proc_cwd.resolve())
+    except OSError:
+        pass
+    try: proc = subprocess.run(["lsof", "-a", "-p", str(pid), "-d", "cwd", "-Fn"], text=True, capture_output=True)
+    except OSError: return None
+    if proc.returncode: return None
+    for line in proc.stdout.splitlines():
+        if line.startswith("n") and line[1:]: return line[1:]
+    return None
+def _command_tokens(command):
+    try: return shlex.split(command)
+    except ValueError: return command.split()
+def _mcp_command_is_nbskill_server(command):
+    tokens = _command_tokens(command)
+    names = {Path(token).name for token in tokens}
+    if names & _MCP_CONTROL_COMMANDS: return False
+    if "nbskill_mcp" in names: return True
+    if "-m" in tokens and "nbskill.mcp" in tokens: return True
+    return "fastmcp" in names and "nbskill.mcp" in command
 def _mcp_project_root(project=None):
     return Path(project or Path.cwd()).expanduser().resolve()
 def _mcp_project_match_texts(project=None):
@@ -528,37 +550,80 @@ def _mcp_project_match_texts(project=None):
     try: texts.add(str(raw.resolve()))
     except OSError: pass
     return texts
+def _path_is_or_below(path, root):
+    try:
+        path = Path(path).expanduser().resolve()
+        root = Path(root).expanduser().resolve()
+    except OSError:
+        return False
+    return path == root or root in path.parents
+def _mcp_process_with_cwd(row):
+    if row.get("cwd") or not row.get("pid"): return row
+    cwd = _process_cwd(row["pid"])
+    return {**row, "cwd": cwd} if cwd else row
 def _mcp_process_matches(row, project=None, all_projects=False):
     command = row.get("command", "")
     if row.get("pid") == os.getpid(): return False
-    if not re.search(r"(^|[\s/])nbskill_mcp($|\s)", command): return False
+    if not _mcp_command_is_nbskill_server(command): return False
     if all_projects: return True
+    root = _mcp_project_root(project)
+    if row.get("cwd") and _path_is_or_below(row["cwd"], root): return True
     return any(text in command for text in _mcp_project_match_texts(project))
 def _find_nbskill_mcp_processes(project=None, all_projects=False):
-    return [row for row in _mcp_process_rows() if _mcp_process_matches(row, project=project, all_projects=all_projects)]
+    rows = []
+    for row in _mcp_process_rows():
+        if not _mcp_process_matches(row, all_projects=True): continue
+        row = _mcp_process_with_cwd(row)
+        if _mcp_process_matches(row, project=project, all_projects=all_projects): rows.append(row)
+    return rows
 def _alive_pids(pids):
     current = {row["pid"] for row in _mcp_process_rows()}
     return [pid for pid in pids if pid in current]
+def _descendant_rows(rows, parent_pids):
+    children_by_parent = {}
+    for row in rows: children_by_parent.setdefault(row.get("ppid"), []).append(row)
+    descendants, seen, frontier = [], set(parent_pids), list(parent_pids)
+    while frontier:
+        parent = frontier.pop(0)
+        for child in children_by_parent.get(parent, []):
+            pid = child.get("pid")
+            if not pid or pid in seen or pid == os.getpid(): continue
+            seen.add(pid)
+            descendants.append(child)
+            frontier.append(pid)
+    return descendants
+def _mcp_stop_target_rows(matches, all_rows=None):
+    all_rows = _mcp_process_rows() if all_rows is None else all_rows
+    descendants = _descendant_rows(all_rows, {row["pid"] for row in matches})
+    targets, seen = [], set()
+    for row in [*reversed(descendants), *matches]:
+        pid = row.get("pid")
+        if not pid or pid in seen or pid == os.getpid(): continue
+        seen.add(pid)
+        targets.append(row)
+    return targets
 def _stop_nbskill_mcp_processes(project=None, all_projects=False, timeout=5.0, force=True, dry_run=False):
     matches = _find_nbskill_mcp_processes(project=project, all_projects=all_projects)
+    targets = _mcp_stop_target_rows(matches)
     result = {
         "project": None if all_projects else str(_mcp_project_root(project)),
         "all_projects": bool(all_projects),
         "matched": matches,
+        "targets": targets,
         "terminated": [],
         "forced": [],
         "alive": [],
         "dry_run": bool(dry_run),
     }
-    if dry_run or not matches: return result
-    for row in matches:
+    if dry_run or not targets: return result
+    for row in targets:
         try:
             os.kill(row["pid"], signal.SIGTERM)
             result["terminated"].append(row["pid"])
         except ProcessLookupError:
             pass
     deadline = time.time() + float(timeout)
-    pending = _alive_pids([row["pid"] for row in matches])
+    pending = _alive_pids([row["pid"] for row in targets])
     while pending and time.time() < deadline:
         time.sleep(0.1)
         pending = _alive_pids(pending)
@@ -578,6 +643,7 @@ def _print_mcp_control_result(result, json_output=False):
         return None
     lines = [
         f"matched={len(result['matched'])}",
+        f"targets={len(result.get('targets', result['matched']))}",
         f"terminated={len(result['terminated'])}",
         f"forced={len(result['forced'])}",
         f"alive={len(result['alive'])}",
@@ -585,7 +651,10 @@ def _print_mcp_control_result(result, json_output=False):
     if result.get("project"): lines.insert(0, f"project={result['project']}")
     if result.get("dry_run"): lines.insert(0, "dry_run=true")
     for row in result["matched"]:
-        lines.append(f"pid={row['pid']} ppid={row['ppid']} command={row['command']}")
+        cwd = f" cwd={row['cwd']}" if row.get("cwd") else ""
+        lines.append(f"pid={row['pid']} ppid={row['ppid']}{cwd} command={row['command']}")
+    target_pids = {row["pid"] for row in result.get("targets", [])} - {row["pid"] for row in result["matched"]}
+    if target_pids: lines.append("target_descendants=" + ",".join(str(pid) for pid in sorted(target_pids)))
     print("\n".join(lines))
     return None
 
@@ -611,14 +680,14 @@ def nbskill_mcp_stop(
     return _print_mcp_control_result(result, json_output=json_output)
 @call_parse
 def nbskill_mcp_restart(
-    project: str | None = None,  # Project root to target; defaults to the current working directory
-    all_projects: bool = False,  # Restart nbskill MCP servers for every project
+    project: str | None = None,  # Optional project root to target when all_projects is false
+    all_projects: bool = True,  # Restart every running nbskill MCP server by default
     timeout: float = 5.0,  # Seconds to wait after SIGTERM before forcing
     force: bool = True,  # Send SIGKILL to remaining matched processes after timeout
     dry_run: bool = False,  # Show matched processes without stopping them
     json_output: bool = False,  # Print JSON instead of text
 ):
-    "Stop nbskill MCP processes so the MCP client starts a fresh per-project server."
+    "Restart running nbskill MCP server processes so clients reconnect to fresh code."
     result = _stop_nbskill_mcp_processes(project=project, all_projects=all_projects, timeout=timeout, force=force, dry_run=dry_run)
-    result["start"] = "stdio MCP servers are client-owned; Codex starts a fresh nbskill_mcp process on the next connection. Use nbskill_mcp_start to run one in the foreground."
+    result["start"] = "stdio MCP servers are client-owned; after the old processes exit, the MCP client starts fresh nbskill_mcp processes on reconnect. Use nbskill_mcp_start to run one in the foreground."
     return _print_mcp_control_result(result, json_output=json_output)

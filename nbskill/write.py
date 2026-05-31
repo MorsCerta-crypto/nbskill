@@ -13,14 +13,14 @@ from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
 
-from fastcore.nbio import mk_cell, new_nb, read_nb, write_nb as fc_write_nb
+from fastcore.nbio import mk_cell, new_nb, read_nb
 from fastcore.script import Param
 
 from .execute import exec_nb, run_notebook_test
 from .review import style_check
 from nbskill.foundation import (
     cell_class_names, cell_source, clear_outputs, cli_error,
-    cli_return, export_notebook, find_cell_by_id, find_cell_by_text,
+    cli_return, commit_notebook, find_cell_by_id, find_cell_by_text,
     is_exported_code_cell, load_cells_text, one_chapter, parse_cells,
     parse_one_cell, replace_cell, short_call_name, source_hash,
     stamp_notebook_metadata, validate_code_cells,
@@ -112,16 +112,23 @@ def replace_str(
     exported = False
     with notebook_locks(*paths):
         for nb_path in paths:
-            nb = read_nb(nb_path)
+            before = read_nb(nb_path)
+            trial = copy.deepcopy(before)
             cells_changed, matches, details = _replace_literal_in_notebook(
-                nb, old_str, new_str, validate_code=validate_code, collect_details=show_cells,
+                trial, old_str, new_str, validate_code=validate_code, collect_details=True,
             )
             if not matches: continue
             changed.append((nb_path, cells_changed, matches, details))
-            if not dry_run:
-                fc_write_nb(nb, nb_path)
-                exported = export_notebook(nb, nb_path) is not None or exported
-                if run_test: run_notebook_test(nb_path)
+            commit = commit_notebook(
+                nb_path,
+                trial,
+                before=before,
+                affected_cell_ids=[item["cell_id"] for item in details],
+                validate_code=validate_code,
+                dry_run=dry_run,
+            )
+            exported = commit["exported"] or exported
+            if not dry_run and run_test: run_notebook_test(nb_path)
     total_matches = sum(matches for _, _, matches, _ in changed)
     total_cells = sum(cells for _, cells, _, _ in changed)
     if not changed:
@@ -135,7 +142,6 @@ def replace_str(
         if show_cells: msg += f"\n{_format_literal_replacement_details(changed)}"
     print(msg)
     return cli_return([path for path, _, _, _ in changed])
-
 
 # %% ../nbs/02_write.ipynb #0f2f63da
 def write_nb(
@@ -159,9 +165,9 @@ def write_nb(
     new_cells = parse_cells(cells, cell_type)
     if validate_code: validate_code_cells(new_cells)
     with notebook_locks(path):
-        if replace and chapter is None: nb = new_nb(new_cells)
-        else:
-            nb = read_nb(path) if path.exists() else new_nb([])
+        before = read_nb(path) if path.exists() else new_nb([])
+        nb = new_nb(new_cells) if replace and chapter is None else copy.deepcopy(before)
+        if not (replace and chapter is None):
             if chapter is not None:
                 span = one_chapter(nb.cells, chapter, create=True)
                 if replace:
@@ -173,15 +179,19 @@ def write_nb(
                 target = idx if before_id else idx + 1
             else: target = len(nb.cells)
             for offset, cell in enumerate(new_cells): nb.cells.insert(target + offset, cell)
-        stamp_notebook_metadata(nb)
-        fc_write_nb(nb, path)
-        exported = export_notebook(nb, path) is not None
+        commit = commit_notebook(
+            path,
+            nb,
+            before=before,
+            affected_cell_ids=[getattr(cell, "id", "") for cell in new_cells],
+            validate_code=validate_code,
+        )
         msg = f"Wrote {len(nb.cells)} cells to {path}"
         if replace: msg += " using replace"
         if chapter is not None: msg += f" in chapter {chapter!r}"
         if before_id: msg += f" before id={before_id}"
         if after_id: msg += f" after id={after_id}"
-        if exported: msg += " and exported with nbdev"
+        if commit["exported"]: msg += " and exported with nbdev"
         print(msg)
         if run_test: run_notebook_test(path)
         if run_style:
@@ -192,9 +202,7 @@ def write_nb(
 # %% ../nbs/02_write.ipynb #5ef9f86f
 def _save_nb(nb, path):
     with notebook_locks(path):
-        stamp_notebook_metadata(nb)
-        fc_write_nb(nb, path)
-        export_notebook(nb, path)
+        return commit_notebook(path, nb)["exported"]
 
 # %% ../nbs/02_write.ipynb #f7ce9319
 def _parse_line_range(line_range, n_lines):
@@ -288,6 +296,7 @@ def update_cell(
 
     with notebook_locks(path):
         nb = read_nb(path)
+        before = copy.deepcopy(nb)
         idx, cell = find_cell_by_id(nb.cells, cell_id) if cell_id else find_cell_by_text(nb.cells, old_str)
         if old_str is not None and old_str not in cell_source(cell): cli_error(f"old_str was not found in id={cell.id}")
 
@@ -319,9 +328,8 @@ def update_cell(
             if diff: msg += chr(10) + diff
             print(msg)
             return cli_return(path)
-        stamp_notebook_metadata(nb)
-        fc_write_nb(nb, path)
-        if export_notebook(nb, path) is not None: msg += " and exported with nbdev"
+        commit = commit_notebook(path, nb, before=before, affected_cell_ids=[getattr(cell, "id", "")], validate_code=validate_code)
+        if commit["exported"]: msg += " and exported with nbdev"
         print(msg)
         if run_test: run_notebook_test(path)
     return cli_return(path)
@@ -347,6 +355,7 @@ def split_cell(
 
     with notebook_locks(path):
         nb = read_nb(path)
+        before = copy.deepcopy(nb)
         idx, cell = find_cell_by_id(nb.cells, cell_id)
         if split_before is not None:
             first, second = _split_cell_sources_before(cell_source(cell), split_before)
@@ -366,9 +375,8 @@ def split_cell(
             return cli_return(path)
         for item in new_cells: clear_outputs(item)
         _replace_cell_with_cells(nb, idx, new_cells)
-        stamp_notebook_metadata(nb)
-        fc_write_nb(nb, path)
-        if export_notebook(nb, path) is not None: msg += " and exported with nbdev"
+        commit = commit_notebook(path, nb, before=before, affected_cell_ids=[getattr(cell, "id", "")], validate_code=validate_code)
+        if commit["exported"]: msg += " and exported with nbdev"
         print(msg)
         if run_test: run_notebook_test(path)
     return cli_return(path)
@@ -477,9 +485,7 @@ def append_notebook_edit_feedback(message, path, cell_ids, auto_feedback=True, f
 # %% ../nbs/02_write.ipynb #a9b30fec
 def save_notebook_edit(nb, path):
     "Stamp, write, export, and report whether nbdev produced Python."
-    stamp_notebook_metadata(nb)
-    fc_write_nb(nb, path)
-    return export_notebook(nb, path) is not None
+    return commit_notebook(path, nb)["exported"]
 
 # %% ../nbs/02_write.ipynb #8699e6a7
 def replace_notebook_cell(
@@ -556,29 +562,67 @@ def delete_notebook_cell(path, cell_id):
     return msg + (" and exported with nbdev" if exported else "")
 
 # %% ../nbs/02_write.ipynb #04fc2540
+def _structured_cells_payload(cells, default_cell_type="code"):
+    "Translate legacy structured cell payloads to edit_notebook cell specs."
+    if isinstance(cells, str):
+        return [dict(source=cell_source(cell), cell_type=getattr(cell, "cell_type", default_cell_type)) for cell in parse_cells(cells, default_cell_type)]
+    specs = cells if isinstance(cells, list) else [cells]
+    made = []
+    for spec in specs:
+        spec = spec or {}
+        if not isinstance(spec, dict):
+            made.append(dict(source=str(spec), cell_type=default_cell_type))
+            continue
+        source = spec.get("source", spec.get("new", spec.get("text", "")))
+        if "source_lines" in spec: source = join_source_lines(spec.get("source_lines"))
+        made.append(dict(source=source, cell_type=spec.get("cell_type", default_cell_type)))
+    return made
+
+
+def _edit_notebook_op_from_legacy(edit, default_cell_type="code"):
+    "Translate older write.py operation names into edit_notebook operations."
+    op = edit.get("op")
+    if op in {"replace_cell", "set_cell_source", "set_cell"}:
+        source = edit.get("source", edit.get("new", edit.get("text", "")))
+        if "source_lines" in edit: source = join_source_lines(edit.get("source_lines"))
+        return dict(op="replace_cell", cell_id=edit.get("cell_id"), source=source, cell_type=edit.get("cell_type", default_cell_type))
+    if op == "replace_range":
+        return dict(
+            op="replace_lines", cell_id=edit.get("cell_id"),
+            start_line=edit.get("start_line"), end_line=edit.get("end_line"),
+            replacement_lines=edit.get("replacement_lines", edit.get("source_lines")),
+        )
+    if op in {"insert_before", "insert_after", "insert_before_id", "insert_after_id"}:
+        where = "before" if op in {"insert_before", "insert_before_id"} else "after"
+        anchor_id = edit.get("anchor_id") or edit.get("cell_id") or edit.get("before_id") or edit.get("after_id")
+        return dict(op="insert_cells", anchor_id=anchor_id, where=where, cells=_structured_cells_payload(edit.get("cells") or [edit], default_cell_type))
+    if op in {"delete_cell", "delete_cell_id"}:
+        return dict(op="delete_cells", cell_id=edit.get("cell_id"))
+    if op == "replace_text":
+        return dict(op="replace_text", target="all", old=edit.get("old_str", edit.get("old")), new=edit.get("new_str", edit.get("new", "")))
+    raise ValueError(f"Unknown edit operation {op!r}")
+
+
 def apply_notebook_edit(
     edit, default_path=None, validate_code=True, default_cell_type="code",
-    auto_feedback=True, feedback_timeout=10, feedback_safe=True,
+    auto_feedback=True, feedback_timeout=10, feedback_safe=True, dry_run=False,
 ):
-    "Apply one structured notebook edit operation."
-    op = edit.get("op")
+    "Apply one structured notebook edit operation through edit_notebook."
+    from nbskill.edit import edit_notebook
+
     path = str(edit.get("path") or default_path or "")
     if not path: raise ValueError(f"Edit operation missing path: {edit}")
-    cell_id = edit.get("cell_id") or edit.get("anchor_id")
-    if not cell_id and op not in {"insert_before", "insert_after"}: raise ValueError(f"Edit operation missing cell_id: {edit}")
-    if op == "replace_cell":
-        return replace_notebook_cell(path, cell_id, edit.get("source_lines"), edit.get("cell_type", default_cell_type), edit.get("split_lines"), validate_code, auto_feedback, feedback_timeout, feedback_safe)
-    if op == "replace_range":
-        start, end = edit.get("start_line"), edit.get("end_line")
-        if start is None or end is None: raise ValueError(f"replace_range needs start_line and end_line: {edit}")
-        lines = edit.get("replacement_lines", edit.get("source_lines"))
-        return replace_notebook_range(path, cell_id, start, end, lines, validate_code, auto_feedback, feedback_timeout, feedback_safe)
-    if op in {"insert_before", "insert_after"}:
-        anchor_id = edit.get("anchor_id") or cell_id
-        where = "before" if op == "insert_before" else "after"
-        return insert_notebook_cells(path, anchor_id, where, edit.get("cells") or [edit], validate_code, default_cell_type, auto_feedback, feedback_timeout, feedback_safe)
-    if op == "delete_cell": return delete_notebook_cell(path, cell_id)
-    raise ValueError(f"Unknown edit operation {op!r}")
+    result = edit_notebook(
+        path,
+        [_edit_notebook_op_from_legacy(edit, default_cell_type=default_cell_type)],
+        validate_code=validate_code,
+        default_cell_type=default_cell_type,
+        auto_feedback=auto_feedback,
+        feedback_timeout=feedback_timeout,
+        feedback_safe=feedback_safe,
+        dry_run=dry_run,
+    )
+    return result["text"]
 
 # %% ../nbs/02_write.ipynb #a6b661e1
 def _load_batch_plan(plan="", plan_file=None):
@@ -597,17 +641,6 @@ def _op_path(op, default_path=None):
     if not path: cli_error(f"Batch operation missing path: {op}")
     return Path(path)
 
-# %% ../nbs/02_write.ipynb #90c505c8
-def _op_source(op):
-    for key in ("source", "new", "text"):
-        if key in op: return str(op[key])
-    cli_error(f"Batch operation missing source/new/text: {op}")
-
-# %% ../nbs/02_write.ipynb #2e718f4f
-def _op_cells(op, default_cell_type="code"):
-    if "cells" in op: return parse_cells(str(op["cells"]), op.get("cell_type", default_cell_type))
-    return [parse_one_cell(_op_source(op), op.get("cell_type", default_cell_type))]
-
 # %% ../nbs/02_write.ipynb #0bc1bf7f
 def _op_diff(before, after, limit=24):
     lines = list(difflib.unified_diff(
@@ -615,129 +648,6 @@ def _op_diff(before, after, limit=24):
     ))
     if len(lines) > limit: lines = [*lines[:limit], "... diff truncated ..."]
     return "\n".join(lines)
-
-# %% ../nbs/02_write.ipynb #fd6543d8
-def _cell_source_hash(cell):
-    return source_hash(cell_source(cell))
-
-
-def _batch_detail(op, path, cell_id="", before="", after=""):
-    detail = {
-        "op": op.get("op"),
-        "path": str(path),
-        "cell_id": cell_id,
-        "before_hash": source_hash(before) if before else "",
-        "after_hash": source_hash(after) if after else "",
-        "status": "planned",
-        "diff": _op_diff(before, after) if before != after else "",
-    }
-    return detail
-
-# %% ../nbs/02_write.ipynb #95713c03
-def _apply_batch_op(nb, path, op, validate_code=True, default_cell_type="code"):
-    kind = op.get("op")
-    if kind in {"set_cell_source", "set_cell"}:
-        _, cell = find_cell_by_id(nb.cells, op.get("cell_id"))
-        before = cell_source(cell)
-        source = _op_source(op)
-        cell_type = op.get("cell_type")
-        if cell_type: cell.cell_type = cell_type
-        if validate_code and getattr(cell, "cell_type", None) == "code": validate_code_cells([mk_cell(source)])
-        cell.source = source
-        clear_outputs(cell)
-        return [_batch_detail(op, path, cell.id, before, source)]
-    if kind in {"insert_after_id", "insert_before_id"}:
-        idx, anchor = find_cell_by_id(nb.cells, op.get("cell_id") or op.get("after_id") or op.get("before_id"))
-        new_cells = _op_cells(op, default_cell_type=default_cell_type)
-        if validate_code: validate_code_cells(new_cells)
-        target = idx + 1 if kind == "insert_after_id" else idx
-        inserted = []
-        for offset, cell in enumerate(new_cells):
-            clear_outputs(cell)
-            nb.cells.insert(target + offset, cell)
-            inserted.append({"cell_id": getattr(cell, "id", ""), "after_hash": _cell_source_hash(cell)})
-        where = "after" if kind == "insert_after_id" else "before"
-        return [{
-            "op": kind,
-            "path": str(path),
-            "cell_id": getattr(anchor, "id", ""),
-            "inserted": inserted,
-            "status": "planned",
-            "diff": f"inserted {len(new_cells)} cell(s) {where} id={getattr(anchor, 'id', '')}",
-        }]
-    if kind == "delete_cell_id":
-        idx, cell = find_cell_by_id(nb.cells, op.get("cell_id"))
-        before = cell_source(cell)
-        del nb.cells[idx]
-        return [_batch_detail(op, path, cell.id, before, "")]
-    if kind == "replace_text":
-        old = op.get("old_str", op.get("old"))
-        new = op.get("new_str", op.get("new"))
-        if old in {None, ""}: cli_error(f"replace_text needs old/old_str: {op}")
-        if new is None: cli_error(f"replace_text needs new/new_str: {op}")
-        _, matches, details = _replace_literal_in_notebook(nb, str(old), str(new), validate_code=validate_code, collect_details=True)
-        if not matches: cli_error(f"No matches for {old!r} in {path}")
-        return [
-            {
-                "op": kind,
-                "path": str(path),
-                "cell_id": item["cell_id"],
-                "before_hash": item.get("before_hash", ""),
-                "after_hash": item.get("after_hash", ""),
-                "status": "planned",
-                "diff": item["diff"],
-            }
-            for item in details
-        ]
-    cli_error(f"Unknown batch operation {kind!r}")
-
-# %% ../nbs/02_write.ipynb #71622b02
-def _detail_cell_matches(nb, detail):
-    try:
-        _, cell = find_cell_by_id(nb.cells, detail.get("cell_id"))
-    except ValueError:
-        return False
-    return not detail.get("after_hash") or _cell_source_hash(cell) == detail.get("after_hash")
-
-
-# %% ../nbs/02_write.ipynb #ae0e2774
-def _detail_insert_matches(nb, detail):
-    for item in detail.get("inserted", []):
-        try:
-            _, cell = find_cell_by_id(nb.cells, item.get("cell_id"))
-        except ValueError:
-            return False
-        if _cell_source_hash(cell) != item.get("after_hash"): return False
-    return True
-
-
-# %% ../nbs/02_write.ipynb #607730b3
-def _verify_batch_details(details):
-    by_path = {}
-    for detail in details:
-        by_path.setdefault(Path(detail["path"]), []).append(detail)
-    failed = []
-    for path, path_details in by_path.items():
-        nb = read_nb(path)
-        for detail in path_details:
-            op = detail.get("op")
-            ok = True
-            if op == "delete_cell_id":
-                try:
-                    find_cell_by_id(nb.cells, detail.get("cell_id"))
-                    ok = False
-                except ValueError:
-                    ok = True
-            elif op in {"insert_after_id", "insert_before_id"}:
-                ok = _detail_insert_matches(nb, detail)
-            else:
-                ok = _detail_cell_matches(nb, detail)
-            if not ok:
-                failed_detail = dict(detail)
-                failed_detail["status"] = "failed"
-                failed.append(failed_detail)
-    return failed
-
 
 # %% ../nbs/02_write.ipynb #d790c1d4
 def _format_batch_details(details):
@@ -766,35 +676,40 @@ def batch_edit_nb(
     validate_code: bool = True,  # Validate changed Python code before writing
     default_cell_type: str = "code",  # Default cell type for inserted cells without %% markers
 ):
-    "Apply a JSON batch edit plan to one or more notebooks with locks, diffs, and read-back verification."
+    "Apply a JSON batch edit plan as thin edit_notebook operations."
+    from nbskill.edit import edit_notebook
+
     data = _load_batch_plan(plan, plan_file)
     ops = data["operations"]
-    paths = sorted({_op_path(op, path) for op in ops}, key=str)
     details = []
     exported = False
-    with notebook_locks(*paths):
-        notebooks = {nb_path: read_nb(nb_path) for nb_path in paths}
-        for index, op in enumerate(ops, start=1):
-            nb_path = _op_path(op, path)
-            op_details = _apply_batch_op(
-                notebooks[nb_path], nb_path, op,
-                validate_code=validate_code, default_cell_type=default_cell_type,)
-            for detail in op_details: detail["index"] = index
-            details.extend(op_details)
-        if not dry_run:
-            for nb_path, nb in notebooks.items():
-                stamp_notebook_metadata(nb)
-                fc_write_nb(nb, nb_path)
-                exported = export_notebook(nb, nb_path) is not None or exported
-            failed = _verify_batch_details(details)
-            if failed:
-                for item in failed:
-                    for detail in details:
-                        if detail.get("index") == item.get("index") and detail.get("cell_id") == item.get("cell_id"):
-                            detail["status"] = "failed"
-                cli_error("Batch edit verification failed after writing:\n" + _format_batch_details(failed))
-            for detail in details:
-                detail["status"] = "verified"
+    for index, op in enumerate(ops, start=1):
+        nb_path = _op_path(op, path)
+        result = edit_notebook(
+            nb_path,
+            [_edit_notebook_op_from_legacy(op, default_cell_type=default_cell_type)],
+            validate_code=validate_code,
+            default_cell_type=default_cell_type,
+            auto_feedback=False,
+            dry_run=dry_run,
+        )
+        exported = result.get("exported", False) or exported
+        status = "planned" if dry_run else "verified"
+        for diff in result.get("diffs", []):
+            detail = {
+                "index": index,
+                "op": op.get("op"),
+                "path": str(nb_path),
+                "cell_id": diff.get("cell_id", ""),
+                "before_hash": diff.get("before_hash", ""),
+                "after_hash": diff.get("after_hash", ""),
+                "status": status,
+                "diff": diff.get("diff", ""),
+            }
+            if diff.get("inserted_cell_ids"):
+                detail["inserted"] = [dict(cell_id=cell_id, after_hash="") for cell_id in diff.get("inserted_cell_ids", [])]
+            details.append(detail)
+    paths = sorted({_op_path(op, path) for op in ops}, key=str)
     prefix = "Dry run: would apply" if dry_run else "Applied"
     msg = f"{prefix} {len(ops)} batch operations across {len(paths)} notebook(s)"
     if exported: msg += " and exported with nbdev"
@@ -1043,21 +958,28 @@ def split_nb_chapter(
     path, dest = Path(path), Path(dest)
     if dest.exists() and not force: cli_error(f"Destination exists: {dest}; pass --force to overwrite")
     with notebook_locks(path, dest):
-        nb = read_nb(path)
-        plan = _split_chapter_plan(nb, chapter=chapter, dest=dest, default_exp=default_exp, promote_private=promote_private)
+        before = read_nb(path)
+        plan = _split_chapter_plan(before, chapter=chapter, dest=dest, default_exp=default_exp, promote_private=promote_private)
         msg = _format_split_plan(path, dest, chapter, plan, dry_run=dry_run)
         print(msg)
         if dry_run: return cli_return(plan)
         source_nb = new_nb(plan["source_cells"])
         dest_nb = new_nb(plan["dest_cells"])
-        validate_code_cells([cell for cell in source_nb.cells if getattr(cell, "cell_type", None) == "code"])
-        validate_code_cells([cell for cell in dest_nb.cells if getattr(cell, "cell_type", None) == "code"])
-        stamp_notebook_metadata(source_nb)
-        stamp_notebook_metadata(dest_nb)
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        fc_write_nb(source_nb, path)
-        fc_write_nb(dest_nb, dest)
-        export_notebook(source_nb, path)
-        export_notebook(dest_nb, dest)
+        dest_before = read_nb(dest) if dest.exists() else new_nb([])
+        source_commit = commit_notebook(
+            path,
+            source_nb,
+            before=before,
+            affected_cell_ids=[getattr(cell, "id", "") for cell in source_nb.cells],
+            validate_code=True,
+        )
+        dest_commit = commit_notebook(
+            dest,
+            dest_nb,
+            before=dest_before,
+            affected_cell_ids=[getattr(cell, "id", "") for cell in dest_nb.cells],
+            validate_code=True,
+        )
+        plan["source_exported"] = source_commit["exported"]
+        plan["dest_exported"] = dest_commit["exported"]
     return cli_return(plan)
-

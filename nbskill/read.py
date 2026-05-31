@@ -399,8 +399,10 @@ def _normalize_chapter_title(value):
     return re.sub(r"\s+", " ", str(value).strip().lower())
 
 # %% ../nbs/01_read.ipynb #411b4891
-def _chapter_spans_for_nb(cells):
-    return chapter_spans(cells, levels=range(1, 7), fallback="Notebook")
+def _chapter_spans_for_nb(cells): return chapter_spans(cells, levels=(2,), fallback="Notebook")
+
+
+def _all_heading_spans_for_nb(cells): return chapter_spans(cells, levels=range(1, 7), fallback="Notebook")
 
 # %% ../nbs/01_read.ipynb #fa91bd16
 def _notebook_head_items(cells):
@@ -428,6 +430,10 @@ def _chapter_matches(span, name):
 def _one_chapter_span(cells, name):
     spans = _chapter_spans_for_nb(cells)
     matches = [span for span in spans if _chapter_matches(span, name)]
+    if not matches:
+        nested_spans = _all_heading_spans_for_nb(cells)
+        nested_matches = [span for span in nested_spans if _chapter_matches(span, name)]
+        if nested_matches: spans, matches = nested_spans, nested_matches
     if len(matches) == 1: return matches[0]
     titles = ", ".join(span["title"] for span in spans[:8]) or "none"
     if not matches: raise ValueError(f"No chapter matches {name!r}. Available chapters: {titles}")
@@ -465,6 +471,38 @@ def _chapter_items(nb, span):
         idxs.add(idx)
         items.append((idx, cell))
     return items
+
+# %% ../nbs/01_read.ipynb #3a5cf667
+def _chapter_intro_markdown_items(cells, span):
+    items = []
+    for idx in range(span["start"], span["end"]):
+        cell = cells[idx]
+        if getattr(cell, "cell_type", None) != "markdown": continue
+        source = cell_source(cell)
+        level = _markdown_heading_level(source)
+        if idx != span["start"] and level in (3, 4): break
+        if source.strip(): items.append((idx, cell))
+    return items
+
+
+def _chapter_intro_items(nb, span):
+    idxs = set()
+    items = []
+    for idx, cell in [*_notebook_head_items(nb.cells), *_chapter_intro_markdown_items(nb.cells, span)]:
+        if idx in idxs: continue
+        idxs.add(idx)
+        items.append((idx, cell))
+    return items
+
+# %% ../nbs/01_read.ipynb #3ab02406
+def _filter_chapter_items(items, cell_type=None, include_re=None, exclude_re=None):
+    filtered = []
+    for idx, cell in items:
+        source = cell_source(cell)
+        if cell_type is not None and not cell_matches_type(cell, cell_type): continue
+        if not _context_match(source, include_re, exclude_re): continue
+        filtered.append((idx, cell))
+    return filtered
 
 # %% ../nbs/01_read.ipynb #675786ce
 def _selected_cell_item(nb, query=None, id=None):
@@ -513,18 +551,23 @@ def chapter_context(
     name: str | None = None,  # Chapter title string or regex
     any_cell_id: str | None = None,  # Any cell id inside the chapter
     verbose: bool = True,  # Print rendered context; pass False to only return structured data
+    overview: bool = False,  # Show only notebook head and chapter intro markdown
+    cell_type: str | None = None,  # Optional cell type or semantic type filter for deep dives
+    include_re: str | None = None,  # Optional regex that matched cell source must include
+    exclude_re: str | None = None,  # Optional regex that matched cell source must not include
 ):
-    "Show the notebook head plus one selected chapter."
+    "Show one chapter as an overview or filtered deep dive."
     nb = read_nb(path)
     span = _selected_chapter_span(nb, query=query, name=name, any_cell_id=any_cell_id)
-    items = _chapter_items(nb, span)
+    items = _chapter_intro_items(nb, span) if overview else _chapter_items(nb, span)
+    items = _filter_chapter_items(items, cell_type=cell_type, include_re=include_re, exclude_re=exclude_re)
     text = _format_full(items, show_ids=True, line_numbers=False)
     cells = [{"cell_id": getattr(cell, "id", ""), "cell_idx": idx, "cell_type": cell.cell_type, "source": cell_source(cell)} for idx, cell in items]
     return _context_result(
         "chapter_context", text, verbose=verbose, path=str(path), query=query,
-        name=name, any_cell_id=any_cell_id, chapter=span, cells=cells,
+        name=name, any_cell_id=any_cell_id, overview=overview, cell_type=cell_type,
+        include_re=include_re, exclude_re=exclude_re, chapter=span, cells=cells,
     )
-
 
 # %% ../nbs/01_read.ipynb #32506359
 def file_context(
@@ -999,7 +1042,9 @@ def _notebook_overview_markdown_records(cells):
     records = _notebook_markdown_records(cells)
     first_chapter = next((item["cell_idx"] for item in records if item["heading_level"] == 2), None)
     if first_chapter is None: return records
-    return [item for item in records if item["cell_idx"] <= first_chapter or item["heading_level"] == 2]
+    wanted = {idx for idx, _ in _notebook_head_items(cells)}
+    for span in _chapter_spans_for_nb(cells): wanted.update(idx for idx, _ in _chapter_intro_markdown_items(cells, span))
+    return [item for item in records if item["cell_idx"] in wanted]
 
 def _render_markdown_record(item):
     return f"Cell id={item['cell_id']}\n{item['source']}"
@@ -1064,12 +1109,14 @@ def _context_symbol_matches(target, notebooks):
         matches.append({"path": path, "cell_idx": idx, "symbol": str(target)})
     return matches
 def _context_chapter_matches(target, notebooks):
-    matches = []
+    chapter_matches, subchapter_matches = [], []
     for path in notebooks:
         nb = read_nb(path)
         for span in _chapter_spans_for_nb(nb.cells):
-            if _chapter_matches(span, target): matches.append({"path": path, "chapter": span})
-    return matches
+            if _chapter_matches(span, target): chapter_matches.append({"path": path, "chapter": span})
+        for span in _all_heading_spans_for_nb(nb.cells):
+            if _chapter_matches(span, target): subchapter_matches.append({"path": path, "chapter": span})
+    return chapter_matches or subchapter_matches
 def _context_one_match(kind, target, matches):
     if len(matches) == 1: return matches[0]
     if not matches: return None
@@ -1239,7 +1286,7 @@ def context(
         return _context_as_single(result, target, scope, "symbol", overview=overview, symbol_graphs=graphs)
     chapter = _context_one_match("chapter", target, _context_chapter_matches(target, notebooks))
     if chapter is not None:
-        result = chapter_context(chapter["path"], name=chapter["chapter"]["title"], verbose=False)
+        result = chapter_context(chapter["path"], name=chapter["chapter"]["title"], overview=overview, verbose=False)
         return _context_as_single(result, target, scope, "chapter", overview=overview)
     result = _literal_search_context(target, scope, notebooks, verbose=False)
     return _context_as_single(result, target, scope, "search", overview=overview)

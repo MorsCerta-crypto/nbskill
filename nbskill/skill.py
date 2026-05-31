@@ -55,33 +55,50 @@ def build_skill_from_readme(
 
 # %% ../nbs/06_skill.ipynb #e2009808
 def _nbskill_mcp_pids():
-    proc = subprocess.run(["ps", "-eo", "pid=,command="], text=True, capture_output=True)
+    try:
+        from .cli import _find_nbskill_mcp_processes
+        return _find_nbskill_mcp_processes(all_projects=True)
+    except Exception:
+        pass
+    proc = subprocess.run(["ps", "-eo", "pid=,ppid=,command="], text=True, capture_output=True)
     if proc.returncode != 0: return []
     pids = []
     for line in proc.stdout.splitlines():
-        line = line.strip()
-        if not line: continue
-        pid_text, _, command = line.partition(" ")
-        if "nbskill_mcp" not in command and "nbskill.mcp" not in command: continue
-        try: pid = int(pid_text)
+        parts = line.strip().split(None, 2)
+        if len(parts) != 3: continue
+        try: pid, ppid = int(parts[0]), int(parts[1])
         except ValueError: continue
-        pids.append({"pid": pid, "command": command.strip()})
+        command = parts[2]
+        if "nbskill_mcp" not in command and "nbskill.mcp" not in command: continue
+        if any(name in command for name in ("nbskill_mcp_start", "nbskill_mcp_stop", "nbskill_mcp_restart")): continue
+        pids.append({"pid": pid, "ppid": ppid, "command": command.strip()})
     return pids
 
-
 # %% ../nbs/06_skill.ipynb #c0d2e39e
-def nbskill_mcp_restart_notice():
-    "Return restart guidance for running nbskill MCP server processes without stopping them."
-    running = _nbskill_mcp_pids()
-    if not running: return {"running": False, "processes": [], "message": "No running nbskill MCP server process detected."}
-    message = (
-        "A running nbskill MCP server is still using the old code. "
-        "Restart or reconnect the MCP client so it launches the updated nbskill_mcp command. "
-        "For development outside Codex, FastMCP can auto-reload when launched with `fastmcp run ... --reload`, "
-        "but nbskill will not terminate existing MCP processes for you."
-    )
-    return {"running": True, "processes": running, "message": message}
-
+def nbskill_mcp_restart_notice(timeout=5.0, force=True, dry_run=False):
+    "Restart running nbskill MCP server processes and return a user-facing result."
+    try:
+        from .cli import _stop_nbskill_mcp_processes
+        result = _stop_nbskill_mcp_processes(all_projects=True, timeout=timeout, force=force, dry_run=dry_run)
+    except Exception as exc:
+        running = _nbskill_mcp_pids()
+        return {
+            "running": bool(running),
+            "restarted": False,
+            "processes": running,
+            "message": f"Could not restart nbskill MCP processes automatically: {exc}",
+        }
+    matched = result.get("matched", [])
+    alive = result.get("alive", [])
+    if not matched:
+        return {"running": False, "restarted": False, "processes": [], "message": "No running nbskill MCP server process detected.", "result": result}
+    if result.get("dry_run"):
+        message = f"Would restart {len(matched)} nbskill MCP server process(es)."
+    elif alive:
+        message = f"Stopped {len(result.get('terminated', []))} nbskill MCP process target(s), but {len(alive)} process(es) are still alive."
+    else:
+        message = f"Restarted {len(matched)} nbskill MCP server process(es); the MCP client will start fresh nbskill_mcp processes on reconnect."
+    return {"running": True, "restarted": not bool(alive) and not result.get("dry_run"), "processes": matched, "message": message, "result": result}
 
 # %% ../nbs/06_skill.ipynb #4c71a41f
 def _nbskill_source_project():
@@ -137,7 +154,7 @@ def install_nbskill(
     skill_name: str = "jupyter-notebooks",  # Skill folder name
     overwrite: bool = True,  # Overwrite an existing SKILL.md or Cursor server entry
     install_hooks: bool = False,  # Install nbdev-clean/nbdev-test pre-commit hooks in the current repo
-    restart_mcp: bool = True,  # Detect running nbskill MCP server and print restart guidance
+    restart_mcp: bool = True,  # Restart running nbskill MCP servers after updating install/config
     cursor_workspace: str | None = None,  # Cursor workspace for .cursor/mcp.json; omit for global ~/.cursor/mcp.json
 ):
     "Install nbskill agent instructions or Cursor MCP configuration."
@@ -176,8 +193,9 @@ def install_nbskill(
     if hooks.get("installed"): print(f"Installed nbdev pre-commit hook at {hooks['hook']}")
     else: print(f"Skipped nbdev pre-commit hook: {hooks.get('reason')}")
     if mcp_notice.get("running"):
-        print("nbskill MCP restart required:")
+        print("nbskill MCP restarted:" if mcp_notice.get("restarted") else "nbskill MCP restart incomplete:")
         print(mcp_notice["message"])
         for proc in mcp_notice.get("processes", []):
-            print(f"- pid={proc['pid']} command={proc['command']}")
+            cwd = f" cwd={proc['cwd']}" if proc.get("cwd") else ""
+            print(f"- pid={proc['pid']}{cwd} command={proc['command']}")
     return cli_return({"installed": installed, "cursor_mcp": cursor_mcp, "hooks": hooks, "mcp_restart": mcp_notice})

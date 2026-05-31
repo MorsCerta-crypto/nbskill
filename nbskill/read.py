@@ -602,6 +602,14 @@ def file_context(
 
 
 # %% ../nbs/01_read.ipynb #74f9370a
+_CONTEXT_SEARCH_SKIP_DIRS = set(".git .hg .svn .venv venv env __pycache__ .ipynb_checkpoints .pytest_cache .mypy_cache .ruff_cache .quarto .tox .nox node_modules dist build".split())
+_CONTEXT_SEARCH_SKIP_SUFFIXES = set(".ipynb .pyc .pyo .so .dylib .dll .png .jpg .jpeg .gif .webp .ico .pdf .zip .tar .gz .bz2 .xz .7z .sqlite .db .jsonl .log".split())
+_CONTEXT_CELL_SOURCE_CHARS = 50000
+_CONTEXT_CELL_OUTPUT_CHARS = 4000
+_CONTEXT_SEARCH_MAX_FILES = 2000
+_CONTEXT_SEARCH_MAX_BYTES = 1_000_000
+
+
 def _trim_context_source(source, limit=1200):
     source = str(source or "").strip()
     if limit is None or limit <= 0 or len(source) <= limit: return source
@@ -1138,14 +1146,6 @@ def _context_one_match(kind, target, matches):
     raise ValueError(f"Target {target!r} matched multiple {kind} contexts:\n" + "\n".join(shown))
 
 # %% ../nbs/01_read.ipynb #153bbc70
-_CONTEXT_SEARCH_SKIP_DIRS = set(".git .hg .svn .venv venv env __pycache__ .ipynb_checkpoints .pytest_cache .mypy_cache .ruff_cache .quarto .tox .nox node_modules dist build".split())
-_CONTEXT_SEARCH_SKIP_SUFFIXES = set(".ipynb .pyc .pyo .so .dylib .dll .png .jpg .jpeg .gif .webp .ico .pdf .zip .tar .gz .bz2 .xz .7z .sqlite .db .jsonl .log".split())
-_CONTEXT_CELL_SOURCE_CHARS = 50000
-_CONTEXT_CELL_OUTPUT_CHARS = 4000
-_CONTEXT_SEARCH_MAX_FILES = 2000
-_CONTEXT_SEARCH_MAX_BYTES = 1_000_000
-
-
 def _context_search_root(scope):
     raw = "." if scope in (None, "") else str(scope)
     path = Path(raw).expanduser()

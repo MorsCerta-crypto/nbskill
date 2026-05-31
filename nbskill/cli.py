@@ -164,6 +164,7 @@ def _print_workbench_result(result):
 def _format_status(data):
     lines = [
         "nbskill status",
+        "status_transport=local CLI inspection; no active MCP stdio connection required",
         f"version={data['version']}",
         f"cwd={data['cwd']}",
         f"python={data['python']}",
@@ -173,10 +174,10 @@ def _format_status(data):
     ]
     lines.extend(f"- {name}: {path or '(not on PATH)'}" for name, path in data["cli_tools"].items())
     lines.append(f"reconnect_hint={data['reconnect_hint']}")
+    lines.append("restart_hint=nbskill_mcp_restart stops stdio servers; reconnect the MCP client to start a fresh nbskill_mcp")
     lines.append("install_commands:")
     lines.extend(f"- {cmd}" for cmd in data["install_commands"])
     return "\n".join(lines)
-
 
 # %% ../nbs/13_cli.ipynb #4d2b69b5
 @call_parse
@@ -655,6 +656,8 @@ def _print_mcp_control_result(result, json_output=False):
         lines.append(f"pid={row['pid']} ppid={row['ppid']}{cwd} command={row['command']}")
     target_pids = {row["pid"] for row in result.get("targets", [])} - {row["pid"] for row in result["matched"]}
     if target_pids: lines.append("target_descendants=" + ",".join(str(pid) for pid in sorted(target_pids)))
+    if result.get("start"):
+        lines.append(f"reconnect={result['start']}")
     print("\n".join(lines))
     return None
 
@@ -681,13 +684,17 @@ def nbskill_mcp_stop(
 @call_parse
 def nbskill_mcp_restart(
     project: str | None = None,  # Optional project root to target when all_projects is false
-    all_projects: bool = True,  # Restart every running nbskill MCP server by default
+    all_projects: bool = True,  # Stop every running nbskill MCP server by default
     timeout: float = 5.0,  # Seconds to wait after SIGTERM before forcing
     force: bool = True,  # Send SIGKILL to remaining matched processes after timeout
     dry_run: bool = False,  # Show matched processes without stopping them
     json_output: bool = False,  # Print JSON instead of text
 ):
-    "Restart running nbskill MCP server processes so clients reconnect to fresh code."
+    "Stop nbskill MCP stdio servers; clients must reconnect to start fresh code."
     result = _stop_nbskill_mcp_processes(project=project, all_projects=all_projects, timeout=timeout, force=force, dry_run=dry_run)
-    result["start"] = "stdio MCP servers are client-owned; after the old processes exit, the MCP client starts fresh nbskill_mcp processes on reconnect. Use nbskill_mcp_start to run one in the foreground."
+    result["start"] = (
+        "nbskill_mcp_restart only stops stdio MCP server processes. "
+        "Reconnect or restart the MCP client to launch a fresh nbskill_mcp; "
+        "use nbskill_status for local status without an active stdio server."
+    )
     return _print_mcp_control_result(result, json_output=json_output)

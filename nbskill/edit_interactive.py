@@ -9,7 +9,6 @@ __all__ = ['EDIT_INTERACTIVE_SYSTEM', 'CONTEXT_SESSION_SYSTEM', 'capture_call_te
 
 # %% ../nbs/08_edit_interactive.ipynb #c7e88003
 import ast
-import difflib
 import json
 import os
 import re
@@ -19,13 +18,9 @@ from dataclasses import dataclass, field
 from io import StringIO
 from pathlib import Path
 from threading import Lock
-from fastcore.nbio import mk_cell
 from fastcore.nbio import read_nb
-from fastcore.nbio import write_nb
-from nbskill.foundation import (
-    cap_text, cell_source, chapter_spans, clear_outputs, export_notebook,
-    parse_one_cell, stamp_notebook_metadata, validate_code_cells,
-)
+from .edit import NotebookEditor
+from .foundation import cap_text, cell_source, chapter_spans, commit_notebook, parse_one_cell
 from .graph import symbol_usage_summary
 from .knowledge import reference_query
 from .parallel import notebook_locks
@@ -35,10 +30,7 @@ _CAPTURE_LOCK = Lock()
 
 # %% ../nbs/08_edit_interactive.ipynb #0b709792
 def _save_notebook(nb, path):
-    with notebook_locks(path):
-        stamp_notebook_metadata(nb)
-        write_nb(nb, path)
-        export_notebook(nb, path)
+    return commit_notebook(path, nb, before=read_nb(path))
 
 # %% ../nbs/08_edit_interactive.ipynb #57c2fd65
 EDIT_INTERACTIVE_SYSTEM = """You are an nbskill notebook-editing subagent.
@@ -540,27 +532,15 @@ def _edit_find_cell_by_id(cells, cell_id):
     if not matches: raise ValueError(f"No cell has id {cell_id!r}")
     raise ValueError(f"Multiple cells have id {cell_id!r}")
 
-# %% ../nbs/08_edit_interactive.ipynb #127f9652
-def _source_diff(before, after, label):
-    diff = difflib.unified_diff(
-        before.splitlines(True), after.splitlines(True),
-        fromfile=f"{label}:before", tofile=f"{label}:after",
-    )
-    text = "".join(diff).strip()
-    return text or "No source changes"
-
 # %% ../nbs/08_edit_interactive.ipynb #b0789b35
-def _finish_write(session, path, nb, message, diff):
-    _save_notebook(nb, path)
+def _finish_write(session, path, message, result):
     session.revision += 1
     session.record(message)
     session.refresh_view()
-    return f"{message}\nrevision={session.revision}\n\n{diff}"
-
-# %% ../nbs/08_edit_interactive.ipynb #b78004d1
-def _validate_cell(cell):
-    validate_code_cells([cell])
-    return cell
+    detail = str(result.get("text") or "").strip()
+    chunks = [message, f"revision={session.revision}"]
+    if detail: chunks.extend(["", detail])
+    return "\n".join(chunks)
 
 # %% ../nbs/08_edit_interactive.ipynb #0dbff6c2
 def _agent_notebook_id(path):
@@ -616,6 +596,13 @@ def _subagent_context(path, plan, symbols=None):
     ])
 
 # %% ../nbs/08_edit_interactive.ipynb #8ef57685
+def _inserted_cell_ids(result):
+    inserted = []
+    for diff in result.get("diffs", []):
+        inserted.extend(diff.get("inserted_cell_ids", []))
+    return inserted
+
+
 def make_edit_tools(session):
     "Create notebook-scoped editing tools for one edit-interactive session."
     def str_replace(old_str: str, new_str: str, notebook: str | None = None) -> str:
@@ -627,15 +614,13 @@ def make_edit_tools(session):
             for idx, cell in enumerate(nb.cells):
                 source = cell_source(cell)
                 if old_str in source: matches.append((idx, cell, source))
-            session.record_tool("str_replace", f"notebook={path}, matches={len(matches)}")
-            if len(matches) != 1: raise ValueError(f"old_str matched {len(matches)} cells in {path}; expected exactly 1")
-            idx, cell, before = matches[0]
-            after = before.replace(old_str, new_str, 1)
-            if cell.cell_type == "code": _validate_cell(mk_cell(after, cell_type="code"))
-            cell.source = after
-            clear_outputs(cell)
-            msg = f"Replaced text in {path} id={cell.id}"
-            return _finish_write(session, path, nb, msg, _source_diff(before, after, f"{path} cell {cell.id}"))
+        session.record_tool("str_replace", f"notebook={path}, matches={len(matches)}")
+        if len(matches) != 1: raise ValueError(f"old_str matched {len(matches)} cells in {path}; expected exactly 1")
+        idx, cell, before = matches[0]
+        after = before.replace(old_str, new_str, 1)
+        result = NotebookEditor(path, auto_feedback=False).replace_cell(cell.id, after, cell_type=cell.cell_type)
+        msg = f"Replaced text in {path} id={cell.id}"
+        return _finish_write(session, path, msg, result)
     def edit_cell(id: str, old_str: str, new_str: str, notebook: str | None = None) -> str:
         "Replace one exact string occurrence inside one cell."
         path = session.target_path(notebook)
@@ -644,42 +629,38 @@ def make_edit_tools(session):
             idx, cell = _edit_find_cell_by_id(nb.cells, id)
             before = cell_source(cell)
             count = before.count(old_str)
-            session.record_tool("edit_cell", f"notebook={path}, id={id!r}, matches={count}")
-            if count != 1: raise ValueError(f"old_str matched {count} times in {path} id={id}; expected exactly 1")
-            after = before.replace(old_str, new_str, 1)
-            if cell.cell_type == "code": _validate_cell(mk_cell(after, cell_type="code"))
-            cell.source = after
-            clear_outputs(cell)
-            msg = f"Edited text in {path} id={id}"
-            return _finish_write(session, path, nb, msg, _source_diff(before, after, f"{path} cell {id}"))
+        session.record_tool("edit_cell", f"notebook={path}, id={id!r}, matches={count}")
+        if count != 1: raise ValueError(f"old_str matched {count} times in {path} id={id}; expected exactly 1")
+        after = before.replace(old_str, new_str, 1)
+        result = NotebookEditor(path, auto_feedback=False).replace_cell(id, after, cell_type=cell.cell_type)
+        msg = f"Edited text in {path} id={id}"
+        return _finish_write(session, path, msg, result)
     def add_cell(after_id: str | None = None, content: str = "", notebook: str | None = None) -> str:
         "Add one cell to a target notebook."
         path = session.target_path(notebook)
-        with notebook_locks(path):
-            nb = read_nb(path)
-            new_cell = _validate_cell(parse_one_cell(content, "code"))
-            anchor = _none_if_blank(after_id)
-            target = len(nb.cells)
-            if anchor is not None:
-                idx, _ = _edit_find_cell_by_id(nb.cells, anchor)
-                target = idx + 1
-            session.record_tool("add_cell", f"notebook={path}, after_id={anchor!r}")
-            nb.cells.insert(target, new_cell)
-            src = cell_source(new_cell)
-            where = f"after id={anchor}" if anchor is not None else "at end"
-            msg = f"Added cell id={new_cell.id} to {path} {where}"
-            return _finish_write(session, path, nb, msg, _source_diff("", src, f"{path} cell {new_cell.id}"))
+        anchor = _none_if_blank(after_id)
+        new_cell = parse_one_cell(content, "code")
+        if anchor is not None:
+            with notebook_locks(path):
+                _edit_find_cell_by_id(read_nb(path).cells, anchor)
+        session.record_tool("add_cell", f"notebook={path}, after_id={anchor!r}")
+        result = NotebookEditor(path, auto_feedback=False).insert(
+            anchor, cell_source(new_cell), cell_type=new_cell.cell_type
+        )
+        inserted = _inserted_cell_ids(result)
+        new_id = inserted[0] if inserted else ""
+        where = f"after id={anchor}" if anchor is not None else "at end"
+        msg = f"Added cell id={new_id} to {path} {where}"
+        return _finish_write(session, path, msg, result)
     def delete_cell(id: str, notebook: str | None = None) -> str:
         "Delete one cell from a target notebook."
         path = session.target_path(notebook)
         with notebook_locks(path):
-            nb = read_nb(path)
-            idx, cell = _edit_find_cell_by_id(nb.cells, id)
-            session.record_tool("delete_cell", f"notebook={path}, id={id!r}")
-            before = cell_source(cell)
-            del nb.cells[idx]
-            msg = f"Deleted cell id={id} from {path}"
-            return _finish_write(session, path, nb, msg, _source_diff(before, "", f"{path} cell {id}"))
+            _edit_find_cell_by_id(read_nb(path).cells, id)
+        session.record_tool("delete_cell", f"notebook={path}, id={id!r}")
+        result = NotebookEditor(path, auto_feedback=False).delete(id)
+        msg = f"Deleted cell id={id} from {path}"
+        return _finish_write(session, path, msg, result)
     def _exec_python(source, filename, ns):
         tree = ast.parse(source, filename=filename, mode="exec")
         if not tree.body: return None

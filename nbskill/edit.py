@@ -259,9 +259,12 @@ def _apply_text_edit(nb, edit, diffs, affected):
 
 
 def _insert_at(nb, anchor_id, where, new_cells):
-    idx, _ = find_cell_by_id(nb.cells, anchor_id)
     if where not in {"before", "after"}: raise ValueError("where must be 'before' or 'after'")
-    target = idx if where == "before" else idx + 1
+    if anchor_id is None:
+        target = 0 if where == "before" else len(nb.cells)
+    else:
+        idx, _ = find_cell_by_id(nb.cells, anchor_id)
+        target = idx if where == "before" else idx + 1
     for offset, cell in enumerate(new_cells): nb.cells.insert(target + offset, cell)
     return [getattr(cell, "id", "") for cell in new_cells]
 
@@ -428,7 +431,7 @@ class NotebookEditor:
         return self.apply(edit, **kw)
 
     def insert(self, anchor_id, source, where='after', directive=None, cell_type='code', **kw):
-        'Insert one cell relative to anchor_id.'
+        'Insert one cell relative to anchor_id; pass None to append.'
         cell = {'source': source, 'cell_type': cell_type}
         if directive is not None: cell['directive'] = directive
         return self.apply({'op': 'insert_cells', 'anchor_id': anchor_id, 'where': where, 'cells': [cell]}, **kw)

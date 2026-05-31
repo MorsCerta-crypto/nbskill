@@ -16,6 +16,7 @@ from fastcore.nbio import mk_cell, read_nb, write_nb
 from nbskill.foundation import (
     Notebook,
     apply_directives,
+    cap_text,
     cell_source,
     clear_outputs,
     commit_notebook,
@@ -24,6 +25,31 @@ from nbskill.foundation import (
 )
 from .parallel import notebook_locks
 from .write import append_notebook_edit_feedback
+
+_EDIT_MAX_OPERATIONS = 50
+_EDIT_MAX_SOURCE_CHARS = 200000
+_EDIT_MAX_AFFECTED_CELLS = 200
+_EDIT_MAX_DIFF_CHARS = 50000
+
+
+def _edit_text_budget(value):
+    if value is None: return 0
+    if isinstance(value, str): return len(value)
+    if isinstance(value, dict): return sum(_edit_text_budget(item) for item in value.values())
+    if isinstance(value, (list, tuple)): return sum(_edit_text_budget(item) for item in value)
+    return 0
+
+
+def _validate_edit_budget(edits):
+    if len(edits) > _EDIT_MAX_OPERATIONS:
+        raise ValueError(f"edit_notebook budget exceeded: {len(edits)} operations exceeds limit {_EDIT_MAX_OPERATIONS}")
+    chars = _edit_text_budget(edits)
+    if chars > _EDIT_MAX_SOURCE_CHARS:
+        raise ValueError(f"edit_notebook budget exceeded: {chars} text chars exceeds limit {_EDIT_MAX_SOURCE_CHARS}")
+
+
+def _cap_edit_diffs(diffs):
+    return [{**item, "diff": cap_text(item.get("diff", ""), _EDIT_MAX_DIFF_CHARS)} for item in diffs]
 
 # %% ../nbs/02_edit.ipynb #374b0010
 def _coerce_lines(lines):
@@ -358,6 +384,7 @@ def edit_notebook(
     if not edits: raise ValueError("edits must be a non-empty list")
     path = Path(path)
     normalized = [dict(edit) for edit in edits]
+    _validate_edit_budget(normalized)
     for edit in normalized:
         _require_op(edit)
         if directive is not None: edit.setdefault("directive", directive)
@@ -371,6 +398,10 @@ def edit_notebook(
             if op in _TEXT_OPS: _apply_text_edit(trial, edit, diffs, affected)
             else: _apply_structural_edit(trial, edit, diffs, affected, default_cell_type)
         affected = [cell_id for cell_id in dict.fromkeys(affected) if cell_id]
+        if len(affected) > _EDIT_MAX_AFFECTED_CELLS:
+            raise ValueError(
+                f"edit_notebook budget exceeded: {len(affected)} affected cells exceeds limit {_EDIT_MAX_AFFECTED_CELLS}"
+            )
         commit = commit_notebook(
             path,
             trial,
@@ -381,10 +412,12 @@ def edit_notebook(
         )
 
     changed = commit["changed"]
+    diffs = _cap_edit_diffs(diffs)
     changed_diffs = [item for item in diffs if item.get("changed")]
     status = "dry_run" if dry_run and changed else ("changed" if changed else "no_change")
     text = f"edit_notebook {status}: {len(changed_diffs)} changed operation(s), {len(affected)} affected cell(s)"
     diff_text = "\n\n".join(item["diff"] for item in changed_diffs if item.get("diff"))
+    diff_text = cap_text(diff_text, _EDIT_MAX_DIFF_CHARS)
     if diff_text: text = f"{text}\n\n{diff_text}"
     if changed and not dry_run:
         text = append_notebook_edit_feedback(

@@ -17,6 +17,32 @@ from fastcore.nbio import read_nb
 
 from .foundation import cell_source
 
+_REFERENCE_MAX_TOP_K = 20
+_REFERENCE_MAX_CANDIDATE_K = 500
+_REFERENCE_MAX_FILES = 2000
+_REFERENCE_MAX_FILE_BYTES = 1000000
+_REFERENCE_MAX_REPOS_PER_INGEST = 10
+_REFERENCE_MAX_ROWS_PER_REPO = 20000
+_REFERENCE_MAX_TABLE_ROWS_FOR_COUNTERS = 100000
+
+
+def _clamp_int(value, default, minimum, maximum, name):
+    if value is None: value = default
+    try:
+        value = int(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{name} must be an integer") from None
+    if value < minimum:
+        raise ValueError(f"{name} must be >= {minimum}")
+    return min(value, maximum)
+
+
+def _reference_file_within_budget(path):
+    try:
+        return Path(path).stat().st_size <= _REFERENCE_MAX_FILE_BYTES
+    except OSError:
+        return False
+
 # %% ../nbs/12_knowledge.ipynb #ab297e7b
 def reference_home(path=None):
     "Return the global reference knowledge directory."
@@ -463,7 +489,9 @@ def _lancedb_search(
 ):
     table = _reference_table(path, "items")
     if table is None: return [], None, "lancedb"
-    limit = max(candidate_k or top_k * 25, top_k, 80)
+    top_k = _clamp_int(top_k, 3, 1, _REFERENCE_MAX_TOP_K, "top_k")
+    candidate_k = _clamp_int(candidate_k, top_k * 25, top_k, _REFERENCE_MAX_CANDIDATE_K, "candidate_k")
+    limit = min(max(candidate_k, top_k, 80), _REFERENCE_MAX_CANDIDATE_K)
     items = _lance_rows(path, "items")
     dims = next((len(row.get("vector") or []) for row in items if row.get("vector")), None)
     vector = _reference_vector(query, dims=dims)
@@ -544,8 +572,9 @@ def _row_tags(repo, package, module, kind, symbol, decorators, imports):
 
 # %% ../nbs/12_knowledge.ipynb #7c8dc517
 def _item_row(repo, version, package, kind, module, symbol, rel_path, source, **extra):
+    source_excerpt = _source_excerpt(source)
     search_text = "\n".join(str(extra.get(key, "") or "") for key in ("signature", "docstring"))
-    search_text = "\n".join([repo, package or "", kind, module or "", symbol or "", search_text, source or ""])
+    search_text = "\n".join([repo, package or "", kind, module or "", symbol or "", search_text, source_excerpt])
     item_id = _stable_item_id(repo, version, rel_path, extra.get("cell_id"), kind, symbol, extra.get("start_line"))
     imports = _reference_list_value(extra.get("imports"))
     decorators = _reference_list_value(extra.get("decorators"))
@@ -556,7 +585,7 @@ def _item_row(repo, version, package, kind, module, symbol, rel_path, source, **
         "kind": kind, "module": module or "", "symbol": symbol or "", "path": str(rel_path),
         "cell_id": extra.get("cell_id", ""), "start_line": extra.get("start_line", 1),
         "end_line": extra.get("end_line", 1), "signature": extra.get("signature", ""),
-        "docstring": extra.get("docstring", ""), "source": _source_excerpt(source),
+        "docstring": extra.get("docstring", ""), "source": source_excerpt,
         "search_text": search_text, "tags": tags, "imports": imports,
         "decorators": decorators, "calls": calls,
         "vector": _reference_vector(search_text), "embedding_backend": _reference_embedding_backend(),
@@ -602,6 +631,7 @@ def _extract_def_rows(tree, source, repo, version, package, rel_path, module, ce
 
 # %% ../nbs/12_knowledge.ipynb #3f5e4bdc
 def _extract_python_rows(path, root, repo, version, package):
+    if not _reference_file_within_budget(path): return []
     rel_path = path.relative_to(root)
     source = path.read_text(encoding="utf-8", errors="replace")
     try: tree = ast.parse(source)
@@ -615,6 +645,7 @@ def _extract_python_rows(path, root, repo, version, package):
 
 # %% ../nbs/12_knowledge.ipynb #fc2e32e7
 def _extract_notebook_rows(path, root, repo, version, package):
+    if not _reference_file_within_budget(path): return []
     rel_path = path.relative_to(root)
     try: nb = read_nb(path)
     except Exception: return []
@@ -651,16 +682,24 @@ def _nbdev_config(root):
 def _supported_reference_files(root):
     root = Path(root)
     skip = {".git", ".venv", "__pycache__", ".mypy_cache", ".pytest_cache", ".ipynb_checkpoints"}
+    yielded = 0
     nbdev = _nbdev_config(root)
     if nbdev:
         nbs_root = root / nbdev["nbs_path"]
         if nbs_root.exists():
             for path in nbs_root.rglob("*.ipynb"):
-                if not any(part in skip for part in path.parts): yield path
+                if any(part in skip for part in path.parts) or not _reference_file_within_budget(path): continue
+                yielded += 1
+                if yielded > _REFERENCE_MAX_FILES:
+                    raise ValueError(f"Reference ingest budget exceeded: more than {_REFERENCE_MAX_FILES} supported files")
+                yield path
         return
     for path in root.rglob("*"):
         if any(part in skip for part in path.parts): continue
-        if path.suffix == ".py" or path.suffix == ".ipynb":
+        if (path.suffix == ".py" or path.suffix == ".ipynb") and _reference_file_within_budget(path):
+            yielded += 1
+            if yielded > _REFERENCE_MAX_FILES:
+                raise ValueError(f"Reference ingest budget exceeded: more than {_REFERENCE_MAX_FILES} supported files")
             yield path
 
 # %% ../nbs/12_knowledge.ipynb #82ae4875
@@ -668,7 +707,7 @@ def _readme_rows(root, repo, version, package):
     rows = []
     for name in ("README.md", "README.rst", "README.txt"):
         path = Path(root) / name
-        if path.exists():
+        if path.exists() and _reference_file_within_budget(path):
             source = path.read_text(encoding="utf-8", errors="replace")
             rows.append(_item_row(repo, version, package, "readme", "", name, path.relative_to(root), source))
     return rows
@@ -734,6 +773,11 @@ def _extract_reference_rows(root, repo, version, package):
             extracted = []
         for row in extracted: row["repo_kind"] = repo_kind
         rows.extend(extracted)
+        if len(rows) > _REFERENCE_MAX_ROWS_PER_REPO:
+            raise ValueError(
+                f"Reference ingest budget exceeded: {len(rows)} rows exceeds limit {_REFERENCE_MAX_ROWS_PER_REPO} "
+                f"for repo {repo['name']!r}"
+            )
     return rows
 
 # %% ../nbs/12_knowledge.ipynb #a717a326
@@ -789,6 +833,11 @@ def reference_ingest(
     data = _load_reference_registry(path)
     if not data["repos"]: raise ValueError("No reference repositories registered")
     names = list(data["repos"]) if all else [name or next(iter(data["repos"]))]
+    if len(names) > _REFERENCE_MAX_REPOS_PER_INGEST:
+        raise ValueError(
+            f"Reference ingest budget exceeded: {len(names)} repos exceeds limit {_REFERENCE_MAX_REPOS_PER_INGEST}; "
+            "ingest fewer repos at once."
+        )
     total = len(names)
     reports = []
     _reference_ingest_progress(0, total, "", "start")
@@ -909,7 +958,10 @@ def _bump_reference_return_counts(rows, path=None):
     last_exc = None
     for attempt in range(3):
         updated, counts = [], {}
-        for row in _lance_rows(path, "items"):
+        table_rows = _lance_rows(path, "items")
+        if len(table_rows) > _REFERENCE_MAX_TABLE_ROWS_FOR_COUNTERS:
+            return {}
+        for row in table_rows:
             row = dict(row)
             if row.get("item_id") in ids:
                 row["returned_count"] = int(row.get("returned_count") or 0) + 1
@@ -1037,6 +1089,8 @@ def reference_query(
     explain: bool = True,  # Include score breakdowns and why text
 ):
     "Search indexed reference implementations and return a high-level reuse context."
+    top_k = _clamp_int(top_k, 3, 1, _REFERENCE_MAX_TOP_K, "top_k")
+    candidate_k = _clamp_int(candidate_k, top_k * 25, top_k, _REFERENCE_MAX_CANDIDATE_K, "candidate_k")
     repo_names = _repo_filter(repos)
     plan = _query_feature_plan(query, kind=kind, candidate_k=candidate_k)
     if include_local: plan["applied_search_passes"] = [*plan["applied_search_passes"], "local_reuse"]

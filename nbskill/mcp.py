@@ -238,6 +238,48 @@ def _text_preview(value, limit=12000):
         "omitted_chars": omitted,
     }
 
+
+def _bounded_structured_value(value, text_limit=12000, list_limit=200, depth=0, max_depth=8):
+    if depth >= max_depth: return "<nested data omitted>"
+    if isinstance(value, str): return _text_preview(value, limit=text_limit)["text"]
+    if isinstance(value, dict):
+        return {
+            str(key): _bounded_structured_value(val, text_limit=text_limit, list_limit=list_limit, depth=depth + 1, max_depth=max_depth)
+            for key, val in value.items()
+        }
+    if isinstance(value, (list, tuple, set)):
+        items = list(value)
+        bounded = [
+            _bounded_structured_value(item, text_limit=text_limit, list_limit=list_limit, depth=depth + 1, max_depth=max_depth)
+            for item in items[:list_limit]
+        ]
+        if len(items) > list_limit: bounded.append(f"... {len(items) - list_limit} items omitted ...")
+        return bounded
+    if isinstance(value, Path): return str(value)
+    return value
+
+
+def _mcp_clamp_int(value, default, minimum, maximum, name):
+    if value is None: value = default
+    try:
+        value = int(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{name} must be an integer") from None
+    if value < minimum:
+        raise ValueError(f"{name} must be >= {minimum}")
+    return min(value, maximum)
+
+
+def _mcp_clamp_float(value, default, minimum, maximum, name):
+    if value is None: value = default
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{name} must be a number") from None
+    if value < minimum:
+        raise ValueError(f"{name} must be >= {minimum}")
+    return min(value, maximum)
+
 # %% ../nbs/07_mcp.ipynb #eb6a3482
 def _redact_value(key, value, limit=160):
     if value is None: return None
@@ -974,10 +1016,13 @@ def _tool_summary_lines(tool, arguments, full_text, preview, status, structured,
 def mcp_tool_result(tool, arguments, full_output, max_output_chars=12000, detail="summary", warnings=None, hints=None, status="completed", **structured):
     "Return concise visible MCP text plus structured data for clients that inspect it."
     detail = detail or "summary"
+    if max_output_chars is None:
+        max_output_chars = 50000 if detail == "debug" else 12000
     if detail in {"debug", "full"} and max_output_chars is not None:
         max_output_chars = max(max_output_chars, 50000) if detail == "debug" else max_output_chars
     full_text = as_text(full_output or "")
     preview = _text_preview(full_text, limit=max_output_chars)
+    structured_text_limit = 50000 if detail == "debug" else 12000
     auto_warnings = [] if status != "completed" else _response_warnings(tool, arguments or {}, preview)
     warnings = _dedupe_warnings([*(warnings or []), *auto_warnings])
     hints = list(hints or [])
@@ -991,7 +1036,7 @@ def mcp_tool_result(tool, arguments, full_output, max_output_chars=12000, detail
         "summary": summary,
         "status": status,
         "call": {"tool": tool, "arguments": _redact_arguments(arguments or {})},
-        "full_output": full_text,
+        "full_output": preview["text"],
         "preview_output": preview["text"],
         "output_truncated": preview["truncated"],
         "output_chars": preview["chars"],
@@ -999,9 +1044,9 @@ def mcp_tool_result(tool, arguments, full_output, max_output_chars=12000, detail
         "warnings": warnings,
         "hints": hints if detail == "debug" else [],
     }
-    if detail == "debug": data["debug"] = {"arguments": arguments or {}, "raw_output": full_text}
+    if detail == "debug": data["debug"] = {"arguments": arguments or {}, "raw_output": _text_preview(full_text, limit=structured_text_limit)["text"]}
     for key, value in structured.items():
-        data["result_summary" if key == "summary" else key] = value
+        data["result_summary" if key == "summary" else key] = _bounded_structured_value(value, text_limit=structured_text_limit)
     return ToolResult(content=[TextContent(type="text", text=summary)], structured_content=data)
 
 
@@ -1597,7 +1642,7 @@ async def _context_tool(
             out, err = StringIO(), StringIO()
             with redirect_stdout(out), redirect_stderr(err): data = context(**context_args)
     except Exception as exc:
-        return _mcp_tool_error_result("context", arguments, exc, max_output_chars=None, detail=detail)
+        return _mcp_tool_error_result("context", arguments, exc, detail=detail)
 
     warnings = []
     graph = None
@@ -1629,7 +1674,6 @@ async def _context_tool(
         "context",
         arguments,
         full_output,
-        max_output_chars=None,
         detail=detail,
         warnings=warnings,
         **structured,
@@ -1651,19 +1695,24 @@ async def _filter_context_tool(
     "Search notebook cells across a scope with query and regex filters."
     root = await _mcp_workspace_root(ctx)
     scope = _mcp_workspace_path(scope, root)
+    max_matches = _mcp_clamp_int(max_matches, 50, 1, 200, "max_matches")
+    max_chars_per_cell = _mcp_clamp_int(max_chars_per_cell, 1200, 100, 4000, "max_chars_per_cell")
     arguments = dict(
         scope=scope, query=query, include_re=include_re, exclude_re=exclude_re,
         max_matches=max_matches, max_chars_per_cell=max_chars_per_cell,
         verbose=verbose, detail=detail, workspace_root=str(root) if root else None,
     )
-    with notebook_locks(scope), _CAPTURE_LOCK:
-        out, err = StringIO(), StringIO()
-        with redirect_stdout(out), redirect_stderr(err):
-            data = filter_context(
-                scope=scope, query=query, include_re=include_re, exclude_re=exclude_re,
-                max_matches=max_matches, max_chars_per_cell=max_chars_per_cell,
-                verbose=verbose,
-            )
+    try:
+        with notebook_locks(scope), _CAPTURE_LOCK:
+            out, err = StringIO(), StringIO()
+            with redirect_stdout(out), redirect_stderr(err):
+                data = filter_context(
+                    scope=scope, query=query, include_re=include_re, exclude_re=exclude_re,
+                    max_matches=max_matches, max_chars_per_cell=max_chars_per_cell,
+                    verbose=verbose,
+                )
+    except Exception as exc:
+        return _mcp_tool_error_result("filter_context", arguments, exc, detail=detail)
     return mcp_tool_result("filter_context", arguments, data["text"], detail=detail, filter_context=data)
 
 # %% ../nbs/07_mcp.ipynb #mcptool06
@@ -1679,6 +1728,8 @@ async def edit_notebook_tool(
     root = await _mcp_workspace_root(ctx)
     path = _mcp_workspace_path(path, root)
     edits = _mcp_workspace_edit_paths(edits, root)
+    tool_timeout = _mcp_clamp_float(tool_timeout, 150.0, 0.001, 150.0, "tool_timeout")
+    feedback_timeout = _mcp_clamp_int(feedback_timeout, 10, 1, 60, "feedback_timeout")
     arguments = dict(
         path=path, edits=edits, validate_code=validate_code, default_cell_type=default_cell_type,
         auto_feedback=auto_feedback, feedback_timeout=feedback_timeout, feedback_safe=feedback_safe,
@@ -1844,15 +1895,19 @@ async def execute_plan_tool(
     plan: str, notebook: str | None = None, scope: str = "notebook",
     notebooks: str | None = None, model: str | None = None, max_steps: int = 8,
     timeout: int = 30, symbols: str | None = None, dry_run: bool = True,
-    detail: str = "summary", ctx: Context = None,
+    tool_timeout: float = 150.0, detail: str = "summary", ctx: Context = None,
 ) -> ToolResult:
     "Run a bounded notebook-editing subagent against one notebook or a project notebook set."
     root = await _mcp_workspace_root(ctx)
     notebook = _mcp_workspace_path(notebook, root) if notebook else notebook
     notebooks = _mcp_workspace_paths(notebooks, root) if notebooks else notebooks
+    max_steps = _mcp_clamp_int(max_steps, 8, 1, 20, "max_steps")
+    timeout = _mcp_clamp_int(timeout, 30, 1, 120, "timeout")
+    tool_timeout = _mcp_clamp_float(tool_timeout, 150.0, 0.001, 150.0, "tool_timeout")
     arguments = dict(
         plan=plan, notebook=notebook, scope=scope, notebooks=notebooks, model=model, max_steps=max_steps,
-        timeout=timeout, symbols=symbols, dry_run=dry_run, detail=detail, workspace_root=str(root) if root else None,
+        timeout=timeout, symbols=symbols, dry_run=dry_run, tool_timeout=tool_timeout,
+        detail=detail, workspace_root=str(root) if root else None,
     )
     try:
         mode = "project" if scope == "project" or notebooks else "notebook"
@@ -1861,14 +1916,17 @@ async def execute_plan_tool(
                 plan=plan, notebooks=notebooks, model=model, max_steps=max_steps, timeout=timeout,
                 dry_run=dry_run, symbols=symbols,
             )
-            full_output = capture_call(execute_project_plan, **project_args)
+            full_output = await asyncio.wait_for(
+                asyncio.to_thread(capture_call, execute_project_plan, **project_args),
+                timeout=tool_timeout,
+            )
             return mcp_tool_result("execute_plan", arguments, full_output, detail=detail)
         if not notebook: raise ValueError("notebook is required when scope='notebook'")
         notebook_args = dict(
             notebook=notebook, plan=plan, model=model, max_steps=max_steps, timeout=timeout,
             dry_run=dry_run, symbols=symbols,
         )
-        result = execute_plan(**notebook_args)
+        result = await asyncio.wait_for(asyncio.to_thread(execute_plan, **notebook_args), timeout=tool_timeout)
         full_output = plan_result_text(result)
         return mcp_tool_result(
             "execute_plan", arguments, full_output, detail=detail,
@@ -1876,6 +1934,9 @@ async def execute_plan_tool(
             history=result.get("history", []) if isinstance(result, dict) else [],
             result_summary=result.get("summary", "") if isinstance(result, dict) else "",
         )
+    except TimeoutError as exc:
+        message = f"execute_plan exceeded its MCP timeout of {tool_timeout:g}s before Codex's client timeout."
+        return _mcp_tool_error_result("execute_plan", arguments, TimeoutError(message), detail=detail)
     except (Exception, SystemExit) as exc:
         return _mcp_tool_error_result("execute_plan", arguments, exc, detail=detail)
 
@@ -1884,23 +1945,33 @@ async def execute_plan_tool(
 async def agent_workbench_tool(
     goal: str, notebook: str | None = None, contract_file: str | None = None,
     execute: bool = False, max_steps: int = 8, timeout: int = 30,
-    detail: str = "summary", ctx: Context = None,
+    tool_timeout: float = 150.0, detail: str = "summary", ctx: Context = None,
 ) -> ToolResult:
     "Prepare or execute a taste-aware small-diff workbench run."
     root = await _mcp_workspace_root(ctx)
     notebook = _mcp_workspace_path(notebook, root) if notebook else notebook
     contract_file = _mcp_workspace_path(contract_file, root) if contract_file else contract_file
-    arguments = dict(goal=goal, notebook=notebook, contract_file=contract_file, execute=execute, max_steps=max_steps, timeout=timeout, detail=detail, workspace_root=str(root) if root else None)
+    max_steps = _mcp_clamp_int(max_steps, 8, 1, 20, "max_steps")
+    timeout = _mcp_clamp_int(timeout, 30, 1, 120, "timeout")
+    tool_timeout = _mcp_clamp_float(tool_timeout, 150.0, 0.001, 150.0, "tool_timeout")
+    arguments = dict(goal=goal, notebook=notebook, contract_file=contract_file, execute=execute, max_steps=max_steps, timeout=timeout, tool_timeout=tool_timeout, detail=detail, workspace_root=str(root) if root else None)
     try:
-        result = agent_workbench_result(
-            goal, notebook=notebook, contract_file=contract_file, execute=execute,
-            max_steps=max_steps, timeout=timeout,
+        result = await asyncio.wait_for(
+            asyncio.to_thread(
+                agent_workbench_result,
+                goal, notebook=notebook, contract_file=contract_file, execute=execute,
+                max_steps=max_steps, timeout=timeout,
+            ),
+            timeout=tool_timeout,
         )
         full_output = result.get("rendered_plan") or result.get("summary", "")
         return mcp_tool_result(
             "agent_workbench", arguments, full_output, detail=detail,
             agent_workbench=result if isinstance(result, dict) else {},
         )
+    except TimeoutError as exc:
+        message = f"agent_workbench exceeded its MCP timeout of {tool_timeout:g}s before Codex's client timeout."
+        return _mcp_tool_error_result("agent_workbench", arguments, TimeoutError(message), detail=detail)
     except (Exception, SystemExit) as exc:
         return _mcp_tool_error_result("agent_workbench", arguments, exc, detail=detail)
 
@@ -1954,6 +2025,7 @@ async def _reference_tool(
     explain: bool = True,
     all: bool = False,
     force: bool = False,
+    tool_timeout: float = 120.0,
     detail: str = "summary",
     ctx: Context = None,
 ) -> ToolResult:
@@ -1962,31 +2034,47 @@ async def _reference_tool(
     current_repo = _mcp_workspace_path(current_repo, root)
     path = _mcp_workspace_path(path, root) if path else path
     action = str(action or "query").lower()
+    top_k = _mcp_clamp_int(top_k, 3, 1, 20, "top_k")
+    candidate_k = None if candidate_k is None else _mcp_clamp_int(candidate_k, top_k * 25, top_k, 500, "candidate_k")
+    tool_timeout = _mcp_clamp_float(tool_timeout, 120.0, 0.001, 120.0, "tool_timeout")
     arguments = dict(
         action=action, query=query, top_k=top_k, include_branch=include_branch, current_repo=current_repo, repos=repos,
         url=url, name=name, version=version, package=package, path=path, kind=kind, module=module, symbol=symbol,
         include_local=include_local, candidate_k=candidate_k, explain=explain,
-        all=all, force=force, detail=detail, workspace_root=str(root) if root else None,
+        all=all, force=force, tool_timeout=tool_timeout, detail=detail, workspace_root=str(root) if root else None,
     )
     try:
         if action == "add":
             if not url: raise ValueError("reference action='add' needs url")
-            result_data = reference_add(url, name=name, version=version, package=package, path=path)
+            result_data = await asyncio.wait_for(
+                asyncio.to_thread(reference_add, url, name=name, version=version, package=package, path=path),
+                timeout=tool_timeout,
+            )
         elif action == "list":
-            result_data = reference_list(path=path)
+            result_data = await asyncio.wait_for(asyncio.to_thread(reference_list, path=path), timeout=tool_timeout)
         elif action == "ingest":
-            result_data = reference_ingest(name=name, all=all, path=path, force=force)
+            result_data = await asyncio.wait_for(
+                asyncio.to_thread(reference_ingest, name=name, all=all, path=path, force=force),
+                timeout=tool_timeout,
+            )
         elif action == "query":
             if not query: raise ValueError("reference action='query' needs query")
-            result_data = reference_query(
-                query, top_k=top_k, include_branch=include_branch, current_repo=current_repo, repos=repos, path=path,
-                kind=kind, package=package, module=module, symbol=symbol,
-                include_local=include_local, candidate_k=candidate_k, explain=explain,
+            result_data = await asyncio.wait_for(
+                asyncio.to_thread(
+                    reference_query,
+                    query, top_k=top_k, include_branch=include_branch, current_repo=current_repo, repos=repos, path=path,
+                    kind=kind, package=package, module=module, symbol=symbol,
+                    include_local=include_local, candidate_k=candidate_k, explain=explain,
+                ),
+                timeout=tool_timeout,
             )
         else:
             raise ValueError("action must be add, list, ingest, or query")
         full_output = json.dumps(result_data, indent=2, sort_keys=True)
         return mcp_tool_result("reference", arguments, full_output, detail=detail, reference=result_data)
+    except TimeoutError as exc:
+        message = f"reference exceeded its MCP timeout of {tool_timeout:g}s before Codex's client timeout."
+        return _mcp_tool_error_result("reference", arguments, TimeoutError(message), detail=detail)
     except (Exception, SystemExit) as exc:
         return _mcp_tool_error_result("reference", arguments, exc, detail=detail)
 

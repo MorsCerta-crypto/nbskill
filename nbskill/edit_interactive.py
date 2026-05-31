@@ -28,6 +28,35 @@ from .review import diff_nb
 
 _CAPTURE_LOCK = Lock()
 
+_AGENT_MAX_STEPS = 20
+_AGENT_MAX_CONTEXT_STEPS = 5
+_AGENT_MAX_CONTEXT_COMMANDS = 20
+_AGENT_MAX_TIMEOUT_SECONDS = 120
+_AGENT_MAX_MESSAGE_CHARS = 12000
+_AGENT_MAX_NOTEBOOK_VIEW_CHARS = 80000
+_AGENT_MAX_CELL_SOURCE_CHARS = 8000
+_AGENT_MAX_LOG_ITEMS = 200
+_AGENT_MAX_DIFF_CHARS = 50000
+
+
+def _bounded_int(value, default, minimum, maximum, name):
+    if value is None: value = default
+    try:
+        value = int(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{name} must be an integer") from None
+    if value < minimum:
+        raise ValueError(f"{name} must be >= {minimum}")
+    return min(value, maximum)
+
+
+def _bounded_text(text, limit=_AGENT_MAX_MESSAGE_CHARS):
+    return cap_text(str(text or ""), limit)
+
+
+def _bounded_items(items, limit=_AGENT_MAX_LOG_ITEMS):
+    return list(items)[-limit:]
+
 # %% ../nbs/08_edit_interactive.ipynb #0b709792
 def _save_notebook(nb, path):
     return commit_notebook(path, nb, before=read_nb(path))
@@ -83,7 +112,7 @@ def capture_call_text(func, **kwargs):
     if out.getvalue(): chunks.append(out.getvalue().rstrip())
     if err.getvalue(): chunks.append(err.getvalue().rstrip())
     if result is not None and not chunks: chunks.append(str(result))
-    return "\n".join(chunk for chunk in chunks if chunk)
+    return cap_text("\n".join(chunk for chunk in chunks if chunk), _AGENT_MAX_MESSAGE_CHARS)
 
 # %% ../nbs/08_edit_interactive.ipynb #f2cd36c3
 def notebook_view(path, revision=0):
@@ -95,10 +124,10 @@ def notebook_view(path, revision=0):
         for idx, cell in enumerate(nb.cells):
             lines.append(f"CELL {idx} id={cell.id} type={cell.cell_type}")
             lines.append("<<<SOURCE")
-            lines.append(cell_source(cell).rstrip())
+            lines.append(cap_text(cell_source(cell).rstrip(), _AGENT_MAX_CELL_SOURCE_CHARS))
             lines.append("SOURCE")
             lines.append("")
-        return "\n".join(lines).rstrip() + "\n"
+        return cap_text("\n".join(lines).rstrip() + "\n", _AGENT_MAX_NOTEBOOK_VIEW_CHARS)
 
 
 def _split_notebooks(notebooks):
@@ -220,10 +249,10 @@ def _chapter_source_view(path, span, cells):
         cell = cells[idx]
         lines.append(f"CELL {idx} id={cell.id} type={cell.cell_type}")
         lines.append("<<<SOURCE")
-        lines.append(cell_source(cell).rstrip())
+        lines.append(cap_text(cell_source(cell).rstrip(), _AGENT_MAX_CELL_SOURCE_CHARS))
         lines.append("SOURCE")
         lines.append("")
-    return "\n".join(lines).rstrip() + "\n"
+    return cap_text("\n".join(lines).rstrip() + "\n", _AGENT_MAX_NOTEBOOK_VIEW_CHARS)
 
 
 def managed_notebook_context(path, revision=0, previous=None):
@@ -358,7 +387,7 @@ class EditSession:
         _context_msg_set(msg, "content", notebooks_view(self.target_paths, self.revision))
     def record_message(self, role, content):
         "Append one agent message to memory and the run log."
-        item = {"revision": self.revision, "role": role, "content": str(content)}
+        item = {"revision": self.revision, "role": role, "content": _bounded_text(content)}
         self.messages.append(item)
         _append_agent_log(self, "message", item)
     def record(self, message):
@@ -367,6 +396,7 @@ class EditSession:
         _append_agent_log(self, "operation", {"revision": self.revision, "message": message})
     def record_tool(self, name, detail=""):
         "Append one tool use to the session history."
+        detail = _bounded_text(detail, 1000) if detail else ""
         suffix = f"({detail})" if detail else "()"
         self.tool_log.append(f"r{self.revision}: {name}{suffix}")
         item = {"revision": self.revision, "tool": name}
@@ -376,7 +406,7 @@ class EditSession:
     def record_context_command(self, command, status="ok", detail=""):
         "Append one managed-context command to the session history."
         item = {"revision": self.revision, "status": status, **command}
-        if detail: item["detail"] = detail
+        if detail: item["detail"] = _bounded_text(detail, 1000)
         self.context_command_log.append(item)
         _append_agent_log(self, "context_command", item)
 
@@ -425,7 +455,7 @@ def apply_context_command(session, command):
     elif action == "remove":
         msg.removed, msg.visible = True, False
     elif action == "edit":
-        msg.content = str(command.get("content") or "")
+        msg.content = _bounded_text(command.get("content") or "", _AGENT_MAX_NOTEBOOK_VIEW_CHARS)
         msg.purpose = "edited " + msg.purpose
         msg.visible, msg.removed = True, False
     else:
@@ -481,6 +511,8 @@ def _chat_nonstream(session, prompt, max_steps):
 def run_chat_with_context_commands(session, prompt, max_steps=8, max_context_commands=8):
     "Run a streaming chat, intercepting managed-context text commands."
     if session.chat is None: raise ValueError("session.chat is required")
+    max_steps = _bounded_int(max_steps, 8, 1, _AGENT_MAX_STEPS, "max_steps")
+    max_context_commands = _bounded_int(max_context_commands, 8, 0, _AGENT_MAX_CONTEXT_COMMANDS, "max_context_commands")
     output, next_prompt = [], prompt
     for _ in range(max_context_commands + 1):
         stream = None
@@ -490,7 +522,7 @@ def run_chat_with_context_commands(session, prompt, max_steps=8, max_context_com
             for chunk in stream:
                 piece = _stream_chunk_text(chunk)
                 if not piece: continue
-                buffer += piece
+                buffer = cap_text(buffer + piece, _AGENT_MAX_MESSAGE_CHARS)
                 command = find_context_command(buffer)
                 if command:
                     _close_stream(stream)
@@ -752,20 +784,26 @@ def make_chat(model, tools, hist, system_prompt=EDIT_INTERACTIVE_SYSTEM):
     return Chat(model, sp=system_prompt, tools=tools, hist=hist, stream=str(model).startswith("chatgpt/"))
 
 
-def run_context_session(session, model, prompt, max_steps=4):
+def run_context_session(session, model, prompt, max_steps=4, max_context_commands=8):
     "Run one separate context-management step and restore the active edit chat."
     if not session.managed_context: return ""
+    max_steps = _bounded_int(max_steps, 4, 0, _AGENT_MAX_CONTEXT_STEPS, "max_steps")
+    max_context_commands = _bounded_int(max_context_commands, 8, 0, _AGENT_MAX_CONTEXT_COMMANDS, "max_context_commands")
+    if max_steps == 0: return ""
     prior_chat, prior_context_idx = session.chat, session.context_msg_idx
     hist = [{"role": "user", "content": render_managed_context(session.managed_context)}]
     chat = make_chat(model, tools=make_context_tools(session), hist=hist, system_prompt=CONTEXT_SESSION_SYSTEM)
     session.chat = chat
     session.context_msg_idx = len(chat.hist) - 1
     try:
-        result = chat(prompt, max_steps=max_steps, return_all=True)
+        if max_context_commands:
+            result = run_chat_with_context_commands(session, prompt, max_steps=max_steps, max_context_commands=max_context_commands)
+        else:
+            result = chat(prompt, max_steps=max_steps, return_all=True)
     except BaseException as exc:
         summary = f"context session failed: {type(exc).__name__}: {exc}"
     else:
-        summary = response_text(result).strip() or "(no context response)"
+        summary = _bounded_text(response_text(result).strip() or "(no context response)")
     finally:
         session.chat, session.context_msg_idx = prior_chat, prior_context_idx
     session.record_message("context", summary)
@@ -805,7 +843,7 @@ def final_diff(path):
     "Return a nbdev code-cell diff, or a clear unavailable message."
     try:
         with notebook_locks(path):
-            return capture_call_text(diff_nb, path=str(path))
+            return cap_text(capture_call_text(diff_nb, path=str(path)), _AGENT_MAX_DIFF_CHARS)
     except BaseException as exc:
         detail = str(exc)
         if "Could not find notebook" in detail or "No git repository found" in detail:
@@ -821,7 +859,7 @@ def final_diffs(paths):
     chunks = []
     for path in _target_paths(paths):
         chunks.extend([f"## {path}", final_diff(path).strip()])
-    return "\n\n".join(chunks).rstrip()
+    return cap_text("\n\n".join(chunks).rstrip(), _AGENT_MAX_DIFF_CHARS)
 
 # %% ../nbs/08_edit_interactive.ipynb #c1425865
 def execute_plan(
@@ -841,10 +879,15 @@ def execute_plan(
     paths = _target_paths(notebook)
     missing = [str(path) for path in paths if not path.exists()]
     if missing: raise ValueError(f"Notebook does not exist: {', '.join(missing)}")
+    max_steps = _bounded_int(max_steps, 8, 1, _AGENT_MAX_STEPS, "max_steps")
+    timeout = _bounded_int(timeout, 30, 1, _AGENT_MAX_TIMEOUT_SECONDS, "timeout")
+    max_context_commands = _bounded_int(max_context_commands, 8, 0, _AGENT_MAX_CONTEXT_COMMANDS, "max_context_commands")
+    context_steps = _bounded_int(context_steps, 2, 0, _AGENT_MAX_CONTEXT_STEPS, "context_steps")
     model = model or os.environ.get("NBSKILL_AGENT") or "chatgpt/gpt-5.4-mini"
-    project_context = injected_context or _subagent_context(paths[0], plan, symbols=symbols)
+    project_context = _bounded_text(injected_context or _subagent_context(paths[0], plan, symbols=symbols))
     initial_messages = managed_notebook_context(paths, revision=0) if managed_context else []
     initial_view = render_managed_context(initial_messages) if managed_context else notebooks_view(paths, revision=0)
+    initial_view = cap_text(initial_view, _AGENT_MAX_NOTEBOOK_VIEW_CHARS)
     if dry_run:
         view_label = "Initial managed notebook context:" if managed_context else "Initial notebook view:"
         text = "\n".join([
@@ -852,12 +895,12 @@ def execute_plan(
             f"Model: {model}", f"Max steps: {max_steps}", f"Managed context: {managed_context}",
             "Plan:", plan, "", "Injected project context:", project_context, "", view_label, initial_view,
         ]).rstrip()
-        return {"summary": "Dry run only; no subagent was invoked and no notebook edits were made.", "history": [], "context_commands": [], "text": text}
+        return {"summary": "Dry run only; no subagent was invoked and no notebook edits were made.", "history": [], "context_commands": [], "text": cap_text(text, _AGENT_MAX_NOTEBOOK_VIEW_CHARS)}
     session = EditSession(path=paths, target_paths=paths, timeout=timeout, managed_context=initial_messages)
     if managed_context:
         prep = "Prepare context for the edit step. Open only chapters likely needed for this plan.\nPlan:\n" + plan
-        run_context_session(session, model, prep, max_steps=context_steps)
-        initial_view = render_managed_context(session.managed_context)
+        run_context_session(session, model, prep, max_steps=context_steps, max_context_commands=max_context_commands)
+        initial_view = cap_text(render_managed_context(session.managed_context), _AGENT_MAX_NOTEBOOK_VIEW_CHARS)
     hist = [
         {"role": "user", "content": "Injected project context:\n" + project_context},
         {"role": "user", "content": f"Plan:\n{plan}"},
@@ -882,26 +925,26 @@ def execute_plan(
         result = f"notebook subagent failed: {type(exc).__name__}: {exc}"
     if not isinstance(result, (list, str, bytes, dict)) and hasattr(result, "__next__"):
         result = list(result)
-    summary = response_text(result).strip() or "(no final response)"
+    summary = _bounded_text(response_text(result).strip() or "(no final response)")
     session.record_message("assistant", summary)
     if managed_context:
         cleanup = "Clean up context after the edit step. Hide full chapters that are no longer useful and leave the index visible."
-        run_context_session(session, model, cleanup, max_steps=context_steps)
+        run_context_session(session, model, cleanup, max_steps=context_steps, max_context_commands=max_context_commands)
     for path in paths:
         _save_notebook(read_nb(path), path)
     session.record("Exported notebook(s) after subagent run")
     diff = final_diffs(paths).strip()
     text = "\n".join([
         "notebook subagent complete", "", "Final response:", summary, "", "Tools used:",
-        "\n".join(session.tool_log) if session.tool_log else "(no tool calls)", "", "Context commands:",
-        "\n".join(f"r{item['revision']}: {item['action']} {item['tag']} ({item['status']})" for item in session.context_command_log) if session.context_command_log else "(no context commands)",
-        "", "Operation log:", "\n".join(session.log) if session.log else "(no notebook operations)", "",
+        "\n".join(_bounded_items(session.tool_log)) if session.tool_log else "(no tool calls)", "", "Context commands:",
+        "\n".join(f"r{item['revision']}: {item['action']} {item['tag']} ({item['status']})" for item in _bounded_items(session.context_command_log)) if session.context_command_log else "(no context commands)",
+        "", "Operation log:", "\n".join(_bounded_items(session.log)) if session.log else "(no notebook operations)", "",
         f"Final revision: {session.revision}", f"Agent log: {session.log_path}", "", "Notebook diff:", diff,
     ]).rstrip()
     return {
-        "summary": summary, "history": session.history, "context_commands": list(session.context_command_log),
-        "messages": session.messages, "text": text, "model": model, "notebook": str(paths[0]),
-        "notebooks": [str(path) for path in paths], "revision": session.revision, "operations": list(session.log),
+        "summary": summary, "history": _bounded_items(session.history), "context_commands": _bounded_items(session.context_command_log),
+        "messages": _bounded_items(session.messages), "text": cap_text(text, _AGENT_MAX_NOTEBOOK_VIEW_CHARS), "model": model, "notebook": str(paths[0]),
+        "notebooks": [str(path) for path in paths], "revision": session.revision, "operations": _bounded_items(session.log),
         "log_path": str(session.log_path), "diff": diff,
     }
 

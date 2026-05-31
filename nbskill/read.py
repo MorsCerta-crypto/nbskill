@@ -345,14 +345,14 @@ def _symbol_location(path, nb, symbol):
 
 
 # %% ../nbs/01_read.ipynb #contextcallees
-def _callee_summary(path, symbol, depth, seen=None):
+def _callee_summary(path, symbol, depth, seen=None, graph_data=None):
     if depth <= 0: return []
     seen = set() if seen is None else seen
     if symbol in seen: return []
     seen.add(symbol)
     try:
         from nbskill.graph import symbol_graph_data
-        data = symbol_graph_data(path, symbol)
+        data = graph_data or symbol_graph_data(path, symbol)
     except Exception:
         return []
     items = []
@@ -875,7 +875,14 @@ def symbol_context(
     idx, cell, node = _symbol_location(path, nb, symbol)
     source = _source_for_node(cell, node) if node is not None else cell_source(cell).strip()
     markdown = [{"cell_id": getattr(item, "id", ""), "cell_idx": pos, "source": cell_source(item).strip()} for pos, item in _markdown_mentions(nb, symbol)]
-    examples = _example_test_records(nb, symbol)
+    examples = [
+        {
+            **item,
+            "source": _trim_context_source(item.get("source", ""), _CONTEXT_CELL_SOURCE_CHARS),
+            "output": _trim_context_source(item.get("output", ""), _CONTEXT_CELL_OUTPUT_CHARS),
+        }
+        for item in _example_test_records(nb, symbol)
+    ]
     callers, callees = [], []
     if depth > 0:
         try:
@@ -883,8 +890,9 @@ def symbol_context(
             graph_data = symbol_graph_data(path, symbol)
             callers = graph_data.get("caller_usages", [])
         except Exception:
+            graph_data = None
             callers = []
-        callees = _callee_summary(path, symbol, depth)
+        callees = _callee_summary(path, symbol, depth, graph_data=graph_data)
     nl = chr(10)
     blocks = [
         ("Implementation", source),
@@ -924,7 +932,10 @@ def _context_cell_semantic_type(cell):
 
 
 def _context_cell_record(idx, cell):
-    return NotebookCell(cell, idx=idx).context_record()
+    record = NotebookCell(cell, idx=idx).context_record()
+    record["source"] = _trim_context_source(record.get("source", ""), _CONTEXT_CELL_SOURCE_CHARS)
+    record["output"] = _trim_context_source(record.get("output", ""), _CONTEXT_CELL_OUTPUT_CHARS)
+    return record
 
 
 def _render_context_cell(item):
@@ -1128,7 +1139,11 @@ def _context_one_match(kind, target, matches):
 
 # %% ../nbs/01_read.ipynb #153bbc70
 _CONTEXT_SEARCH_SKIP_DIRS = set(".git .hg .svn .venv venv env __pycache__ .ipynb_checkpoints .pytest_cache .mypy_cache .ruff_cache .quarto .tox .nox node_modules dist build".split())
-_CONTEXT_SEARCH_SKIP_SUFFIXES = set(".ipynb .pyc .pyo .so .dylib .dll .png .jpg .jpeg .gif .webp .ico .pdf .zip .tar .gz .bz2 .xz .7z .sqlite .db".split())
+_CONTEXT_SEARCH_SKIP_SUFFIXES = set(".ipynb .pyc .pyo .so .dylib .dll .png .jpg .jpeg .gif .webp .ico .pdf .zip .tar .gz .bz2 .xz .7z .sqlite .db .jsonl .log".split())
+_CONTEXT_CELL_SOURCE_CHARS = 50000
+_CONTEXT_CELL_OUTPUT_CHARS = 4000
+_CONTEXT_SEARCH_MAX_FILES = 2000
+_CONTEXT_SEARCH_MAX_BYTES = 1_000_000
 
 
 def _context_search_root(scope):
@@ -1167,8 +1182,11 @@ def _context_line_snippet(lines, idx, radius=1):
 # %% ../nbs/01_read.ipynb #63b187b1
 def _context_plain_file_matches(target, root, max_matches):
     matches, total = [], 0
-    for path in _context_file_paths(root):
-        try: text = path.read_text(encoding="utf-8", errors="ignore")
+    for file_count, path in enumerate(_context_file_paths(root), start=1):
+        if file_count > _CONTEXT_SEARCH_MAX_FILES: break
+        try:
+            if path.stat().st_size > _CONTEXT_SEARCH_MAX_BYTES: continue
+            text = path.read_text(encoding="utf-8", errors="ignore")
         except OSError: continue
         if target not in text: continue
         lines = text.splitlines() or [""]
@@ -1189,7 +1207,7 @@ def _context_notebook_text_matches(target, notebooks, max_matches):
             if target not in source: continue
             total += 1
             if len(matches) >= max_matches: continue
-            matches.append(dict(path=str(path), cell_id=getattr(cell, "id", ""), cell_idx=idx, cell_type=getattr(cell, "cell_type", ""), source=source.strip()))
+            matches.append(dict(path=str(path), cell_id=getattr(cell, "id", ""), cell_idx=idx, cell_type=getattr(cell, "cell_type", ""), source=_trim_context_source(source, _CONTEXT_CELL_SOURCE_CHARS)))
     return matches, total
 
 # %% ../nbs/01_read.ipynb #1ba187bf

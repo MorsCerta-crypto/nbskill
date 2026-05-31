@@ -52,7 +52,16 @@ DEFAULT_BUDGETS = {
     "max_files": 2,
     "max_cells": 3,
     "max_added_lines": 80,
+    "max_context_notebooks": 20,
+    "max_context_chars": 50000,
+    "max_rendered_plan_chars": 50000,
+    "max_agent_steps": 20,
+    "max_agent_timeout": 120,
 }
+
+_WORKBENCH_MAX_NOTEBOOKS = 20
+_WORKBENCH_MAX_CONTEXT_CHARS = 50000
+_WORKBENCH_MAX_RENDERED_PLAN_CHARS = 50000
 
 # %% ../nbs/11_agent_workbench.ipynb #a9b968ec
 DEFAULT_VERIFICATION = [
@@ -275,8 +284,16 @@ def compile_context(goal, path="nbs", contract=None, taste=None) -> dict:
     "Compile a focused context pack for an agent workbench run."
     contract = contract or make_task_contract(goal)
     taste = taste or load_taste_profile(project_path=path)
+    budgets = contract.get("budgets", {})
+    max_notebooks = min(int(budgets.get("max_context_notebooks", _WORKBENCH_MAX_NOTEBOOKS)), _WORKBENCH_MAX_NOTEBOOKS)
+    max_context_chars = min(int(budgets.get("max_context_chars", _WORKBENCH_MAX_CONTEXT_CHARS)), _WORKBENCH_MAX_CONTEXT_CHARS)
     tokens = _tokens(goal)
     notebooks = notebook_paths(path)
+    if len(notebooks) > max_notebooks:
+        raise ValueError(
+            f"agent_workbench context budget exceeded: {len(notebooks)} notebooks exceeds limit {max_notebooks}; "
+            "pass a narrower notebook/path."
+        )
     overview_cards = []
     for nb_path in notebooks:
         overview = _call_text(file_context, path=str(nb_path), verbose=True)
@@ -303,7 +320,7 @@ def compile_context(goal, path="nbs", contract=None, taste=None) -> dict:
     reuse = reuse_advice(goal, path=path, top_k=5)
     placement = placement_advice(path=path, source=goal, top_k=5)
     state = capture_state(path)
-    return {
+    context = {
         "goal": goal,
         "contract": contract,
         "taste": taste,
@@ -320,6 +337,12 @@ def compile_context(goal, path="nbs", contract=None, taste=None) -> dict:
         "style_summary": state["style"].get("summary", {}),
         "verification_hints": contract.get("verification", []),
     }
+    serialized = json.dumps(context, default=str)
+    if len(serialized) > max_context_chars:
+        context["reuse_advice"] = {"summary": "omitted: context budget reached"}
+        context["placement_advice"] = {"summary": "omitted: context budget reached"}
+        context["evidence"] = context["evidence"][:3]
+    return context
 
 # %% ../nbs/11_agent_workbench.ipynb #902e700d
 def _changed_files(baseline, current):
@@ -531,7 +554,9 @@ def agent_workbench_result(
     taste = _deep_merge(load_taste_profile(project_path=context_path), contract.get("taste", {}))
     context = compile_context(contract["goal"], path=context_path, contract=contract, taste=taste)
     baseline = capture_state(context_path)
-    rendered_plan = _render_workbench_plan(contract, taste, context)
+    budgets = contract.get("budgets", {})
+    max_plan_chars = min(int(budgets.get("max_rendered_plan_chars", _WORKBENCH_MAX_RENDERED_PLAN_CHARS)), _WORKBENCH_MAX_RENDERED_PLAN_CHARS)
+    rendered_plan = cap_text(_render_workbench_plan(contract, taste, context), max_plan_chars)
     result = {
         "summary": "agent_workbench prepared execution context",
         "contract": contract,
@@ -546,6 +571,8 @@ def agent_workbench_result(
     }
     if execute:
         if not notebook: raise ValueError("agent_workbench execute=True requires notebook")
+        max_steps = min(int(max_steps), int(budgets.get("max_agent_steps", DEFAULT_BUDGETS["max_agent_steps"])))
+        timeout = min(int(timeout), int(budgets.get("max_agent_timeout", DEFAULT_BUDGETS["max_agent_timeout"])))
         execution = execute_plan(
             notebook=notebook, plan=rendered_plan, max_steps=max_steps,
             timeout=timeout,

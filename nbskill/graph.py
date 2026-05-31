@@ -23,6 +23,31 @@ from nbskill.foundation import (
     xml_attrs, xml_escape,
 )
 
+_GRAPH_MAX_NOTEBOOKS = 80
+_GRAPH_MAX_CELLS = 5000
+_GRAPH_MAX_RECORDS = 20000
+_GRAPH_MAX_EDGES = 40000
+_GRAPH_MAX_SIMILARITY_RECORDS = 1000
+_GRAPH_JSON_MAX_CHARS = 200000
+
+
+def _graph_limited_notebook_paths(path, max_notebooks=_GRAPH_MAX_NOTEBOOKS):
+    paths = notebook_paths(path)
+    if max_notebooks and len(paths) > max_notebooks:
+        raise ValueError(f"Graph budget exceeded: {len(paths)} notebooks exceeds limit {max_notebooks}; narrow the path.")
+    return paths
+
+
+def _graph_check_size(notebooks=0, cells=0, records=0, edges=0):
+    if _GRAPH_MAX_NOTEBOOKS and notebooks > _GRAPH_MAX_NOTEBOOKS:
+        raise ValueError(f"Graph budget exceeded: {notebooks} notebooks exceeds limit {_GRAPH_MAX_NOTEBOOKS}.")
+    if _GRAPH_MAX_CELLS and cells > _GRAPH_MAX_CELLS:
+        raise ValueError(f"Graph budget exceeded: {cells} cells exceeds limit {_GRAPH_MAX_CELLS}.")
+    if _GRAPH_MAX_RECORDS and records > _GRAPH_MAX_RECORDS:
+        raise ValueError(f"Graph budget exceeded: {records} records exceeds limit {_GRAPH_MAX_RECORDS}.")
+    if _GRAPH_MAX_EDGES and edges > _GRAPH_MAX_EDGES:
+        raise ValueError(f"Graph budget exceeded: {edges} edges exceeds limit {_GRAPH_MAX_EDGES}.")
+
 # %% ../nbs/10_graph.ipynb #c5547d77
 def _graph_scope(path):
     paths = notebook_paths(path)
@@ -133,14 +158,19 @@ def _notebook_module_name(path, nb):
 # %% ../nbs/10_graph.ipynb #170b1d54
 def _collect_graph(path="nbs"):
     definitions, callers, imports = [], [], []
-    for nb_path in notebook_paths(path):
+    nb_paths = _graph_limited_notebook_paths(path)
+    cell_count = 0
+    for nb_path in nb_paths:
         nb = read_nb(nb_path)
         module = _notebook_module_name(nb_path, nb)
         for idx, cell in enumerate(nb.cells):
+            cell_count += 1
+            _graph_check_size(notebooks=len(nb_paths), cells=cell_count, records=len(definitions) + len(callers) + len(imports))
             definitions.extend(_cell_definition_records(nb_path, module, idx, cell))
             imports.extend(_cell_import_records(nb_path, idx, cell))
             record = _cell_call_record(nb_path, idx, cell)
             if record: callers.append(record)
+            _graph_check_size(notebooks=len(nb_paths), cells=cell_count, records=len(definitions) + len(callers) + len(imports))
     return {"definitions": definitions, "callers": callers, "imports": imports}
 
 # %% ../nbs/10_graph.ipynb #5649a185
@@ -579,12 +609,12 @@ def _caller_usage_lines(records, symbol, limit=8):
 def symbol_graph_public_data(data):
     return {
         "symbol": data["symbol"],
-        "definitions": data["definitions"],
-        "callers": data["callers"],
-        "caller_usages": data["caller_usages"],
+        "definitions": data["definitions"][:200],
+        "callers": data["callers"][:200],
+        "caller_usages": data["caller_usages"][:50],
         "callees": [
             {"symbol": symbol, "locations": _callee_locations(data["graph"], symbol)}
-            for symbol in data["callees"]
+            for symbol in data["callees"][:200]
         ],
     }
 
@@ -773,6 +803,7 @@ def _add_kg_node(nodes, node):
 
 
 def _add_kg_edge(edges, seen, edge):
+    if _GRAPH_MAX_EDGES and len(edges) >= _GRAPH_MAX_EDGES: return
     key = (edge["source"], edge["target"], edge["type"], edge.get("evidence", ""))
     if key not in seen:
         edges.append(edge)
@@ -945,6 +976,7 @@ def _merge_symbol_nodes_by_name(state):
 def _kg_add_call_edges(state, graph):
     _merge_symbol_nodes_by_name(state)
     for record in graph["definitions"]:
+        if _GRAPH_MAX_EDGES and len(state["edges"]) >= _GRAPH_MAX_EDGES: break
         source_id = _symbol_node_id(record)
         for call in record.get("calls", []):
             for callee in _resolve_callees(graph, [call]):
@@ -952,6 +984,7 @@ def _kg_add_call_edges(state, graph):
                     if source_id != target_id:
                         _add_kg_edge(state["edges"], state["edge_seen"], _kg_edge(source_id, target_id, "calls", confidence="high", evidence=f"{record['symbol']} calls {call}"))
     for record in graph["callers"]:
+        if _GRAPH_MAX_EDGES and len(state["edges"]) >= _GRAPH_MAX_EDGES: break
         source_id = _cell_node_id(record.get("path"), record.get("cell_idx"), record.get("cell_id"))
         for call in record.get("calls", []):
             for callee in _resolve_callees(graph, [call]):
@@ -961,10 +994,12 @@ def _kg_add_call_edges(state, graph):
 # %% ../nbs/10_graph.ipynb #5df9cc1b
 def _add_similarity_edges(catalog, nodes, edges, seen):
     symbols = catalog.get("symbols", catalog) if isinstance(catalog, dict) else catalog
-    records = [record for record in symbols if record.get("ast_shape")]
+    records = [record for record in symbols if record.get("ast_shape")][:_GRAPH_MAX_SIMILARITY_RECORDS]
     ids_by_key = {(node.get("module"), node.get("name")): node["id"] for node in nodes.values() if node.get("type") == "symbol"}
     for idx, left in enumerate(records):
+        if _GRAPH_MAX_EDGES and len(edges) >= _GRAPH_MAX_EDGES: break
         for right in records[idx + 1:]:
+            if _GRAPH_MAX_EDGES and len(edges) >= _GRAPH_MAX_EDGES: break
             if left.get("symbol") == right.get("symbol"):
                 continue
             if left.get("ast_shape") != right.get("ast_shape"):
@@ -997,7 +1032,7 @@ def notebook_knowledge_graph_data(path="nbs"):
     graph = _collect_graph(scope)
     catalog = symbol_catalog(scope)
     state = _kg_state()
-    ordered_paths = [str(path) for path in notebook_paths(scope)]
+    ordered_paths = [str(path) for path in _graph_limited_notebook_paths(scope)]
     for nb_order, nb_path in enumerate(ordered_paths):
         _kg_add_notebook(state, nb_path, nb_order, graph)
     _kg_add_call_edges(state, graph)
@@ -1021,6 +1056,11 @@ def notebook_knowledge_graph(path="nbs", json_output=False):
     data = notebook_knowledge_graph_data(path)
     if json_output:
         text = json.dumps(data, indent=2, sort_keys=True)
+        if _GRAPH_JSON_MAX_CHARS and len(text) > _GRAPH_JSON_MAX_CHARS:
+            raise ValueError(
+                f"Graph JSON budget exceeded: {len(text)} chars exceeds limit {_GRAPH_JSON_MAX_CHARS}; "
+                "narrow the path or use the summary output."
+            )
         print(text)
         return cli_return(data)
     text = _format_notebook_knowledge_graph(data)
@@ -1144,11 +1184,15 @@ def symbol_catalog(path="nbs"):
     "Return notebook symbols with placement and reuse evidence."
     symbols = []
     notebooks = []
-    for nb_path in notebook_paths(path):
+    nb_paths = _graph_limited_notebook_paths(path)
+    cell_count = 0
+    for nb_path in nb_paths:
         nb = read_nb(nb_path)
         module = _notebook_module_name(nb_path, nb)
         notebooks.append(_notebook_text_profile(nb_path, nb, module))
         for idx, cell in enumerate(nb.cells):
+            cell_count += 1
+            _graph_check_size(notebooks=len(nb_paths), cells=cell_count, records=len(symbols))
             tree = parse_code_cell(cell)
             if tree is None: continue
             heading = _heading_before(nb.cells, idx)
@@ -1158,6 +1202,7 @@ def symbol_catalog(path="nbs"):
                     symbols.append(
                         _catalog_record(nb_path, module, idx, cell, symbol_node, symbol, kind, heading, imports)
                     )
+                    _graph_check_size(notebooks=len(nb_paths), cells=cell_count, records=len(symbols))
     return {"symbols": symbols, "notebooks": notebooks, "graph": _collect_graph(path)}
 
 

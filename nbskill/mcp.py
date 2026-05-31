@@ -1768,57 +1768,60 @@ async def exec_nb_tool(
         path=path, up2id=up2id, chapter=chapter, timeout=timeout, show_output=show_output,
         allow_new=allow_new, check_only=check_only, detail=detail, workspace_root=str(root) if root else None,
     )
-    call_args = dict(
-        path=path, dest=None, exc_stop=False, up2id=up2id, chapter=chapter, timeout=timeout,
-        show_output=show_output, verbose=False, safe=True, allow=None, ok_dests=None,
-        cache_httpx=False, cache_dir=None, cache_domains=None, allow_new=allow_new, check_only=check_only,
-    )
-    full_output = capture_notebook_call(exec_nb, path, **call_args)
-    warnings = []
-    approval_request = None
-    elicitation = None
-    if "PermissionError: Audit:" in full_output:
-        warnings.append(_warning(
-            "safe-exec-audit-block",
-            "Safe execution blocked an audited operation.",
-            "Use an explicit CLI run for trusted notebooks that need broader execution permissions.",
-        ))
-    approval_blocked = "_ExecutionApprovalRequired" in full_output or "refusing to execute unapproved cell" in full_output
-    if approval_blocked and not allow_new:
-        approval_request = _exec_approval_request(path, full_output)
-        approved, elicitation = await _elicit_exec_approval(ctx, approval_request)
-        approval_request["elicited"] = True
-        approval_request["approved"] = approved
-        if approved:
-            retry_args = dict(call_args, allow_new=True)
-            full_output = capture_notebook_call(exec_nb, path, **retry_args)
-            arguments["allow_new"] = True
-            arguments["elicited_allow_new"] = True
-            approval_blocked = "_ExecutionApprovalRequired" in full_output or "refusing to execute unapproved cell" in full_output
-        else:
+    try:
+        call_args = dict(
+            path=path, dest=None, exc_stop=False, up2id=up2id, chapter=chapter, timeout=timeout,
+            show_output=show_output, verbose=False, safe=True, allow=None, ok_dests=None,
+            cache_httpx=False, cache_dir=None, cache_domains=None, allow_new=allow_new, check_only=check_only,
+        )
+        full_output = capture_notebook_call(exec_nb, path, **call_args)
+        warnings = []
+        approval_request = None
+        elicitation = None
+        if "PermissionError: Audit:" in full_output:
+            warnings.append(_warning(
+                "safe-exec-audit-block",
+                "Safe execution blocked an audited operation.",
+                "Use an explicit CLI run for trusted notebooks that need broader execution permissions.",
+            ))
+        approval_blocked = "_ExecutionApprovalRequired" in full_output or "refusing to execute unapproved cell" in full_output
+        if approval_blocked and not allow_new:
+            approval_request = _exec_approval_request(path, full_output)
+            approved, elicitation = await _elicit_exec_approval(ctx, approval_request)
+            approval_request["elicited"] = True
+            approval_request["approved"] = approved
+            if approved:
+                retry_args = dict(call_args, allow_new=True)
+                full_output = capture_notebook_call(exec_nb, path, **retry_args)
+                arguments["allow_new"] = True
+                arguments["elicited_allow_new"] = True
+                approval_blocked = "_ExecutionApprovalRequired" in full_output or "refusing to execute unapproved cell" in full_output
+            else:
+                warnings.append(_warning(
+                    "safe-exec-approval-required",
+                    "Safe execution refused an unapproved notebook cell.",
+                    "Approve the MCP elicitation or rerun with allow_new=True only if you approve the notebook source.",
+                    **approval_request,
+                ))
+                if elicitation and elicitation.get("action") == "error":
+                    warnings.append(_warning(
+                        "mcp-elicitation-unavailable",
+                        "The MCP client did not complete the execution approval prompt.",
+                        "Ask the user in chat before rerunning with allow_new=True.",
+                        **elicitation,
+                    ))
+        if approval_blocked and allow_new:
             warnings.append(_warning(
                 "safe-exec-approval-required",
                 "Safe execution refused an unapproved notebook cell.",
-                "Approve the MCP elicitation or rerun with allow_new=True only if you approve the notebook source.",
-                **approval_request,
+                "Rerun with allow_new=True only if you approve the notebook source.",
             ))
-            if elicitation and elicitation.get("action") == "error":
-                warnings.append(_warning(
-                    "mcp-elicitation-unavailable",
-                    "The MCP client did not complete the execution approval prompt.",
-                    "Ask the user in chat before rerunning with allow_new=True.",
-                    **elicitation,
-                ))
-    if approval_blocked and allow_new:
-        warnings.append(_warning(
-            "safe-exec-approval-required",
-            "Safe execution refused an unapproved notebook cell.",
-            "Rerun with allow_new=True only if you approve the notebook source.",
-        ))
-    return mcp_tool_result(
-        "exec_nb", arguments, full_output, detail=detail, warnings=warnings,
-        approval_required=approval_request, elicitation=elicitation,
-    )
+        return mcp_tool_result(
+            "exec_nb", arguments, full_output, detail=detail, warnings=warnings,
+            approval_required=approval_request, elicitation=elicitation,
+        )
+    except (Exception, SystemExit) as exc:
+        return _mcp_tool_error_result("exec_nb", arguments, exc, detail=detail)
 
 # %% ../nbs/07_mcp.ipynb #mcpdiffnb
 @mcp.tool(**_mcp_tool_meta("diff_nb"))
@@ -1851,27 +1854,30 @@ async def execute_plan_tool(
         plan=plan, notebook=notebook, scope=scope, notebooks=notebooks, model=model, max_steps=max_steps,
         timeout=timeout, symbols=symbols, dry_run=dry_run, detail=detail, workspace_root=str(root) if root else None,
     )
-    mode = "project" if scope == "project" or notebooks else "notebook"
-    if mode == "project":
-        project_args = dict(
-            plan=plan, notebooks=notebooks, model=model, max_steps=max_steps, timeout=timeout,
+    try:
+        mode = "project" if scope == "project" or notebooks else "notebook"
+        if mode == "project":
+            project_args = dict(
+                plan=plan, notebooks=notebooks, model=model, max_steps=max_steps, timeout=timeout,
+                dry_run=dry_run, symbols=symbols,
+            )
+            full_output = capture_call(execute_project_plan, **project_args)
+            return mcp_tool_result("execute_plan", arguments, full_output, detail=detail)
+        if not notebook: raise ValueError("notebook is required when scope='notebook'")
+        notebook_args = dict(
+            notebook=notebook, plan=plan, model=model, max_steps=max_steps, timeout=timeout,
             dry_run=dry_run, symbols=symbols,
         )
-        full_output = capture_call(execute_project_plan, **project_args)
-        return mcp_tool_result("execute_plan", arguments, full_output, detail=detail)
-    if not notebook: raise ValueError("notebook is required when scope='notebook'")
-    notebook_args = dict(
-        notebook=notebook, plan=plan, model=model, max_steps=max_steps, timeout=timeout,
-        dry_run=dry_run, symbols=symbols,
-    )
-    result = execute_plan(**notebook_args)
-    full_output = plan_result_text(result)
-    return mcp_tool_result(
-        "execute_plan", arguments, full_output, detail=detail,
-        execute_plan=result if isinstance(result, dict) else {},
-        history=result.get("history", []) if isinstance(result, dict) else [],
-        result_summary=result.get("summary", "") if isinstance(result, dict) else "",
-    )
+        result = execute_plan(**notebook_args)
+        full_output = plan_result_text(result)
+        return mcp_tool_result(
+            "execute_plan", arguments, full_output, detail=detail,
+            execute_plan=result if isinstance(result, dict) else {},
+            history=result.get("history", []) if isinstance(result, dict) else [],
+            result_summary=result.get("summary", "") if isinstance(result, dict) else "",
+        )
+    except (Exception, SystemExit) as exc:
+        return _mcp_tool_error_result("execute_plan", arguments, exc, detail=detail)
 
 # %% ../nbs/07_mcp.ipynb #mcptool13
 @mcp.tool(**_mcp_tool_meta("agent_workbench"))
@@ -1885,15 +1891,18 @@ async def agent_workbench_tool(
     notebook = _mcp_workspace_path(notebook, root) if notebook else notebook
     contract_file = _mcp_workspace_path(contract_file, root) if contract_file else contract_file
     arguments = dict(goal=goal, notebook=notebook, contract_file=contract_file, execute=execute, max_steps=max_steps, timeout=timeout, detail=detail, workspace_root=str(root) if root else None)
-    result = agent_workbench_result(
-        goal, notebook=notebook, contract_file=contract_file, execute=execute,
-        max_steps=max_steps, timeout=timeout,
-    )
-    full_output = result.get("rendered_plan") or result.get("summary", "")
-    return mcp_tool_result(
-        "agent_workbench", arguments, full_output, detail=detail,
-        agent_workbench=result if isinstance(result, dict) else {},
-    )
+    try:
+        result = agent_workbench_result(
+            goal, notebook=notebook, contract_file=contract_file, execute=execute,
+            max_steps=max_steps, timeout=timeout,
+        )
+        full_output = result.get("rendered_plan") or result.get("summary", "")
+        return mcp_tool_result(
+            "agent_workbench", arguments, full_output, detail=detail,
+            agent_workbench=result if isinstance(result, dict) else {},
+        )
+    except (Exception, SystemExit) as exc:
+        return _mcp_tool_error_result("agent_workbench", arguments, exc, detail=detail)
 
 # %% ../nbs/07_mcp.ipynb #mcptool15
 @mcp.tool(**_mcp_tool_meta("style_check"))
@@ -1959,24 +1968,27 @@ async def _reference_tool(
         include_local=include_local, candidate_k=candidate_k, explain=explain,
         all=all, force=force, detail=detail, workspace_root=str(root) if root else None,
     )
-    if action == "add":
-        if not url: raise ValueError("reference action='add' needs url")
-        result_data = reference_add(url, name=name, version=version, package=package, path=path)
-    elif action == "list":
-        result_data = reference_list(path=path)
-    elif action == "ingest":
-        result_data = reference_ingest(name=name, all=all, path=path, force=force)
-    elif action == "query":
-        if not query: raise ValueError("reference action='query' needs query")
-        result_data = reference_query(
-            query, top_k=top_k, include_branch=include_branch, current_repo=current_repo, repos=repos, path=path,
-            kind=kind, package=package, module=module, symbol=symbol,
-            include_local=include_local, candidate_k=candidate_k, explain=explain,
-        )
-    else:
-        raise ValueError("action must be add, list, ingest, or query")
-    full_output = json.dumps(result_data, indent=2, sort_keys=True)
-    return mcp_tool_result("reference", arguments, full_output, detail=detail, reference=result_data)
+    try:
+        if action == "add":
+            if not url: raise ValueError("reference action='add' needs url")
+            result_data = reference_add(url, name=name, version=version, package=package, path=path)
+        elif action == "list":
+            result_data = reference_list(path=path)
+        elif action == "ingest":
+            result_data = reference_ingest(name=name, all=all, path=path, force=force)
+        elif action == "query":
+            if not query: raise ValueError("reference action='query' needs query")
+            result_data = reference_query(
+                query, top_k=top_k, include_branch=include_branch, current_repo=current_repo, repos=repos, path=path,
+                kind=kind, package=package, module=module, symbol=symbol,
+                include_local=include_local, candidate_k=candidate_k, explain=explain,
+            )
+        else:
+            raise ValueError("action must be add, list, ingest, or query")
+        full_output = json.dumps(result_data, indent=2, sort_keys=True)
+        return mcp_tool_result("reference", arguments, full_output, detail=detail, reference=result_data)
+    except (Exception, SystemExit) as exc:
+        return _mcp_tool_error_result("reference", arguments, exc, detail=detail)
 
 # %% ../nbs/07_mcp.ipynb #mcptool19
 @mcp.tool(**_mcp_tool_meta("convert"))
@@ -2012,13 +2024,16 @@ async def convert_tool(
         include=include, exclude=exclude, skip_init=skip_init, include_tests=include_tests, force=force,
         run_validation=run_validation, dry_run=dry_run, detail=detail, workspace_root=str(root) if root else None,
     )
-    full_output = capture_call(
-        convert, path=path, mode=mode, dest=dest, nbs_path=nbs_path, recursive=recursive, maxdepth=maxdepth,
-        preserve_tree=preserve_tree, class_lines=class_lines, method_lines=method_lines, package=package,
-        include=include, exclude=exclude, skip_init=skip_init, include_tests=include_tests, dry_run=dry_run,
-        force=force, run_validation=run_validation,
-    )
-    return mcp_tool_result("convert", arguments, full_output, detail=detail)
+    try:
+        full_output = capture_call(
+            convert, path=path, mode=mode, dest=dest, nbs_path=nbs_path, recursive=recursive, maxdepth=maxdepth,
+            preserve_tree=preserve_tree, class_lines=class_lines, method_lines=method_lines, package=package,
+            include=include, exclude=exclude, skip_init=skip_init, include_tests=include_tests, dry_run=dry_run,
+            force=force, run_validation=run_validation,
+        )
+        return mcp_tool_result("convert", arguments, full_output, detail=detail)
+    except (Exception, SystemExit) as exc:
+        return _mcp_tool_error_result("convert", arguments, exc, detail=detail)
 
 # %% ../nbs/07_mcp.ipynb #6daab47d
 def create_mcp():

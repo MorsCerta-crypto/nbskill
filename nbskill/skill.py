@@ -119,12 +119,7 @@ def _cursor_mcp_path(workspace=None):
 
 # %% ../nbs/06_skill.ipynb #cfe66977
 def _cursor_nbskill_server_config():
-    project = _nbskill_source_project()
-    args = ["run"]
-    if project: args += ["--with-editable", str(project)]
-    else: args += ["--with", "nbskill"]
-    args.append("nbskill_mcp")
-    return {"command": "uv", "args": args}
+    return {"command": "nbskill_mcp"}
 
 # %% ../nbs/06_skill.ipynb #feab9338
 def _install_cursor_mcp(workspace=None, overwrite=True):

@@ -10,12 +10,12 @@ __all__ = ['NotebookCell', 'NotebookChapter', 'NotebookDocument', 'output_text',
            'node_start_line', 'is_export_directive', 'cell_source', 'parse_code_cell', 'CellType', 'SemanticType',
            'Directive', 'directive_lines', 'apply_directives', 'Cell', 'Chapter', 'Notebook', 'NotebookSymbol',
            'xml_escape', 'xml_attrs', 'cell_metadata', 'notebook_metadata', 'file_hash', 'exported_py_path',
-           'stamp_export_metadata', 'run_nbdev_export_from_project', 'export_notebook', 'notebook_hash',
-           'commit_notebook', 'parse_one_cell', 'find_cell_by_id', 'find_cell_by_text', 'replace_cell', 'clear_outputs',
-           'load_cells_text', 'validate_code_cells', 'parse_cells', 'first_line', 'cell_prefix', 'matches_filter',
-           'is_exported_code_cell', 'output_value_text', 'cell_output_text', 'stamp_notebook_metadata',
-           'cell_class_names', 'cell_matches_type', 'with_context', 'heading_title', 'chapter_spans',
-           'chapter_index_set', 'one_chapter']
+           'stamp_export_metadata', 'run_nbdev_export_from_project', 'export_notebook', 'ensure_cell_ids',
+           'notebook_hash', 'commit_notebook', 'parse_one_cell', 'find_cell_by_id', 'find_cell_by_text', 'replace_cell',
+           'clear_outputs', 'load_cells_text', 'validate_code_cells', 'parse_cells', 'first_line', 'cell_prefix',
+           'matches_filter', 'is_exported_code_cell', 'output_value_text', 'cell_output_text',
+           'stamp_notebook_metadata', 'cell_class_names', 'cell_matches_type', 'with_context', 'heading_title',
+           'chapter_spans', 'chapter_index_set', 'one_chapter']
 
 # %% ../nbs/00_foundation.ipynb #2500639f
 import ast,hashlib,json,os,re
@@ -27,6 +27,7 @@ from pathlib import Path
 from fastcore.basics import in_jupyter, patch
 from fastcore.nbio import mk_cell, new_nb, write_nb
 from fastcore.script import _in_call_parse
+from fastcore.xtras import rtoken_hex
 
 # %% ../nbs/00_foundation.ipynb #demohelpcode
 def remove_demo_path(path):
@@ -1095,6 +1096,13 @@ def export_notebook(nb, nb_path, writer=write_nb):
     return py_path
 
 # %% ../nbs/00_foundation.ipynb #0d020917
+def ensure_cell_ids(nb):
+    "Add nbdev-style ids to notebook cells missing `id`, mutating and returning `nb`."
+    for cell in getattr(nb, "cells", nb):
+        if "id" not in cell: cell["id"] = rtoken_hex(4)
+    return nb
+
+
 def notebook_hash(nb):
     "Return a stable source hash for a notebook's ordered cell contents."
     payload = chr(30).join(f"{getattr(cell, 'id', '')}:{cell_source(cell)}" for cell in getattr(nb, "cells", []))
@@ -1147,9 +1155,12 @@ def commit_notebook(
 
     path = Path(path)
     before = before if before is not None else (read_nb(path) if path.exists() else new_nb([]))
+    missing_cell_ids = any("id" not in cell for cell in getattr(trial, "cells", []))
+    ensure_cell_ids(before)
+    ensure_cell_ids(trial)
     before_hash = notebook_hash(before)
     planned_hash = notebook_hash(trial)
-    changed = before_hash != planned_hash
+    changed = before_hash != planned_hash or missing_cell_ids
     affected = [cell_id for cell_id in dict.fromkeys(affected_cell_ids or []) if cell_id]
     if validate_code and changed: validate_code_cells(trial.cells)
 

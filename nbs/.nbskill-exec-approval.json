@@ -1,0 +1,45 @@
+{
+  "functions": {
+    "_route": {
+      "allowed": true,
+      "cell_id": "41c992a9",
+      "external_effects": false,
+      "line": 1,
+      "notebook": "nbs/data/03_execute_decorated_warning/nbs/decorated.ipynb",
+      "reasons": []
+    },
+    "api_handler": {
+      "allowed": true,
+      "cell_id": "fc5df319",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "nbs/data/03_execute_decorated_warning/nbs/decorated.ipynb",
+      "reasons": []
+    },
+    "demo_fn": {
+      "allowed": true,
+      "cell_id": "51e75d68",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "data/nbs/data/test_nbskill_contract/demo.ipynb",
+      "reasons": []
+    },
+    "unused_demo": {
+      "allowed": true,
+      "cell_id": "3a494e0e",
+      "external_effects": false,
+      "line": 1,
+      "notebook": "nbs/data/03_execute_uncalled_warning/nbs/uncalled.ipynb",
+      "reasons": []
+    },
+    "used_demo": {
+      "allowed": true,
+      "cell_id": "26eb1ed4",
+      "external_effects": false,
+      "line": 1,
+      "notebook": "nbs/data/03_execute_called_warning/nbs/called.ipynb",
+      "reasons": []
+    }
+  },
+  "version": 1
+}

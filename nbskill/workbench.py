@@ -413,7 +413,7 @@ def _style_delta(baseline, current):
     }
 
 # %% ../nbs/11_agent_workbench.ipynb #bb502512
-def score_patch(baseline, contract, path=".") -> dict:
+def score_patch(baseline, contract, path=".", execution=None) -> dict:
     "Score current repository state against a baseline and task contract."
     current = capture_state(path)
     budgets = contract.get("budgets", {})
@@ -435,6 +435,13 @@ def score_patch(baseline, contract, path=".") -> dict:
         hard_failures.append({"code": "validation_errors_added"})
     if current["order_problem_count"] > baseline.get("order_problem_count", 0):
         hard_failures.append({"code": "order_errors_added"})
+    if execution is not None:
+        summary = str(execution.get("summary", ""))
+        if summary.startswith("notebook subagent failed"):
+            hard_failures.append({"code": "execution_failed", "summary": summary})
+        tools = [item.get("tool") for item in execution.get("history", []) if isinstance(item, dict)]
+        if execution.get("revision", 0) and "execute_cell" not in tools:
+            hard_failures.append({"code": "execution_modified_without_validation", "tools": tools})
     return {
         "passed": not hard_failures,
         "hard_failures": hard_failures,
@@ -619,7 +626,9 @@ def agent_workbench_result(
             context_steps=context_steps,
         )
         result["execution"] = execution
-        result["score"] = score_patch(baseline, contract, path=context_path)
+        result["score"] = score_patch(
+            baseline, contract, path=context_path, execution=execution
+        )
         result["summary"] = "agent_workbench executed plan"
     return result
 

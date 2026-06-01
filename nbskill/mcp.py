@@ -1970,6 +1970,7 @@ async def execute_plan_tool(
     plan: str, notebook: str | None = None, scope: str = "notebook",
     notebooks: str | None = None, model: str | None = None, max_steps: int = 8,
     timeout: int = 30, symbols: str | None = None, dry_run: bool = True,
+    max_context_commands: int = 8, context_steps: int = 2,
     tool_timeout: float = 150.0, detail: str = "summary", ctx: Context = None,
 ) -> ToolResult:
     "Run a bounded notebook-editing subagent against one notebook or a project notebook set."
@@ -1978,18 +1979,22 @@ async def execute_plan_tool(
     notebooks = _mcp_workspace_paths(notebooks, root) if notebooks else notebooks
     max_steps = _mcp_clamp_int(max_steps, 8, 1, 20, "max_steps")
     timeout = _mcp_clamp_int(timeout, 30, 1, 120, "timeout")
+    max_context_commands = _mcp_clamp_int(max_context_commands, 8, 0, 20, "max_context_commands")
+    context_steps = _mcp_clamp_int(context_steps, 2, 0, 5, "context_steps")
     tool_timeout = _mcp_clamp_float(tool_timeout, 150.0, 0.001, 150.0, "tool_timeout")
     arguments = dict(
         plan=plan, notebook=notebook, scope=scope, notebooks=notebooks, model=model, max_steps=max_steps,
-        timeout=timeout, symbols=symbols, dry_run=dry_run, tool_timeout=tool_timeout,
-        detail=detail, workspace_root=str(root) if root else None,
+        timeout=timeout, symbols=symbols, dry_run=dry_run, max_context_commands=max_context_commands,
+        context_steps=context_steps, tool_timeout=tool_timeout, detail=detail,
+        workspace_root=str(root) if root else None,
     )
     try:
         mode = "project" if scope == "project" or notebooks else "notebook"
         if mode == "project":
             project_args = dict(
                 plan=plan, notebooks=notebooks, model=model, max_steps=max_steps, timeout=timeout,
-                dry_run=dry_run, symbols=symbols,
+                dry_run=dry_run, symbols=symbols, max_context_commands=max_context_commands,
+                context_steps=context_steps,
             )
             full_output = await asyncio.wait_for(
                 asyncio.to_thread(capture_call, execute_project_plan, **project_args),
@@ -1999,7 +2004,8 @@ async def execute_plan_tool(
         if not notebook: raise ValueError("notebook is required when scope='notebook'")
         notebook_args = dict(
             notebook=notebook, plan=plan, model=model, max_steps=max_steps, timeout=timeout,
-            dry_run=dry_run, symbols=symbols,
+            dry_run=dry_run, symbols=symbols, max_context_commands=max_context_commands,
+            context_steps=context_steps,
         )
         result = await asyncio.wait_for(asyncio.to_thread(execute_plan, **notebook_args), timeout=tool_timeout)
         full_output = plan_result_text(result)

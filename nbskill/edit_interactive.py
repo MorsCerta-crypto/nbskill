@@ -35,6 +35,7 @@ _AGENT_MAX_CONTEXT_STEPS = 5
 _AGENT_MAX_CONTEXT_COMMANDS = 20
 _AGENT_MAX_TIMEOUT_SECONDS = 120
 _AGENT_MAX_MESSAGE_CHARS = 12000
+_AGENT_MAX_PROJECT_CONTEXT_CHARS = 6000
 _AGENT_MAX_NOTEBOOK_VIEW_CHARS = 80000
 _AGENT_MAX_CELL_SOURCE_CHARS = 8000
 _AGENT_MAX_LOG_ITEMS = 200
@@ -590,7 +591,12 @@ def _finish_write(session, path, message, result):
     session.record(message)
     session.refresh_view()
     detail = str(result.get("text") or "").strip()
-    chunks = [message, f"revision={session.revision}"]
+    machine = {"status": "changed", "revision": session.revision, "notebook": str(path)}
+    chunks = [
+        message,
+        "tool_result=" + json.dumps(machine, sort_keys=True),
+        f"revision={session.revision}",
+    ]
     if detail: chunks.extend(["", detail])
     return "\n".join(chunks)
 
@@ -1128,7 +1134,8 @@ def execute_plan(
     )
     model = model or os.environ.get("NBSKILL_AGENT") or "chatgpt/gpt-5.4-mini"
     project_context = _bounded_text(
-        injected_context or _subagent_context(paths[0], plan, symbols=symbols)
+        injected_context or _subagent_context(paths[0], plan, symbols=symbols),
+        _AGENT_MAX_PROJECT_CONTEXT_CHARS,
     )
     initial_messages = managed_notebook_context(paths, revision=0)
     initial_view = cap_text(
@@ -1145,11 +1152,11 @@ def execute_plan(
                 "Plan:",
                 plan,
                 "",
-                "Injected project context:",
-                project_context,
-                "",
                 "Initial managed notebook context:",
                 initial_view,
+                "",
+                "Injected project context:",
+                project_context,
             ]
         ).rstrip()
         return {
@@ -1176,22 +1183,26 @@ def execute_plan(
         render_managed_context(session.managed_context), _AGENT_MAX_NOTEBOOK_VIEW_CHARS
     )
     hist = [
-        {"role": "user", "content": "Injected project context:\n" + project_context},
         {"role": "user", "content": f"Plan:\n{plan}"},
         {"role": "user", "content": initial_view},
+        {"role": "user", "content": "Injected project context:\n" + project_context},
     ]
     for item in hist:
         session.record_message(item["role"], item["content"])
-    chat = make_chat(model, tools=make_edit_tools(session), hist=hist)
+    chat = make_chat(
+        model,
+        tools=make_edit_tools(session) + make_context_tools(session),
+        hist=hist,
+    )
     session.chat = chat
-    session.context_msg_idx = len(chat.hist) - 1
+    session.context_msg_idx = 1
     session.refresh_view()
     prompt = (
         "Execute the plan with the scratch, inspect, function, example, and test "
         "loop from the system prompt. Use run_code for experiments, inspect_state "
         "for live state checks, and execute_cell to validate the final example or "
-        "test when practical. Context-management tools are not available in this edit "
-        "step; use the active context you were given. Stop when the notebook change "
+        "test when practical. Use context tools during the edit step when you "
+        "need to open, fold, or prune the active notebook view. Stop when the notebook change "
         "is complete."
     )
     session.record_message("user", prompt)
@@ -1277,6 +1288,8 @@ def execute_project_plan(
     timeout: int = 30,
     dry_run: bool = True,
     symbols: str | None = None,
+    max_context_commands: int = 8,
+    context_steps: int = 2,
 ) -> str:
     "Launch one edit-interactive session that can touch multiple notebooks."
     targets = _split_notebooks(notebooks)
@@ -1284,6 +1297,7 @@ def execute_project_plan(
     result = execute_plan(
         notebook=targets, plan=plan, model=model, max_steps=max_steps,
         timeout=timeout, dry_run=dry_run, symbols=symbols,
+        max_context_commands=max_context_commands, context_steps=context_steps,
     )
     return "\n".join([
         "project subagent coordinator", "", f"Dry run: {dry_run}", f"Targets: {len(targets)}", "", plan_result_text(result),

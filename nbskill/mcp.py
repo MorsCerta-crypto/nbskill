@@ -876,22 +876,64 @@ def _top_code_counts(chart, limit=5):
     return ", ".join(f"{code}={count}" for code, count in list(by_code.items())[:limit])
 
 
+def _context_result_line(item):
+    target = item.get("target") or item.get("symbol") or item.get("path") or ""
+    if item.get("ok") is False:
+        error = item.get("error") or {}
+        return f"- {target}: failed {_short_item(error.get('message', ''))}"
+    selection = item.get("selection") or {}
+    resolved = item.get("resolved_kind") or item.get("kind") or ""
+    path = item.get("path") or selection.get("path") or ""
+    symbol = item.get("symbol") or selection.get("symbol")
+    symbol_text = f" symbol={symbol}" if symbol else ""
+    return f"- {target}: {resolved} {path}{symbol_text}".rstrip()
+
+
 def _context_summary_lines(data):
     data = data or {}
+    if data.get("kind") == "context_batch":
+        results = data.get("results") or []
+        ok = sum(1 for item in results if item.get("ok"))
+        lines = ["resolved=context_batch", f"targets={len(results)} ok={ok} failed={len(results) - ok}"]
+        lines.extend(_context_result_line(item) for item in results[:5])
+        return lines
     selection = data.get("selection") or {}
     cells = data.get("cells") or selection.get("cells") or []
+    cell = data.get("cell") or selection.get("cell")
     notebooks = data.get("notebooks") or selection.get("notebooks") or []
     symbols = data.get("symbols") or selection.get("symbols") or []
+    neighbors = data.get("neighbors") or selection.get("neighbors") or []
+    path = data.get("path") or selection.get("path")
+    symbol = data.get("symbol") or selection.get("symbol")
+    source_hash_value = data.get("source_hash") or selection.get("source_hash")
     lines = [f"resolved={data.get('resolved_kind') or data.get('kind')}"]
-    if data.get("path"): lines.append(f"path={data['path']}")
-    if data.get("symbol"): lines.append(f"symbol={data['symbol']}")
+    if data.get("mode"): lines.append(f"mode={data['mode']}")
+    if path: lines.append(f"path={path}")
+    if symbol: lines.append(f"symbol={symbol}")
+    if source_hash_value: lines.append(f"source_hash={source_hash_value}")
     if notebooks: lines.append(f"notebooks={len(notebooks)}")
     if cells: lines.append(f"cells={len(cells)}")
+    if cell: lines.append(f"cell={cell.get('cell_id')} idx={cell.get('cell_idx')}")
+    if neighbors: lines.append(f"neighbors={len(neighbors)}")
     if symbols: lines.append(f"symbols={len(symbols)}")
-    for cell in cells[:3]:
-        label = f"{cell.get('path', data.get('path', ''))} id={cell.get('cell_id', '')}".strip()
-        lines.append(f"- {label}: {_short_item(cell.get('source', ''))}")
+    for cell_item in cells[:3]:
+        label = f"{cell_item.get('path', path or '')} id={cell_item.get('cell_id', '')}".strip()
+        lines.append(f"- {label}: {_short_item(cell_item.get('source', ''))}")
     return lines
+
+
+def _compact_context_payload(data):
+    if not isinstance(data, dict): return data
+    data = dict(data)
+    data.pop("text", None)
+    selection = data.get("selection")
+    if isinstance(selection, dict):
+        selection = dict(selection)
+        selection.pop("text", None)
+        data["selection"] = selection
+    if isinstance(data.get("results"), list):
+        data["results"] = [_compact_context_payload(item) for item in data["results"]]
+    return data
 
 
 def _filter_context_match_summary(item):
@@ -1032,20 +1074,22 @@ def mcp_tool_result(tool, arguments, full_output, max_output_chars=12000, detail
         lines += ["", "Hints:"]
         lines.extend(f"- {hint}" for hint in hints)
     summary = chr(10).join(lines)
+    context_summary = tool == "context" and detail == "summary"
     data = {
         "summary": summary,
         "status": status,
         "call": {"tool": tool, "arguments": _redact_arguments(arguments or {})},
-        "full_output": preview["text"],
-        "preview_output": preview["text"],
+        "full_output": summary if context_summary else preview["text"],
         "output_truncated": preview["truncated"],
         "output_chars": preview["chars"],
         "omitted_chars": preview["omitted_chars"],
         "warnings": warnings,
         "hints": hints if detail == "debug" else [],
     }
+    if tool != "context": data["preview_output"] = preview["text"]
     if detail == "debug": data["debug"] = {"arguments": arguments or {}, "raw_output": _text_preview(full_text, limit=structured_text_limit)["text"]}
     for key, value in structured.items():
+        if context_summary and key == "context": value = _compact_context_payload(value)
         data["result_summary" if key == "summary" else key] = _bounded_structured_value(value, text_limit=structured_text_limit)
     return ToolResult(content=[TextContent(type="text", text=summary)], structured_content=data)
 
@@ -1612,31 +1656,54 @@ def _mcp_graph_summary(graph):
     return "\n".join(lines)
 
 # %% ../nbs/07_mcp.ipynb #5450e1be
+def _mcp_context_target_path(target, root):
+    if target in (None, ""): return target
+    text = str(target)
+    path_text, sep, ref = text.partition("#")
+    target_is_path = path_text.endswith(".ipynb") or "/" in path_text or "\\" in path_text
+    if not target_is_path: return target
+    path = _mcp_workspace_path(path_text, root)
+    return f"{path}#{ref}" if sep else path
+
+
+def _mcp_context_targets(targets, root):
+    if targets is None: return None
+    if isinstance(targets, str): return [_mcp_context_target_path(targets, root)] if targets else []
+    return [_mcp_context_target_path(item, root) for item in targets]
+
+
 @mcp.tool(**_mcp_tool_meta("context"))
 async def _context_tool(
     target: str = "project",
+    targets: list[str] | None = None,
     scope: str = ".",
     overview: bool = False,
+    mode: str = "auto",
+    around: int = 0,
     include_graph: bool = False,
     detail: str = "summary",
     ctx: Context = None,
 ) -> ToolResult:
-    "Resolve one target to project, notebook, chapter, cell, or symbol context."
+    "Resolve targets to project, notebook, chapter, cell, or symbol context."
     root = await _mcp_workspace_root(ctx)
     scope = _mcp_workspace_path(scope, root)
+    target = _mcp_context_target_path(target, root)
+    targets = _mcp_context_targets(targets, root)
+    around = _mcp_clamp_int(around, 0, 0, 20, "around")
     target_text = str(target or "")
-    target_is_project = target_text in {"project", ".", ""}
-    target_is_path = target_text.endswith(".ipynb") or "/" in target_text or "\\" in target_text
-    if target_is_path: target = _mcp_workspace_path(target, root)
+    target_is_project = targets is None and target_text in {"project", ".", ""}
     arguments = dict(
         target=target,
+        targets=targets,
         scope=scope,
         overview=overview,
+        mode=mode,
+        around=around,
         include_graph=include_graph,
         detail=detail,
         workspace_root=str(root) if root else None,
     )
-    context_args = dict(target=target, scope=scope, overview=overview)
+    context_args = dict(target=target, targets=targets, scope=scope, overview=overview, mode=mode, around=around)
     try:
         with notebook_locks(scope), _CAPTURE_LOCK:
             out, err = StringIO(), StringIO()

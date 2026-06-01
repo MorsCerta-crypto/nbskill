@@ -19,7 +19,7 @@ from nbskill.foundation import (
     Notebook, NotebookCell, call_name, cell_matches_type, cell_output_text, cell_prefix,
     cell_source, chapter_index_set, chapter_spans, find_cell_by_id, first_line,
     heading_title, is_exported_code_cell, matches_filter, notebook_paths,
-    source_without_directives, symbol_short_name,
+    source_hash, source_without_directives, symbol_short_name,
 )
 
 # %% ../nbs/01_read.ipynb #3876f40e
@@ -1117,33 +1117,60 @@ def _context_cell_matches(target, notebooks):
         nb = read_nb(path)
         for idx, cell in enumerate(nb.cells):
             if getattr(cell, "id", None) == target:
-                matches.append({"path": path, "cell_idx": idx, "cell_id": getattr(cell, "id", "")})
+                matches.append(dict(path=str(path), cell_idx=idx, cell_id=target))
     return matches
+
+
 def _context_symbol_matches(target, notebooks):
     matches = []
     for path in notebooks:
         nb = read_nb(path)
         try: idx = _find_symbol_cell(nb, target)
         except ValueError: continue
-        matches.append({"path": path, "cell_idx": idx, "symbol": str(target)})
+        if idx is not None:
+            matches.append(dict(path=str(path), cell_idx=idx, symbol=str(target)))
     return matches
+
+
 def _context_chapter_matches(target, notebooks):
     chapter_matches, subchapter_matches = [], []
     for path in notebooks:
         nb = read_nb(path)
         for span in _chapter_spans_for_nb(nb.cells):
-            if _chapter_matches(span, target): chapter_matches.append({"path": path, "chapter": span})
+            if _chapter_matches(span, target):
+                chapter_matches.append(dict(path=str(path), chapter=span))
         for span in _all_heading_spans_for_nb(nb.cells):
-            if _chapter_matches(span, target): subchapter_matches.append({"path": path, "chapter": span})
+            if _chapter_matches(span, target):
+                subchapter_matches.append(dict(path=str(path), chapter=span))
     return chapter_matches or subchapter_matches
+
+
+def _context_candidate_target(item):
+    path = item.get("path", "")
+    detail = item.get("cell_id") or item.get("symbol") or item.get("chapter", {}).get("title", "")
+    return f"{path}#{detail}" if path and detail else (path or detail)
+
+
+def _context_candidate_line(kind, item):
+    detail = item.get("cell_id") or item.get("symbol") or item.get("chapter", {}).get("title", "")
+    target = _context_candidate_target(item)
+    suffix = f" use {target!r}" if target else ""
+    return f"- {kind}: {item.get('path', '')} {detail}{suffix}".rstrip()
+
+
 def _context_one_match(kind, target, matches):
     if len(matches) == 1: return matches[0]
     if not matches: return None
-    shown = []
-    for item in matches[:8]:
-        detail = item.get("cell_id") or item.get("symbol") or item.get("chapter", {}).get("title", "")
-        shown.append(f"- {kind}: {item['path']} {detail}".rstrip())
-    raise ValueError(f"Target {target!r} matched multiple {kind} contexts:\n" + "\n".join(shown))
+    candidates = [_context_candidate_target(item) for item in matches[:8]]
+    shown = [_context_candidate_line(kind, item) for item in matches[:8]]
+    message = (
+        f"Target {target!r} matched multiple {kind} contexts. "
+        "Use a qualified target like path.ipynb#cell_id or path.ipynb#symbol.\n"
+        + "\n".join(shown)
+    )
+    exc = ValueError(message)
+    exc.candidates = [item for item in candidates if item]
+    raise exc
 
 # %% ../nbs/01_read.ipynb #153bbc70
 def _context_search_root(scope):
@@ -1230,6 +1257,30 @@ def _literal_search_context(target, scope, notebooks, max_matches=50, max_chars_
     return _context_result("search_context", text, verbose=verbose, target=str(target), scope=str(scope), **data)
 
 # %% ../nbs/01_read.ipynb #9a40cc35
+_CONTEXT_MODES = {"auto", "edit", "review", "overview"}
+
+
+def _context_mode(mode, overview=False):
+    if overview: return "overview"
+    mode = "auto" if mode in (None, "") else str(mode).lower()
+    if mode not in _CONTEXT_MODES:
+        raise ValueError(f"mode must be one of {sorted(_CONTEXT_MODES)}, not {mode!r}")
+    return mode
+
+
+def _context_around(around):
+    try: return max(0, int(around or 0))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("around must be an integer") from exc
+
+
+def _context_target_items(targets):
+    if targets is None: return None
+    if isinstance(targets, str):
+        return [targets] if targets else []
+    return [str(item) for item in targets if str(item)]
+
+
 def _context_symbol_graphs(path, symbols):
     symbols = [str(item) for item in dict.fromkeys(symbols or []) if item]
     if not symbols: return []
@@ -1242,6 +1293,8 @@ def _context_symbol_graphs(path, symbols):
         try: graphs.append(symbol_graph_public_data(symbol_graph_data(path, symbol)))
         except Exception: pass
     return graphs
+
+
 def _context_graph_text(graphs):
     if not graphs: return ""
     lines = ["Symbol graph"]
@@ -1259,52 +1312,210 @@ def _context_graph_text(graphs):
             callee_symbol = callee.get("symbol", callee) if isinstance(callee, dict) else callee
             lines.append(f"  callee: {callee_symbol}")
     return "\n".join(lines)
+
+
 def _context_cell_symbols(path, cell_idx):
     nb = read_nb(path)
     return [item["symbol"] for item in _definition_records_for_cell(path, nb, cell_idx)]
+
+
 def _context_with_graphs(result, graphs):
     if not graphs: return result
     text = result.get("text", "")
     graph_text = _context_graph_text(graphs)
     return {**result, "text": f"{text}\n\n{graph_text}".rstrip(), "symbol_graphs": graphs}
-def _context_as_single(result, target, scope, resolved_kind, **extra):
+
+
+def _context_neighbor_records(path, cell_idx, around):
+    around = _context_around(around)
+    if around <= 0: return []
+    nb = read_nb(path)
+    start, end = max(0, cell_idx - around), min(len(nb.cells), cell_idx + around + 1)
+    return [{**_context_cell_record(idx, nb.cells[idx]), "path": str(path)} for idx in range(start, end) if idx != cell_idx]
+
+
+def _context_append_block(text, heading, items):
+    items = [item for item in items if item]
+    if not items: return text
+    return f"{text.rstrip()}\n\n{heading}\n" + "\n\n".join(items)
+
+
+def _context_with_neighbors(result, path, cell_idx, around):
+    neighbors = _context_neighbor_records(path, cell_idx, around)
+    if not neighbors: return result
+    text = _context_append_block(result.get("text", ""), "Neighbor cells", [_render_context_cell(item) for item in neighbors])
+    return {**result, "text": text, "neighbors": neighbors}
+
+
+def _context_edit_result(path, cell_idx, symbol=None, source=None, verbose=True):
+    nb = read_nb(path)
+    cell = nb.cells[cell_idx]
+    source = cell_source(cell) if source is None else source
+    cell_record = {**_context_cell_record(cell_idx, cell), "path": str(path)}
+    symbols = [symbol] if symbol else _context_cell_symbols(path, cell_idx)
+    title = "\n".join([
+        f"Edit context: {symbol or cell_record['cell_id']}",
+        f"Path: {path}",
+        f"Cell: {cell_prefix(cell_idx, cell, True)}",
+    ])
+    text = _format_context_blocks(title, [("Source", source)])
     return _context_result(
-        "context", result["text"], verbose=True, target=str(target), scope=str(scope),
-        resolved_kind=resolved_kind, selection=result, **extra,
+        "edit_context", text, verbose=verbose, path=str(path), symbol=symbol,
+        cell=cell_record, cell_id=cell_record["cell_id"], cell_idx=cell_idx,
+        source=source, source_hash=source_hash(source), symbols=symbols,
     )
-def context(
-    target: str = "project",  # project, notebook path/name, chapter title, cell id, Python symbol, or literal search text
-    scope: str = ".",  # Project, folder, glob, or notebook used to narrow target lookup
-    overview: bool = False,  # True keeps compact overview; False shows fuller notebook markdown or related symbol context
-):
-    "Return the best notebook-aware context for one target."
+
+
+def _context_cell_payload(path, cell_idx, mode, around):
+    if mode == "edit":
+        result, graphs = _context_edit_result(path, cell_idx, verbose=False), []
+    else:
+        result = _cell_context(path, cell_idx, overview=(mode == "overview"), verbose=False)
+        graphs = [] if mode == "overview" else _context_symbol_graphs(path, result.get("symbols", []))
+        result = _context_with_graphs(result, graphs)
+    return _context_with_neighbors(result, path, cell_idx, around), graphs
+
+
+def _context_symbol_payload(path, symbol, mode, around):
+    nb = read_nb(path)
+    idx, cell, node, source = _symbol_source(path, nb, symbol)
+    if mode == "edit":
+        result, graphs = _context_edit_result(path, idx, symbol=symbol, source=source, verbose=False), []
+    else:
+        result = _symbol_focus_context(path, symbol, overview=(mode == "overview"), verbose=False)
+        graphs = [] if mode == "overview" else _context_symbol_graphs(path, result.get("symbols", [symbol]))
+        result = _context_with_graphs(result, graphs)
+    return _context_with_neighbors(result, path, idx, around), graphs
+
+
+def _context_as_single(result, target, scope, resolved_kind, mode="auto", around=0, **extra):
+    return _context_result(
+        "context", result["text"], verbose=True, ok=True, target=str(target), scope=str(scope),
+        mode=mode, around=around, resolved_kind=resolved_kind, selection=result, **extra,
+    )
+
+
+def _context_parse_qualified_target(target):
+    text = str(target or "")
+    if "#" not in text: return None
+    path_text, ref = text.rsplit("#", 1)
+    if not ref or ".ipynb" not in path_text: return None
+    path = _context_existing_notebook(path_text)
+    return (str(path), ref) if path is not None else None
+
+
+def _context_cell_index_for_ref(nb, ref):
+    if str(ref).isdigit():
+        idx = int(ref)
+        if 0 <= idx < len(nb.cells): return idx
+    for idx, cell in enumerate(nb.cells):
+        if getattr(cell, "id", None) == ref: return idx
+    return None
+
+
+def _context_qualified_candidates(path, nb, limit=8):
+    cells = [f"{path}#{getattr(cell, 'id', '')}" for cell in nb.cells if getattr(cell, "id", "")]
+    symbols = [f"{path}#{item['symbol']}" for item in _definition_records(path, nb)]
+    return (cells[: limit // 2] + symbols)[:limit]
+
+
+def _context_unknown_qualified(path, ref, nb):
+    candidates = _context_qualified_candidates(path, nb)
+    shown = "\n".join(f"- {item}" for item in candidates)
+    suffix = f"\nCandidates:\n{shown}" if shown else ""
+    exc = ValueError(f"No cell id, cell index, or symbol {ref!r} in {path}.{suffix}")
+    exc.candidates = candidates
+    raise exc
+
+
+def _context_qualified_payload(target, mode, around):
+    parsed = _context_parse_qualified_target(target)
+    if parsed is None: return None
+    path, ref = parsed
+    nb = read_nb(path)
+    cell_idx = _context_cell_index_for_ref(nb, ref)
+    if cell_idx is not None:
+        result, graphs = _context_cell_payload(path, cell_idx, mode, around)
+        return result, "cell", {"symbol_graphs": graphs} if graphs else {}
+    try:
+        result, graphs = _context_symbol_payload(path, ref, mode, around)
+        return result, "symbol", {"symbol_graphs": graphs} if graphs else {}
+    except ValueError:
+        _context_unknown_qualified(path, ref, nb)
+
+
+def _context_single(target="project", scope=".", mode="auto", around=0, verbose=True):
     target = "project" if target in (None, "") else str(target)
     scope = "." if scope in (None, "") else str(scope)
+    mode, around = _context_mode(mode), _context_around(around)
     if target == "project":
         result = project_context(scope, verbose=False)
-        return _context_as_single(result, target, scope, "project", overview=overview)
+        return _context_as_single(result, target, scope, "project", mode=mode, around=around)
+    qualified = _context_qualified_payload(target, mode, around)
+    if qualified is not None:
+        result, resolved_kind, extra = qualified
+        return _context_as_single(result, target, scope, resolved_kind, mode=mode, around=around, **extra)
     path = _context_existing_notebook(target)
     try: notebooks = _context_notebooks(scope)
     except ValueError: notebooks = []
     path = path or _context_named_notebook(target, notebooks)
     if path is not None:
-        result = _notebook_context(path, scope=scope, overview=overview, verbose=False)
-        return _context_as_single(result, target, scope, "notebook", overview=overview)
+        result = _notebook_context(path, scope=scope, overview=(mode in {"overview", "edit"}), verbose=False)
+        return _context_as_single(result, target, scope, "notebook", mode=mode, around=around)
     cell = _context_one_match("cell", target, _context_cell_matches(target, notebooks))
     if cell is not None:
-        result = _cell_context(cell["path"], cell["cell_idx"], overview=overview, verbose=False)
-        graphs = _context_symbol_graphs(cell["path"], result.get("symbols", []))
-        result = _context_with_graphs(result, graphs)
-        return _context_as_single(result, target, scope, "cell", overview=overview, symbol_graphs=graphs)
+        result, graphs = _context_cell_payload(cell["path"], cell["cell_idx"], mode, around)
+        return _context_as_single(result, target, scope, "cell", mode=mode, around=around, symbol_graphs=graphs)
     symbol = _context_one_match("symbol", target, _context_symbol_matches(target, notebooks))
     if symbol is not None:
-        result = _symbol_focus_context(symbol["path"], target, overview=overview, verbose=False)
-        graphs = _context_symbol_graphs(symbol["path"], result.get("symbols", [target]))
-        result = _context_with_graphs(result, graphs)
-        return _context_as_single(result, target, scope, "symbol", overview=overview, symbol_graphs=graphs)
+        result, graphs = _context_symbol_payload(symbol["path"], target, mode, around)
+        return _context_as_single(result, target, scope, "symbol", mode=mode, around=around, symbol_graphs=graphs)
     chapter = _context_one_match("chapter", target, _context_chapter_matches(target, notebooks))
     if chapter is not None:
-        result = chapter_context(chapter["path"], name=chapter["chapter"]["title"], overview=overview, verbose=False)
-        return _context_as_single(result, target, scope, "chapter", overview=overview)
+        result = chapter_context(chapter["path"], name=chapter["chapter"]["title"], overview=(mode == "overview"), verbose=False)
+        return _context_as_single(result, target, scope, "chapter", mode=mode, around=around)
     result = _literal_search_context(target, scope, notebooks, verbose=False)
-    return _context_as_single(result, target, scope, "search", overview=overview)
+    return _context_as_single(result, target, scope, "search", mode=mode, around=around)
+
+
+def _context_error_entry(target, exc):
+    return {
+        "kind": "context_error", "ok": False, "target": str(target),
+        "error": {"type": type(exc).__name__, "message": str(exc)},
+        "candidates": list(getattr(exc, "candidates", []) or []),
+        "text": f"Context error: {target}\n{type(exc).__name__}: {exc}",
+    }
+
+
+def _context_batch(targets, scope=".", mode="auto", around=0):
+    scope = "." if scope in (None, "") else str(scope)
+    items = _context_target_items(targets) or []
+    results, rendered = [], []
+    for item in items:
+        try:
+            result = _context_single(item, scope=scope, mode=mode, around=around, verbose=False)
+            result = {**result, "ok": True}
+        except Exception as exc:
+            result = _context_error_entry(item, exc)
+        results.append(result)
+        rendered.append(result.get("text", ""))
+    text = _format_context_blocks(f"Context batch\nTargets: {len(items)}", [("Results", "\n\n".join(rendered))])
+    return _context_result(
+        "context_batch", text, verbose=True, ok=all(item.get("ok") for item in results),
+        targets=items, scope=scope, mode=mode, around=around, results=results,
+    )
+
+
+def context(
+    target: str = "project",
+    scope: str = ".",
+    overview: bool = False,
+    targets: list[str] | None = None,
+    mode: str = "auto",
+    around: int = 0,
+):
+    "Return the best notebook-aware context for one target or an ordered batch of targets."
+    mode = _context_mode(mode, overview=overview)
+    around = _context_around(around)
+    if targets is not None: return _context_batch(targets, scope=scope, mode=mode, around=around)
+    return _context_single(target=target, scope=scope, mode=mode, around=around)

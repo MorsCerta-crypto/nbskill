@@ -760,6 +760,15 @@ def _kg_id(*parts):
 def _kg_clean(extra):
     return {key: value for key, value in extra.items() if value is not None and value != ""}
 
+# %% ../nbs/10_graph.ipynb #38c0c450
+def _kg_project_summary(scope, ordered_paths, state):
+    return {
+        "path": str(scope),
+        "notebook_count": len(ordered_paths),
+        "node_count": len(state["nodes"]),
+        "edge_count": len(state["edges"]),
+    }
+
 # %% ../nbs/10_graph.ipynb #9dee544b
 def _kg_node(node_id, kind, name, **extra):
     data = {"id": node_id, "type": kind, "name": str(name)}
@@ -1040,7 +1049,7 @@ def notebook_knowledge_graph_data(path="nbs"):
     data = {
         "version": 1,
         "kind": "nbskill_notebook_graph",
-        "project": {"path": str(scope), "notebook_count": len(ordered_paths), "node_count": len(state["nodes"]), "edge_count": len(state["edges"])},
+        "project": _kg_project_summary(scope, ordered_paths, state),
         "nodes": list(state["nodes"].values()),
         "edges": state["edges"],
         "layers": list(state["layers"].values()),

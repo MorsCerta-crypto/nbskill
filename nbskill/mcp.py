@@ -7,7 +7,7 @@ __all__ = ['mcp', 'as_text', 'capture_call', 'capture_notebook_call', 'mcp_tool_
 
 # %% ../nbs/07_mcp.ipynb #mcpimports1
 import asyncio
-import json,os
+import json,os,signal
 import re
 import shutil
 import subprocess
@@ -139,25 +139,49 @@ def _mcp_expected_hash_warning(path, cell_id, expected_hash):
     )
 
 # %% ../nbs/07_mcp.ipynb #da137c83
-def _capture_exec_nb_cli_call(arguments):
+def _exec_nb_subprocess_output(stdout, stderr):
+    chunks = [item.rstrip() for item in (stdout, stderr) if item]
+    return chr(10).join(chunks)
+
+# %% ../nbs/07_mcp.ipynb #45d4a277
+def _terminate_exec_nb_process(proc):
+    if proc.poll() is not None: return
+    if os.name != "nt":
+        try: os.killpg(proc.pid, signal.SIGTERM)
+        except ProcessLookupError: return
+        except Exception: proc.terminate()
+    else: proc.terminate()
+    try: proc.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        if os.name != "nt":
+            try: os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError: pass
+            except Exception: proc.kill()
+        else: proc.kill()
+        proc.wait(timeout=2)
+
+# %% ../nbs/07_mcp.ipynb #8f9a83fe
+def _capture_exec_nb_cli_call(arguments, tool_timeout=None):
     call_args = {key: value for key, value in arguments.items() if key not in {"detail", "workspace_root"}}
-    script = "; ".join([
-        "import json, sys",
-        "from nbskill.execute import exec_nb",
-        "exec_nb(**json.loads(sys.argv[1]))",
-    ])
+    script = "import json, sys; from nbskill.execute import exec_nb; exec_nb(**json.loads(sys.argv[1]))"
     lock_paths = [call_args.get("path")]
     if call_args.get("dest"): lock_paths.append(call_args["dest"])
     cwd = git_root(call_args.get("path") or ".") or _git_base(call_args.get("path") or ".").resolve()
+    popen_kwargs = dict(text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=str(cwd))
+    if os.name != "nt": popen_kwargs["start_new_session"] = True
     with notebook_locks(*lock_paths):
-        proc = subprocess.run(
-            [sys.executable, "-c", script, json.dumps(call_args)],
-            text=True, capture_output=True, cwd=str(cwd),
-        )
-    chunks = [item.rstrip() for item in (proc.stdout, proc.stderr) if item]
-    output = chr(10).join(chunks)
-    if proc.returncode != 0:
-        raise RuntimeError(output or f"exec_nb subprocess failed with exit code {proc.returncode}")
+        proc = subprocess.Popen([sys.executable, "-c", script, json.dumps(call_args)], **popen_kwargs)
+        try: stdout, stderr = proc.communicate(timeout=tool_timeout if tool_timeout and tool_timeout > 0 else None)
+        except subprocess.TimeoutExpired as exc:
+            _terminate_exec_nb_process(proc)
+            stdout, stderr = proc.communicate()
+            output = _exec_nb_subprocess_output(stdout, stderr)
+            timeout_text = f"{tool_timeout:g}s"
+            message = f"exec_nb exceeded its MCP timeout of {timeout_text} before Codex's client timeout; terminated Python subprocess pid={proc.pid}."
+            if output: message = f"{message}\n\nPartial output:\n{output}"
+            raise TimeoutError(message) from exc
+    output = _exec_nb_subprocess_output(stdout, stderr)
+    if proc.returncode != 0: raise RuntimeError(output or f"exec_nb subprocess failed with exit code {proc.returncode}")
     return output
 
 # %% ../nbs/07_mcp.ipynb #92b5d9b5
@@ -1884,15 +1908,18 @@ async def exec_nb_tool(
     show_output: bool = True,
     allow_new: bool = False,
     check_only: bool = False,
+    tool_timeout: float = 150.0,
     detail: str = "summary",
     ctx: Context = None,
 ) -> ToolResult:
     "Execute a notebook and return visible outputs/errors. Use check_only=True to avoid writing outputs."
     root = await _mcp_workspace_root(ctx)
     path = _mcp_workspace_path(path, root)
+    tool_timeout = _mcp_clamp_float(tool_timeout, 150.0, 0.001, 150.0, "tool_timeout")
     arguments = dict(
         path=path, up2id=up2id, chapter=chapter, timeout=timeout, show_output=show_output,
-        allow_new=allow_new, check_only=check_only, detail=detail, workspace_root=str(root) if root else None,
+        allow_new=allow_new, check_only=check_only, tool_timeout=tool_timeout, detail=detail,
+        workspace_root=str(root) if root else None,
     )
     try:
         call_args = dict(
@@ -1900,7 +1927,7 @@ async def exec_nb_tool(
             show_output=show_output, verbose=False, safe=True, allow=None, ok_dests=None,
             cache_httpx=False, cache_dir=None, cache_domains=None, allow_new=allow_new, check_only=check_only,
         )
-        full_output = capture_notebook_call(exec_nb, path, **call_args)
+        full_output = await asyncio.to_thread(_capture_exec_nb_cli_call, call_args, tool_timeout)
         warnings = []
         approval_request = None
         elicitation = None
@@ -1918,7 +1945,7 @@ async def exec_nb_tool(
             approval_request["approved"] = approved
             if approved:
                 retry_args = dict(call_args, allow_new=True)
-                full_output = capture_notebook_call(exec_nb, path, **retry_args)
+                full_output = await asyncio.to_thread(_capture_exec_nb_cli_call, retry_args, tool_timeout)
                 arguments["allow_new"] = True
                 arguments["elicited_allow_new"] = True
                 approval_blocked = "_ExecutionApprovalRequired" in full_output or "refusing to execute unapproved cell" in full_output

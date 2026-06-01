@@ -57,6 +57,9 @@ DEFAULT_BUDGETS = {
     "max_rendered_plan_chars": 50000,
     "max_agent_steps": 20,
     "max_agent_timeout": 120,
+    "max_run_secs": 30,
+    "max_context_commands": 8,
+    "context_steps": 2,
 }
 
 _WORKBENCH_MAX_NOTEBOOKS = 20
@@ -456,14 +459,15 @@ def _render_list(items):
 # %% ../nbs/11_agent_workbench.ipynb #dfbc8a3b
 def _render_budget_lines(contract):
     budgets = contract.get("budgets", {})
-    return [
-        "Budgets:",
-        f"- max_files={budgets.get('max_files')}",
-        f"- max_cells={budgets.get('max_cells')}",
-        f"- max_added_lines={budgets.get('max_added_lines')}",
-        f"- compatibility={contract.get('compatibility')}",
-        f"- public_api={contract.get('public_api')}",
-    ]
+    lines = ["Budgets:"]
+    lines.extend(f"- {key}={budgets.get(key)}" for key in DEFAULT_BUDGETS)
+    lines.extend(
+        [
+            f"- compatibility={contract.get('compatibility')}",
+            f"- public_api={contract.get('public_api')}",
+        ]
+    )
+    return lines
 
 # %% ../nbs/11_agent_workbench.ipynb #a1b091c5
 def _render_workbench_header(contract, taste):
@@ -551,11 +555,22 @@ def agent_workbench_result(
     contract_goal = overrides.pop("goal", goal)
     contract = make_task_contract(contract_goal, **overrides)
     context_path = notebook or "nbs"
-    taste = _deep_merge(load_taste_profile(project_path=context_path), contract.get("taste", {}))
-    context = compile_context(contract["goal"], path=context_path, contract=contract, taste=taste)
+    taste = _deep_merge(
+        load_taste_profile(project_path=context_path), contract.get("taste", {})
+    )
+    context = compile_context(
+        contract["goal"], path=context_path, contract=contract, taste=taste
+    )
     baseline = capture_state(context_path)
     budgets = contract.get("budgets", {})
-    max_plan_chars = min(int(budgets.get("max_rendered_plan_chars", _WORKBENCH_MAX_RENDERED_PLAN_CHARS)), _WORKBENCH_MAX_RENDERED_PLAN_CHARS)
+    max_plan_chars = min(
+        int(
+            budgets.get(
+                "max_rendered_plan_chars", _WORKBENCH_MAX_RENDERED_PLAN_CHARS
+            )
+        ),
+        _WORKBENCH_MAX_RENDERED_PLAN_CHARS,
+    )
     rendered_plan = cap_text(_render_workbench_plan(contract, taste, context), max_plan_chars)
     result = {
         "summary": "agent_workbench prepared execution context",
@@ -565,17 +580,43 @@ def agent_workbench_result(
         "baseline": baseline,
         "rendered_plan": rendered_plan,
         "expected_gates": {
-            "hard": ["max_files", "max_cells", "max_added_lines", "public_api", "generated/source sync", "new doctor errors"],
+            "hard": [
+                "max_files",
+                "max_cells",
+                "max_added_lines",
+                "public_api",
+                "generated/source sync",
+                "new doctor errors",
+            ],
             "soft": ["style_delta", "readability_delta", "test_clarity"],
         },
     }
     if execute:
-        if not notebook: raise ValueError("agent_workbench execute=True requires notebook")
-        max_steps = min(int(max_steps), int(budgets.get("max_agent_steps", DEFAULT_BUDGETS["max_agent_steps"])))
-        timeout = min(int(timeout), int(budgets.get("max_agent_timeout", DEFAULT_BUDGETS["max_agent_timeout"])))
+        if not notebook:
+            raise ValueError("agent_workbench execute=True requires notebook")
+        max_steps = min(
+            int(max_steps),
+            int(budgets.get("max_agent_steps", DEFAULT_BUDGETS["max_agent_steps"])),
+        )
+        timeout = min(
+            int(timeout),
+            int(budgets.get("max_run_secs", DEFAULT_BUDGETS["max_run_secs"])),
+        )
+        max_context_commands = int(
+            budgets.get(
+                "max_context_commands", DEFAULT_BUDGETS["max_context_commands"]
+            )
+        )
+        context_steps = int(
+            budgets.get("context_steps", DEFAULT_BUDGETS["context_steps"])
+        )
         execution = execute_plan(
-            notebook=notebook, plan=rendered_plan, max_steps=max_steps,
+            notebook=notebook,
+            plan=rendered_plan,
+            max_steps=max_steps,
             timeout=timeout,
+            max_context_commands=max_context_commands,
+            context_steps=context_steps,
         )
         result["execution"] = execution
         result["score"] = score_patch(baseline, contract, path=context_path)

@@ -9,15 +9,17 @@ __all__ = ['EDIT_INTERACTIVE_SYSTEM', 'CONTEXT_SESSION_SYSTEM', 'capture_call_te
 
 # %% ../nbs/08_edit_interactive.ipynb #c7e88003
 import ast
+import inspect
 import json
 import os
 import re
+import signal
 import traceback
-from contextlib import redirect_stderr, redirect_stdout
+from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from dataclasses import dataclass, field
 from io import StringIO
 from pathlib import Path
-from threading import Lock
+from threading import Lock, current_thread, main_thread
 from fastcore.nbio import read_nb
 from .edit import NotebookEditor
 from .foundation import cap_text, cell_source, chapter_spans, commit_notebook, parse_one_cell
@@ -70,35 +72,40 @@ context-management step. There is no project-scope lookup tool because that
 scope is injected into this prompt.
 
 Use only the provided editing tools: str_replace, edit_cell, add_cell,
-delete_cell, execute_cell, and query_knowledge. The context-management tools are
-not available in this edit step. When more than one notebook is in scope, pass
-the notebook path/name to edit and execution tools so the target is explicit.
-Keep the work scoped to one small specific task.
+delete_cell, run_code, inspect_state, execute_cell, and query_knowledge. The
+context-management tools are not available in this edit step. When more than one
+notebook is in scope, pass the notebook path/name to edit and execution tools so
+the target is explicit. Keep the work scoped to one small specific task.
 
 For new behavior, use this loop:
-1. Experiment: write the smallest code that explores the idea, execute it, and
-   inspect the result before treating it as correct.
-2. Function: turn the working experiment into a focused function. Add a Markdown
-   cell directly above the exported code explaining why the function is needed
-   and why it is useful.
-3. Example: add an example cell directly below the function showing how it works.
-   If the example is slow or produces artifacts, add `#| eval: false`.
-4. Test: add a focused test cell directly below the example so future changes
+1. Scratch: run the smallest experiment with run_code in the live notebook
+   scope. Use budget_secs for code that might run long.
+2. Inspect: use inspect_state to look at variables and functions before treating
+   an experiment as correct.
+3. Function: turn the working scratch into a focused function. Add a Markdown
+   cell directly above exported code explaining why the function is needed.
+4. Example: add an example cell directly below the function showing how it
+   works. If the example is slow or produces artifacts, add `#| eval: false`.
+5. Test: add a focused test cell directly below the example so future changes
    keep the same output.
+6. Execute: use execute_cell to replay through the example or test. Pass
+   rerun_all=True when earlier cells changed and the whole notebook state must
+   be rebuilt.
+7. Clean context: after scratch is stabilized into notebook cells, let the final
+   context step fold or delete no-longer-needed working context.
 
-Use execute_cell normally to continue from the last executed cell through the
-target cell, like a live notebook kernel. Pass rerun_all=True when earlier cells
-changed and the whole notebook state must be rebuilt. Exceptions are returned to
-you as tool output; inspect them, edit, and execute again. Stop as soon as the
-requested notebook change is complete. Your final message must summarize what
-changed, what was executed, and what could not be completed.
+Exceptions are returned to you as tool output; inspect them, edit, and execute
+again. Stop as soon as the requested notebook change is complete. Your final
+message must summarize what changed, what was executed, and what could not be
+completed.
 """
 
 CONTEXT_SESSION_SYSTEM = """You manage the context for an nbskill editing run.
-You do not edit notebooks. Use only the context tools to open, hide, remove, or
-summarize managed context messages so the next editing step sees the smallest
-useful context. Prefer opening the few chapters directly relevant to the plan,
-hiding full chapters after they are no longer useful, and leaving the index
+You do not edit notebooks. Use only the context tools to open, fold, delete, or
+edit managed context messages so the next editing step sees the smallest useful
+context. Open the few chapters directly relevant to the plan, fold full chapters
+to concise summaries after they are no longer useful, delete irrelevant material
+from the active context while preserving the audit log, and leave the index
 visible. Stop once the context is prepared or cleaned.
 """
 
@@ -181,12 +188,13 @@ def notebooks_view(paths, revision=0):
 # %% ../nbs/08_edit_interactive.ipynb #8b698a18
 class ManagedContextMessage:
     "One mutable context message controlled by a stable tag."
-    def __init__(self, tag, purpose, content, visible=True, removed=False):
+    def __init__(self, tag, purpose, content, visible=True, removed=False, summary=""):
         self.tag = str(tag)
         self.purpose = str(purpose)
         self.content = str(content)
         self.visible = bool(visible)
         self.removed = bool(removed)
+        self.summary = str(summary or "")
 
 
 def _context_msg_get(msg, key):
@@ -265,7 +273,7 @@ def managed_notebook_context(path, revision=0, previous=None):
         "Notebooks: " + _target_label(paths),
         f"Revision: {revision}",
         "",
-        "Context is controlled by a separate context session. The edit session sees only visible messages.",
+        "Open messages render full content; folded messages render summaries; deleted messages are omitted.",
         "",
         "Chapter index:",
     ]
@@ -287,38 +295,44 @@ def managed_notebook_context(path, revision=0, previous=None):
                     purpose=f"full chapter: {path} :: {span['title']}",
                     content=_chapter_source_view(path, span, nb.cells),
                     visible=False,
+                    summary=summary,
                 ))
-    index = ManagedContextMessage("notebook:index", "chapter summary index", "\n".join(index_lines).rstrip() + "\n")
+    index = ManagedContextMessage(
+        "notebook:index", "chapter summary index", "\n".join(index_lines).rstrip() + "\n",
+        summary="Index of available notebook context messages.",
+    )
     rebuilt = [index, *messages]
     for msg in rebuilt:
         prior = old.get(msg.tag)
         if prior is None: continue
+        prior_summary = getattr(prior, "summary", "")
         if msg.tag != "notebook:index":
             msg.visible, msg.removed = prior.visible, prior.removed
+            if prior_summary: msg.summary = prior_summary
         if prior.purpose.startswith("edited "):
             msg.purpose, msg.content = prior.purpose, prior.content
+            if prior_summary: msg.summary = prior_summary
     return rebuilt
 
 
 def render_managed_context(messages):
-    "Render currently visible managed context messages."
+    "Render active managed context messages as a budgeted projection."
     visible = [msg for msg in messages if msg.visible and not msg.removed]
-    hidden = [msg for msg in messages if not msg.visible and not msg.removed]
-    removed = [msg for msg in messages if msg.removed]
+    folded = [msg for msg in messages if not msg.visible and not msg.removed]
     lines = ["Self-managed context messages", ""]
     for msg in visible:
         lines.append(f"<message tag={msg.tag!r} purpose={msg.purpose!r}>")
         lines.append(msg.content.rstrip())
         lines.append("</message>")
         lines.append("")
-    if hidden:
-        lines.append("Hidden messages:")
-        lines.extend(f"- {msg.tag}: {msg.purpose}" for msg in hidden)
-        lines.append("")
-    if removed:
-        lines.append("Removed messages:")
-        lines.extend(f"- {msg.tag}: {msg.purpose}" for msg in removed)
-        lines.append("")
+    if folded:
+        lines.append("Folded messages:")
+        for msg in folded:
+            summary = (msg.summary or msg.purpose).rstrip()
+            lines.append(f"<folded-message tag={msg.tag!r} purpose={msg.purpose!r}>")
+            lines.append(summary)
+            lines.append("</folded-message>")
+            lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 
 # %% ../nbs/08_edit_interactive.ipynb #ab5864d9
@@ -411,19 +425,19 @@ class EditSession:
         _append_agent_log(self, "context_command", item)
 
 # %% ../nbs/08_edit_interactive.ipynb #1462727f
-_CTX_SIMPLE_RE = re.compile(r"\[\[ctx:(open|hide|remove)\s+([^\]]+)\]\]")
-_CTX_EDIT_RE = re.compile(r"\[\[ctx:edit\s+([^\]]+)\]\](.*?)\[\[/ctx:edit\]\]", re.S)
+_CTX_SIMPLE_RE = re.compile(r"\[\[ctx:(open|delete)\s+([^\]]+)\]\]")
+_CTX_BLOCK_RE = re.compile(r"\[\[ctx:(fold|edit)\s+([^\]]+)\]\](.*?)\[\[/ctx:\1\]\]", re.S)
 
 
 def find_context_command(text):
     "Return the first complete managed-context command in `text`."
     simple = _CTX_SIMPLE_RE.search(text)
-    edit = _CTX_EDIT_RE.search(text)
-    matches = [match for match in [simple, edit] if match is not None]
+    block = _CTX_BLOCK_RE.search(text)
+    matches = [match for match in [simple, block] if match is not None]
     if not matches: return None
     match = min(matches, key=lambda item: item.start())
-    if match.re is _CTX_EDIT_RE:
-        action, tag, content = "edit", match.group(1).strip(), match.group(2)
+    if match.re is _CTX_BLOCK_RE:
+        action, tag, content = match.group(1), match.group(2).strip(), match.group(3)
     else:
         action, tag, content = match.group(1), match.group(2).strip(), None
     return {
@@ -450,13 +464,18 @@ def apply_context_command(session, command):
     msg = _managed_message_by_tag(session.managed_context, tag)
     if action == "open":
         msg.visible, msg.removed = True, False
-    elif action == "hide":
-        msg.visible = False
-    elif action == "remove":
+    elif action == "fold":
+        summary = _bounded_text(command.get("content") or msg.summary or msg.purpose, _AGENT_MAX_MESSAGE_CHARS)
+        msg.summary = summary
+        msg.visible, msg.removed = False, False
+    elif action == "delete":
         msg.removed, msg.visible = True, False
     elif action == "edit":
-        msg.content = _bounded_text(command.get("content") or "", _AGENT_MAX_NOTEBOOK_VIEW_CHARS)
-        msg.purpose = "edited " + msg.purpose
+        content = _bounded_text(command.get("content") or "", _AGENT_MAX_NOTEBOOK_VIEW_CHARS)
+        msg.content = content
+        if not msg.purpose.startswith("edited "):
+            msg.purpose = "edited " + msg.purpose
+        if content.strip(): msg.summary = cap_text(" ".join(content.split()), 600)
         msg.visible, msg.removed = True, False
     else:
         raise ValueError(f"Unknown managed context action {action!r}")
@@ -567,6 +586,7 @@ def _edit_find_cell_by_id(cells, cell_id):
 # %% ../nbs/08_edit_interactive.ipynb #b0789b35
 def _finish_write(session, path, message, result):
     session.revision += 1
+    session.reset_live_state(path)
     session.record(message)
     session.refresh_view()
     detail = str(result.get("text") or "").strip()
@@ -637,6 +657,7 @@ def _inserted_cell_ids(result):
 
 def make_edit_tools(session):
     "Create notebook-scoped editing tools for one edit-interactive session."
+
     def str_replace(old_str: str, new_str: str, notebook: str | None = None) -> str:
         "Replace one exact string occurrence anywhere in a target notebook."
         path = session.target_path(notebook)
@@ -645,15 +666,24 @@ def make_edit_tools(session):
             matches = []
             for idx, cell in enumerate(nb.cells):
                 source = cell_source(cell)
-                if old_str in source: matches.append((idx, cell, source))
+                if old_str in source:
+                    matches.append((idx, cell, source))
         session.record_tool("str_replace", f"notebook={path}, matches={len(matches)}")
-        if len(matches) != 1: raise ValueError(f"old_str matched {len(matches)} cells in {path}; expected exactly 1")
+        if len(matches) != 1:
+            raise ValueError(
+                f"old_str matched {len(matches)} cells in {path}; expected exactly 1"
+            )
         idx, cell, before = matches[0]
         after = before.replace(old_str, new_str, 1)
-        result = NotebookEditor(path, auto_feedback=False).replace_cell(cell.id, after, cell_type=cell.cell_type)
+        result = NotebookEditor(path, auto_feedback=False).replace_cell(
+            cell.id, after, cell_type=cell.cell_type
+        )
         msg = f"Replaced text in {path} id={cell.id}"
         return _finish_write(session, path, msg, result)
-    def edit_cell(id: str, old_str: str, new_str: str, notebook: str | None = None) -> str:
+
+    def edit_cell(
+        id: str, old_str: str, new_str: str, notebook: str | None = None
+    ) -> str:
         "Replace one exact string occurrence inside one cell."
         path = session.target_path(notebook)
         with notebook_locks(path):
@@ -662,12 +692,22 @@ def make_edit_tools(session):
             before = cell_source(cell)
             count = before.count(old_str)
         session.record_tool("edit_cell", f"notebook={path}, id={id!r}, matches={count}")
-        if count != 1: raise ValueError(f"old_str matched {count} times in {path} id={id}; expected exactly 1")
+        if count != 1:
+            raise ValueError(
+                f"old_str matched {count} times in {path} id={id}; expected exactly 1"
+            )
         after = before.replace(old_str, new_str, 1)
-        result = NotebookEditor(path, auto_feedback=False).replace_cell(id, after, cell_type=cell.cell_type)
+        result = NotebookEditor(path, auto_feedback=False).replace_cell(
+            id, after, cell_type=cell.cell_type
+        )
         msg = f"Edited text in {path} id={id}"
         return _finish_write(session, path, msg, result)
-    def add_cell(after_id: str | None = None, content: str = "", notebook: str | None = None) -> str:
+
+    def add_cell(
+        after_id: str | None = None,
+        content: str = "",
+        notebook: str | None = None,
+    ) -> str:
         "Add one cell to a target notebook."
         path = session.target_path(notebook)
         anchor = _none_if_blank(after_id)
@@ -684,6 +724,7 @@ def make_edit_tools(session):
         where = f"after id={anchor}" if anchor is not None else "at end"
         msg = f"Added cell id={new_id} to {path} {where}"
         return _finish_write(session, path, msg, result)
+
     def delete_cell(id: str, notebook: str | None = None) -> str:
         "Delete one cell from a target notebook."
         path = session.target_path(notebook)
@@ -693,9 +734,11 @@ def make_edit_tools(session):
         result = NotebookEditor(path, auto_feedback=False).delete(id)
         msg = f"Deleted cell id={id} from {path}"
         return _finish_write(session, path, msg, result)
+
     def _exec_python(source, filename, ns):
         tree = ast.parse(source, filename=filename, mode="exec")
-        if not tree.body: return None
+        if not tree.body:
+            return None
         if not isinstance(tree.body[-1], ast.Expr):
             exec(compile(tree, filename, "exec"), ns)
             return None
@@ -703,101 +746,293 @@ def make_edit_tools(session):
         expr = ast.Expression(tree.body[-1].value)
         ast.fix_missing_locations(prefix)
         ast.fix_missing_locations(expr)
-        if prefix.body: exec(compile(prefix, filename, "exec"), ns)
+        if prefix.body:
+            exec(compile(prefix, filename, "exec"), ns)
         return eval(compile(expr, filename, "eval"), ns)
+
     def _eval_false(source):
-        return any(re.match(r"#\|\s*eval:\s*false\b", line.strip(), re.I) for line in source.splitlines()[:5])
-    def _execute_one(path, idx, cell):
-        source = cell_source(cell)
-        header = f"CELL {idx} id={cell.id} notebook={path}"
-        if cell.cell_type != "code": return f"{header} status=skipped reason=non-code"
-        if _eval_false(source): return f"{header} status=skipped reason=eval-false"
+        return any(
+            re.match(r"#\|\s*eval:\s*false\b", line.strip(), re.I)
+            for line in source.splitlines()[:5]
+        )
+
+    def _time_limit_supported():
+        return (
+            hasattr(signal, "setitimer")
+            and hasattr(signal, "SIGALRM")
+            and current_thread() is main_thread()
+        )
+
+    @contextmanager
+    def _time_limit(seconds):
+        def _raise_timeout(signum, frame):
+            raise TimeoutError(f"execution exceeded budget_secs={seconds}")
+
+        old_handler = signal.signal(signal.SIGALRM, _raise_timeout)
+        old_timer = signal.setitimer(signal.ITIMER_REAL, float(seconds))
+        try:
+            yield
+        finally:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+            signal.signal(signal.SIGALRM, old_handler)
+            if old_timer[0] > 0:
+                signal.setitimer(signal.ITIMER_REAL, old_timer[0], old_timer[1])
+
+    @contextmanager
+    def _execution_budget(seconds, explicit):
+        if not _time_limit_supported():
+            if explicit:
+                raise RuntimeError(
+                    "execution timeout unsupported: signal timers require the main thread"
+                )
+            yield
+            return
+        with _time_limit(seconds):
+            yield
+
+    def _execute_source(source, header, filename, ns, budget_secs=None):
+        budget = _bounded_int(
+            budget_secs,
+            session.timeout,
+            1,
+            _AGENT_MAX_TIMEOUT_SECONDS,
+            "budget_secs",
+        )
         out, err = StringIO(), StringIO()
         status, display, tb = "ok", None, ""
-        filename = f"{path}::{cell.id}"
-        ns = session.live_state(path)
-        with _CAPTURE_LOCK, redirect_stdout(out), redirect_stderr(err):
-            try: display = _exec_python(source, filename, ns)
-            except BaseException:
-                status = "error"
-                tb = traceback.format_exc()
-        chunks = [f"{header} status={status}"]
-        if out.getvalue(): chunks.append("stdout:\n" + out.getvalue().rstrip())
-        if err.getvalue(): chunks.append("stderr:\n" + err.getvalue().rstrip())
-        if display is not None: chunks.append("display:\n" + repr(display))
-        if tb: chunks.append("traceback:\n" + tb.rstrip())
+        try:
+            with (
+                _execution_budget(budget, budget_secs is not None),
+                _CAPTURE_LOCK,
+                redirect_stdout(out),
+                redirect_stderr(err),
+            ):
+                display = _exec_python(source, filename, ns)
+        except BaseException:
+            status = "error"
+            tb = traceback.format_exc()
+        chunks = [f"{header} status={status} budget_secs={budget}"]
+        if out.getvalue():
+            chunks.append("stdout:\n" + out.getvalue().rstrip())
+        if err.getvalue():
+            chunks.append("stderr:\n" + err.getvalue().rstrip())
+        if display is not None:
+            chunks.append("display:\n" + repr(display))
+        if tb:
+            chunks.append("traceback:\n" + tb.rstrip())
         return "\n".join(chunks)
-    def execute_cell(id: str, rerun_all: bool = False, notebook: str | None = None) -> str:
+
+    def run_code(
+        source: str, notebook: str | None = None, budget_secs: int | None = None
+    ) -> str:
+        "Run scratch Python in the live notebook scope without editing the notebook."
+        path = session.target_path(notebook)
+        budget = _bounded_int(
+            budget_secs,
+            session.timeout,
+            1,
+            _AGENT_MAX_TIMEOUT_SECONDS,
+            "budget_secs",
+        )
+        source = str(source or "")
+        session.record_tool(
+            "run_code", f"notebook={path}, chars={len(source)}, budget_secs={budget}"
+        )
+        report = _execute_source(
+            source,
+            f"SCRATCH notebook={path}",
+            f"{path}::<scratch>",
+            session.live_state(path),
+            budget_secs,
+        )
+        status = "error" if " status=error" in report else "ok"
+        session.record(f"Ran scratch code in {path} ({status})")
+        return report
+
+    def inspect_state(name: str | None = None, notebook: str | None = None) -> str:
+        "Inspect variables and functions in the live notebook scope."
+        path = session.target_path(notebook)
+        ns = session.live_state(path)
+        target = _none_if_blank(name)
+        session.record_tool("inspect_state", f"notebook={path}, name={target!r}")
+        if target is None:
+            names = sorted(key for key in ns if not key.startswith("__"))
+            lines = [f"state notebook={path} names={len(names)}"]
+            lines.extend(f"- {key}: {type(ns[key]).__name__}" for key in names)
+            return "\n".join(lines)
+        if target not in ns:
+            return f"state notebook={path} name={target} status=missing"
+        value = ns[target]
+        value_type = type(value)
+        lines = [
+            f"state notebook={path} name={target} status=ok",
+            f"type={value_type.__module__}.{value_type.__qualname__}",
+            "repr=" + cap_text(repr(value), 2000),
+        ]
+        if callable(value):
+            try:
+                lines.append(f"signature={target}{inspect.signature(value)}")
+            except (TypeError, ValueError):
+                pass
+        try:
+            source = inspect.getsource(value)
+        except (OSError, TypeError):
+            source = ""
+        if source:
+            lines.append("source:\n" + cap_text(source, 4000))
+        return "\n".join(lines)
+
+    def _execute_one(path, idx, cell, budget_secs=None):
+        source = cell_source(cell)
+        header = f"CELL {idx} id={cell.id} notebook={path}"
+        if cell.cell_type != "code":
+            return f"{header} status=skipped reason=non-code"
+        if _eval_false(source):
+            return f"{header} status=skipped reason=eval-false"
+        return _execute_source(
+            source,
+            header,
+            f"{path}::{cell.id}",
+            session.live_state(path),
+            budget_secs,
+        )
+
+    def execute_cell(
+        id: str,
+        rerun_all: bool = False,
+        notebook: str | None = None,
+        budget_secs: int | None = None,
+    ) -> str:
         "Execute through one cell in the live notebook state."
         path = session.target_path(notebook)
         with notebook_locks(path):
             nb = read_nb(path)
             target_idx, _ = _edit_find_cell_by_id(nb.cells, id)
             cells = list(nb.cells)
-        if rerun_all: session.reset_live_state(path)
+        if rerun_all:
+            session.reset_live_state(path)
         start = session.executed_until(path) + 1
-        if target_idx < start: start = target_idx
-        session.record_tool("execute_cell", f"notebook={path}, id={id!r}, rerun_all={rerun_all}, start={start}, target={target_idx}")
+        if target_idx < start:
+            start = target_idx
+        budget = _bounded_int(
+            budget_secs,
+            session.timeout,
+            1,
+            _AGENT_MAX_TIMEOUT_SECONDS,
+            "budget_secs",
+        )
+        session.record_tool(
+            "execute_cell",
+            (
+                f"notebook={path}, id={id!r}, rerun_all={rerun_all}, "
+                f"budget_secs={budget}, start={start}, target={target_idx}"
+            ),
+        )
         reports, status = [], "ok"
         for idx in range(start, target_idx + 1):
-            report = _execute_one(path, idx, cells[idx])
+            report = _execute_one(path, idx, cells[idx], budget_secs=budget_secs)
             reports.append(report)
             session.set_executed_until(path, idx)
             if " status=error" in report:
                 status = "error"
                 break
         if not reports:
-            reports.append(f"CELL {target_idx} id={id} notebook={path} status=skipped reason=already-executed")
+            reports.append(
+                f"CELL {target_idx} id={id} notebook={path} "
+                "status=skipped reason=already-executed"
+            )
         session.record(f"Executed {path} cells {start}:{target_idx} ({status})")
         return "\n\n".join([f"status={status}", *reports])
+
     def query_knowledge(query: str, top_k: int = 3) -> str:
         "Search the reference knowledge base."
         session.record_tool("query_knowledge", f"top_k={top_k}")
         return _knowledge_context(query, top_k=top_k)
-    return [str_replace, edit_cell, add_cell, delete_cell, execute_cell, query_knowledge]
+
+    return [
+        str_replace,
+        edit_cell,
+        add_cell,
+        delete_cell,
+        run_code,
+        inspect_state,
+        execute_cell,
+        query_knowledge,
+    ]
 
 # %% ../nbs/08_edit_interactive.ipynb #3540e8d9
 def make_context_tools(session):
     "Create managed-context tools for a separate context session."
+
     def open_context(tag: str) -> str:
-        "Show a hidden managed-context message."
+        "Open a folded managed-context message."
         return apply_context_command(session, {"action": "open", "tag": tag})
-    def hide_context(tag: str) -> str:
-        "Hide a visible managed-context message without removing it."
-        return apply_context_command(session, {"action": "hide", "tag": tag})
-    def remove_context(tag: str) -> str:
-        "Remove a managed-context message from later renders."
-        return apply_context_command(session, {"action": "remove", "tag": tag})
+
+    def fold_context(tag: str, summary: str) -> str:
+        "Fold a managed-context message to a concise summary."
+        return apply_context_command(
+            session, {"action": "fold", "tag": tag, "content": summary}
+        )
+
+    def delete_context(tag: str) -> str:
+        "Delete a managed-context message from active renders."
+        return apply_context_command(session, {"action": "delete", "tag": tag})
+
     def edit_context(tag: str, content: str) -> str:
-        "Replace one managed-context message with concise custom content."
-        return apply_context_command(session, {"action": "edit", "tag": tag, "content": content})
+        "Replace one managed-context message with custom content."
+        return apply_context_command(
+            session, {"action": "edit", "tag": tag, "content": content}
+        )
+
     def context_view() -> str:
-        "Return the currently visible managed context."
+        "Return the currently active managed context."
         session.record_context_command({"action": "view", "tag": "managed-context"})
         return render_managed_context(session.managed_context)
-    return [open_context, hide_context, remove_context, edit_context, context_view]
+
+    return [open_context, fold_context, delete_context, edit_context, context_view]
 
 
 def make_chat(model, tools, hist, system_prompt=EDIT_INTERACTIVE_SYSTEM):
     "Create the Lisette chat object for edit-interactive."
     from lisette import Chat
-    return Chat(model, sp=system_prompt, tools=tools, hist=hist, stream=str(model).startswith("chatgpt/"))
+
+    return Chat(
+        model, sp=system_prompt, tools=tools, hist=hist, stream=str(model).startswith("chatgpt/")
+    )
 
 
 def run_context_session(session, model, prompt, max_steps=4, max_context_commands=8):
     "Run one separate context-management step and restore the active edit chat."
-    if not session.managed_context: return ""
+    if not session.managed_context:
+        return ""
     max_steps = _bounded_int(max_steps, 4, 0, _AGENT_MAX_CONTEXT_STEPS, "max_steps")
-    max_context_commands = _bounded_int(max_context_commands, 8, 0, _AGENT_MAX_CONTEXT_COMMANDS, "max_context_commands")
-    if max_steps == 0: return ""
+    max_context_commands = _bounded_int(
+        max_context_commands,
+        8,
+        0,
+        _AGENT_MAX_CONTEXT_COMMANDS,
+        "max_context_commands",
+    )
+    if max_steps == 0:
+        return ""
     prior_chat, prior_context_idx = session.chat, session.context_msg_idx
     hist = [{"role": "user", "content": render_managed_context(session.managed_context)}]
-    chat = make_chat(model, tools=make_context_tools(session), hist=hist, system_prompt=CONTEXT_SESSION_SYSTEM)
+    chat = make_chat(
+        model,
+        tools=make_context_tools(session),
+        hist=hist,
+        system_prompt=CONTEXT_SESSION_SYSTEM,
+    )
     session.chat = chat
     session.context_msg_idx = len(chat.hist) - 1
     try:
         if max_context_commands:
-            result = run_chat_with_context_commands(session, prompt, max_steps=max_steps, max_context_commands=max_context_commands)
+            result = run_chat_with_context_commands(
+                session,
+                prompt,
+                max_steps=max_steps,
+                max_context_commands=max_context_commands,
+            )
         else:
             result = chat(prompt, max_steps=max_steps, return_all=True)
     except BaseException as exc:
@@ -871,52 +1106,93 @@ def execute_plan(
     dry_run: bool = False,
     symbols: str | None = None,
     injected_context: str | None = None,
-    managed_context: bool = True,
     max_context_commands: int = 8,
     context_steps: int = 2,
 ) -> dict:
     "Execute `plan` against one or more notebooks using bounded subagent steps."
     paths = _target_paths(notebook)
     missing = [str(path) for path in paths if not path.exists()]
-    if missing: raise ValueError(f"Notebook does not exist: {', '.join(missing)}")
+    if missing:
+        raise ValueError(f"Notebook does not exist: {', '.join(missing)}")
     max_steps = _bounded_int(max_steps, 8, 1, _AGENT_MAX_STEPS, "max_steps")
     timeout = _bounded_int(timeout, 30, 1, _AGENT_MAX_TIMEOUT_SECONDS, "timeout")
-    max_context_commands = _bounded_int(max_context_commands, 8, 0, _AGENT_MAX_CONTEXT_COMMANDS, "max_context_commands")
-    context_steps = _bounded_int(context_steps, 2, 0, _AGENT_MAX_CONTEXT_STEPS, "context_steps")
+    max_context_commands = _bounded_int(
+        max_context_commands,
+        8,
+        0,
+        _AGENT_MAX_CONTEXT_COMMANDS,
+        "max_context_commands",
+    )
+    context_steps = _bounded_int(
+        context_steps, 2, 0, _AGENT_MAX_CONTEXT_STEPS, "context_steps"
+    )
     model = model or os.environ.get("NBSKILL_AGENT") or "chatgpt/gpt-5.4-mini"
-    project_context = _bounded_text(injected_context or _subagent_context(paths[0], plan, symbols=symbols))
-    initial_messages = managed_notebook_context(paths, revision=0) if managed_context else []
-    initial_view = render_managed_context(initial_messages) if managed_context else notebooks_view(paths, revision=0)
-    initial_view = cap_text(initial_view, _AGENT_MAX_NOTEBOOK_VIEW_CHARS)
+    project_context = _bounded_text(
+        injected_context or _subagent_context(paths[0], plan, symbols=symbols)
+    )
+    initial_messages = managed_notebook_context(paths, revision=0)
+    initial_view = cap_text(
+        render_managed_context(initial_messages), _AGENT_MAX_NOTEBOOK_VIEW_CHARS
+    )
     if dry_run:
-        view_label = "Initial managed notebook context:" if managed_context else "Initial notebook view:"
-        text = "\n".join([
-            "notebook subagent dry run", "", f"Notebooks: {_target_label(paths)}",
-            f"Model: {model}", f"Max steps: {max_steps}", f"Managed context: {managed_context}",
-            "Plan:", plan, "", "Injected project context:", project_context, "", view_label, initial_view,
-        ]).rstrip()
-        return {"summary": "Dry run only; no subagent was invoked and no notebook edits were made.", "history": [], "context_commands": [], "text": cap_text(text, _AGENT_MAX_NOTEBOOK_VIEW_CHARS)}
-    session = EditSession(path=paths, target_paths=paths, timeout=timeout, managed_context=initial_messages)
-    if managed_context:
-        prep = "Prepare context for the edit step. Open only chapters likely needed for this plan.\nPlan:\n" + plan
-        run_context_session(session, model, prep, max_steps=context_steps, max_context_commands=max_context_commands)
-        initial_view = cap_text(render_managed_context(session.managed_context), _AGENT_MAX_NOTEBOOK_VIEW_CHARS)
+        text = "\n".join(
+            [
+                "notebook subagent dry run",
+                "",
+                f"Notebooks: {_target_label(paths)}",
+                f"Model: {model}",
+                f"Max steps: {max_steps}",
+                "Plan:",
+                plan,
+                "",
+                "Injected project context:",
+                project_context,
+                "",
+                "Initial managed notebook context:",
+                initial_view,
+            ]
+        ).rstrip()
+        return {
+            "summary": "Dry run only; no subagent was invoked and no notebook edits were made.",
+            "history": [],
+            "context_commands": [],
+            "text": cap_text(text, _AGENT_MAX_NOTEBOOK_VIEW_CHARS),
+        }
+    session = EditSession(
+        path=paths, target_paths=paths, timeout=timeout, managed_context=initial_messages
+    )
+    prep = (
+        "Prepare context for the edit step. Open only chapters likely needed for this plan.\n"
+        "Plan:\n" + plan
+    )
+    run_context_session(
+        session,
+        model,
+        prep,
+        max_steps=context_steps,
+        max_context_commands=max_context_commands,
+    )
+    initial_view = cap_text(
+        render_managed_context(session.managed_context), _AGENT_MAX_NOTEBOOK_VIEW_CHARS
+    )
     hist = [
         {"role": "user", "content": "Injected project context:\n" + project_context},
         {"role": "user", "content": f"Plan:\n{plan}"},
         {"role": "user", "content": initial_view},
     ]
-    for item in hist: session.record_message(item["role"], item["content"])
+    for item in hist:
+        session.record_message(item["role"], item["content"])
     chat = make_chat(model, tools=make_edit_tools(session), hist=hist)
     session.chat = chat
-    if managed_context: session.context_msg_idx = len(chat.hist) - 1
-    else: session.notebook_msg_idx = len(chat.hist) - 1
+    session.context_msg_idx = len(chat.hist) - 1
     session.refresh_view()
     prompt = (
-        "Execute the plan with the experiment, function, example, and test loop from the system prompt. "
-        "Use execute_cell to validate the experiment and the final example or test when practical. "
-        "Context-management tools are not available in this edit step; use the visible context you were given. "
-        "Stop when the notebook change is complete."
+        "Execute the plan with the scratch, inspect, function, example, and test "
+        "loop from the system prompt. Use run_code for experiments, inspect_state "
+        "for live state checks, and execute_cell to validate the final example or "
+        "test when practical. Context-management tools are not available in this edit "
+        "step; use the active context you were given. Stop when the notebook change "
+        "is complete."
     )
     session.record_message("user", prompt)
     try:
@@ -927,25 +1203,66 @@ def execute_plan(
         result = list(result)
     summary = _bounded_text(response_text(result).strip() or "(no final response)")
     session.record_message("assistant", summary)
-    if managed_context:
-        cleanup = "Clean up context after the edit step. Hide full chapters that are no longer useful and leave the index visible."
-        run_context_session(session, model, cleanup, max_steps=context_steps, max_context_commands=max_context_commands)
+    cleanup = (
+        "Clean up context after the edit step. Fold useful full chapters to summaries, "
+        "delete irrelevant scratch context from active renders, and leave the index visible."
+    )
+    run_context_session(
+        session,
+        model,
+        cleanup,
+        max_steps=context_steps,
+        max_context_commands=max_context_commands,
+    )
     for path in paths:
         _save_notebook(read_nb(path), path)
     session.record("Exported notebook(s) after subagent run")
     diff = final_diffs(paths).strip()
-    text = "\n".join([
-        "notebook subagent complete", "", "Final response:", summary, "", "Tools used:",
-        "\n".join(_bounded_items(session.tool_log)) if session.tool_log else "(no tool calls)", "", "Context commands:",
-        "\n".join(f"r{item['revision']}: {item['action']} {item['tag']} ({item['status']})" for item in _bounded_items(session.context_command_log)) if session.context_command_log else "(no context commands)",
-        "", "Operation log:", "\n".join(_bounded_items(session.log)) if session.log else "(no notebook operations)", "",
-        f"Final revision: {session.revision}", f"Agent log: {session.log_path}", "", "Notebook diff:", diff,
-    ]).rstrip()
+    text = "\n".join(
+        [
+            "notebook subagent complete",
+            "",
+            "Final response:",
+            summary,
+            "",
+            "Tools used:",
+            "\n".join(_bounded_items(session.tool_log))
+            if session.tool_log
+            else "(no tool calls)",
+            "",
+            "Context commands:",
+            "\n".join(
+                f"r{item['revision']}: {item['action']} {item['tag']} ({item['status']})"
+                for item in _bounded_items(session.context_command_log)
+            )
+            if session.context_command_log
+            else "(no context commands)",
+            "",
+            "Operation log:",
+            "\n".join(_bounded_items(session.log))
+            if session.log
+            else "(no notebook operations)",
+            "",
+            f"Final revision: {session.revision}",
+            f"Agent log: {session.log_path}",
+            "",
+            "Notebook diff:",
+            diff,
+        ]
+    ).rstrip()
     return {
-        "summary": summary, "history": _bounded_items(session.history), "context_commands": _bounded_items(session.context_command_log),
-        "messages": _bounded_items(session.messages), "text": cap_text(text, _AGENT_MAX_NOTEBOOK_VIEW_CHARS), "model": model, "notebook": str(paths[0]),
-        "notebooks": [str(path) for path in paths], "revision": session.revision, "operations": _bounded_items(session.log),
-        "log_path": str(session.log_path), "diff": diff,
+        "summary": summary,
+        "history": _bounded_items(session.history),
+        "context_commands": _bounded_items(session.context_command_log),
+        "messages": _bounded_items(session.messages),
+        "text": cap_text(text, _AGENT_MAX_NOTEBOOK_VIEW_CHARS),
+        "model": model,
+        "notebook": str(paths[0]),
+        "notebooks": [str(path) for path in paths],
+        "revision": session.revision,
+        "operations": _bounded_items(session.log),
+        "log_path": str(session.log_path),
+        "diff": diff,
     }
 
 # %% ../nbs/08_edit_interactive.ipynb #256a672a

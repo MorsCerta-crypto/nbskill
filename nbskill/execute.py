@@ -68,7 +68,293 @@ def _local_import_paths(path):
 
 # %% ../nbs/03_execute.ipynb #827d4e40
 _SAFE_SENTINEL = "__nbskill_safe_exec__"
+_EXECUTION_POLICY_FILE = ".nbskill-exec-approval.json"
+_EXECUTION_POLICY_VERSION = 1
 
+# %% ../nbs/03_execute.ipynb #7b1e5eb0
+def _execution_policy_path(path):
+    return _project_root_for_notebook(path) / _EXECUTION_POLICY_FILE
+
+
+def _empty_execution_policy():
+    return {"version": _EXECUTION_POLICY_VERSION, "functions": {}}
+
+# %% ../nbs/03_execute.ipynb #4d46a8aa
+def _read_execution_policy(path):
+    policy_path = _execution_policy_path(path)
+    if policy_path.exists():
+        try:
+            policy = json.loads(policy_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"Invalid nbskill execution policy {policy_path}: {exc}") from exc
+        if not isinstance(policy, dict): raise ValueError(f"Invalid nbskill execution policy {policy_path}: expected object")
+    else:
+        policy = _empty_execution_policy()
+    policy.setdefault("version", _EXECUTION_POLICY_VERSION)
+    if not isinstance(policy.setdefault("functions", {}), dict):
+        raise ValueError(f"Invalid nbskill execution policy {policy_path}: functions must be an object")
+    policy["_path"] = str(policy_path)
+    return policy
+
+
+def _write_execution_policy(policy):
+    policy_path = policy.get("_path")
+    if not policy_path: raise ValueError("execution policy is missing _path")
+    payload = {key: value for key, value in policy.items() if not str(key).startswith("_")}
+    Path(policy_path).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+# %% ../nbs/03_execute.ipynb #aa608db2
+_EXTERNAL_EFFECT_CALLS = {
+    "httpx.delete", "httpx.get", "httpx.patch", "httpx.post", "httpx.put", "httpx.request", "httpx.stream",
+    "os.chmod", "os.chown", "os.makedirs", "os.mkdir", "os.popen", "os.remove", "os.replace", "os.rename",
+    "os.rmdir", "os.symlink", "os.system", "os.unlink",
+    "requests.delete", "requests.get", "requests.patch", "requests.post", "requests.put", "requests.request",
+    "shutil.copy", "shutil.copy2", "shutil.copytree", "shutil.move", "shutil.rmtree",
+    "socket.create_connection", "socket.socket",
+    "subprocess.Popen", "subprocess.call", "subprocess.check_call", "subprocess.check_output", "subprocess.run",
+    "urllib.request.urlopen",
+}
+_EXTERNAL_EFFECT_ATTRS = {
+    "chmod", "hardlink_to", "mkdir", "rename", "replace", "rmdir", "symlink_to", "touch", "unlink",
+    "write", "write_bytes", "write_text", "writelines",
+}
+_SAFE_POLICY_CALLS = {
+    "abs", "all", "any", "bool", "bytes", "dict", "enumerate", "float", "getattr", "hasattr", "int", "isinstance",
+    "issubclass", "len", "list", "max", "min", "print", "range", "repr", "set", "sorted", "str", "sum", "tuple", "zip",
+}
+
+# %% ../nbs/03_execute.ipynb #63ff85bf
+def _execution_import_aliases_from_tree(tree):
+    aliases = {}
+    for node in tree.body:
+        if isinstance(node, ast.Import):
+            for item in node.names:
+                aliases[item.asname or item.name.split(".")[0]] = item.name
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            for item in node.names:
+                if item.name == "*": continue
+                aliases[item.asname or item.name] = f"{node.module}.{item.name}"
+    return aliases
+
+
+def _execution_policy_import_aliases(nb):
+    aliases = {}
+    for cell in nb.cells:
+        if cell.cell_type != "code": continue
+        try: tree = ast.parse(cell_source(cell))
+        except SyntaxError: continue
+        aliases.update(_execution_import_aliases_from_tree(tree))
+    return aliases
+
+# %% ../nbs/03_execute.ipynb #944df4b3
+def _call_name(node, aliases=None):
+    aliases = aliases or {}
+    if isinstance(node, ast.Name): return aliases.get(node.id, node.id)
+    if isinstance(node, ast.Attribute):
+        base = _call_name(node.value, aliases=aliases)
+        return f"{base}.{node.attr}" if base else node.attr
+    return ""
+
+
+def _open_write_mode(call):
+    mode = "r"
+    if len(call.args) > 1 and isinstance(call.args[1], ast.Constant) and isinstance(call.args[1].value, str):
+        mode = call.args[1].value
+    for keyword in call.keywords:
+        if keyword.arg == "mode" and isinstance(keyword.value, ast.Constant) and isinstance(keyword.value.value, str):
+            mode = keyword.value.value
+    return any(char in mode for char in "wax+")
+
+# %% ../nbs/03_execute.ipynb #acea339d
+def _external_effect_reasons(call, aliases=None):
+    name = _call_name(call.func, aliases=aliases)
+    attr = call.func.attr if isinstance(call.func, ast.Attribute) else ""
+    reasons = []
+    if (name == "open" or name.endswith(".open")) and _open_write_mode(call):
+        reasons.append("call:open(write)")
+    if name in _EXTERNAL_EFFECT_CALLS:
+        reasons.append(f"call:{name}")
+    if attr in _EXTERNAL_EFFECT_ATTRS:
+        reasons.append(f"call:{name or attr}")
+    return reasons
+
+
+def _node_external_effect_reasons(node, aliases=None):
+    reasons = []
+    for child in ast.walk(node):
+        if isinstance(child, ast.Call): reasons.extend(_external_effect_reasons(child, aliases=aliases))
+    return sorted(set(reasons))
+
+# %% ../nbs/03_execute.ipynb #1912aa1f
+def _function_runtime_nodes(node):
+    nodes = [*node.decorator_list, *node.args.defaults, *(value for value in node.args.kw_defaults if value)]
+    if node.returns: nodes.append(node.returns)
+    args = [*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs]
+    if node.args.vararg: args.append(node.args.vararg)
+    if node.args.kwarg: args.append(node.args.kwarg)
+    nodes += [arg.annotation for arg in args if arg.annotation]
+    return nodes
+
+
+def _function_runtime_external_effect_reasons(node, aliases=None):
+    reasons = []
+    for part in _function_runtime_nodes(node):
+        reasons.extend(_node_external_effect_reasons(part, aliases=aliases))
+    return sorted(set(reasons))
+
+# %% ../nbs/03_execute.ipynb #de90b8dc
+def _execution_policy_function_defs(nb):
+    functions = {}
+    for cell in nb.cells:
+        if cell.cell_type != "code": continue
+        try: tree = ast.parse(cell_source(cell))
+        except SyntaxError: continue
+        for node in tree.body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name not in functions:
+                functions[node.name] = {"node": node, "cell_id": getattr(cell, "id", ""), "line": node.lineno}
+    return functions
+
+
+def _raw_call_names(node):
+    return {child.func.id for child in ast.walk(node) if isinstance(child, ast.Call) and isinstance(child.func, ast.Name)}
+
+# %% ../nbs/03_execute.ipynb #3e730146
+def _execution_policy_function_effects(functions, aliases=None):
+    aliases = {key: value for key, value in (aliases or {}).items() if key not in functions}
+    effects = {name: set(_node_external_effect_reasons(info["node"], aliases=aliases)) for name, info in functions.items()}
+    local_calls = {name: _raw_call_names(info["node"]) & set(functions) for name, info in functions.items()}
+    changed = True
+    while changed:
+        changed = False
+        for name, callees in local_calls.items():
+            for callee in callees:
+                for reason in effects[callee]:
+                    indirect = f"{callee}->{reason}"
+                    if indirect not in effects[name]:
+                        effects[name].add(indirect)
+                        changed = True
+    return {name: sorted(reasons) for name, reasons in effects.items()}
+
+# %% ../nbs/03_execute.ipynb #22e0fe93
+def _execution_policy_notebook(path):
+    root = _project_root_for_notebook(path).resolve()
+    full = Path(path).resolve()
+    try: return str(full.relative_to(root))
+    except ValueError: return str(full)
+
+
+def _coerce_execution_policy_entry(entry, default_allowed):
+    if isinstance(entry, dict):
+        entry = dict(entry)
+        allowed = entry.get("allowed", default_allowed)
+    else:
+        allowed = entry if isinstance(entry, bool) else default_allowed
+        entry = {}
+    entry["allowed"] = bool(allowed)
+    return entry
+
+# %% ../nbs/03_execute.ipynb #7c076bd7
+def _sync_execution_policy(path, nb):
+    policy = _read_execution_policy(path)
+    functions = _execution_policy_function_defs(nb)
+    aliases = _execution_policy_import_aliases(nb)
+    effects = _execution_policy_function_effects(functions, aliases=aliases)
+    entries = policy.setdefault("functions", {})
+    notebook = _execution_policy_notebook(path)
+    for name in sorted(functions):
+        reasons = effects.get(name, [])
+        entry = _coerce_execution_policy_entry(entries.get(name), default_allowed=not bool(reasons))
+        entry.update({
+            "cell_id": str(functions[name]["cell_id"]),
+            "external_effects": bool(reasons),
+            "line": int(functions[name]["line"]),
+            "notebook": notebook,
+            "reasons": reasons,
+        })
+        entries[name] = entry
+    _write_execution_policy(policy)
+    return policy
+
+# %% ../nbs/03_execute.ipynb #abdf2390
+def _cell_policy_tree(cell):
+    if cell.cell_type != "code": return None
+    try: return ast.parse(cell_source(cell))
+    except SyntaxError: return None
+
+
+def _cell_policy_function_names(cell):
+    tree = _cell_policy_tree(cell)
+    if tree is None: return []
+    return [node.name for node in tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))]
+
+# %% ../nbs/03_execute.ipynb #2a715588
+def _top_level_external_effect_reasons(tree, aliases=None):
+    reasons = []
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            reasons.extend(_function_runtime_external_effect_reasons(node, aliases=aliases))
+        elif isinstance(node, ast.ClassDef):
+            reasons.append("class-body")
+        else:
+            reasons.extend(_node_external_effect_reasons(node, aliases=aliases))
+    return sorted(set(reasons))
+
+
+def _top_level_policy_call_names(tree, aliases=None):
+    names = set()
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Import, ast.ImportFrom)):
+            continue
+        for child in ast.walk(node):
+            if isinstance(child, ast.Call) and (name := _call_name(child.func, aliases=aliases)):
+                names.add(name)
+    return names
+
+# %% ../nbs/03_execute.ipynb #a28a0e85
+def _policy_entry_allowed(policy, name):
+    if not isinstance(policy, dict): return False
+    entry = policy.get("functions", {}).get(name)
+    if isinstance(entry, dict): return entry.get("allowed") is True
+    return entry is True
+
+
+def _policy_allowed_function_names(policy):
+    if not isinstance(policy, dict): return []
+    return [name for name in policy.get("functions", {}) if _policy_entry_allowed(policy, name)]
+
+# %% ../nbs/03_execute.ipynb #4f0d62d6
+def _cell_has_project_execution_approval(cell, policy=None):
+    if not policy: return False
+    tree = _cell_policy_tree(cell)
+    if tree is None: return False
+    aliases = _execution_import_aliases_from_tree(tree)
+    if any(isinstance(node, ast.ClassDef) for node in tree.body): return False
+    defined = [node for node in tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))]
+    if any(node.decorator_list for node in defined): return False
+    if _top_level_external_effect_reasons(tree, aliases=aliases): return False
+    calls = _top_level_policy_call_names(tree, aliases=aliases)
+    policy_functions = set(policy.get("functions", {}))
+    policy_calls = calls & policy_functions
+    unknown = calls - policy_calls - _SAFE_POLICY_CALLS
+    if unknown: return False
+    needed = {node.name for node in defined} | policy_calls
+    return bool(needed) and all(_policy_entry_allowed(policy, name) for name in needed)
+
+# %% ../nbs/03_execute.ipynb #7f7031cf
+def _policy_blocked_function_names(cell, policy=None):
+    if not policy: return []
+    tree = _cell_policy_tree(cell)
+    if tree is None: return []
+    aliases = _execution_import_aliases_from_tree(tree)
+    policy_functions = set(policy.get("functions", {}))
+    names = [node.name for node in tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))]
+    names += [name for name in _top_level_policy_call_names(tree, aliases=aliases) if name in policy_functions]
+    return sorted({name for name in names if not _policy_entry_allowed(policy, name)})
+
+
+def _register_project_allowed(policy, namespace):
+    for name in _policy_allowed_function_names(policy):
+        if name in namespace: _safepyrun_allow(namespace[name])
 
 # %% ../nbs/03_execute.ipynb #54c66726
 _DEFAULT_CACHE_DOMAINS = (
@@ -372,12 +658,23 @@ async def _run_safe_source(runner, namespace, source):
 
 # %% ../nbs/03_execute.ipynb #170861e4
 class _SafeShell:
-    def __init__(self, path, extra_paths=None, allow=None, ok_dests=None, cache_httpx=False, cache_dir=None, cache_domains=None):
+    def __init__(
+        self,
+        path,
+        extra_paths=None,
+        allow=None,
+        ok_dests=None,
+        cache_httpx=False,
+        cache_dir=None,
+        cache_domains=None,
+        execution_policy=None,
+    ):
         self.path = Path(path)
         self.paths = [*(_local_import_paths(path)), *(_project_env_site_paths(path)), *(extra_paths or [])]
         self.cache_httpx = cache_httpx
         self.cache_dir = cache_dir
         self.cache_domains = cache_domains
+        self.execution_policy = execution_policy
         self.safe = True
         self.exc = None
         self.g = {
@@ -387,6 +684,7 @@ class _SafeShell:
         }
         with _temporary_sys_path(self.paths):
             _register_allowed(allow, self.g)
+            _register_project_allowed(self.execution_policy, self.g)
         self.runner = RunPython(g=self.g, ok_dests=_parse_str_list(ok_dests))
 
     def run(self, source, timeout=30, verbose=False):
@@ -399,7 +697,9 @@ class _SafeShell:
                 with _temporary_sys_path(self.paths), _httpx_guard(
                     self.path, cache_httpx=self.cache_httpx, cache_dir=self.cache_dir, cache_domains=self.cache_domains,
                 ), redirect_stdout(out), redirect_stderr(err):
-                    return await _run_safe_source(self.runner, self.g, source)
+                    result = await _run_safe_source(self.runner, self.g, source)
+                    _register_project_allowed(self.execution_policy, self.g)
+                    return result
             coro = call_runner()
             if timeout and timeout > 0: coro = asyncio.wait_for(coro, timeout=timeout)
             result = _run_async(coro)
@@ -415,7 +715,6 @@ class _SafeShell:
         elif result is not None: outputs.append(_result_output(result))
         return outputs
 
-
 # %% ../nbs/03_execute.ipynb #25c5b5a7
 def _exec_shell(
     path,
@@ -426,18 +725,19 @@ def _exec_shell(
     cache_httpx=False,
     cache_dir=None,
     cache_domains=None,
+    execution_policy=None,
 ):
     paths = [*(_local_import_paths(path)), *(_project_env_site_paths(path)), *(extra_paths or [])]
     if safe:
         return _SafeShell(
             path, extra_paths=extra_paths, allow=allow, ok_dests=ok_dests,
             cache_httpx=cache_httpx, cache_dir=cache_dir, cache_domains=cache_domains,
+            execution_policy=execution_policy,
         )
     shell = CaptureShell()
     for pth in reversed(paths):
         shell.set_path(pth)
     return shell
-
 
 # %% ../nbs/03_execute.ipynb #78d2789f
 _TIMEOUT_HASH_KEY = "timeout_hash"
@@ -458,19 +758,27 @@ class _ExecutionApprovalRequired(RuntimeError): pass
 
 
 # %% ../nbs/03_execute.ipynb #5a60da1d
-def _cell_has_execution_approval(cell):
+def _cell_has_execution_approval(cell, execution_policy=None):
     if getattr(cell, "execution_count", None) not in (None, 0): return True
     info = _nbskill_cell_metadata(cell, create=False) or {}
-    return info.get(_EXECUTED_HASH_KEY) == _cell_source_hash(cell)
+    if info.get(_EXECUTED_HASH_KEY) == _cell_source_hash(cell): return True
+    return _cell_has_project_execution_approval(cell, execution_policy)
 
 # %% ../nbs/03_execute.ipynb #3a9a06d4
-def _approval_required_error(cell):
+def _approval_required_error(cell, execution_policy=None):
+    policy_path = execution_policy.get("_path") if isinstance(execution_policy, dict) else None
+    blocked = _policy_blocked_function_names(cell, execution_policy)
+    if blocked and policy_path:
+        policy_hint = f" Project policy {policy_path} has allowed=false for: {', '.join(blocked)}."
+    elif policy_path:
+        policy_hint = f" Project policy {policy_path} did not approve this cell."
+    else:
+        policy_hint = ""
     msg = (
-        f"nbskill: refusing to execute unapproved cell id={cell.id}. "
-        "Run it once yourself, or rerun nbskill with allow_new=True if you approve this source."
+        f"nbskill: refusing to execute unapproved cell id={cell.id}."
+        f"{policy_hint} Edit the policy entry, run it once yourself, or rerun nbskill with allow_new=True if you approve this source."
     )
     return _ExecutionApprovalRequired(msg)
-
 
 # %% ../nbs/03_execute.ipynb #7691adbc
 def _mark_executed(cell):
@@ -528,11 +836,11 @@ def _clear_timeout_mark(cell):
     meta.pop(_TIMEOUT_SECONDS_KEY, None)
 
 # %% ../nbs/03_execute.ipynb #abe3e565
-def _run_cell(shell, cell, timeout=30, verbose=False, allow_new=False):
+def _run_cell(shell, cell, timeout=30, verbose=False, allow_new=False, execution_policy=None):
     if cell.cell_type != "code": return
     shell._cell_idx = cell.idx_ + 1
-    if getattr(shell, "safe", False) and not allow_new and not _cell_has_execution_approval(cell):
-        shell.exc = _approval_required_error(cell)
+    if getattr(shell, "safe", False) and not allow_new and not _cell_has_execution_approval(cell, execution_policy):
+        shell.exc = _approval_required_error(cell, execution_policy)
         cell.outputs = [_error_output(shell.exc)]
         return
     outputs = shell.run(cell.source, timeout=timeout if timeout and timeout > 0 else None, verbose=verbose)
@@ -562,11 +870,12 @@ def _execute_nb(
     with notebook_locks(path, dest):
         with execution_slot():
             nb = read_nb(path)
+            execution_policy = _sync_execution_policy(path, nb) if safe else None
             first_exc = None
             with _temporary_allow_registry():
                 shell = _exec_shell(
                     path, safe=safe, allow=allow, ok_dests=ok_dests, cache_httpx=cache_httpx,
-                    cache_dir=cache_dir, cache_domains=cache_domains,
+                    cache_dir=cache_dir, cache_domains=cache_domains, execution_policy=execution_policy,
                 )
                 for cell in nb.cells:
                     if preproc(cell): continue
@@ -577,7 +886,10 @@ def _execute_nb(
                     if _skip_timed_out_cell(cell):
                         postproc(cell)
                         continue
-                    _run_cell(shell, cell, timeout=timeout, verbose=verbose, allow_new=allow_new)
+                    _run_cell(
+                        shell, cell, timeout=timeout, verbose=verbose, allow_new=allow_new,
+                        execution_policy=execution_policy,
+                    )
                     postproc(cell)
                     if isinstance(shell.exc, _ExecutionApprovalRequired):
                         break

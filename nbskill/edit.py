@@ -4,6 +4,7 @@
 __all__ = ['insert_lines', 'replace_lines', 'delete_lines', 'replace_text', 'replace_texts', 'edit_notebook', 'NotebookEditor']
 
 # %% ../nbs/02_edit.ipynb #256e7289
+import ast
 import copy
 import difflib
 import re
@@ -31,7 +32,7 @@ _EDIT_MAX_SOURCE_CHARS = 200000
 _EDIT_MAX_AFFECTED_CELLS = 200
 _EDIT_MAX_DIFF_CHARS = 50000
 
-
+# %% ../nbs/02_edit.ipynb #0327a438
 def _edit_text_budget(value):
     if value is None: return 0
     if isinstance(value, str): return len(value)
@@ -39,7 +40,7 @@ def _edit_text_budget(value):
     if isinstance(value, (list, tuple)): return sum(_edit_text_budget(item) for item in value)
     return 0
 
-
+# %% ../nbs/02_edit.ipynb #e3beccd9
 def _validate_edit_budget(edits):
     if len(edits) > _EDIT_MAX_OPERATIONS:
         raise ValueError(f"edit_notebook budget exceeded: {len(edits)} operations exceeds limit {_EDIT_MAX_OPERATIONS}")
@@ -47,7 +48,7 @@ def _validate_edit_budget(edits):
     if chars > _EDIT_MAX_SOURCE_CHARS:
         raise ValueError(f"edit_notebook budget exceeded: {chars} text chars exceeds limit {_EDIT_MAX_SOURCE_CHARS}")
 
-
+# %% ../nbs/02_edit.ipynb #2b915028
 def _cap_edit_diffs(diffs):
     return [{**item, "diff": cap_text(item.get("diff", ""), _EDIT_MAX_DIFF_CHARS)} for item in diffs]
 
@@ -156,23 +157,21 @@ def replace_texts(text, replacements=None, olds=None, news=None, start_line=None
 
 # %% ../nbs/02_edit.ipynb #df4cf6e4
 _TEXT_OPS = {"replace_lines", "insert_lines", "delete_lines", "replace_text", "replace_texts"}
-_STRUCTURAL_OPS = {"replace_cell", "insert_cells", "delete_cells", "move_cells"}
+_STRUCTURAL_OPS = {"replace_cell", "insert_cells", "delete_cells", "move_cells", "explode_cells"}
 _EDIT_OPS = _TEXT_OPS | _STRUCTURAL_OPS
 
-
-
-
+# %% ../nbs/02_edit.ipynb #9ea66beb
 def _cell_by_id_map(nb):
     return {getattr(cell, "id", None): (idx, cell) for idx, cell in enumerate(nb.cells)}
 
-
+# %% ../nbs/02_edit.ipynb #5d075f59
 def _require_op(edit):
     if not isinstance(edit, dict): raise ValueError("each edit must be a dict")
     op = edit.get("op")
     if op not in _EDIT_OPS: raise ValueError(f"unsupported edit op {op!r}")
     return op
 
-
+# %% ../nbs/02_edit.ipynb #d271e936
 def _replacement_source(edit):
     if "source_lines" in edit: lines = edit["source_lines"]
     elif "source" in edit: lines = edit["source"]
@@ -181,13 +180,13 @@ def _replacement_source(edit):
     if source == "": raise ValueError("replace_cell cannot delete a cell; use delete_cells")
     return source
 
-
+# %% ../nbs/02_edit.ipynb #4de5197d
 def _cell_from_source(source, cell_type="code"):
     cell = mk_cell(source, cell_type=cell_type)
     clear_outputs(cell)
     return cell
 
-
+# %% ../nbs/02_edit.ipynb #0bb16263
 def _cells_from_structs(cells, default_cell_type="code", directive=None):
     if not cells: raise ValueError("insert_cells needs a non-empty cells list")
     made = []
@@ -199,7 +198,119 @@ def _cells_from_structs(cells, default_cell_type="code", directive=None):
         made.append(_cell_from_source(source, cell_type=cell_type))
     return made
 
+# %% ../nbs/02_edit.ipynb #99565769
+def _cell_directive_body_lines(source):
+    lines = str(source or "").strip("\n").splitlines()
+    directives, body_start = [], len(lines)
+    for idx, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped: continue
+        if not stripped.startswith("#|"):
+            body_start = idx
+            break
+        directive = stripped[2:].strip()
+        if not directive.startswith("default_exp"):
+            directives.append(stripped)
+    return directives, lines[body_start:]
 
+# %% ../nbs/02_edit.ipynb #ff8e1afb
+def _is_function_def(node):
+    return isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+
+# %% ../nbs/02_edit.ipynb #8c4d000c
+def _node_start_line(node):
+    starts = [node.lineno, *[decorator.lineno for decorator in getattr(node, "decorator_list", [])]]
+    return min(starts) - 1
+
+# %% ../nbs/02_edit.ipynb #6e29d69c
+def _with_directive_prefix(source, directive_lines):
+    source = "\n".join(str(source or "").splitlines()).strip("\n")
+    if not source or not directive_lines: return source
+    existing = {line.strip() for line in source.splitlines()}
+    missing = [line for line in directive_lines if line not in existing]
+    return "\n".join([*missing, source]) if missing else source
+
+# %% ../nbs/02_edit.ipynb #a3889f73
+def _append_exploded_source(chunks, lines, directive_lines):
+    source = "\n".join(lines).strip("\n")
+    if source: chunks.append(_with_directive_prefix(source, directive_lines))
+
+# %% ../nbs/02_edit.ipynb #06c04acd
+def _explode_function_sources(source):
+    raw = str(source or "").strip("\n")
+    if not raw: return []
+    directive_lines, body_lines = _cell_directive_body_lines(raw)
+    body = "\n".join(body_lines).strip("\n")
+    if not body: return [raw]
+    try:
+        tree = ast.parse(body)
+    except SyntaxError:
+        return [raw]
+    if sum(1 for node in tree.body if _is_function_def(node)) <= 1:
+        return [raw]
+
+    chunks, pending, cursor = [], [], 0
+    for node in tree.body:
+        start = _node_start_line(node)
+        end = node.end_lineno
+        gap = body_lines[cursor:start]
+        node_lines = body_lines[start:end]
+        if _is_function_def(node):
+            _append_exploded_source(chunks, pending, directive_lines)
+            pending = []
+            _append_exploded_source(chunks, [*gap, *node_lines], directive_lines)
+        else:
+            pending.extend([*gap, *node_lines])
+        cursor = end
+    pending.extend(body_lines[cursor:])
+    _append_exploded_source(chunks, pending, directive_lines)
+    return chunks or [raw]
+
+# %% ../nbs/02_edit.ipynb #eb170e62
+def _explode_cell(cell):
+    if getattr(cell, "cell_type", None) != "code": return [cell]
+    sources = _explode_function_sources(cell_source(cell))
+    if len(sources) <= 1: return [cell]
+    new_cells = [_cell_from_source(source, cell_type="code") for source in sources]
+    new_cells[0].id = getattr(cell, "id", new_cells[0].id)
+    return new_cells
+
+# %% ../nbs/02_edit.ipynb #64a3f9d0
+def _apply_explode_edit(nb, edit, diffs, affected):
+    indices = sorted(_selected_indices(nb, edit))
+    if not indices: raise ValueError("explode_cells matched no cells")
+    _check_expected_hash(nb, edit, indices)
+    shift = 0
+    for original_idx in indices:
+        idx = original_idx + shift
+        cell = nb.cells[idx]
+        before = cell_source(cell)
+        new_cells = _explode_cell(cell)
+        after = "\n---\n".join(cell_source(item) for item in new_cells)
+        changed = len(new_cells) > 1
+        exploded_ids = [getattr(item, "id", "") for item in new_cells]
+        diffs.append({
+            "op": "explode_cells",
+            "cell_id": getattr(cell, "id", ""),
+            "cell_type": getattr(cell, "cell_type", ""),
+            "changed": changed,
+            "matches": 1 if changed else 0,
+            "exploded_cell_ids": exploded_ids if changed else [],
+            "before_hash": source_hash(before),
+            "after_hash": source_hash(after),
+            "diff": _unified_diff(
+                before,
+                after,
+                fromfile=f"{getattr(cell, 'id', '')}:before",
+                tofile=f"{getattr(cell, 'id', '')}:after",
+            ),
+        })
+        if not changed: continue
+        nb.cells[idx:idx + 1] = new_cells
+        affected.extend(exploded_ids)
+        shift += len(new_cells) - 1
+
+# %% ../nbs/02_edit.ipynb #f22b5d3c
 def _cell_content_match(cell, edit):
     if edit.get("cell_type") and getattr(cell, "cell_type", None) != edit.get("cell_type"): return False
     checks = []
@@ -209,7 +320,7 @@ def _cell_content_match(cell, edit):
     matched = all(checks) if checks else True
     return not matched if edit.get("invert_filter") else matched
 
-
+# %% ../nbs/02_edit.ipynb #0a269fbe
 def _selected_indices(nb, edit):
     ids = []
     if edit.get("cell_id") is not None: ids = [edit["cell_id"]]
@@ -223,7 +334,7 @@ def _selected_indices(nb, edit):
     if missing: raise ValueError(f"unknown cell id(s): {missing}")
     return [seen[cell_id][0] for cell_id in ids if _cell_content_match(seen[cell_id][1], edit)]
 
-
+# %% ../nbs/02_edit.ipynb #44af041e
 def _check_expected_hash(nb, edit, indices):
     expected = edit.get("expected_hash")
     if expected is None: return
@@ -240,7 +351,7 @@ def _check_expected_hash(nb, edit, indices):
     if str(expected) != source_hash(cell_source(cell)):
         raise ValueError(f"expected_hash mismatch for cell {getattr(cell, 'id', '')}")
 
-
+# %% ../nbs/02_edit.ipynb #dbb9f898
 def _edit_cell_source(source, edit):
     op = edit["op"]
     if op == "replace_lines":
@@ -255,7 +366,7 @@ def _edit_cell_source(source, edit):
         return replace_texts(source, edit.get("replacements"), edit.get("olds"), edit.get("news"), edit.get("start_line"), edit.get("end_line"))
     raise ValueError(f"{op!r} is not a text operation")
 
-
+# %% ../nbs/02_edit.ipynb #c5ac4b3a
 def _append_cell_diff(diffs, cell, before, after, op):
     diff = _unified_diff(before, after, fromfile=f"{getattr(cell, 'id', '')}:before", tofile=f"{getattr(cell, 'id', '')}:after")
     diffs.append({
@@ -269,7 +380,7 @@ def _append_cell_diff(diffs, cell, before, after, op):
         "diff": diff,
     })
 
-
+# %% ../nbs/02_edit.ipynb #6a4e960e
 def _apply_text_edit(nb, edit, diffs, affected):
     indices = _selected_indices(nb, edit)
     _check_expected_hash(nb, edit, indices)
@@ -283,7 +394,7 @@ def _apply_text_edit(nb, edit, diffs, affected):
             clear_outputs(cell)
             affected.append(getattr(cell, "id", ""))
 
-
+# %% ../nbs/02_edit.ipynb #8436d989
 def _insert_at(nb, anchor_id, where, new_cells):
     if where not in {"before", "after"}: raise ValueError("where must be 'before' or 'after'")
     if anchor_id is None:
@@ -294,7 +405,7 @@ def _insert_at(nb, anchor_id, where, new_cells):
     for offset, cell in enumerate(new_cells): nb.cells.insert(target + offset, cell)
     return [getattr(cell, "id", "") for cell in new_cells]
 
-
+# %% ../nbs/02_edit.ipynb #1745202e
 def _apply_structural_edit(nb, edit, diffs, affected, default_cell_type):
     op = edit["op"]
     if op == "replace_cell":
@@ -337,6 +448,9 @@ def _apply_structural_edit(nb, edit, diffs, affected, default_cell_type):
             affected.append(getattr(cell, "id", ""))
             diffs.append({"op": op, "cell_id": getattr(cell, "id", ""), "changed": True, "before_hash": source_hash(cell_source(cell)), "after_hash": "", "diff": _unified_diff(cell_source(cell), "")})
             del nb.cells[idx]
+        return
+    if op == "explode_cells":
+        _apply_explode_edit(nb, edit, diffs, affected)
         return
     if op == "move_cells":
         indices = _selected_indices(nb, edit)
@@ -468,6 +582,13 @@ class NotebookEditor:
         cell = {'source': source, 'cell_type': cell_type}
         if directive is not None: cell['directive'] = directive
         return self.apply({'op': 'insert_cells', 'anchor_id': anchor_id, 'where': where, 'cells': [cell]}, **kw)
+
+    def explode(self, cell_id=None, **kw):
+        'Split top-level function definitions in one cell, or matching cells, into separate cells.'
+        edit = {'op': 'explode_cells'}
+        if cell_id is None: edit['target'] = 'all'
+        else: edit['cell_id'] = cell_id
+        return self.apply(edit, **kw)
 
     def delete(self, cell_id, **kw):
         'Delete one cell by id.'

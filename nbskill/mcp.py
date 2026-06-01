@@ -1772,7 +1772,15 @@ def _exec_approval_request(path, full_output):
     text = as_text(full_output)
     match = re.search(r"unapproved cell id=([A-Za-z0-9_-]+)", text)
     cell_id = match.group(1) if match else None
-    request = dict(kind="safe_execution", path=str(path), cell_id=cell_id, source_hash=None, reason="Safe execution refused an unapproved notebook cell.", approval_argument={"allow_new": True}, risk="Runs notebook code that has not yet been stamped by nbskill safe execution.")
+    request = dict(
+        kind="safe_execution",
+        path=str(path),
+        cell_id=cell_id,
+        source_hash=None,
+        reason="Safe execution refused a cell that was neither stamped nor approved by project execution policy.",
+        approval_argument={"allow_new": True},
+        risk="Runs notebook code outside the project .nbskill-exec-approval.json policy gate.",
+    )
     if cell_id:
         try: request["source_hash"] = _mcp_cell_source_hash(path, cell_id)
         except Exception as exc: request["source_hash_error"] = f"{type(exc).__name__}: {exc}"
@@ -1851,21 +1859,21 @@ async def exec_nb_tool(
                 warnings.append(_warning(
                     "safe-exec-approval-required",
                     "Safe execution refused an unapproved notebook cell.",
-                    "Approve the MCP elicitation or rerun with allow_new=True only if you approve the notebook source.",
+                    "Edit .nbskill-exec-approval.json for function approvals, approve the MCP elicitation, or rerun with allow_new=True only if you approve the notebook source.",
                     **approval_request,
                 ))
                 if elicitation and elicitation.get("action") == "error":
                     warnings.append(_warning(
                         "mcp-elicitation-unavailable",
                         "The MCP client did not complete the execution approval prompt.",
-                        "Ask the user in chat before rerunning with allow_new=True.",
+                        "Ask the user before editing .nbskill-exec-approval.json or rerunning with allow_new=True.",
                         **elicitation,
                     ))
         if approval_blocked and allow_new:
             warnings.append(_warning(
                 "safe-exec-approval-required",
                 "Safe execution refused an unapproved notebook cell.",
-                "Rerun with allow_new=True only if you approve the notebook source.",
+                "Edit .nbskill-exec-approval.json for function approvals, or rerun with allow_new=True only if you approve the notebook source.",
             ))
         return mcp_tool_result(
             "exec_nb", arguments, full_output, detail=detail, warnings=warnings,

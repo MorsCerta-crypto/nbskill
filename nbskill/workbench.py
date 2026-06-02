@@ -75,6 +75,7 @@ DEFAULT_VERIFICATION = [
 
 # %% ../nbs/11_agent_workbench.ipynb #36a5fe49
 def _deep_merge(base, override):
+    "Recursively merge override values into a copied base mapping."
     result = deepcopy(base)
     for key, value in (override or {}).items():
         if isinstance(value, dict) and isinstance(result.get(key), dict):
@@ -85,6 +86,7 @@ def _deep_merge(base, override):
 
 # %% ../nbs/11_agent_workbench.ipynb #919b6c69
 def _read_workbench_json(path):
+    "Read a JSON object from disk, returning an empty dict when absent."
     path = Path(path).expanduser()
     if not path.exists(): return {}
     data = json.loads(path.read_text(encoding="utf-8"))
@@ -94,6 +96,7 @@ def _read_workbench_json(path):
 
 # %% ../nbs/11_agent_workbench.ipynb #a9effd31
 def _project_taste_path(project_path):
+    "Return the nearest project taste profile path for a file or directory."
     path = Path(project_path).expanduser()
     if path.is_file(): path = path.parent
     for candidate in [path, *path.parents]:
@@ -102,7 +105,10 @@ def _project_taste_path(project_path):
     return path / ".nbskill" / "taste.json"
 
 # %% ../nbs/11_agent_workbench.ipynb #637f6efe
-def load_taste_profile(project_path=".", user_path="~/.nbskill/taste.json") -> dict:
+def load_taste_profile(
+    project_path=".",  # Project file or folder used to discover .nbskill/taste.json
+    user_path="~/.nbskill/taste.json",  # Optional user taste profile path
+) -> dict:
     "Load built-in, project, and optional user taste profiles with later profiles winning."
     taste = deepcopy(BUILTIN_TASTE_PROFILE)
     taste = _deep_merge(taste, _read_workbench_json(_project_taste_path(project_path)))
@@ -111,6 +117,7 @@ def load_taste_profile(project_path=".", user_path="~/.nbskill/taste.json") -> d
 
 # %% ../nbs/11_agent_workbench.ipynb #494f0f29
 def _contract_overrides(overrides):
+    "Split flat budget keys from other task-contract overrides."
     overrides = dict(overrides)
     budget_keys = set(DEFAULT_BUDGETS)
     budgets = {key: overrides.pop(key) for key in list(overrides) if key in budget_keys}
@@ -118,7 +125,10 @@ def _contract_overrides(overrides):
     return overrides
 
 # %% ../nbs/11_agent_workbench.ipynb #05a4560d
-def make_task_contract(goal, **overrides) -> dict:
+def make_task_contract(
+    goal,  # Desired software-development outcome
+    **overrides,  # Optional contract and budget overrides
+) -> dict:
     "Create a concrete task contract with conservative small-diff defaults."
     contract = {
         "goal": goal,
@@ -138,6 +148,7 @@ def make_task_contract(goal, **overrides) -> dict:
 
 # %% ../nbs/11_agent_workbench.ipynb #62cb8654
 def _public_symbols_in_cell(cell):
+    "Return public definitions exported by one notebook cell."
     if "exported_code" not in cell_class_names(cell): return []
     try: tree = ast.parse(source_without_directives(cell_source(cell)))
     except SyntaxError: return []
@@ -148,12 +159,14 @@ def _public_symbols_in_cell(cell):
 
 # %% ../nbs/11_agent_workbench.ipynb #449cea07
 def _notebook_cell_sources(path):
+    "Return a mapping of cell ids to source for one notebook."
     try: nb = read_nb(path)
     except FileNotFoundError: return {}
     return {getattr(cell, "id", f"idx-{idx}"): cell_source(cell) for idx, cell in enumerate(nb.cells)}
 
 # %% ../nbs/11_agent_workbench.ipynb #d2503c21
 def _notebook_public_symbols(path):
+    "Return sorted public symbols exported by one notebook."
     try: nb = read_nb(path)
     except FileNotFoundError: return []
     symbols = []
@@ -163,6 +176,7 @@ def _notebook_public_symbols(path):
 
 # %% ../nbs/11_agent_workbench.ipynb #84c23b83
 def _generated_pairs(root):
+    "Return generated Python files paired with their owning notebooks."
     pairs = []
     for path in Path(root).rglob("*.py"):
         if any(part in {".git", ".venv", "__pycache__"} for part in path.parts): continue
@@ -172,6 +186,7 @@ def _generated_pairs(root):
 
 # %% ../nbs/11_agent_workbench.ipynb #e1c183f2
 def _style_summary(path):
+    "Return a compact style report summary for a path."
     try: report = style_report(path, max_output_chars=4000, max_diagnostics=100)
     except BaseException as exc: return {"error": f"{type(exc).__name__}: {exc}"}
     return {
@@ -180,13 +195,16 @@ def _style_summary(path):
     }
 
 # %% ../nbs/11_agent_workbench.ipynb #cb0e0f6d
-def capture_state(path=".") -> dict:
+def capture_state(
+    path=".",  # Project, notebook, or folder whose patch state should be captured
+) -> dict:
     "Capture git, notebook, export, and style state for later patch scoring."
     root = git_root(path)
     base = root or Path(path).expanduser()
     target = Path(path).expanduser()
 
     def _scope_rel():
+        "Return the target path relative to the state root, when scoped."
         if str(path) in {"", "."}: return None
         try:
             rel = target.resolve().relative_to(base.resolve()).as_posix()
@@ -197,6 +215,7 @@ def capture_state(path=".") -> dict:
     scope = _scope_rel()
 
     def _in_scope(rel):
+        "Return whether a relative path belongs to the captured scope."
         if scope is None: return True
         rel = str(rel)
         return rel == scope or rel.startswith(f"{scope.rstrip('/')}/")
@@ -238,16 +257,19 @@ def capture_state(path=".") -> dict:
 
 # %% ../nbs/11_agent_workbench.ipynb #56fa4bdd
 def _tokens(text):
+    "Extract search tokens from a goal or evidence string."
     stop = {"the", "and", "for", "with", "that", "this", "into", "from", "should", "agent"}
     return {item for item in re.findall(r"[A-Za-z_][A-Za-z0-9_]{2,}", str(text).lower()) if item not in stop}
 
 # %% ../nbs/11_agent_workbench.ipynb #96ec5e36
 def _score_text(text, tokens):
+    "Count token hits in text for simple relevance scoring."
     low = str(text).lower()
     return sum(low.count(token) for token in tokens)
 
 # %% ../nbs/11_agent_workbench.ipynb #0964c3cb
 def _call_text(func, **kwargs):
+    "Call a helper and return either its text result or captured output."
     out, err = StringIO(), StringIO()
     with redirect_stdout(out), redirect_stderr(err):
         result = func(**kwargs)
@@ -256,6 +278,7 @@ def _call_text(func, **kwargs):
 
 # %% ../nbs/11_agent_workbench.ipynb #34e8b756
 def _cell_records(nb_path, tokens, limit=4):
+    "Return the most relevant evidence cells for a notebook."
     nb = read_nb(nb_path)
     records = []
     for idx, cell in enumerate(nb.cells):
@@ -274,6 +297,7 @@ def _cell_records(nb_path, tokens, limit=4):
 
 # %% ../nbs/11_agent_workbench.ipynb #887d4f2d
 def _symbol_candidates(nb_path, tokens):
+    "Return public symbol names that look relevant to the goal tokens."
     names = []
     try: nb = read_nb(nb_path)
     except FileNotFoundError: return []
@@ -283,7 +307,12 @@ def _symbol_candidates(nb_path, tokens):
     return sorted(set(names))[:5]
 
 # %% ../nbs/11_agent_workbench.ipynb #24b0d9b7
-def compile_context(goal, path="nbs", contract=None, taste=None) -> dict:
+def compile_context(
+    goal,  # Desired software-development outcome
+    path="nbs",  # Project, notebook, or folder to inspect
+    contract=None,  # Optional task contract controlling budgets and gates
+    taste=None,  # Optional taste profile merged into the workbench plan
+) -> dict:
     "Compile a focused context pack for an agent workbench run."
     contract = contract or make_task_contract(goal)
     taste = taste or load_taste_profile(project_path=path)
@@ -349,6 +378,7 @@ def compile_context(goal, path="nbs", contract=None, taste=None) -> dict:
 
 # %% ../nbs/11_agent_workbench.ipynb #902e700d
 def _changed_files(baseline, current):
+    "Return files whose hashes changed between two captured states."
     before = baseline.get("file_hashes", {})
     after = current.get("file_hashes", {})
     paths = set(before) | set(after)
@@ -356,6 +386,7 @@ def _changed_files(baseline, current):
 
 # %% ../nbs/11_agent_workbench.ipynb #3245ca82
 def _changed_cells(baseline, current):
+    "Return notebook cells whose source changed between two states."
     changed = []
     before_all = baseline.get("notebook_cell_sources", {})
     after_all = current.get("notebook_cell_sources", {})
@@ -369,6 +400,7 @@ def _changed_cells(baseline, current):
 
 # %% ../nbs/11_agent_workbench.ipynb #e3badb93
 def _added_line_delta(baseline, current):
+    "Return the positive added-line delta between two states."
     before = baseline.get("diff_stats", {})
     after = current.get("diff_stats", {})
     total = 0
@@ -378,6 +410,7 @@ def _added_line_delta(baseline, current):
 
 # %% ../nbs/11_agent_workbench.ipynb #c3dc3bf3
 def _added_public_symbols(baseline, current):
+    "Return public symbols present in the current state but not baseline."
     added = []
     before_all = baseline.get("public_symbols", {})
     after_all = current.get("public_symbols", {})
@@ -388,6 +421,7 @@ def _added_public_symbols(baseline, current):
 
 # %% ../nbs/11_agent_workbench.ipynb #72d75ac7
 def _export_pair_failures(current, touched_files):
+    "Return source/generated sync failures for touched notebook pairs."
     touched = {str(Path(path)) for path in touched_files}
     failures = []
     for pair in current.get("generated_pairs", []):
@@ -403,6 +437,7 @@ def _export_pair_failures(current, touched_files):
 
 # %% ../nbs/11_agent_workbench.ipynb #4da9ae33
 def _style_delta(baseline, current):
+    "Return style-summary count deltas between two captured states."
     before = baseline.get("style", {}).get("summary", {})
     after = current.get("style", {}).get("summary", {})
     keys = sorted(set(before) | set(after))
@@ -414,6 +449,7 @@ def _style_delta(baseline, current):
 
 # %% ../nbs/11_agent_workbench.ipynb #bb502512
 def _private_defs_in_source(source):
+    "Return private top-level definitions found in Python source."
     try:
         tree = ast.parse(source)
     except SyntaxError:
@@ -433,6 +469,7 @@ def _private_defs_in_source(source):
 
 
 def _private_symbol_records(state):
+    "Return private definition records across captured notebook sources."
     records = []
     for nb_path, cells in state.get("notebook_cell_sources", {}).items():
         for cell_id, source in cells.items():
@@ -442,6 +479,7 @@ def _private_symbol_records(state):
 
 
 def _name_load_count(source, name, skip_span=None):
+    "Count load references to a name, optionally skipping one line span."
     try:
         tree = ast.parse(source)
     except SyntaxError:
@@ -460,6 +498,7 @@ def _name_load_count(source, name, skip_span=None):
 
 
 def _unused_added_private_helpers(baseline, current):
+    "Return newly added private helpers that have no load-site usage."
     before = {(item["path"], item["symbol"]) for item in _private_symbol_records(baseline)}
     after = _private_symbol_records(current)
     added = [item for item in after if (item["path"], item["symbol"]) not in before]
@@ -482,7 +521,12 @@ def _unused_added_private_helpers(baseline, current):
     return unused
 
 
-def score_patch(baseline, contract, path=".", execution=None) -> dict:
+def score_patch(
+    baseline,  # State captured before the agent run
+    contract,  # Task contract containing budgets and gates
+    path=".",  # Project, notebook, or folder to score
+    execution=None,  # Optional execute_plan result to validate
+) -> dict:
     "Score current repository state against a baseline and task contract."
     current = capture_state(path)
     budgets = contract.get("budgets", {})
@@ -529,15 +573,18 @@ def score_patch(baseline, contract, path=".", execution=None) -> dict:
 
 # %% ../nbs/11_agent_workbench.ipynb #2edc0410
 def _load_contract_file(contract_file):
+    "Load JSON contract overrides from disk when a file is provided."
     if not contract_file: return {}
     return _read_workbench_json(contract_file)
 
 # %% ../nbs/11_agent_workbench.ipynb #3d58f90c
 def _render_list(items):
+    "Render a bullet list with an explicit empty placeholder."
     return "\n".join(f"- {item}" for item in items) if items else "- (none)"
 
 # %% ../nbs/11_agent_workbench.ipynb #dfbc8a3b
 def _render_budget_lines(contract):
+    "Render budget and compatibility settings for the workbench plan."
     budgets = contract.get("budgets", {})
     lines = ["Budgets:"]
     lines.extend(f"- {key}={budgets.get(key)}" for key in DEFAULT_BUDGETS)
@@ -551,6 +598,7 @@ def _render_budget_lines(contract):
 
 # %% ../nbs/11_agent_workbench.ipynb #a1b091c5
 def _render_workbench_header(contract, taste):
+    "Render the goal, taste, and budget header for a workbench plan."
     return [
         "Agent workbench task",
         "",
@@ -567,6 +615,7 @@ def _render_workbench_header(contract, taste):
 
 # %% ../nbs/11_agent_workbench.ipynb #dd85b0c4
 def _render_context_lines(context):
+    "Render notebook evidence, reuse advice, and symbol context lines."
     lines = ["", "Relevant notebooks:"]
     lines.extend(
         f"- {item['path']} score={item['score']}"
@@ -592,6 +641,7 @@ def _render_context_lines(context):
 
 # %% ../nbs/11_agent_workbench.ipynb #0a8507b3
 def _render_notebook_craft_lines():
+    "Render notebook craft guidance for the workbench executor."
     body = """
 Notebook craft:
 - Keep notebooks coherent: small markdown and code cells, one idea at a time.
@@ -623,15 +673,15 @@ def _render_workbench_plan(contract, taste, context):
 
 # %% ../nbs/11_agent_workbench.ipynb #7131526e
 def agent_workbench_result(
-    goal: str,
-    notebook: str | None = None,
-    contract_file: str | None = None,
-    execute: bool = False,
-    max_steps: int = 8,
-    timeout: int = 30,
-    session_id: str | None = None,
-    reset_session: bool = False,
-    feedback_rounds: int = 3,
+    goal: str,  # Desired software-development outcome
+    notebook: str | None = None,  # Optional notebook/path to narrow context and execute against
+    contract_file: str | None = None,  # Optional JSON contract overrides
+    execute: bool = False,  # Execute the rendered plan through execute_plan
+    max_steps: int = 8,  # Maximum inner-agent steps when executing
+    timeout: int = 30,  # Per-cell timeout for execute_plan
+    session_id: str | None = None,  # Reuse an in-memory edit session when provided
+    reset_session: bool = False,  # Drop an existing in-memory edit session first
+    feedback_rounds: int = 3,  # Maximum mutation feedback rounds
 ) -> dict:
     "Build the structured workbench result without CLI printing side effects."
     overrides = _load_contract_file(contract_file)

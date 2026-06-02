@@ -121,7 +121,7 @@
       "allowed": true,
       "cell_id": "c7e88003",
       "external_effects": false,
-      "line": 58,
+      "line": 60,
       "notebook": "08_edit_interactive.ipynb",
       "reasons": []
     },
@@ -137,7 +137,7 @@
       "allowed": true,
       "cell_id": "c7e88003",
       "external_effects": false,
-      "line": 54,
+      "line": 55,
       "notebook": "08_edit_interactive.ipynb",
       "reasons": []
     },
@@ -207,7 +207,7 @@
       "allowed": true,
       "cell_id": "c1425865",
       "external_effects": false,
-      "line": 40,
+      "line": 43,
       "notebook": "08_edit_interactive.ipynb",
       "reasons": []
     },
@@ -533,7 +533,7 @@
       "allowed": true,
       "cell_id": "8b698a18",
       "external_effects": false,
-      "line": 37,
+      "line": 42,
       "notebook": "08_edit_interactive.ipynb",
       "reasons": []
     },
@@ -541,7 +541,7 @@
       "allowed": true,
       "cell_id": "8b698a18",
       "external_effects": false,
-      "line": 67,
+      "line": 75,
       "notebook": "08_edit_interactive.ipynb",
       "reasons": []
     },
@@ -565,7 +565,7 @@
       "allowed": true,
       "cell_id": "8b698a18",
       "external_effects": false,
-      "line": 60,
+      "line": 67,
       "notebook": "08_edit_interactive.ipynb",
       "reasons": []
     },
@@ -573,7 +573,7 @@
       "allowed": true,
       "cell_id": "8b698a18",
       "external_effects": false,
-      "line": 22,
+      "line": 25,
       "notebook": "08_edit_interactive.ipynb",
       "reasons": []
     },
@@ -597,7 +597,7 @@
       "allowed": true,
       "cell_id": "1462727f",
       "external_effects": false,
-      "line": 100,
+      "line": 109,
       "notebook": "08_edit_interactive.ipynb",
       "reasons": []
     },
@@ -605,7 +605,7 @@
       "allowed": true,
       "cell_id": "1462727f",
       "external_effects": false,
-      "line": 106,
+      "line": 115,
       "notebook": "08_edit_interactive.ipynb",
       "reasons": []
     },
@@ -613,7 +613,7 @@
       "allowed": true,
       "cell_id": "1462727f",
       "external_effects": false,
-      "line": 92,
+      "line": 101,
       "notebook": "08_edit_interactive.ipynb",
       "reasons": []
     },
@@ -663,7 +663,7 @@
       "allowed": true,
       "cell_id": "1462727f",
       "external_effects": false,
-      "line": 87,
+      "line": 95,
       "notebook": "08_edit_interactive.ipynb",
       "reasons": []
     },
@@ -874,7 +874,7 @@
       "allowed": true,
       "cell_id": "1462727f",
       "external_effects": false,
-      "line": 34,
+      "line": 37,
       "notebook": "08_edit_interactive.ipynb",
       "reasons": []
     },
@@ -922,7 +922,7 @@
       "allowed": true,
       "cell_id": "8b698a18",
       "external_effects": false,
-      "line": 13,
+      "line": 14,
       "notebook": "08_edit_interactive.ipynb",
       "reasons": []
     },
@@ -930,7 +930,7 @@
       "allowed": true,
       "cell_id": "8b698a18",
       "external_effects": false,
-      "line": 17,
+      "line": 19,
       "notebook": "08_edit_interactive.ipynb",
       "reasons": []
     },
@@ -1385,7 +1385,7 @@
       "allowed": true,
       "cell_id": "8ef57685",
       "external_effects": false,
-      "line": 20,
+      "line": 22,
       "notebook": "08_edit_interactive.ipynb",
       "reasons": []
     },
@@ -1630,7 +1630,7 @@
       "allowed": true,
       "cell_id": "c1425865",
       "external_effects": false,
-      "line": 33,
+      "line": 35,
       "notebook": "08_edit_interactive.ipynb",
       "reasons": []
     },
@@ -1721,7 +1721,7 @@
       "allowed": true,
       "cell_id": "8b698a18",
       "external_effects": false,
-      "line": 44,
+      "line": 50,
       "notebook": "08_edit_interactive.ipynb",
       "reasons": []
     },
@@ -1969,7 +1969,7 @@
       "allowed": true,
       "cell_id": "c1425865",
       "external_effects": false,
-      "line": 6,
+      "line": 7,
       "notebook": "08_edit_interactive.ipynb",
       "reasons": []
     },
@@ -2306,7 +2306,7 @@
       "allowed": true,
       "cell_id": "1462727f",
       "external_effects": false,
-      "line": 27,
+      "line": 29,
       "notebook": "08_edit_interactive.ipynb",
       "reasons": []
     },
@@ -2775,7 +2775,7 @@
       "allowed": true,
       "cell_id": "c1425865",
       "external_effects": false,
-      "line": 53,
+      "line": 57,
       "notebook": "08_edit_interactive.ipynb",
       "reasons": []
     },
@@ -3292,7 +3292,7 @@
       "allowed": true,
       "cell_id": "8b698a18",
       "external_effects": false,
-      "line": 27,
+      "line": 31,
       "notebook": "08_edit_interactive.ipynb",
       "reasons": []
     },
@@ -3562,7 +3562,7 @@
       "allowed": true,
       "cell_id": "f2cd36c3",
       "external_effects": false,
-      "line": 46,
+      "line": 53,
       "notebook": "08_edit_interactive.ipynb",
       "reasons": []
     },
@@ -3736,7 +3736,7 @@
       "allowed": true,
       "cell_id": "8ef57685",
       "external_effects": false,
-      "line": 9,
+      "line": 10,
       "notebook": "08_edit_interactive.ipynb",
       "reasons": []
     },
@@ -3840,7 +3840,7 @@
       "allowed": true,
       "cell_id": "f2cd36c3",
       "external_effects": false,
-      "line": 17,
+      "line": 20,
       "notebook": "08_edit_interactive.ipynb",
       "reasons": []
     },
@@ -3864,7 +3864,7 @@
       "allowed": true,
       "cell_id": "1462727f",
       "external_effects": false,
-      "line": 72,
+      "line": 79,
       "notebook": "08_edit_interactive.ipynb",
       "reasons": []
     },
@@ -4036,7 +4036,7 @@
       "allowed": true,
       "cell_id": "f2cd36c3",
       "external_effects": false,
-      "line": 40,
+      "line": 46,
       "notebook": "08_edit_interactive.ipynb",
       "reasons": []
     },
@@ -4044,7 +4044,7 @@
       "allowed": true,
       "cell_id": "f2cd36c3",
       "external_effects": false,
-      "line": 23,
+      "line": 27,
       "notebook": "08_edit_interactive.ipynb",
       "reasons": []
     },
@@ -4052,7 +4052,7 @@
       "allowed": true,
       "cell_id": "f2cd36c3",
       "external_effects": false,
-      "line": 35,
+      "line": 40,
       "notebook": "08_edit_interactive.ipynb",
       "reasons": []
     },
@@ -4393,7 +4393,7 @@
       "allowed": true,
       "cell_id": "1462727f",
       "external_effects": false,
-      "line": 42,
+      "line": 46,
       "notebook": "08_edit_interactive.ipynb",
       "reasons": []
     },
@@ -4850,7 +4850,7 @@
       "allowed": false,
       "cell_id": "c1425865",
       "external_effects": true,
-      "line": 59,
+      "line": 64,
       "notebook": "08_edit_interactive.ipynb",
       "reasons": [
         "make_edit_tools->call:before.replace"
@@ -4917,7 +4917,7 @@
       "allowed": true,
       "cell_id": "e1d50cfa",
       "external_effects": false,
-      "line": 52,
+      "line": 56,
       "notebook": "08_edit_interactive.ipynb",
       "reasons": []
     },
@@ -4925,7 +4925,7 @@
       "allowed": true,
       "cell_id": "e1d50cfa",
       "external_effects": false,
-      "line": 150,
+      "line": 158,
       "notebook": "08_edit_interactive.ipynb",
       "reasons": []
     },
@@ -5237,7 +5237,7 @@
       "allowed": false,
       "cell_id": "8ef57685",
       "external_effects": true,
-      "line": 40,
+      "line": 43,
       "notebook": "08_edit_interactive.ipynb",
       "reasons": [
         "call:before.replace"
@@ -5255,7 +5255,7 @@
       "allowed": true,
       "cell_id": "8b698a18",
       "external_effects": false,
-      "line": 79,
+      "line": 88,
       "notebook": "08_edit_interactive.ipynb",
       "reasons": []
     },
@@ -5380,7 +5380,7 @@
       "allowed": true,
       "cell_id": "f2cd36c3",
       "external_effects": false,
-      "line": 61,
+      "line": 69,
       "notebook": "08_edit_interactive.ipynb",
       "reasons": []
     },
@@ -5495,7 +5495,7 @@
       "allowed": true,
       "cell_id": "8b698a18",
       "external_effects": false,
-      "line": 128,
+      "line": 141,
       "notebook": "08_edit_interactive.ipynb",
       "reasons": []
     },
@@ -5540,7 +5540,7 @@
       "allowed": true,
       "cell_id": "1462727f",
       "external_effects": false,
-      "line": 114,
+      "line": 123,
       "notebook": "08_edit_interactive.ipynb",
       "reasons": []
     },

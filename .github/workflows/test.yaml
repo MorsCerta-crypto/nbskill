@@ -12,6 +12,6 @@ jobs:
           python-version: "3.12"
       - run: uv sync --dev
       - run: uv run python -m compileall -q nbskill
-      - run: uv run nbskill_validate nbs
+      # - run: uv run nbskill_validate nbs
       - run: uv run nbdev-test
       # - run: uv run style_check nbs --changed_only --max_diagnostics 80

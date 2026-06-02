@@ -84,7 +84,7 @@ def _deep_merge(base, override):
     return result
 
 # %% ../nbs/11_agent_workbench.ipynb #919b6c69
-def _read_json(path):
+def _read_workbench_json(path):
     path = Path(path).expanduser()
     if not path.exists(): return {}
     data = json.loads(path.read_text(encoding="utf-8"))
@@ -105,8 +105,8 @@ def _project_taste_path(project_path):
 def load_taste_profile(project_path=".", user_path="~/.nbskill/taste.json") -> dict:
     "Load built-in, project, and optional user taste profiles with later profiles winning."
     taste = deepcopy(BUILTIN_TASTE_PROFILE)
-    taste = _deep_merge(taste, _read_json(_project_taste_path(project_path)))
-    if user_path: taste = _deep_merge(taste, _read_json(user_path))
+    taste = _deep_merge(taste, _read_workbench_json(_project_taste_path(project_path)))
+    if user_path: taste = _deep_merge(taste, _read_workbench_json(user_path))
     return taste
 
 # %% ../nbs/11_agent_workbench.ipynb #494f0f29
@@ -413,6 +413,75 @@ def _style_delta(baseline, current):
     }
 
 # %% ../nbs/11_agent_workbench.ipynb #bb502512
+def _private_defs_in_source(source):
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return []
+    records = []
+    for node in tree.body:
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            continue
+        if not node.name.startswith("_") or node.name.startswith("__"):
+            continue
+        records.append({
+            "symbol": node.name,
+            "line": getattr(node, "lineno", None),
+            "end_line": getattr(node, "end_lineno", getattr(node, "lineno", None)),
+        })
+    return records
+
+
+def _private_symbol_records(state):
+    records = []
+    for nb_path, cells in state.get("notebook_cell_sources", {}).items():
+        for cell_id, source in cells.items():
+            for item in _private_defs_in_source(source):
+                records.append({"path": nb_path, "cell_id": cell_id, **item})
+    return records
+
+
+def _name_load_count(source, name, skip_span=None):
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return 0
+    count = 0
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Name) or not isinstance(node.ctx, ast.Load):
+            continue
+        if node.id != name:
+            continue
+        line = getattr(node, "lineno", 0)
+        if skip_span and skip_span[0] <= line <= skip_span[1]:
+            continue
+        count += 1
+    return count
+
+
+def _unused_added_private_helpers(baseline, current):
+    before = {(item["path"], item["symbol"]) for item in _private_symbol_records(baseline)}
+    after = _private_symbol_records(current)
+    added = [item for item in after if (item["path"], item["symbol"]) not in before]
+    unused = []
+    sources = current.get("notebook_cell_sources", {})
+    for item in added:
+        uses = 0
+        for nb_path, cells in sources.items():
+            for cell_id, source in cells.items():
+                span = None
+                if nb_path == item["path"] and cell_id == item["cell_id"]:
+                    span = (item.get("line") or 0, item.get("end_line") or 0)
+                uses += _name_load_count(source, item["symbol"], skip_span=span)
+        if uses == 0:
+            unused.append({
+                "path": item["path"],
+                "cell_id": item["cell_id"],
+                "symbol": item["symbol"],
+            })
+    return unused
+
+
 def score_patch(baseline, contract, path=".", execution=None) -> dict:
     "Score current repository state against a baseline and task contract."
     current = capture_state(path)
@@ -421,6 +490,7 @@ def score_patch(baseline, contract, path=".", execution=None) -> dict:
     changed_cells = _changed_cells(baseline, current)
     added_lines = _added_line_delta(baseline, current)
     added_public = _added_public_symbols(baseline, current)
+    unused_private = _unused_added_private_helpers(baseline, current)
     hard_failures = []
     if len(touched_files) > budgets.get("max_files", DEFAULT_BUDGETS["max_files"]):
         hard_failures.append({"code": "max_files", "limit": budgets.get("max_files"), "actual": len(touched_files)})
@@ -430,6 +500,8 @@ def score_patch(baseline, contract, path=".", execution=None) -> dict:
         hard_failures.append({"code": "max_added_lines", "limit": budgets.get("max_added_lines"), "actual": added_lines})
     if contract.get("public_api") == "forbidden" and added_public:
         hard_failures.append({"code": "public_api_added", "symbols": added_public})
+    if unused_private:
+        hard_failures.append({"code": "private_helper_added_unused", "symbols": unused_private})
     hard_failures.extend(_export_pair_failures(current, touched_files))
     if current["validation_problem_count"] > baseline.get("validation_problem_count", 0):
         hard_failures.append({"code": "validation_errors_added"})
@@ -449,6 +521,7 @@ def score_patch(baseline, contract, path=".", execution=None) -> dict:
         "changed_cells": changed_cells,
         "added_lines": added_lines,
         "added_public_symbols": added_public,
+        "added_unused_private_helpers": unused_private,
         "style_delta": _style_delta(baseline, current),
         "baseline": baseline,
         "current": current,
@@ -457,7 +530,7 @@ def score_patch(baseline, contract, path=".", execution=None) -> dict:
 # %% ../nbs/11_agent_workbench.ipynb #2edc0410
 def _load_contract_file(contract_file):
     if not contract_file: return {}
-    return _read_json(contract_file)
+    return _read_workbench_json(contract_file)
 
 # %% ../nbs/11_agent_workbench.ipynb #3d58f90c
 def _render_list(items):
@@ -556,6 +629,9 @@ def agent_workbench_result(
     execute: bool = False,
     max_steps: int = 8,
     timeout: int = 30,
+    session_id: str | None = None,
+    reset_session: bool = False,
+    feedback_rounds: int = 3,
 ) -> dict:
     "Build the structured workbench result without CLI printing side effects."
     overrides = _load_contract_file(contract_file)
@@ -624,6 +700,9 @@ def agent_workbench_result(
             timeout=timeout,
             max_context_commands=max_context_commands,
             context_steps=context_steps,
+            session_id=session_id,
+            reset_session=reset_session,
+            feedback_rounds=feedback_rounds,
         )
         result["execution"] = execution
         result["score"] = score_patch(
@@ -640,9 +719,13 @@ def agent_workbench(
     execute: bool = False,  # Execute the rendered plan through execute_plan
     max_steps: int = 8,  # Maximum inner-agent steps when executing
     timeout: int = 30,  # Per-cell timeout for execute_plan
+    session_id: str | None = None,  # Reuse an in-memory edit session when provided
+    reset_session: bool = False,  # Drop an existing in-memory edit session first
+    feedback_rounds: int = 3,  # Maximum mutation feedback rounds
 ) -> dict:
     "Prepare or execute a taste-aware, small-diff agent workbench run."
     return agent_workbench_result(
         goal, notebook=notebook, contract_file=contract_file, execute=execute,
-        max_steps=max_steps, timeout=timeout,
+        max_steps=max_steps, timeout=timeout, session_id=session_id,
+        reset_session=reset_session, feedback_rounds=feedback_rounds,
     )

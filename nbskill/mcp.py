@@ -1998,6 +1998,7 @@ async def execute_plan_tool(
     notebooks: str | None = None, model: str | None = None, max_steps: int = 8,
     timeout: int = 30, symbols: str | None = None, dry_run: bool = True,
     max_context_commands: int = 8, context_steps: int = 2,
+    session_id: str | None = None, reset_session: bool = False, feedback_rounds: int = 3,
     tool_timeout: float = 150.0, detail: str = "summary", ctx: Context = None,
 ) -> ToolResult:
     "Run a bounded notebook-editing subagent against one notebook or a project notebook set."
@@ -2008,11 +2009,13 @@ async def execute_plan_tool(
     timeout = _mcp_clamp_int(timeout, 30, 1, 120, "timeout")
     max_context_commands = _mcp_clamp_int(max_context_commands, 8, 0, 20, "max_context_commands")
     context_steps = _mcp_clamp_int(context_steps, 2, 0, 5, "context_steps")
+    feedback_rounds = _mcp_clamp_int(feedback_rounds, 3, 1, 8, "feedback_rounds")
     tool_timeout = _mcp_clamp_float(tool_timeout, 150.0, 0.001, 150.0, "tool_timeout")
     arguments = dict(
         plan=plan, notebook=notebook, scope=scope, notebooks=notebooks, model=model, max_steps=max_steps,
         timeout=timeout, symbols=symbols, dry_run=dry_run, max_context_commands=max_context_commands,
-        context_steps=context_steps, tool_timeout=tool_timeout, detail=detail,
+        context_steps=context_steps, session_id=session_id, reset_session=reset_session,
+        feedback_rounds=feedback_rounds, tool_timeout=tool_timeout, detail=detail,
         workspace_root=str(root) if root else None,
     )
     try:
@@ -2021,7 +2024,8 @@ async def execute_plan_tool(
             project_args = dict(
                 plan=plan, notebooks=notebooks, model=model, max_steps=max_steps, timeout=timeout,
                 dry_run=dry_run, symbols=symbols, max_context_commands=max_context_commands,
-                context_steps=context_steps,
+                context_steps=context_steps, session_id=session_id, reset_session=reset_session,
+                feedback_rounds=feedback_rounds,
             )
             full_output = await asyncio.wait_for(
                 asyncio.to_thread(capture_call, execute_project_plan, **project_args),
@@ -2032,7 +2036,8 @@ async def execute_plan_tool(
         notebook_args = dict(
             notebook=notebook, plan=plan, model=model, max_steps=max_steps, timeout=timeout,
             dry_run=dry_run, symbols=symbols, max_context_commands=max_context_commands,
-            context_steps=context_steps,
+            context_steps=context_steps, session_id=session_id, reset_session=reset_session,
+            feedback_rounds=feedback_rounds,
         )
         result = await asyncio.wait_for(asyncio.to_thread(execute_plan, **notebook_args), timeout=tool_timeout)
         full_output = plan_result_text(result)
@@ -2053,6 +2058,7 @@ async def execute_plan_tool(
 async def agent_workbench_tool(
     goal: str, notebook: str | None = None, contract_file: str | None = None,
     execute: bool = False, max_steps: int = 8, timeout: int = 30,
+    session_id: str | None = None, reset_session: bool = False, feedback_rounds: int = 3,
     tool_timeout: float = 150.0, detail: str = "summary", ctx: Context = None,
 ) -> ToolResult:
     "Prepare or execute a taste-aware small-diff workbench run."
@@ -2061,14 +2067,16 @@ async def agent_workbench_tool(
     contract_file = _mcp_workspace_path(contract_file, root) if contract_file else contract_file
     max_steps = _mcp_clamp_int(max_steps, 8, 1, 20, "max_steps")
     timeout = _mcp_clamp_int(timeout, 30, 1, 120, "timeout")
+    feedback_rounds = _mcp_clamp_int(feedback_rounds, 3, 1, 8, "feedback_rounds")
     tool_timeout = _mcp_clamp_float(tool_timeout, 150.0, 0.001, 150.0, "tool_timeout")
-    arguments = dict(goal=goal, notebook=notebook, contract_file=contract_file, execute=execute, max_steps=max_steps, timeout=timeout, tool_timeout=tool_timeout, detail=detail, workspace_root=str(root) if root else None)
+    arguments = dict(goal=goal, notebook=notebook, contract_file=contract_file, execute=execute, max_steps=max_steps, timeout=timeout, session_id=session_id, reset_session=reset_session, feedback_rounds=feedback_rounds, tool_timeout=tool_timeout, detail=detail, workspace_root=str(root) if root else None)
     try:
         result = await asyncio.wait_for(
             asyncio.to_thread(
                 agent_workbench_result,
                 goal, notebook=notebook, contract_file=contract_file, execute=execute,
-                max_steps=max_steps, timeout=timeout,
+                max_steps=max_steps, timeout=timeout, session_id=session_id,
+                reset_session=reset_session, feedback_rounds=feedback_rounds,
             ),
             timeout=tool_timeout,
         )

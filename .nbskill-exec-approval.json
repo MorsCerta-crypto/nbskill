@@ -1,0 +1,13 @@
+{
+  "functions": {
+    "double_answer": {
+      "allowed": true,
+      "cell_id": "fixture-double-answer",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "tests/fixtures/nbskill_tool_fixture.ipynb",
+      "reasons": []
+    }
+  },
+  "version": 1
+}

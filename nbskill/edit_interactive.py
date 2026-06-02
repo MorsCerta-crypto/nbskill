@@ -15,14 +15,19 @@ import os
 import re
 import signal
 import traceback
+import uuid
 from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from dataclasses import dataclass, field
 from io import StringIO
 from pathlib import Path
 from threading import Lock, current_thread, main_thread
 from fastcore.nbio import read_nb
+from lisette import StopResponse
 from .edit import NotebookEditor
-from .foundation import cap_text, cell_source, chapter_spans, commit_notebook, parse_one_cell
+from nbskill.foundation import (
+    cap_text, cell_source, chapter_spans, commit_notebook, parse_one_cell,
+    source_hash,
+)
 from .graph import symbol_usage_summary
 from .knowledge import reference_query
 from .parallel import notebook_locks
@@ -33,6 +38,7 @@ _CAPTURE_LOCK = Lock()
 _AGENT_MAX_STEPS = 20
 _AGENT_MAX_CONTEXT_STEPS = 5
 _AGENT_MAX_CONTEXT_COMMANDS = 20
+_AGENT_MAX_FEEDBACK_ROUNDS = 8
 _AGENT_MAX_TIMEOUT_SECONDS = 120
 _AGENT_MAX_MESSAGE_CHARS = 12000
 _AGENT_MAX_PROJECT_CONTEXT_CHARS = 6000
@@ -40,6 +46,7 @@ _AGENT_MAX_NOTEBOOK_VIEW_CHARS = 80000
 _AGENT_MAX_CELL_SOURCE_CHARS = 8000
 _AGENT_MAX_LOG_ITEMS = 200
 _AGENT_MAX_DIFF_CHARS = 50000
+_AGENT_SESSIONS = {}
 
 
 def _bounded_int(value, default, minimum, maximum, name):
@@ -69,14 +76,14 @@ EDIT_INTERACTIVE_SYSTEM = """You are an nbskill notebook-editing subagent.
 You may edit one or more target notebooks in one repository. You receive the
 project description, a focused knowledge summary, optional caller/callee impact
 for the symbols in scope, and a managed notebook context prepared by a separate
-context-management step. There is no project-scope lookup tool because that
-scope is injected into this prompt.
+context-management step.
 
-Use only the provided editing tools: str_replace, edit_cell, add_cell,
-delete_cell, run_code, inspect_state, execute_cell, and query_knowledge. The
-context-management tools are not available in this edit step. When more than one
-notebook is in scope, pass the notebook path/name to edit and execution tools so
-the target is explicit. Keep the work scoped to one small specific task.
+Use only the provided tools: str_replace, edit_cell, add_cell, delete_cell,
+run_code, inspect_state, execute_cell, query_knowledge, and the context tools
+open_context, fold_context, delete_context, edit_context, context_view. When
+more than one notebook is in scope, pass the notebook path/name to edit and
+execution tools so the target is explicit. Keep the work scoped to one small
+specific task.
 
 For new behavior, use this loop:
 1. Scratch: run the smallest experiment with run_code in the live notebook
@@ -92,13 +99,15 @@ For new behavior, use this loop:
 6. Execute: use execute_cell to replay through the example or test. Pass
    rerun_all=True when earlier cells changed and the whole notebook state must
    be rebuilt.
-7. Clean context: after scratch is stabilized into notebook cells, let the final
-   context step fold or delete no-longer-needed working context.
+7. Clean context: after scratch is stabilized into notebook cells, fold or
+   delete no-longer-needed working context.
 
-Exceptions are returned to you as tool output; inspect them, edit, and execute
-again. Stop as soon as the requested notebook change is complete. Your final
-message must summarize what changed, what was executed, and what could not be
-completed.
+After a notebook or context mutation, the tool loop may stop and return a short
+feedback note. Read that note, decide whether the change looks correct, then
+continue, fix, test, or fold context. Exceptions are returned as tool output;
+inspect them, edit, and execute again. Stop as soon as the requested notebook
+change is complete. Your final message must summarize what changed, what was
+executed, and what could not be completed.
 """
 
 CONTEXT_SESSION_SYSTEM = """You manage the context for an nbskill editing run.
@@ -310,9 +319,6 @@ def managed_notebook_context(path, revision=0, previous=None):
         if msg.tag != "notebook:index":
             msg.visible, msg.removed = prior.visible, prior.removed
             if prior_summary: msg.summary = prior_summary
-        if prior.purpose.startswith("edited "):
-            msg.purpose, msg.content = prior.purpose, prior.content
-            if prior_summary: msg.summary = prior_summary
     return rebuilt
 
 
@@ -344,6 +350,7 @@ class EditSession:
     target_paths: list[Path] = field(default_factory=list)
     timeout: int = 30
     revision: int = 0
+    session_id: str | None = None
     agent_id: str | None = None
     log_path: Path | None = None
     log: list[str] = field(default_factory=list)
@@ -352,6 +359,8 @@ class EditSession:
     messages: list[dict] = field(default_factory=list)
     managed_context: list[ManagedContextMessage] = field(default_factory=list)
     context_command_log: list[dict] = field(default_factory=list)
+    feedback_notes: list[str] = field(default_factory=list)
+    pending_feedback: str = ""
     live_ns: dict = field(default_factory=lambda: {"__name__": "__main__"})
     live_ns_by_path: dict = field(default_factory=dict)
     executed_until_idx: int = -1
@@ -363,7 +372,11 @@ class EditSession:
         paths = self.target_paths or _target_paths(self.path)
         self.target_paths = [Path(path) for path in paths]
         self.path = self.target_paths[0]
-        if self.agent_id is None: self.agent_id = _agent_notebook_id(_target_label(self.target_paths))
+        if self.session_id is None:
+            self.session_id = f"session-{uuid.uuid4().hex[:8]}"
+        if self.agent_id is None:
+            label = f"{_target_label(self.target_paths)}-{self.session_id}"
+            self.agent_id = _agent_notebook_id(label)
         if self.log_path is None: self.log_path = Path("log") / f"agent-{self.agent_id}.log"
     def target_path(self, notebook=None):
         "Resolve a user-facing notebook selector against this session."
@@ -389,15 +402,22 @@ class EditSession:
             return
         self.live_ns_by_path[self._state_key(path)] = {"__name__": "__main__"}
         self.executed_until_by_path[self._state_key(path)] = -1
+    def update_context_view(self):
+        "Render the current managed context into the active chat history."
+        if self.chat is None or self.context_msg_idx is None: return
+        if self.context_msg_idx >= len(self.chat.hist): return
+        msg = self.chat.hist[self.context_msg_idx]
+        _context_msg_set(msg, "content", render_managed_context(self.managed_context))
     def refresh_view(self):
-        "Replace the notebook context message in the active Lisette history."
+        "Refresh notebook-derived context and replace the active chat view."
         if self.chat is None: return
         if self.managed_context and self.context_msg_idx is not None:
-            msg = self.chat.hist[self.context_msg_idx]
-            self.managed_context = managed_notebook_context(self.target_paths, self.revision, previous=self.managed_context)
-            _context_msg_set(msg, "content", render_managed_context(self.managed_context))
+            self.managed_context = managed_notebook_context(
+                self.target_paths, self.revision, previous=self.managed_context
+            )
+            self.update_context_view()
             return
-        if self.notebook_msg_idx is None: return
+        if self.notebook_msg_idx is None or self.notebook_msg_idx >= len(self.chat.hist): return
         msg = self.chat.hist[self.notebook_msg_idx]
         _context_msg_set(msg, "content", notebooks_view(self.target_paths, self.revision))
     def record_message(self, role, content):
@@ -405,6 +425,49 @@ class EditSession:
         item = {"revision": self.revision, "role": role, "content": _bounded_text(content)}
         self.messages.append(item)
         _append_agent_log(self, "message", item)
+    def session_note(self, content):
+        "Insert a feedback note into memory, active chat history, and the audit log."
+        note = _bounded_text(content)
+        self.pending_feedback = note
+        self.feedback_notes.append(note)
+        item = {"revision": self.revision, "role": "note", "content": note}
+        self.messages.append(item)
+        _append_agent_log(self, "feedback_note", item)
+        if self.chat is not None:
+            self.chat.hist.append({"role": "user", "content": note})
+        return note
+    def consume_feedback(self):
+        "Return and clear the feedback note that should seed the next round."
+        note = self.pending_feedback
+        self.pending_feedback = ""
+        return note
+    def feedback_packet(self, result, message, path=None):
+        "Build one compact notebook/context mutation feedback packet."
+        result = result if isinstance(result, dict) else {}
+        affected, diff_chunks = [], []
+        for item in result.get("diffs", []):
+            affected.extend(item.get("affected_cell_ids", []) or [])
+            affected.extend(item.get("inserted_cell_ids", []) or [])
+            if item.get("cell_id"): affected.append(item.get("cell_id"))
+            if item.get("diff"): diff_chunks.append(str(item["diff"]))
+        affected = sorted({str(item) for item in affected if item})
+        detail = str(result.get("text") or "").strip()
+        if detail and not diff_chunks: diff_chunks.append(detail)
+        machine = {
+            "status": "changed",
+            "revision": self.revision,
+            "notebook": str(path or self.path),
+            "affected_cell_ids": affected,
+        }
+        chunks = [message, "tool_result=" + json.dumps(machine, sort_keys=True)]
+        if affected: chunks.append("affected_cell_ids=" + ", ".join(affected))
+        if diff_chunks:
+            chunks.extend(["", "concise_diff:", cap_text("\n\n".join(diff_chunks), 3000)])
+        chunks.extend([
+            "",
+            "Notebook/context updated. Continue with the next step if the change looks correct; otherwise fix it.",
+        ])
+        return _bounded_text("\n".join(chunks))
     def record(self, message):
         "Append an operation to the session log."
         self.log.append(f"r{self.revision}: {message}")
@@ -458,6 +521,14 @@ def _managed_message_by_tag(messages, tag):
     raise ValueError(f"Multiple managed context messages have tag {tag!r}")
 
 
+def _context_feedback_note(action, tag):
+    return (
+        f"context {action} applied to {tag}\n"
+        "Notebook/context updated. Continue with the next step if the change "
+        "looks correct; otherwise fix it."
+    )
+
+
 def apply_context_command(session, command):
     "Apply one managed-context command to an edit session."
     command = dict(command)
@@ -482,8 +553,10 @@ def apply_context_command(session, command):
         raise ValueError(f"Unknown managed context action {action!r}")
     public = {key: command.get(key) for key in ("action", "tag")}
     session.record_context_command(public)
-    session.refresh_view()
-    return f"context {action} applied to {tag}"
+    session.update_context_view()
+    note = _context_feedback_note(action, tag)
+    session.session_note(note)
+    return StopResponse(note)
 
 
 def _stream_chunk_text(chunk):
@@ -563,10 +636,10 @@ def run_chat_with_context_commands(session, prompt, max_steps=8, max_context_com
             output.append(buffer)
             return "".join(output).strip()
         output.append(buffer[:command["start"]])
-        apply_context_command(session, command)
+        note = str(apply_context_command(session, command))
         next_prompt = (
-            f"Managed context command applied: {command['action']} {command['tag']}. "
-            "Continue the same task from just before the command. Do not repeat the command."
+            note + "\nContinue the same task from just before the command. "
+            "Do not repeat the command."
         )
     session.record_context_command({"action": "limit", "tag": "managed-context"}, status="error", detail="max_context_commands exceeded")
     return "".join(output).strip() or "managed context command limit reached"
@@ -590,15 +663,9 @@ def _finish_write(session, path, message, result):
     session.reset_live_state(path)
     session.record(message)
     session.refresh_view()
-    detail = str(result.get("text") or "").strip()
-    machine = {"status": "changed", "revision": session.revision, "notebook": str(path)}
-    chunks = [
-        message,
-        "tool_result=" + json.dumps(machine, sort_keys=True),
-        f"revision={session.revision}",
-    ]
-    if detail: chunks.extend(["", detail])
-    return "\n".join(chunks)
+    note = session.feedback_packet(result, message, path=path)
+    session.session_note(note)
+    return StopResponse(note)
 
 # %% ../nbs/08_edit_interactive.ipynb #0dbff6c2
 def _agent_notebook_id(path):
@@ -661,6 +728,37 @@ def _inserted_cell_ids(result):
     return inserted
 
 
+def _similar_source_lines(source, needle, limit=6):
+    words = {word for word in re.findall(r"\w+", str(needle or "")) if len(word) > 2}
+    scored = []
+    for number, line in enumerate(str(source or "").splitlines(), 1):
+        score = sum(1 for word in words if word in line)
+        if score:
+            scored.append((score, number, line.strip()))
+    scored.sort(key=lambda item: (-item[0], item[1]))
+    return [f"L{number}: {cap_text(line, 240)}" for _, number, line in scored[:limit]]
+
+
+def _edit_mismatch_feedback(path, id, before, old_str, matches):
+    machine = {
+        "status": "no_change",
+        "reason": "old_str_match_count",
+        "matches": matches,
+        "notebook": str(path),
+        "cell_id": id,
+        "source_hash": source_hash(before),
+    }
+    chunks = [
+        "edit_cell made no change because old_str did not match exactly once.",
+        "tool_result=" + json.dumps(machine, sort_keys=True),
+    ]
+    similar = _similar_source_lines(before, old_str)
+    if similar:
+        chunks.extend(["", "similar_lines:", "\n".join(similar)])
+    chunks.extend(["", "current_source:", cap_text(before, _AGENT_MAX_CELL_SOURCE_CHARS)])
+    return "\n".join(chunks)
+
+
 def make_edit_tools(session):
     "Create notebook-scoped editing tools for one edit-interactive session."
 
@@ -699,9 +797,7 @@ def make_edit_tools(session):
             count = before.count(old_str)
         session.record_tool("edit_cell", f"notebook={path}, id={id!r}, matches={count}")
         if count != 1:
-            raise ValueError(
-                f"old_str matched {count} times in {path} id={id}; expected exactly 1"
-            )
+            return _edit_mismatch_feedback(path, id, before, old_str, count)
         after = before.replace(old_str, new_str, 1)
         result = NotebookEditor(path, auto_feedback=False).replace_cell(
             id, after, cell_type=cell.cell_type
@@ -1103,6 +1199,63 @@ def final_diffs(paths):
     return cap_text("\n\n".join(chunks).rstrip(), _AGENT_MAX_DIFF_CHARS)
 
 # %% ../nbs/08_edit_interactive.ipynb #c1425865
+def _new_agent_session_id():
+    return f"session-{uuid.uuid4().hex[:8]}"
+
+
+def _get_agent_session(paths, timeout, session_id=None, reset_session=False):
+    sid = str(session_id or "").strip() or _new_agent_session_id()
+    if reset_session:
+        _AGENT_SESSIONS.pop(sid, None)
+    session = _AGENT_SESSIONS.get(sid)
+    if session is None:
+        session = EditSession(
+            path=paths,
+            target_paths=paths,
+            timeout=timeout,
+            session_id=sid,
+            managed_context=managed_notebook_context(paths, revision=0),
+        )
+        _AGENT_SESSIONS[sid] = session
+        return session
+    session.target_paths = [Path(path) for path in paths]
+    session.path = session.target_paths[0]
+    session.timeout = timeout
+    session.chat = None
+    session.notebook_msg_idx = None
+    session.context_msg_idx = None
+    session.managed_context = managed_notebook_context(
+        session.target_paths, session.revision, previous=session.managed_context
+    )
+    return session
+
+
+def _feedback_final_prompt():
+    return (
+        "A notebook or context update was applied. Stop this tool loop now and "
+        "briefly summarize the update. The next feedback round will continue."
+    )
+
+
+def _call_feedback_chat(chat, prompt, max_steps):
+    try:
+        return chat(
+            prompt,
+            max_steps=max_steps,
+            return_all=True,
+            final_prompt=_feedback_final_prompt(),
+        )
+    except TypeError as exc:
+        if "final_prompt" not in str(exc): raise
+        return chat(prompt, max_steps=max_steps, return_all=True)
+
+
+def _normalize_chat_result(result):
+    if not isinstance(result, (list, str, bytes, dict)) and hasattr(result, "__next__"):
+        return list(result)
+    return result
+
+
 def execute_plan(
     notebook: str | list,
     plan: str,
@@ -1114,6 +1267,9 @@ def execute_plan(
     injected_context: str | None = None,
     max_context_commands: int = 8,
     context_steps: int = 2,
+    session_id: str | None = None,
+    reset_session: bool = False,
+    feedback_rounds: int = 3,
 ) -> dict:
     "Execute `plan` against one or more notebooks using bounded subagent steps."
     paths = _target_paths(notebook)
@@ -1132,6 +1288,10 @@ def execute_plan(
     context_steps = _bounded_int(
         context_steps, 2, 0, _AGENT_MAX_CONTEXT_STEPS, "context_steps"
     )
+    feedback_rounds = _bounded_int(
+        feedback_rounds, 3, 1, _AGENT_MAX_FEEDBACK_ROUNDS, "feedback_rounds"
+    )
+    session_key = str(session_id or "").strip() or _new_agent_session_id()
     model = model or os.environ.get("NBSKILL_AGENT") or "chatgpt/gpt-5.4-mini"
     project_context = _bounded_text(
         injected_context or _subagent_context(paths[0], plan, symbols=symbols),
@@ -1148,7 +1308,9 @@ def execute_plan(
                 "",
                 f"Notebooks: {_target_label(paths)}",
                 f"Model: {model}",
+                f"Session id: {session_key}",
                 f"Max steps: {max_steps}",
+                f"Feedback rounds: {feedback_rounds}",
                 "Plan:",
                 plan,
                 "",
@@ -1163,10 +1325,13 @@ def execute_plan(
             "summary": "Dry run only; no subagent was invoked and no notebook edits were made.",
             "history": [],
             "context_commands": [],
+            "feedback_notes": [],
+            "feedback_rounds": 0,
+            "session_id": session_key,
             "text": cap_text(text, _AGENT_MAX_NOTEBOOK_VIEW_CHARS),
         }
-    session = EditSession(
-        path=paths, target_paths=paths, timeout=timeout, managed_context=initial_messages
+    session = _get_agent_session(
+        paths, timeout, session_id=session_key, reset_session=reset_session
     )
     prep = (
         "Prepare context for the edit step. Open only chapters likely needed for this plan.\n"
@@ -1179,14 +1344,18 @@ def execute_plan(
         max_steps=context_steps,
         max_context_commands=max_context_commands,
     )
+    session.consume_feedback()
     initial_view = cap_text(
         render_managed_context(session.managed_context), _AGENT_MAX_NOTEBOOK_VIEW_CHARS
     )
+    recent_feedback = "\n\n".join(session.feedback_notes[-3:]).strip()
     hist = [
         {"role": "user", "content": f"Plan:\n{plan}"},
         {"role": "user", "content": initial_view},
         {"role": "user", "content": "Injected project context:\n" + project_context},
     ]
+    if recent_feedback:
+        hist.append({"role": "user", "content": "Recent feedback notes:\n" + recent_feedback})
     for item in hist:
         session.record_message(item["role"], item["content"])
     chat = make_chat(
@@ -1201,19 +1370,32 @@ def execute_plan(
         "Execute the plan with the scratch, inspect, function, example, and test "
         "loop from the system prompt. Use run_code for experiments, inspect_state "
         "for live state checks, and execute_cell to validate the final example or "
-        "test when practical. Use context tools during the edit step when you "
-        "need to open, fold, or prune the active notebook view. Stop when the notebook change "
-        "is complete."
+        "test when practical. Use context tools when you need to open, fold, or "
+        "prune the active notebook view. Stop when the notebook change is complete."
     )
-    session.record_message("user", prompt)
-    try:
-        result = chat(prompt, max_steps=max_steps, return_all=True)
-    except BaseException as exc:
-        result = f"notebook subagent failed: {type(exc).__name__}: {exc}"
-    if not isinstance(result, (list, str, bytes, dict)) and hasattr(result, "__next__"):
-        result = list(result)
-    summary = _bounded_text(response_text(result).strip() or "(no final response)")
-    session.record_message("assistant", summary)
+    round_summaries = []
+    for round_idx in range(feedback_rounds):
+        session.pending_feedback = ""
+        session.record_message("user", prompt)
+        try:
+            result = _call_feedback_chat(chat, prompt, max_steps=max_steps)
+        except BaseException as exc:
+            result = f"notebook subagent failed: {type(exc).__name__}: {exc}"
+        result = _normalize_chat_result(result)
+        summary = _bounded_text(response_text(result).strip() or "(no final response)")
+        round_summaries.append(summary)
+        session.record_message("assistant", summary)
+        feedback = session.consume_feedback()
+        if not feedback or round_idx == feedback_rounds - 1:
+            break
+        prompt = (
+            f"Feedback round {round_idx + 2} of {feedback_rounds}.\n"
+            "Last feedback note:\n"
+            f"{feedback}\n\n"
+            "Continue from this updated notebook/context. If the change looks "
+            "wrong, fix it; otherwise test or move to the next plan step."
+        )
+    summary = round_summaries[-1] if round_summaries else "(no final response)"
     cleanup = (
         "Clean up context after the edit step. Fold useful full chapters to summaries, "
         "delete irrelevant scratch context from active renders, and leave the index visible."
@@ -1225,6 +1407,7 @@ def execute_plan(
         max_steps=context_steps,
         max_context_commands=max_context_commands,
     )
+    session.pending_feedback = ""
     for path in paths:
         _save_notebook(read_nb(path), path)
     session.record("Exported notebook(s) after subagent run")
@@ -1233,8 +1416,16 @@ def execute_plan(
         [
             "notebook subagent complete",
             "",
+            f"Session id: {session.session_id}",
+            f"Feedback rounds completed: {len(round_summaries)}",
+            "",
             "Final response:",
             summary,
+            "",
+            "Feedback notes:",
+            "\n\n".join(_bounded_items(session.feedback_notes))
+            if session.feedback_notes
+            else "(no feedback notes)",
             "",
             "Tools used:",
             "\n".join(_bounded_items(session.tool_log))
@@ -1265,6 +1456,9 @@ def execute_plan(
         "summary": summary,
         "history": _bounded_items(session.history),
         "context_commands": _bounded_items(session.context_command_log),
+        "feedback_notes": _bounded_items(session.feedback_notes),
+        "feedback_rounds": len(round_summaries),
+        "session_id": session.session_id,
         "messages": _bounded_items(session.messages),
         "text": cap_text(text, _AGENT_MAX_NOTEBOOK_VIEW_CHARS),
         "model": model,
@@ -1290,6 +1484,9 @@ def execute_project_plan(
     symbols: str | None = None,
     max_context_commands: int = 8,
     context_steps: int = 2,
+    session_id: str | None = None,
+    reset_session: bool = False,
+    feedback_rounds: int = 3,
 ) -> str:
     "Launch one edit-interactive session that can touch multiple notebooks."
     targets = _split_notebooks(notebooks)
@@ -1298,6 +1495,8 @@ def execute_project_plan(
         notebook=targets, plan=plan, model=model, max_steps=max_steps,
         timeout=timeout, dry_run=dry_run, symbols=symbols,
         max_context_commands=max_context_commands, context_steps=context_steps,
+        session_id=session_id, reset_session=reset_session,
+        feedback_rounds=feedback_rounds,
     )
     return "\n".join([
         "project subagent coordinator", "", f"Dry run: {dry_run}", f"Targets: {len(targets)}", "", plan_result_text(result),

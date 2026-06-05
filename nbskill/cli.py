@@ -155,10 +155,24 @@ def _print_json(value):
 
 # %% ../nbs/13_cli.ipynb #3f156eb2
 def _print_workbench_result(result):
-    text = result.get("rendered_plan") or result.get("summary") or json.dumps(result, indent=2, sort_keys=True)
+    "Print a rendered workbench plan or compact execution score."
+    if "score" in result:
+        score = result.get("score", {})
+        payload = {
+            "summary": result.get("summary"),
+            "passed": score.get("passed"),
+            "hard_failures": score.get("hard_failures", []),
+            "empirical_warnings": score.get("empirical_warnings", []),
+        }
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return None
+    text = (
+        result.get("rendered_plan")
+        or result.get("summary")
+        or json.dumps(result, indent=2, sort_keys=True)
+    )
     print(text)
     return None
-
 
 # %% ../nbs/13_cli.ipynb #4d6ca218
 def _format_status(data):
@@ -479,11 +493,13 @@ def agent_workbench(
     execute: bool = False,  # Execute the rendered plan through execute_plan
     max_steps: int = 8,  # Maximum inner-agent steps when executing
     timeout: int = 30,  # Per-cell timeout for execute_plan
+    enforce_empirical: bool = False,  # Promote empirical-loop warnings to hard failures
 ):
     "Prepare or execute a taste-aware, small-diff agent workbench run."
     result = nbskill.workbench.agent_workbench(
         goal, notebook=notebook, contract_file=contract_file, execute=execute,
         max_steps=max_steps, timeout=timeout,
+        enforce_empirical=enforce_empirical,
     )
     return _print_workbench_result(result)
 

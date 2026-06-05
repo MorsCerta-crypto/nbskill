@@ -33,12 +33,14 @@ BUILTIN_TASTE_PROFILE = {
         "Prefer the smallest coherent diff and ask only when ambiguity materially changes it.",
         "Use nbskill MCP tools for normal notebook reads, edits, execution, review, and diagnostics.",
         "Write notebooks as a story: rationale, implementation, visible example, focused test.",
+        "Use the empirical loop: scratch, inspect, implement, example, test, execute.",
         "Keep cells small, explain why the shape exists, and cross-reference downstream uses.",
     ],
     "aversions": [
         "Backwards-compatibility scaffolding unless requested.",
         "Generated-file edits without notebook source changes.",
         "Raw notebook JSON edits, large cells, missing docs, hidden outputs, and speculative architecture.",
+        "Function-first edits without runnable evidence or notebook story context.",
     ],
     "defaults": {
         "compatibility": "not_required",
@@ -140,6 +142,14 @@ def make_task_contract(
             "prefer_existing_code": True,
             "forbid_generated_only_edits": True,
             "stop_when_smallest_valid_diff_passes": True,
+        },
+        "empirical": {
+            "enabled": True,
+            "enforce": False,
+            "require_scratch_before_write": True,
+            "require_inspect_before_write": True,
+            "require_execute_after_write": True,
+            "require_story_for_new_export": True,
         },
         "verification": list(DEFAULT_VERIFICATION),
         "taste": {},
@@ -447,6 +457,188 @@ def _style_delta(baseline, current):
         if isinstance(after.get(key, 0), int) and isinstance(before.get(key, 0), int)
     }
 
+# %% ../nbs/11_agent_workbench.ipynb #5af1b4ba
+def _empirical_settings(contract):
+    "Return empirical-loop settings with conservative defaults."
+    defaults = {
+        "enabled": True,
+        "enforce": False,
+        "require_scratch_before_write": True,
+        "require_inspect_before_write": True,
+        "require_execute_after_write": True,
+        "require_story_for_new_export": True,
+    }
+    return _deep_merge(defaults, contract.get("empirical", {}) or {})
+
+# %% ../nbs/11_agent_workbench.ipynb #da18de5a
+def _execution_events(execution, kind=None):
+    "Return structured execution events, optionally filtered by kind."
+    if not isinstance(execution, dict): return []
+    events = [event for event in execution.get("events", []) if isinstance(event, dict)]
+    if kind is None: return events
+    return [event for event in events if event.get("kind") == kind]
+
+# %% ../nbs/11_agent_workbench.ipynb #8ca5715f
+def _event_revision(event):
+    "Return a numeric event revision for ordering empirical evidence."
+    try: return int(event.get("revision", 0) or 0)
+    except (TypeError, ValueError): return 0
+
+# %% ../nbs/11_agent_workbench.ipynb #7f187706
+def _changed_write_events(events):
+    "Return write events that changed notebook source."
+    return [
+        event for event in events
+        if event.get("kind") == "write" and event.get("status", "changed") == "changed"
+    ]
+
+# %% ../nbs/11_agent_workbench.ipynb #49f7a485
+def _event_window(events, writes, revision):
+    "Return event windows around the first and last source write."
+    if not writes and not revision: return [], []
+    if not writes: writes = [{"kind": "write", "revision": revision, "status": "changed"}]
+    first_write = min(_event_revision(event) for event in writes)
+    last_write = max(_event_revision(event) for event in writes)
+    before_write = [event for event in events if _event_revision(event) <= first_write]
+    after_write = [event for event in events if _event_revision(event) >= last_write]
+    return before_write, after_write
+
+# %% ../nbs/11_agent_workbench.ipynb #d869696a
+def _empirical_probe_warnings(settings, before_write):
+    "Return warnings for missing scratch or inspect evidence before writing."
+    warnings = []
+    if settings.get("require_scratch_before_write"):
+        scratch = [event for event in before_write if event.get("kind") == "scratch"]
+        if not scratch: warnings.append({"code": "empirical_missing_scratch"})
+        elif not any(event.get("status") == "ok" for event in scratch):
+            warnings.append({"code": "empirical_scratch_failed"})
+    if settings.get("require_inspect_before_write"):
+        inspect_events = [
+            event for event in before_write
+            if event.get("kind") == "inspect" and event.get("status") != "error"
+        ]
+        if not inspect_events: warnings.append({"code": "empirical_missing_inspect"})
+    return warnings
+
+# %% ../nbs/11_agent_workbench.ipynb #ad2b859e
+def _empirical_execute_warnings(settings, after_write):
+    "Return warnings for missing or failed execution after writing."
+    if not settings.get("require_execute_after_write"): return []
+    execute_events = [event for event in after_write if event.get("kind") == "execute"]
+    if not execute_events: return [{"code": "empirical_missing_execute"}]
+    if not any(event.get("status") == "ok" for event in execute_events):
+        return [{"code": "empirical_execute_failed"}]
+    return []
+
+# %% ../nbs/11_agent_workbench.ipynb #c77c15de
+def _empirical_event_warnings(execution, contract):
+    "Return empirical-loop warnings from execute_plan event evidence."
+    settings = _empirical_settings(contract)
+    if not settings.get("enabled") or execution is None: return []
+    events = _execution_events(execution)
+    revision = _event_revision(execution)
+    writes = _changed_write_events(events)
+    before_write, after_write = _event_window(events, writes, revision)
+    warnings = _empirical_probe_warnings(settings, before_write)
+    warnings.extend(_empirical_execute_warnings(settings, after_write))
+    return warnings
+
+# %% ../nbs/11_agent_workbench.ipynb #fc1f8c1a
+def _source_exports(source):
+    "Return whether a source cell starts with an export directive."
+    return any(
+        re.match(r"#\|\s*export\b", line.strip())
+        for line in str(source or "").splitlines()[:5]
+    )
+
+# %% ../nbs/11_agent_workbench.ipynb #8e77ad65
+def _public_defs_in_source(source):
+    "Return public top-level definitions from one exported source string."
+    if not _source_exports(source): return []
+    try: tree = ast.parse(source_without_directives(source))
+    except SyntaxError: return []
+    return [
+        node.name for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+        and not node.name.startswith("_")
+    ]
+
+# %% ../nbs/11_agent_workbench.ipynb #bb6fcba9
+def _exported_public_records(state):
+    "Return exported public definition records from captured notebook state."
+    records = []
+    for path, cells in state.get("notebook_cell_sources", {}).items():
+        for cell_id, source in cells.items():
+            for symbol in _public_defs_in_source(source):
+                records.append({
+                    "path": path, "cell_id": cell_id,
+                    "symbol": symbol, "source": source,
+                })
+    return records
+
+# %% ../nbs/11_agent_workbench.ipynb #f0848c33
+def _new_exported_public_records(baseline, current):
+    "Return exported public definitions present only in the current state."
+    before = {
+        (record["path"], record["symbol"])
+        for record in _exported_public_records(baseline)
+    }
+    return [
+        record for record in _exported_public_records(current)
+        if (record["path"], record["symbol"]) not in before
+    ]
+
+# %% ../nbs/11_agent_workbench.ipynb #9147e033
+def _symbol_mentioned(source, symbol):
+    "Return whether source mentions a symbol as a word token."
+    return bool(re.search(rf"\b{re.escape(symbol)}\b", source_without_directives(source)))
+
+# %% ../nbs/11_agent_workbench.ipynb #5c6e1865
+def _test_like_source(source):
+    "Return whether a source cell looks like a focused test cell."
+    text = str(source or "")
+    hidden = any(re.match(r"#\|\s*hide\b", line.strip()) for line in text.splitlines()[:5])
+    pattern = r"\bassert\b|\bpytest\b|\btest_"
+    return hidden or bool(re.search(pattern, source_without_directives(text)))
+
+# %% ../nbs/11_agent_workbench.ipynb #abe77d9a
+def _record_story_warnings(record):
+    "Return docs, example, and test warnings for one new public record."
+    try: nb = read_nb(record["path"])
+    except FileNotFoundError: return []
+    by_id = {getattr(cell, "id", ""): idx for idx, cell in enumerate(nb.cells)}
+    idx = by_id.get(record["cell_id"])
+    if idx is None: return []
+    symbol = record["symbol"]
+    location = {"path": record["path"], "symbol": symbol}
+    warnings = []
+    if idx == 0 or nb.cells[idx - 1].cell_type != "markdown" or not cell_source(nb.cells[idx - 1]).strip():
+        warnings.append({"code": "empirical_missing_docs", **location})
+    later_sources = [cell_source(cell) for cell in nb.cells[idx + 1:] if cell.cell_type == "code"]
+    usage_sources = [source for source in later_sources if _symbol_mentioned(source, symbol)]
+    if not any(not _test_like_source(source) for source in usage_sources):
+        warnings.append({"code": "empirical_missing_example", **location})
+    if not any(_test_like_source(source) for source in usage_sources):
+        warnings.append({"code": "empirical_missing_test", **location})
+    return warnings
+
+# %% ../nbs/11_agent_workbench.ipynb #89337655
+def _symbol_story_warnings(baseline, current, contract):
+    "Return warnings for new exported public symbols without a notebook story."
+    settings = _empirical_settings(contract)
+    if not settings.get("enabled") or not settings.get("require_story_for_new_export"): return []
+    warnings = []
+    for record in _new_exported_public_records(baseline, current):
+        warnings.extend(_record_story_warnings(record))
+    return warnings
+
+# %% ../nbs/11_agent_workbench.ipynb #899bd813
+def _empirical_warnings(baseline, current, contract, execution=None):
+    "Return all empirical-loop warnings for a patch score."
+    warnings = _empirical_event_warnings(execution, contract)
+    warnings.extend(_symbol_story_warnings(baseline, current, contract))
+    return warnings
+
 # %% ../nbs/11_agent_workbench.ipynb #bb502512
 def _private_defs_in_source(source):
     "Return private top-level definitions found in Python source."
@@ -535,6 +727,7 @@ def score_patch(
     added_lines = _added_line_delta(baseline, current)
     added_public = _added_public_symbols(baseline, current)
     unused_private = _unused_added_private_helpers(baseline, current)
+    empirical_warnings = _empirical_warnings(baseline, current, contract, execution)
     hard_failures = []
     if len(touched_files) > budgets.get("max_files", DEFAULT_BUDGETS["max_files"]):
         hard_failures.append({"code": "max_files", "limit": budgets.get("max_files"), "actual": len(touched_files)})
@@ -547,6 +740,8 @@ def score_patch(
     if unused_private:
         hard_failures.append({"code": "private_helper_added_unused", "symbols": unused_private})
     hard_failures.extend(_export_pair_failures(current, touched_files))
+    if _empirical_settings(contract).get("enforce"):
+        hard_failures.extend(empirical_warnings)
     if current["validation_problem_count"] > baseline.get("validation_problem_count", 0):
         hard_failures.append({"code": "validation_errors_added"})
     if current["order_problem_count"] > baseline.get("order_problem_count", 0):
@@ -566,6 +761,7 @@ def score_patch(
         "added_lines": added_lines,
         "added_public_symbols": added_public,
         "added_unused_private_helpers": unused_private,
+        "empirical_warnings": empirical_warnings,
         "style_delta": _style_delta(baseline, current),
         "baseline": baseline,
         "current": current,
@@ -653,12 +849,29 @@ Notebook craft:
     return ["", *body.strip().splitlines()]
 
 # %% ../nbs/11_agent_workbench.ipynb #d359c484
+def _render_empirical_lines(contract):
+    "Render empirical-loop guidance for the workbench executor."
+    settings = _empirical_settings(contract)
+    mode = "hard" if settings.get("enforce") else "soft"
+    if not settings.get("enabled"):
+        return ["", "Empirical loop:", "- Disabled by contract."]
+    return [
+        "",
+        f"Empirical loop ({mode} gate):",
+        "- Try the behavior first with run_code before changing notebook source.",
+        "- Inspect live state with inspect_state before writing the final shape.",
+        "- Implement the smallest useful cell change, then add example and test cells.",
+        "- Execute the focused final example or test with execute_cell after writing.",
+    ]
+
+# %% ../nbs/11_agent_workbench.ipynb #323a0f78
 def _render_workbench_plan(contract, taste, context):
     "Render the executor-facing plan with taste, budgets, context, and stop rules."
     lines = [
         *_render_workbench_header(contract, taste),
         *_render_context_lines(context),
         *_render_notebook_craft_lines(),
+        *_render_empirical_lines(contract),
         "",
         "Stop rules:",
         "- Prefer the smallest valid diff over a broad complete rewrite.",
@@ -682,11 +895,14 @@ def agent_workbench_result(
     session_id: str | None = None,  # Reuse an in-memory edit session when provided
     reset_session: bool = False,  # Drop an existing in-memory edit session first
     feedback_rounds: int = 3,  # Maximum mutation feedback rounds
+    enforce_empirical: bool = False,  # Promote empirical-loop warnings to hard failures
 ) -> dict:
     "Build the structured workbench result without CLI printing side effects."
     overrides = _load_contract_file(contract_file)
     contract_goal = overrides.pop("goal", goal)
     contract = make_task_contract(contract_goal, **overrides)
+    if enforce_empirical:
+        contract = _deep_merge(contract, {"empirical": {"enforce": True}})
     context_path = notebook or "nbs"
     taste = _deep_merge(
         load_taste_profile(project_path=context_path), contract.get("taste", {})
@@ -705,6 +921,7 @@ def agent_workbench_result(
         _WORKBENCH_MAX_RENDERED_PLAN_CHARS,
     )
     rendered_plan = cap_text(_render_workbench_plan(contract, taste, context), max_plan_chars)
+    empirical_hard = _empirical_settings(contract).get("enforce")
     result = {
         "summary": "agent_workbench prepared execution context",
         "contract": contract,
@@ -720,8 +937,9 @@ def agent_workbench_result(
                 "public_api",
                 "generated/source sync",
                 "new doctor errors",
-            ],
-            "soft": ["style_delta", "readability_delta", "test_clarity"],
+            ] + (["empirical_loop"] if empirical_hard else []),
+            "soft": ["style_delta", "readability_delta", "test_clarity"]
+            + ([] if empirical_hard else ["empirical_loop"]),
         },
     }
     if execute:
@@ -772,10 +990,12 @@ def agent_workbench(
     session_id: str | None = None,  # Reuse an in-memory edit session when provided
     reset_session: bool = False,  # Drop an existing in-memory edit session first
     feedback_rounds: int = 3,  # Maximum mutation feedback rounds
+    enforce_empirical: bool = False,  # Promote empirical-loop warnings to hard failures
 ) -> dict:
     "Prepare or execute a taste-aware, small-diff agent workbench run."
     return agent_workbench_result(
         goal, notebook=notebook, contract_file=contract_file, execute=execute,
         max_steps=max_steps, timeout=timeout, session_id=session_id,
         reset_session=reset_session, feedback_rounds=feedback_rounds,
+        enforce_empirical=enforce_empirical,
     )

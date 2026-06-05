@@ -389,6 +389,7 @@ class EditSession:
     log: list[str] = field(default_factory=list)
     tool_log: list[str] = field(default_factory=list)
     history: list[dict] = field(default_factory=list)
+    events: list[dict] = field(default_factory=list)
     messages: list[dict] = field(default_factory=list)
     managed_context: list[ManagedContextMessage] = field(default_factory=list)
     context_command_log: list[dict] = field(default_factory=list)
@@ -519,6 +520,15 @@ class EditSession:
         if detail: item["detail"] = detail
         self.history.append(item)
         _append_agent_log(self, "tool", item)
+    def record_event(self, kind, **data):
+        "Append one structured empirical event to the session audit log."
+        item = {"revision": self.revision, "kind": kind}
+        for key, value in data.items():
+            if value is None: continue
+            item[key] = _bounded_text(value, 1000) if isinstance(value, str) else value
+        self.events.append(item)
+        _append_agent_log(self, "event", item)
+        return item
     def record_context_command(self, command, status="ok", detail=""):
         "Append one managed-context command to the session history."
         item = {"revision": self.revision, "status": status, **command}
@@ -712,13 +722,34 @@ def _edit_find_cell_by_id(cells, cell_id):
     raise ValueError(f"Multiple cells have id {cell_id!r}")
 
 # %% ../nbs/08_edit_interactive.ipynb #b0789b35
-def _finish_write(session, path, message, result):
+def _result_cell_ids(result):
+    "Return affected or inserted cell ids from a notebook edit result."
+    result = result if isinstance(result, dict) else {}
+    affected = []
+    for item in result.get("diffs", []):
+        affected.extend(item.get("affected_cell_ids", []) or [])
+        affected.extend(item.get("inserted_cell_ids", []) or [])
+        if item.get("cell_id"): affected.append(item.get("cell_id"))
+    return sorted({str(item) for item in affected if item})
+
+
+def _finish_write(session, path, message, result, tool_name=None):
     "Finalize a notebook mutation and return feedback to the agent."
     session.revision += 1
     session.reset_live_state(path)
     session.record(message)
+    status = "changed" if not isinstance(result, dict) or result.get("changed", True) else "no_change"
+    session.record_event(
+        "write", tool=tool_name, notebook=str(path), status=status,
+        affected_cell_ids=_result_cell_ids(result),
+    )
     session.refresh_view()
     note = session.feedback_packet(result, message, path=path)
+    if status == "changed":
+        note = _bounded_text(
+            note
+            + "\n\nEmpirical next step: inspect or run the changed behavior, then execute the focused example/test."
+        )
     session.session_note(note)
     return StopResponse(note)
 
@@ -849,7 +880,7 @@ def make_edit_tools(
             cell.id, after, cell_type=cell.cell_type
         )
         msg = f"Replaced text in {path} id={cell.id}"
-        return _finish_write(session, path, msg, result)
+        return _finish_write(session, path, msg, result, tool_name="str_replace")
 
     def edit_cell(
         id: str, old_str: str, new_str: str, notebook: str | None = None
@@ -869,7 +900,7 @@ def make_edit_tools(
             id, after, cell_type=cell.cell_type
         )
         msg = f"Edited text in {path} id={id}"
-        return _finish_write(session, path, msg, result)
+        return _finish_write(session, path, msg, result, tool_name="edit_cell")
 
     def add_cell(
         after_id: str | None = None,
@@ -891,7 +922,7 @@ def make_edit_tools(
         new_id = inserted[0] if inserted else ""
         where = f"after id={anchor}" if anchor is not None else "at end"
         msg = f"Added cell id={new_id} to {path} {where}"
-        return _finish_write(session, path, msg, result)
+        return _finish_write(session, path, msg, result, tool_name="add_cell")
 
     def delete_cell(id: str, notebook: str | None = None) -> str:
         "Delete one cell from a target notebook."
@@ -901,7 +932,7 @@ def make_edit_tools(
         session.record_tool("delete_cell", f"notebook={path}, id={id!r}")
         result = NotebookEditor(path, auto_feedback=False).delete(id)
         msg = f"Deleted cell id={id} from {path}"
-        return _finish_write(session, path, msg, result)
+        return _finish_write(session, path, msg, result, tool_name="delete_cell")
 
     def _exec_python(source, filename, ns):
         "Execute Python source and evaluate a final expression when present."
@@ -1021,6 +1052,10 @@ def make_edit_tools(
             budget_secs,
         )
         status = "error" if " status=error" in report else "ok"
+        session.record_event(
+            "scratch", tool="run_code", notebook=str(path), status=status,
+            chars=len(source), budget_secs=budget,
+        )
         session.record(f"Ran scratch code in {path} ({status})")
         return report
 
@@ -1034,8 +1069,15 @@ def make_edit_tools(
             names = sorted(key for key in ns if not key.startswith("__"))
             lines = [f"state notebook={path} names={len(names)}"]
             lines.extend(f"- {key}: {type(ns[key]).__name__}" for key in names)
+            session.record_event(
+                "inspect", tool="inspect_state", notebook=str(path), status="ok"
+            )
             return "\n".join(lines)
         if target not in ns:
+            session.record_event(
+                "inspect", tool="inspect_state", notebook=str(path), status="missing",
+                name=target,
+            )
             return f"state notebook={path} name={target} status=missing"
         value = ns[target]
         value_type = type(value)
@@ -1055,6 +1097,10 @@ def make_edit_tools(
             source = ""
         if source:
             lines.append("source:\n" + cap_text(source, 4000))
+        session.record_event(
+            "inspect", tool="inspect_state", notebook=str(path), status="ok",
+            name=target,
+        )
         return "\n".join(lines)
 
     def _execute_one(path, idx, cell, budget_secs=None):
@@ -1117,6 +1163,11 @@ def make_edit_tools(
                 f"CELL {target_idx} id={id} notebook={path} "
                 "status=skipped reason=already-executed"
             )
+        session.record_event(
+            "execute", tool="execute_cell", notebook=str(path), status=status,
+            cell_id=id, rerun_all=rerun_all, start=start, target=target_idx,
+            budget_secs=budget,
+        )
         session.record(f"Executed {path} cells {start}:{target_idx} ({status})")
         return "\n\n".join([f"status={status}", *reports])
 
@@ -1504,6 +1555,7 @@ def execute_plan(
     return {
         "summary": summary,
         "history": _bounded_items(session.history),
+        "events": _bounded_items(session.events),
         "context_commands": _bounded_items(session.context_command_log),
         "feedback_notes": _bounded_items(session.feedback_notes),
         "feedback_rounds": len(round_summaries),

@@ -73,4 +73,5 @@ allowed_cell_metadata_keys = ["nbskill"]
 dev = [
     "ipykernel>=7.2.0",
     "jupyter>=1.1.1",
+    "pytest>=9.0.3",
 ]

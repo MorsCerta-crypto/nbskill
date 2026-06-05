@@ -72,12 +72,10 @@
     "_append_mcp_feedback": {
       "allowed": false,
       "cell_id": "56bbc791",
-      "external_effects": true,
+      "external_effects": false,
       "line": 2,
       "notebook": "07_mcp.ipynb",
-      "reasons": [
-        "_mcp_feedback_output->_capture_exec_nb_cli_call->call:subprocess.Popen"
-      ]
+      "reasons": []
     },
     "_approval_required_error": {
       "allowed": true,
@@ -293,6 +291,29 @@
       "notebook": "01_read.ipynb",
       "reasons": []
     },
+    "_capture_edit_notebook_cli_call": {
+      "allowed": false,
+      "cell_id": "2f91ca01",
+      "external_effects": true,
+      "line": 51,
+      "notebook": "07_mcp.ipynb",
+      "reasons": [
+        "_mcp_log_event->call:handle.write",
+        "_mcp_log_event->call:path.parent.mkdir",
+        "call:subprocess.Popen"
+      ]
+    },
+    "_capture_edit_notebook_process_call": {
+      "allowed": false,
+      "cell_id": "eac9e756",
+      "external_effects": true,
+      "line": 2,
+      "notebook": "07_mcp.ipynb",
+      "reasons": [
+        "_mcp_log_event->call:handle.write",
+        "_mcp_log_event->call:path.parent.mkdir"
+      ]
+    },
     "_capture_exec_nb_cli_call": {
       "allowed": false,
       "cell_id": "8f9a83fe",
@@ -302,6 +323,14 @@
       "reasons": [
         "call:subprocess.Popen"
       ]
+    },
+    "_capture_exec_nb_process_call": {
+      "allowed": true,
+      "cell_id": "4f453da4",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "07_mcp.ipynb",
+      "reasons": []
     },
     "_capture_mcp_warning_scopes": {
       "allowed": false,
@@ -327,6 +356,14 @@
       "external_effects": false,
       "line": 2,
       "notebook": "01_read.ipynb",
+      "reasons": []
+    },
+    "_captured_process_output": {
+      "allowed": true,
+      "cell_id": "da137c83",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "07_mcp.ipynb",
       "reasons": []
     },
     "_cell_base_class_names": {
@@ -1247,11 +1284,13 @@
     },
     "_demo_root": {
       "allowed": false,
-      "cell_id": "5d75c89f",
-      "external_effects": false,
+      "cell_id": "93807953",
+      "external_effects": true,
       "line": 6,
-      "notebook": "11_agent_workbench.ipynb",
-      "reasons": []
+      "notebook": "07_mcp.ipynb",
+      "reasons": [
+        "call:root.mkdir"
+      ]
     },
     "_descendant_rows": {
       "allowed": true,
@@ -1437,6 +1476,38 @@
       "notebook": "08_edit_interactive.ipynb",
       "reasons": []
     },
+    "_edit_notebook_child_script": {
+      "allowed": true,
+      "cell_id": "2f91ca01",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "07_mcp.ipynb",
+      "reasons": []
+    },
+    "_edit_notebook_error_message": {
+      "allowed": true,
+      "cell_id": "2f91ca01",
+      "external_effects": false,
+      "line": 43,
+      "notebook": "07_mcp.ipynb",
+      "reasons": []
+    },
+    "_edit_notebook_payload": {
+      "allowed": true,
+      "cell_id": "2f91ca01",
+      "external_effects": false,
+      "line": 33,
+      "notebook": "07_mcp.ipynb",
+      "reasons": []
+    },
+    "_edit_notebook_process_worker": {
+      "allowed": true,
+      "cell_id": "863ebc2e",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "07_mcp.ipynb",
+      "reasons": []
+    },
     "_edit_scope_paths": {
       "allowed": true,
       "cell_id": "dffc637d",
@@ -1571,6 +1642,14 @@
       "external_effects": false,
       "line": 2,
       "notebook": "03_execute.ipynb",
+      "reasons": []
+    },
+    "_exec_nb_process_worker": {
+      "allowed": true,
+      "cell_id": "8f9a83fe",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "07_mcp.ipynb",
       "reasons": []
     },
     "_exec_nb_subprocess_output": {
@@ -1743,6 +1822,30 @@
       "cell_id": "84acf4e8",
       "external_effects": false,
       "line": 2,
+      "notebook": "07_mcp.ipynb",
+      "reasons": []
+    },
+    "_fake_mcp_agent_workbench_result": {
+      "allowed": true,
+      "cell_id": "fb7cb28a",
+      "external_effects": false,
+      "line": 25,
+      "notebook": "07_mcp.ipynb",
+      "reasons": []
+    },
+    "_fake_mcp_execute_plan": {
+      "allowed": true,
+      "cell_id": "fb7cb28a",
+      "external_effects": false,
+      "line": 15,
+      "notebook": "07_mcp.ipynb",
+      "reasons": []
+    },
+    "_fake_mcp_execute_project_plan": {
+      "allowed": true,
+      "cell_id": "fb7cb28a",
+      "external_effects": false,
+      "line": 20,
       "notebook": "07_mcp.ipynb",
       "reasons": []
     },
@@ -2505,6 +2608,14 @@
       "notebook": "00_foundation.ipynb",
       "reasons": []
     },
+    "_mcp_call_id": {
+      "allowed": true,
+      "cell_id": "54fbd6d7",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "07_mcp.ipynb",
+      "reasons": []
+    },
     "_mcp_cell_ids_from_index": {
       "allowed": true,
       "cell_id": "139c6c5a",
@@ -2596,12 +2707,10 @@
     "_mcp_feedback_output": {
       "allowed": false,
       "cell_id": "7c1eac0d",
-      "external_effects": true,
+      "external_effects": false,
       "line": 2,
       "notebook": "07_mcp.ipynb",
-      "reasons": [
-        "_capture_exec_nb_cli_call->call:subprocess.Popen"
-      ]
+      "reasons": []
     },
     "_mcp_find_cell": {
       "allowed": true,
@@ -2621,17 +2730,17 @@
     },
     "_mcp_json_safe": {
       "allowed": true,
-      "cell_id": "f5b0a105",
+      "cell_id": "d0631eb1",
       "external_effects": false,
-      "line": 13,
+      "line": 2,
       "notebook": "07_mcp.ipynb",
       "reasons": []
     },
     "_mcp_log_event": {
       "allowed": false,
-      "cell_id": "f5b0a105",
+      "cell_id": "8813745f",
       "external_effects": true,
-      "line": 21,
+      "line": 2,
       "notebook": "07_mcp.ipynb",
       "reasons": [
         "call:handle.write",
@@ -2640,9 +2749,9 @@
     },
     "_mcp_log_exception": {
       "allowed": false,
-      "cell_id": "f5b0a105",
+      "cell_id": "8ed11d84",
       "external_effects": true,
-      "line": 38,
+      "line": 2,
       "notebook": "07_mcp.ipynb",
       "reasons": [
         "_mcp_log_event->call:handle.write",
@@ -2651,17 +2760,17 @@
     },
     "_mcp_log_path": {
       "allowed": true,
-      "cell_id": "f5b0a105",
+      "cell_id": "fccf4ebb",
       "external_effects": false,
-      "line": 7,
+      "line": 2,
       "notebook": "07_mcp.ipynb",
       "reasons": []
     },
     "_mcp_middleware_tool_arguments": {
       "allowed": true,
-      "cell_id": "7f480c89",
+      "cell_id": "67d2e033",
       "external_effects": false,
-      "line": 6,
+      "line": 2,
       "notebook": "07_mcp.ipynb",
       "reasons": []
     },
@@ -2864,6 +2973,53 @@
       "line": 2,
       "notebook": "00_foundation.ipynb",
       "reasons": []
+    },
+    "_nbdev_export_lock": {
+      "allowed": false,
+      "cell_id": "74e50ddc",
+      "external_effects": true,
+      "line": 3,
+      "notebook": "00_foundation.ipynb",
+      "reasons": [
+        "_nbdev_export_lock_path->call:base.mkdir",
+        "call:handle.write"
+      ]
+    },
+    "_nbdev_export_lock_path": {
+      "allowed": false,
+      "cell_id": "b075ca01",
+      "external_effects": true,
+      "line": 2,
+      "notebook": "00_foundation.ipynb",
+      "reasons": [
+        "call:base.mkdir"
+      ]
+    },
+    "_nbdev_export_process": {
+      "allowed": true,
+      "cell_id": "b1ba8e13",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "00_foundation.ipynb",
+      "reasons": []
+    },
+    "_nbdev_export_process_worker": {
+      "allowed": true,
+      "cell_id": "5632903e",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "00_foundation.ipynb",
+      "reasons": []
+    },
+    "_nbdev_export_subprocess": {
+      "allowed": false,
+      "cell_id": "4379ff7b",
+      "external_effects": true,
+      "line": 45,
+      "notebook": "00_foundation.ipynb",
+      "reasons": [
+        "call:subprocess.run"
+      ]
     },
     "_nbdev_hook_block": {
       "allowed": true,
@@ -3458,6 +3614,22 @@
       "reasons": [
         "call:subprocess.run"
       ]
+    },
+    "_process_error_message": {
+      "allowed": true,
+      "cell_id": "8262779a",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "07_mcp.ipynb",
+      "reasons": []
+    },
+    "_process_payload": {
+      "allowed": true,
+      "cell_id": "2f91ca01",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "07_mcp.ipynb",
+      "reasons": []
     },
     "_project_description": {
       "allowed": true,
@@ -4424,9 +4596,9 @@
     },
     "_temporary_cwd": {
       "allowed": true,
-      "cell_id": "4379ff7b",
+      "cell_id": "617bfc4e",
       "external_effects": false,
-      "line": 12,
+      "line": 3,
       "notebook": "00_foundation.ipynb",
       "reasons": []
     },
@@ -4439,6 +4611,14 @@
       "reasons": []
     },
     "_terminate_exec_nb_process": {
+      "allowed": true,
+      "cell_id": "45d4a277",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "07_mcp.ipynb",
+      "reasons": []
+    },
+    "_terminate_multiprocessing_process": {
       "allowed": true,
       "cell_id": "45d4a277",
       "external_effects": false,
@@ -5046,7 +5226,9 @@
         "commit_notebook->_restore_file_bytes->call:path.unlink",
         "commit_notebook->_restore_file_bytes->call:path.write_bytes",
         "commit_notebook->call:path.parent.mkdir",
-        "commit_notebook->exported_py_path->call:default_exp.replace"
+        "commit_notebook->exported_py_path->call:default_exp.replace",
+        "commit_notebook->run_nbdev_export_from_project->_nbdev_export_lock->_nbdev_export_lock_path->call:base.mkdir",
+        "commit_notebook->run_nbdev_export_from_project->_nbdev_export_lock->call:handle.write"
       ]
     },
     "commit_notebook": {
@@ -5060,7 +5242,9 @@
         "_restore_file_bytes->call:path.unlink",
         "_restore_file_bytes->call:path.write_bytes",
         "call:path.parent.mkdir",
-        "exported_py_path->call:default_exp.replace"
+        "exported_py_path->call:default_exp.replace",
+        "run_nbdev_export_from_project->_nbdev_export_lock->_nbdev_export_lock_path->call:base.mkdir",
+        "run_nbdev_export_from_project->_nbdev_export_lock->call:handle.write"
       ]
     },
     "compile_context": {
@@ -5130,6 +5314,20 @@
       "notebook": "00_foundation.ipynb",
       "reasons": [
         "call:path.parent.mkdir",
+        "remove_demo_path->call:path.unlink",
+        "remove_demo_path->call:shutil.rmtree"
+      ]
+    },
+    "demo_path_context": {
+      "allowed": false,
+      "cell_id": "b49ce285",
+      "external_effects": true,
+      "line": 11,
+      "notebook": "00_foundation.ipynb",
+      "reasons": [
+        "demo_path->call:path.parent.mkdir",
+        "demo_path->remove_demo_path->call:path.unlink",
+        "demo_path->remove_demo_path->call:shutil.rmtree",
         "remove_demo_path->call:path.unlink",
         "remove_demo_path->call:shutil.rmtree"
       ]
@@ -5282,12 +5480,14 @@
     },
     "export_notebook": {
       "allowed": false,
-      "cell_id": "4379ff7b",
+      "cell_id": "bfbbe4d5",
       "external_effects": true,
-      "line": 35,
+      "line": 2,
       "notebook": "00_foundation.ipynb",
       "reasons": [
-        "exported_py_path->call:default_exp.replace"
+        "exported_py_path->call:default_exp.replace",
+        "run_nbdev_export_from_project->_nbdev_export_lock->_nbdev_export_lock_path->call:base.mkdir",
+        "run_nbdev_export_from_project->_nbdev_export_lock->call:handle.write"
       ]
     },
     "exported_py_path": {
@@ -5740,10 +5940,10 @@
     },
     "nbskill_status": {
       "allowed": true,
-      "cell_id": "7dbcb797",
+      "cell_id": "85b62f4f",
       "external_effects": false,
-      "line": 4,
-      "notebook": "13_cli.ipynb",
+      "line": 2,
+      "notebook": "07_mcp.ipynb",
       "reasons": []
     },
     "nbskill_validate": {
@@ -6031,11 +6231,14 @@
     },
     "run_nbdev_export_from_project": {
       "allowed": true,
-      "cell_id": "4379ff7b",
-      "external_effects": false,
-      "line": 19,
+      "cell_id": "c144bdd6",
+      "external_effects": true,
+      "line": 2,
       "notebook": "00_foundation.ipynb",
-      "reasons": []
+      "reasons": [
+        "_nbdev_export_lock->_nbdev_export_lock_path->call:base.mkdir",
+        "_nbdev_export_lock->call:handle.write"
+      ]
     },
     "run_notebook_test": {
       "allowed": false,

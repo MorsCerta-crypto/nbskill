@@ -41,6 +41,21 @@ or revised behavior:
 3. A small example cell calls the behavior and shows useful output.
 4. A small test cell checks one thing at a time.
 
+Use the strength of notebooks. Markdown cells and example cells are part
+of the implementation surface: they explain why the code exists, exercise
+it in place, and show off how it is meant to work. When you edit a
+notebook because of a bug, design constraint, production failure, or
+surprising behavior, mention that reason in nearby markdown. A bugfix
+should leave a small notebook artifact, such as "Here we have to do X
+because Y", so future agents can see the current problem and the rationale
+without rediscovering it.
+
+Prefer markdown for durable context: name the problem being solved, record
+important tradeoffs, and explain non-obvious implementation choices such
+as using multiprocessing instead of asyncio. Keep it short and useful;
+do not turn notebooks into a changelog, but do preserve the reasoning a
+future maintainer needs.
+
 Notebook directives matter:
 
 - Cells exported to Python start with `#| export`.

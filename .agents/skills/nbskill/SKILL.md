@@ -40,3 +40,28 @@ work.
 
 Do not edit raw notebook JSON or generated Python for normal notebook
 source changes.
+
+## How To Work With This Tool
+
+Use the strength of notebooks instead of treating them like plain source
+files. Markdown cells, markdown files, examples, and tests live close to
+the code, so use them together:
+
+1. Let markdown name the behavior, the current problem, and the reason a
+   change exists.
+2. Let a small example cell exercise the code and show off how it works.
+3. Let focused tests check the important behavior without hiding the
+   intent.
+
+When you edit a notebook because of a bug, design constraint, production
+failure, or surprising behavior, mention that reason in nearby markdown.
+Every bugfix should leave a small notebook artifact, such as "Here we have
+to do X because Y", so future agents understand the issue without having
+to rediscover it from the diff.
+
+Use markdown for durable rationale, especially when the choice is not
+obvious: why a function uses multiprocessing instead of asyncio, why a
+parser accepts a narrow shape, why a filesystem operation is deliberately
+ordered, or why an example covers a once-broken case. Keep the note short
+and useful. Do not turn notebooks into a changelog; preserve the reasoning
+needed to work well with the code.

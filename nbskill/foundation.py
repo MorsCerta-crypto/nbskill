@@ -2,27 +2,29 @@
 
 # %% auto #0
 __all__ = ['EXAMPLE_NOTEBOOK_PATH', 'NotebookCell', 'NotebookChapter', 'NotebookDocument', 'output_text', 'remove_demo_path',
-           'demo_path', 'path_candidates', 'is_valid_ipynb', 'write_demo_notebook', 'example_notebook',
-           'revert_example_notebook', 'cli_return', 'cli_error', 'failure_map_path', 'empty_failure_map',
-           'load_failure_map', 'git_run', 'git_root', 'git_status_paths', 'git_tracked_paths', 'git_diff_stats',
-           'load_nbskill_config', 'notebook_paths', 'source_without_directives', 'source_hash', 'file_line_count',
-           'cap_text', 'generated_owner', 'install_nbdev_pre_commit_hooks', 'parse_literal', 'none_if_string',
-           'symbol_short_name', 'call_name', 'short_call_name', 'is_definition_node', 'node_start_line',
-           'is_export_directive', 'cell_source', 'parse_code_cell', 'CellType', 'SemanticType', 'Directive',
-           'directive_lines', 'apply_directives', 'Cell', 'Chapter', 'Notebook', 'NotebookSymbol', 'xml_escape',
-           'xml_attrs', 'cell_metadata', 'notebook_metadata', 'file_hash', 'exported_py_path', 'stamp_export_metadata',
-           'run_nbdev_export_from_project', 'export_notebook', 'ensure_cell_ids', 'notebook_hash', 'commit_notebook',
-           'parse_one_cell', 'find_cell_by_id', 'find_cell_by_text', 'replace_cell', 'clear_outputs', 'load_cells_text',
-           'validate_code_cells', 'parse_cells', 'first_line', 'cell_prefix', 'matches_filter', 'is_exported_code_cell',
-           'output_value_text', 'cell_output_text', 'stamp_notebook_metadata', 'cell_class_names', 'cell_matches_type',
-           'with_context', 'heading_title', 'chapter_spans', 'chapter_index_set', 'one_chapter']
+           'demo_path', 'demo_path_context', 'path_candidates', 'is_valid_ipynb', 'write_demo_notebook',
+           'example_notebook', 'revert_example_notebook', 'cli_return', 'cli_error', 'failure_map_path',
+           'empty_failure_map', 'load_failure_map', 'git_run', 'git_root', 'git_status_paths', 'git_tracked_paths',
+           'git_diff_stats', 'load_nbskill_config', 'notebook_paths', 'source_without_directives', 'source_hash',
+           'file_line_count', 'cap_text', 'generated_owner', 'install_nbdev_pre_commit_hooks', 'parse_literal',
+           'none_if_string', 'symbol_short_name', 'call_name', 'short_call_name', 'is_definition_node',
+           'node_start_line', 'is_export_directive', 'cell_source', 'parse_code_cell', 'CellType', 'SemanticType',
+           'Directive', 'directive_lines', 'apply_directives', 'Cell', 'Chapter', 'Notebook', 'NotebookSymbol',
+           'xml_escape', 'xml_attrs', 'cell_metadata', 'notebook_metadata', 'file_hash', 'exported_py_path',
+           'stamp_export_metadata', 'run_nbdev_export_from_project', 'export_notebook', 'ensure_cell_ids',
+           'notebook_hash', 'commit_notebook', 'parse_one_cell', 'find_cell_by_id', 'find_cell_by_text', 'replace_cell',
+           'clear_outputs', 'load_cells_text', 'validate_code_cells', 'parse_cells', 'first_line', 'cell_prefix',
+           'matches_filter', 'is_exported_code_cell', 'output_value_text', 'cell_output_text',
+           'stamp_notebook_metadata', 'cell_class_names', 'cell_matches_type', 'with_context', 'heading_title',
+           'chapter_spans', 'chapter_index_set', 'one_chapter']
 
 # %% ../nbs/00_foundation.ipynb #2500639f
-import ast,hashlib,json,os,re
+import ast,hashlib,json,multiprocessing,os,queue,re,tempfile,traceback
 import shutil,subprocess,sys
-from contextlib import contextmanager
+from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from dataclasses import dataclass, field
 from enum import Enum
+from io import StringIO
 from pathlib import Path
 from fastcore.basics import in_jupyter, patch
 from fastcore.nbio import mk_cell, new_nb, write_nb
@@ -38,10 +40,19 @@ def remove_demo_path(path):
 
 # %% ../nbs/00_foundation.ipynb #b49ce285
 def demo_path(name, base="nbs/data", reset=True):
+    'Return a scratch path under `base`, optionally removing any previous artifact.'
     path = Path(base) / name
     if reset: remove_demo_path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     return path
+
+
+@contextmanager
+def demo_path_context(name, base="nbs/data", reset=True):
+    'Yield a demo path and remove it when the block exits.'
+    path = demo_path(name, base=base, reset=reset)
+    try: yield path
+    finally: remove_demo_path(path)
 
 # %% ../nbs/00_foundation.ipynb #bd16385a
 def path_candidates(path):
@@ -1097,7 +1108,7 @@ def _nbdev_project_root(path):
         if _looks_like_nbdev_project(candidate): return candidate
     return None
 
-
+# %% ../nbs/00_foundation.ipynb #617bfc4e
 @contextmanager
 def _temporary_cwd(path):
     previous = Path.cwd()
@@ -1105,25 +1116,81 @@ def _temporary_cwd(path):
     try: yield
     finally: os.chdir(previous)
 
+# %% ../nbs/00_foundation.ipynb #b075ca01
+def _nbdev_export_lock_path(path):
+    root = Path(path).expanduser().resolve(strict=False)
+    digest = hashlib.sha256(str(root).encode("utf-8")).hexdigest()[:24]
+    base = Path(os.environ.get("NBSKILL_LOCK_DIR") or tempfile.gettempdir()) / "nbskill-export-locks"
+    base.mkdir(parents=True, exist_ok=True)
+    return base / f"{digest}.lock"
 
+# %% ../nbs/00_foundation.ipynb #74e50ddc
+@contextmanager
+def _nbdev_export_lock(path):
+    lock_path = _nbdev_export_lock_path(path)
+    try: import fcntl
+    except ImportError:
+        yield
+        return
+    with lock_path.open("a+", encoding="utf-8") as handle:
+        handle.seek(0)
+        handle.truncate()
+        handle.write(str(Path(path).expanduser().resolve(strict=False)) + "\n")
+        handle.flush()
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try: yield
+        finally: fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+# %% ../nbs/00_foundation.ipynb #5632903e
+def _nbdev_export_process_worker(path, cwd, result_queue):
+    out, err = StringIO(), StringIO()
+    try:
+        if cwd is not None: os.chdir(cwd)
+        from nbdev.doclinks import nbdev_export
+        with redirect_stdout(out), redirect_stderr(err): nbdev_export(path=path)
+        result_queue.put(dict(ok=True, stdout=out.getvalue(), stderr=err.getvalue()))
+    except BaseException as exc:
+        result_queue.put(dict(
+            ok=False, error_type=type(exc).__name__, error=str(exc),
+            traceback=traceback.format_exc(), stdout=out.getvalue(), stderr=err.getvalue(),
+        ))
+
+# %% ../nbs/00_foundation.ipynb #b1ba8e13
+def _nbdev_export_process(path, cwd=None):
+    from nbskill.foundation import _nbdev_export_process_worker as worker
+    ctx = multiprocessing.get_context("spawn")
+    result_queue = ctx.Queue()
+    proc = ctx.Process(target=worker, args=(str(path), str(cwd) if cwd is not None else None, result_queue))
+    proc.start()
+    proc.join()
+    try: payload = result_queue.get(timeout=1)
+    except queue.Empty:
+        payload = dict(ok=False, error_type="ProcessError", error=f"nbdev export process exited without a result payload; exit code {proc.exitcode}")
+    if proc.exitcode != 0 or not payload.get("ok", True):
+        lines = [f"{payload.get('error_type', 'Error')}: {payload.get('error', '')}".rstrip()]
+        if payload.get("traceback"): lines.append(payload["traceback"].rstrip())
+        captured = "\n".join(item.rstrip() for item in (payload.get("stdout"), payload.get("stderr")) if item)
+        if captured: lines.append("Captured output:\n" + captured)
+        raise RuntimeError("\n\n".join(line for line in lines if line))
+
+# %% ../nbs/00_foundation.ipynb #c144bdd6
 def run_nbdev_export_from_project(nb_path):
-    from nbdev.doclinks import nbdev_export as _run_nb_export
-
+    "Run nbdev export in a project-scoped process without changing server cwd."
     nb_path = Path(nb_path).expanduser()
     project_root = _nbdev_project_root(nb_path)
     if project_root is None:
-        _run_nb_export(path=str(nb_path))
+        export_path = nb_path.resolve(strict=False)
+        with _nbdev_export_lock(export_path.parent): _nbdev_export_process(export_path, cwd=export_path.parent)
         return
 
     resolved = nb_path.resolve(strict=False)
     try: export_path = resolved.relative_to(project_root)
     except ValueError: export_path = resolved
-    with _temporary_cwd(project_root):
-        _run_nb_export(path=str(export_path))
+    with _nbdev_export_lock(project_root): _nbdev_export_process(export_path, cwd=project_root)
 
-
+# %% ../nbs/00_foundation.ipynb #bfbbe4d5
 def export_notebook(nb, nb_path, writer=write_nb):
-    """Export an nbdev notebook and stamp export metadata when possible."""
+    "Export an nbdev notebook and stamp export metadata when possible."
     nb_path = Path(nb_path)
     py_path = exported_py_path(nb_path, nb)
     if py_path is None: return None

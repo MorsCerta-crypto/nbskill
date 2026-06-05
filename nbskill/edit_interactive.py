@@ -84,10 +84,11 @@ context-management step.
 
 Use only the provided tools: str_replace, edit_cell, add_cell, delete_cell,
 run_code, inspect_state, execute_cell, query_knowledge, and the context tools
-open_context, fold_context, delete_context, edit_context, context_view. When
-more than one notebook is in scope, pass the notebook path/name to edit and
-execution tools so the target is explicit. Keep the work scoped to one small
-specific task.
+open_context, fold_context, delete_context, edit_context, context_view, and
+manage_context. Prefer manage_context to batch multiple context operations in
+one tool call. When more than one notebook is in scope, pass the notebook
+path/name to edit and execution tools so the target is explicit. Keep the work
+scoped to one small specific task.
 
 For new behavior, use this loop:
 1. Scratch: run the smallest experiment with run_code in the live notebook
@@ -115,10 +116,12 @@ executed, and what could not be completed.
 """
 
 CONTEXT_SESSION_SYSTEM = """You manage the context for an nbskill editing run.
-You do not edit notebooks. Use only the context tools to open, fold, delete, or
-edit managed context messages so the next editing step sees the smallest useful
-context. Open the few chapters directly relevant to the plan, fold full chapters
-to concise summaries after they are no longer useful, delete irrelevant material
+You do not edit notebooks. Use the context tools to open, fold, delete, or edit
+managed context messages so the next editing step sees the smallest useful
+context. Prefer manage_context to batch multiple operations in one tool call,
+e.g. [{"action":"open","tag":"ch3"},{"action":"fold","tag":"ch1","content":"summary"}].
+Open the few chapters directly relevant to the plan, fold full chapters to
+concise summaries after they are no longer useful, delete irrelevant material
 from the active context while preserving the audit log, and leave the index
 visible. Stop once the context is prepared or cleaned.
 """
@@ -1162,7 +1165,17 @@ def make_context_tools(session):
         session.record_context_command({"action": "view", "tag": "managed-context"})
         return render_managed_context(session.managed_context)
 
-    return [open_context, fold_context, delete_context, edit_context, context_view]
+    def manage_context(commands: str) -> str:
+        "Apply multiple context commands in one tool call. Pass a JSON list of {action, tag, content?} dicts."
+        items = json.loads(commands) if isinstance(commands, str) else commands
+        if not isinstance(items, list): raise ValueError("commands must be a JSON list of dicts")
+        results = []
+        for cmd in items:
+            if not isinstance(cmd, dict): raise ValueError(f"Each command must be a dict, got {type(cmd).__name__}")
+            results.append(str(apply_context_command(session, cmd)))
+        return "\n".join(results)
+
+    return [open_context, fold_context, delete_context, edit_context, context_view, manage_context]
 
 
 def make_chat(model, tools, hist, system_prompt=EDIT_INTERACTIVE_SYSTEM):
@@ -1175,39 +1188,17 @@ def make_chat(model, tools, hist, system_prompt=EDIT_INTERACTIVE_SYSTEM):
 
 
 def run_context_session(session, model, prompt, max_steps=4, max_context_commands=8):
-    "Run one separate context-management step and restore the active edit chat."
-    if not session.managed_context:
-        return ""
+    "Run one separate context-management step using batched tool calls."
+    if not session.managed_context: return ""
     max_steps = _bounded_int(max_steps, 4, 0, _AGENT_MAX_CONTEXT_STEPS, "max_steps")
-    max_context_commands = _bounded_int(
-        max_context_commands,
-        8,
-        0,
-        _AGENT_MAX_CONTEXT_COMMANDS,
-        "max_context_commands",
-    )
-    if max_steps == 0:
-        return ""
+    if max_steps == 0: return ""
     prior_chat, prior_context_idx = session.chat, session.context_msg_idx
     hist = [{"role": "user", "content": render_managed_context(session.managed_context)}]
-    chat = make_chat(
-        model,
-        tools=make_context_tools(session),
-        hist=hist,
-        system_prompt=CONTEXT_SESSION_SYSTEM,
-    )
+    chat = make_chat(model, tools=make_context_tools(session), hist=hist, system_prompt=CONTEXT_SESSION_SYSTEM)
     session.chat = chat
     session.context_msg_idx = len(chat.hist) - 1
     try:
-        if max_context_commands:
-            result = run_chat_with_context_commands(
-                session,
-                prompt,
-                max_steps=max_steps,
-                max_context_commands=max_context_commands,
-            )
-        else:
-            result = chat(prompt, max_steps=max_steps, return_all=True)
+        result = chat(prompt, max_steps=max_steps, return_all=True)
     except BaseException as exc:
         summary = f"context session failed: {type(exc).__name__}: {exc}"
     else:
@@ -1216,6 +1207,7 @@ def run_context_session(session, model, prompt, max_steps=4, max_context_command
         session.chat, session.context_msg_idx = prior_chat, prior_context_idx
     session.record_message("context", summary)
     return summary
+
 
 # %% ../nbs/08_edit_interactive.ipynb #7b3292af
 def response_text(response):
@@ -1341,7 +1333,6 @@ def execute_plan(
     dry_run: bool = False,  # Render plan/context without invoking the agent
     symbols: str | None = None,  # Optional comma-separated symbols for impact context
     injected_context: str | None = None,  # Optional precomputed project context
-    max_context_commands: int = 8,  # Maximum context commands per context session
     context_steps: int = 2,  # Maximum context-management steps before/after editing
     session_id: str | None = None,  # Reuse an in-memory edit session when provided
     reset_session: bool = False,  # Drop an existing in-memory session first
@@ -1354,13 +1345,6 @@ def execute_plan(
         raise ValueError(f"Notebook does not exist: {', '.join(missing)}")
     max_steps = _bounded_int(max_steps, 8, 1, _AGENT_MAX_STEPS, "max_steps")
     timeout = _bounded_int(timeout, 30, 1, _AGENT_MAX_TIMEOUT_SECONDS, "timeout")
-    max_context_commands = _bounded_int(
-        max_context_commands,
-        8,
-        0,
-        _AGENT_MAX_CONTEXT_COMMANDS,
-        "max_context_commands",
-    )
     context_steps = _bounded_int(
         context_steps, 2, 0, _AGENT_MAX_CONTEXT_STEPS, "context_steps"
     )
@@ -1413,13 +1397,7 @@ def execute_plan(
         "Prepare context for the edit step. Open only chapters likely needed for this plan.\n"
         "Plan:\n" + plan
     )
-    run_context_session(
-        session,
-        model,
-        prep,
-        max_steps=context_steps,
-        max_context_commands=max_context_commands,
-    )
+    run_context_session(session, model, prep, max_steps=context_steps)
     session.consume_feedback()
     initial_view = cap_text(
         render_managed_context(session.managed_context), _AGENT_MAX_NOTEBOOK_VIEW_CHARS
@@ -1446,8 +1424,9 @@ def execute_plan(
         "Execute the plan with the scratch, inspect, function, example, and test "
         "loop from the system prompt. Use run_code for experiments, inspect_state "
         "for live state checks, and execute_cell to validate the final example or "
-        "test when practical. Use context tools when you need to open, fold, or "
-        "prune the active notebook view. Stop when the notebook change is complete."
+        "test when practical. Use manage_context to batch context operations when "
+        "you need to open, fold, or prune the active notebook view. Stop when the "
+        "notebook change is complete."
     )
     round_summaries = []
     for round_idx in range(feedback_rounds):
@@ -1476,13 +1455,7 @@ def execute_plan(
         "Clean up context after the edit step. Fold useful full chapters to summaries, "
         "delete irrelevant scratch context from active renders, and leave the index visible."
     )
-    run_context_session(
-        session,
-        model,
-        cleanup,
-        max_steps=context_steps,
-        max_context_commands=max_context_commands,
-    )
+    run_context_session(session, model, cleanup, max_steps=context_steps)
     session.pending_feedback = ""
     for path in paths:
         _save_notebook(read_nb(path), path)

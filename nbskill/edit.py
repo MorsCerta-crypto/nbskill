@@ -470,8 +470,6 @@ def _apply_structural_edit(nb, edit, diffs, affected, default_cell_type):
         diff = "\n".join([
             f"moved cells: {', '.join(moving_ids)}",
             f"anchor: {where} {anchor_id}",
-            "before order: " + " -> ".join(before_order),
-            "after order: " + " -> ".join(after_order),
         ])
         diffs.append({
             "op": op, "cell_id": "", "changed": True, "moved_cell_ids": moving_ids,

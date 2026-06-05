@@ -297,7 +297,7 @@ def _mcp_feedback_location(path, edit, default_cell_type="code"):
     return edit_path, None, 0
 
 # %% ../nbs/07_mcp.ipynb #7c1eac0d
-def _mcp_feedback_output(path, cell_ids, auto_feedback=True, feedback_timeout=10, feedback_safe=True):
+def _mcp_feedback_output(path, cell_ids, auto_feedback=True, feedback_timeout=10, feedback_safe=True, detail="summary", warnings=None):
     if not auto_feedback: return ""
     nb = _read_raw_nb(path)
     cells_by_id = {getattr(cell, "id", None): cell for cell in nb.cells}
@@ -306,17 +306,36 @@ def _mcp_feedback_output(path, cell_ids, auto_feedback=True, feedback_timeout=10
         cell = cells_by_id.get(cell_id)
         if cell is not None and should_run_cell_feedback(cell): target_id = cell_id
     if target_id is None: return ""
-    output = _capture_exec_nb_process_call(dict(
-        path=str(path), dest=None, exc_stop=False, up2id=target_id, chapter=None,
-        timeout=feedback_timeout, show_output=True, verbose=False, safe=feedback_safe,
-        allow=None, ok_dests=None, cache_httpx=False, cache_dir=None,
-        cache_domains=None, allow_new=True, check_only=True,
-    ))
+    try:
+        output = _capture_exec_nb_process_call(dict(
+            path=str(path), dest=None, exc_stop=False, up2id=target_id, chapter=None,
+            timeout=feedback_timeout, show_output=True, verbose=False, safe=feedback_safe,
+            allow=None, ok_dests=None, cache_httpx=False, cache_dir=None,
+            cache_domains=None, allow_new=True, check_only=True,
+        ), tool_timeout=feedback_timeout + 5)
+    except (Exception, SystemExit) as exc:
+        raw = str(exc).strip()
+        first = next((line.strip() for line in raw.splitlines() if line.strip()), type(exc).__name__)
+        first = " ".join(first.split())
+        if len(first) > 160: first = first[:157].rstrip() + "..."
+        failure = f"{type(exc).__name__}: {first}"
+        message = f"Auto feedback failed (up to id={target_id}): auto_feedback_failed: {failure}"
+        if warnings is not None:
+            warnings.append({
+                "code": "auto_feedback_failed",
+                "message": f"auto_feedback_failed: {failure}",
+                "next_action": "Run edit_notebook with detail='debug' to inspect full feedback output.",
+                "path": str(path),
+                "cell_id": target_id,
+            })
+        if detail == "debug" and raw:
+            return f"{message}\n\nAuto feedback debug output:\n{raw}".rstrip()
+        return message
     return f"Auto feedback (up to id={target_id}):\n{output}".rstrip()
 
 # %% ../nbs/07_mcp.ipynb #56bbc791
-def _append_mcp_feedback(message, path, cell_ids, auto_feedback=True, feedback_timeout=10, feedback_safe=True):
-    feedback = _mcp_feedback_output(path, cell_ids, auto_feedback, feedback_timeout, feedback_safe)
+def _append_mcp_feedback(message, path, cell_ids, auto_feedback=True, feedback_timeout=10, feedback_safe=True, detail="summary", warnings=None):
+    feedback = _mcp_feedback_output(path, cell_ids, auto_feedback, feedback_timeout, feedback_safe, detail, warnings)
     return "\n\n".join(chunk for chunk in [message.rstrip(), feedback] if chunk)
 
 # %% ../nbs/07_mcp.ipynb #fca505e1
@@ -1073,6 +1092,11 @@ def _style_summary_lines(report):
         f"notebook_problems={summary.get('notebook_problem_count', 0)}",
         f"chkstyle_problems={summary.get('chkstyle_problem_count', 0)}",
     ]
+    chkstyle = report.get("chkstyle") or {}
+    chkstyle_text = as_text(chkstyle.get("text") or "")
+    raw_lines = [line for line in chkstyle_text.splitlines() if line.strip()]
+    if raw_lines and summary.get("chkstyle_problem_count", 0) == 0:
+        lines.append(f"chkstyle_raw_lines={len(raw_lines)} supplemental")
     counts = _top_code_counts(report.get("problem_chart"))
     if counts: lines.append(f"top_codes={counts}")
     diagnostics = report.get("diagnostics") or report.get("notebook_problems") or []
@@ -1907,14 +1931,22 @@ async def edit_notebook_tool(
         auto_feedback=auto_feedback, feedback_timeout=feedback_timeout, feedback_safe=feedback_safe,
         dry_run=dry_run, tool_timeout=tool_timeout, detail=detail, workspace_root=str(root) if root else None,
     )
+    process_arguments = dict(arguments, auto_feedback=False)
     try:
-        result = await asyncio.to_thread(_capture_edit_notebook_process_call, arguments, tool_timeout)
+        result = await asyncio.to_thread(_capture_edit_notebook_process_call, process_arguments, tool_timeout)
     except TimeoutError as exc:
         return _mcp_tool_error_result("edit_notebook", arguments, exc, detail=detail)
     except (Exception, SystemExit) as exc:
         return _mcp_tool_error_result("edit_notebook", arguments, exc, detail=detail)
-    warnings = result.get("warnings", []) if isinstance(result, dict) else []
+    warnings = list(result.get("warnings", [])) if isinstance(result, dict) else []
     full_output = result.get("text", str(result)) if isinstance(result, dict) else str(result)
+    if isinstance(result, dict) and result.get("changed") and not result.get("dry_run"):
+        full_output = _append_mcp_feedback(
+            full_output, path, result.get("affected_cell_ids", []),
+            auto_feedback=auto_feedback, feedback_timeout=feedback_timeout,
+            feedback_safe=feedback_safe, detail=detail, warnings=warnings,
+        )
+        result = dict(result, warnings=warnings, text=full_output)
     return mcp_tool_result(
         "edit_notebook", arguments, full_output, detail=detail, warnings=warnings,
         ok=bool(result.get("ok", False)) if isinstance(result, dict) else True,
@@ -2178,14 +2210,25 @@ async def style_check_tool(
     skip_path = _mcp_workspace_path(skip_path, root) if skip_path else skip_path
     arguments = dict(path=path, skip_folder_re=skip_folder_re, skip_path=skip_path, strict=strict, delete_after_output=delete_after_output, max_output_chars=max_output_chars, max_diagnostics=max_diagnostics, fix=fix, changed_only=changed_only, ref_a=ref_a, ref_b=ref_b, detail=detail, workspace_root=str(root) if root else None)
     try:
-        style_output = capture_call(style_check, **{k: v for k, v in arguments.items() if k not in {"detail", "workspace_root"}})
-        private_output = _private_symbol_report_text(path)
-        full_output = "\n\n".join(chunk for chunk in [private_output, style_output] if chunk)
+        chkstyle = run_style_check(path, skip_folder_re, skip_path, strict=False, max_output_chars=max_output_chars)
         report = style_report(
-            path, max_output_chars=max_output_chars, max_diagnostics=max_diagnostics,
-            changed_only=changed_only, ref_a=ref_a, ref_b=ref_b,
+            path, chkstyle=chkstyle, max_output_chars=max_output_chars,
+            max_diagnostics=max_diagnostics, changed_only=changed_only, ref_a=ref_a, ref_b=ref_b,
             skip_folder_re=skip_folder_re, skip_path=skip_path,
         )
+        style_output = report["text"]
+        if fix:
+            fix_lines = ["Fix suggestions:"]
+            fixes = report.get("fixes", [])
+            if not fixes: fix_lines.append("- no deterministic fixes available")
+            for item in fixes:
+                fix_lines.append(f"- would apply: {item['description']} ({item['path']})")
+            style_output = "\n\n".join(chunk for chunk in [style_output, "\n".join(fix_lines)] if chunk)
+        if delete_after_output: reset_global_usage_summary()
+        if strict and (chkstyle["status"] or report["diagnostics"]):
+            raise RuntimeError("\n".join(chunk for chunk in [style_output.rstrip(), f"SystemExit: {chkstyle['status'] or 1}"] if chunk))
+        private_output = _private_symbol_report_text(path)
+        full_output = "\n\n".join(chunk for chunk in [private_output, style_output] if chunk)
     except Exception as exc:
         return _mcp_tool_error_result("style_check", arguments, exc, max_output_chars=max_output_chars, detail=detail)
     report["private_symbol_report"] = private_output

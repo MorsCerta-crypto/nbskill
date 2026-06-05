@@ -69,6 +69,22 @@
         "call:write"
       ]
     },
+    "_append_cell_diff": {
+      "allowed": true,
+      "cell_id": "c5ac4b3a",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "02_edit.ipynb",
+      "reasons": []
+    },
+    "_append_exploded_source": {
+      "allowed": true,
+      "cell_id": "a3889f73",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "02_edit.ipynb",
+      "reasons": []
+    },
     "_append_mcp_feedback": {
       "allowed": false,
       "cell_id": "56bbc791",
@@ -76,6 +92,35 @@
       "line": 2,
       "notebook": "07_mcp.ipynb",
       "reasons": []
+    },
+    "_apply_explode_edit": {
+      "allowed": true,
+      "cell_id": "64a3f9d0",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "02_edit.ipynb",
+      "reasons": []
+    },
+    "_apply_structural_edit": {
+      "allowed": true,
+      "cell_id": "1745202e",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "02_edit.ipynb",
+      "reasons": []
+    },
+    "_apply_text_edit": {
+      "allowed": false,
+      "cell_id": "6a4e960e",
+      "external_effects": true,
+      "line": 2,
+      "notebook": "02_edit.ipynb",
+      "reasons": [
+        "_edit_cell_source->replace_text->call:replace",
+        "_edit_cell_source->replace_text->call:source.replace",
+        "_edit_cell_source->replace_texts->replace_text->call:replace",
+        "_edit_cell_source->replace_texts->replace_text->call:source.replace"
+      ]
     },
     "_approval_required_error": {
       "allowed": true,
@@ -291,6 +336,14 @@
       "notebook": "01_read.ipynb",
       "reasons": []
     },
+    "_cap_edit_diffs": {
+      "allowed": true,
+      "cell_id": "2b915028",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "02_edit.ipynb",
+      "reasons": []
+    },
     "_capture_edit_notebook_cli_call": {
       "allowed": false,
       "cell_id": "2f91ca01",
@@ -374,6 +427,14 @@
       "notebook": "00_foundation.ipynb",
       "reasons": []
     },
+    "_cell_by_id_map": {
+      "allowed": true,
+      "cell_id": "9ea66beb",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "02_edit.ipynb",
+      "reasons": []
+    },
     "_cell_calls_symbol": {
       "allowed": true,
       "cell_id": "contextcalls",
@@ -388,6 +449,14 @@
       "external_effects": false,
       "line": 2,
       "notebook": "04_review.ipynb",
+      "reasons": []
+    },
+    "_cell_content_match": {
+      "allowed": true,
+      "cell_id": "f22b5d3c",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "02_edit.ipynb",
       "reasons": []
     },
     "_cell_context": {
@@ -414,6 +483,14 @@
       "notebook": "01_read.ipynb",
       "reasons": []
     },
+    "_cell_directive_body_lines": {
+      "allowed": true,
+      "cell_id": "99565769",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "02_edit.ipynb",
+      "reasons": []
+    },
     "_cell_eval_false": {
       "allowed": false,
       "cell_id": "c136baf3",
@@ -438,6 +515,14 @@
       "external_effects": false,
       "line": 2,
       "notebook": "00_foundation.ipynb",
+      "reasons": []
+    },
+    "_cell_from_source": {
+      "allowed": true,
+      "cell_id": "4de5197d",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "02_edit.ipynb",
       "reasons": []
     },
     "_cell_has_execution_approval": {
@@ -518,6 +603,14 @@
       "external_effects": false,
       "line": 2,
       "notebook": "07_mcp.ipynb",
+      "reasons": []
+    },
+    "_cells_from_structs": {
+      "allowed": true,
+      "cell_id": "0bb16263",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "02_edit.ipynb",
       "reasons": []
     },
     "_changed_cells": {
@@ -688,6 +781,14 @@
       "notebook": "08_edit_interactive.ipynb",
       "reasons": []
     },
+    "_check_expected_hash": {
+      "allowed": true,
+      "cell_id": "44af041e",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "02_edit.ipynb",
+      "reasons": []
+    },
     "_chkstyle_diagnostics": {
       "allowed": true,
       "cell_id": "a3620495",
@@ -776,6 +877,14 @@
       "external_effects": false,
       "line": 9,
       "notebook": "03_execute.ipynb",
+      "reasons": []
+    },
+    "_coerce_lines": {
+      "allowed": true,
+      "cell_id": "374b0010",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "02_edit.ipynb",
       "reasons": []
     },
     "_command_tokens": {
@@ -1335,7 +1444,7 @@
       "allowed": true,
       "cell_id": "efed7008",
       "external_effects": false,
-      "line": 145,
+      "line": 150,
       "notebook": "07_mcp.ipynb",
       "reasons": []
     },
@@ -1460,6 +1569,19 @@
         "_notebook_export_relevant_change->call:subprocess.run"
       ]
     },
+    "_edit_cell_source": {
+      "allowed": false,
+      "cell_id": "dbb9f898",
+      "external_effects": true,
+      "line": 2,
+      "notebook": "02_edit.ipynb",
+      "reasons": [
+        "replace_text->call:replace",
+        "replace_text->call:source.replace",
+        "replace_texts->replace_text->call:replace",
+        "replace_texts->replace_text->call:source.replace"
+      ]
+    },
     "_edit_find_cell_by_id": {
       "allowed": true,
       "cell_id": "ce344c69",
@@ -1520,8 +1642,16 @@
       "allowed": true,
       "cell_id": "efed7008",
       "external_effects": false,
-      "line": 170,
+      "line": 175,
       "notebook": "07_mcp.ipynb",
+      "reasons": []
+    },
+    "_edit_text_budget": {
+      "allowed": true,
+      "cell_id": "0327a438",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "02_edit.ipynb",
       "reasons": []
     },
     "_elicit_exec_approval": {
@@ -1672,7 +1802,7 @@
       "allowed": true,
       "cell_id": "efed7008",
       "external_effects": false,
-      "line": 184,
+      "line": 189,
       "notebook": "07_mcp.ipynb",
       "reasons": []
     },
@@ -1783,6 +1913,22 @@
       "external_effects": false,
       "line": 7,
       "notebook": "04_review.ipynb",
+      "reasons": []
+    },
+    "_explode_cell": {
+      "allowed": true,
+      "cell_id": "eb170e62",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "02_edit.ipynb",
+      "reasons": []
+    },
+    "_explode_function_sources": {
+      "allowed": true,
+      "cell_id": "06c04acd",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "02_edit.ipynb",
       "reasons": []
     },
     "_export_pair_failures": {
@@ -2371,6 +2517,14 @@
       "notebook": "01_read.ipynb",
       "reasons": []
     },
+    "_insert_at": {
+      "allowed": true,
+      "cell_id": "8436d989",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "02_edit.ipynb",
+      "reasons": []
+    },
     "_inserted_cell_ids": {
       "allowed": true,
       "cell_id": "8ef57685",
@@ -2401,6 +2555,14 @@
       "external_effects": false,
       "line": 2,
       "notebook": "00_foundation.ipynb",
+      "reasons": []
+    },
+    "_is_function_def": {
+      "allowed": true,
+      "cell_id": "ff8e1afb",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "02_edit.ipynb",
       "reasons": []
     },
     "_is_import_cell": {
@@ -2459,6 +2621,14 @@
       "notebook": "00_foundation.ipynb",
       "reasons": []
     },
+    "_join_lines": {
+      "allowed": true,
+      "cell_id": "374b0010",
+      "external_effects": false,
+      "line": 12,
+      "notebook": "02_edit.ipynb",
+      "reasons": []
+    },
     "_json_preview": {
       "allowed": true,
       "cell_id": "fca505e1",
@@ -2489,6 +2659,14 @@
       "external_effects": false,
       "line": 2,
       "notebook": "07_mcp.ipynb",
+      "reasons": []
+    },
+    "_line_no": {
+      "allowed": true,
+      "cell_id": "374b0010",
+      "external_effects": false,
+      "line": 16,
+      "notebook": "02_edit.ipynb",
       "reasons": []
     },
     "_literal_search_context": {
@@ -2848,7 +3026,7 @@
       "allowed": false,
       "cell_id": "efed7008",
       "external_effects": true,
-      "line": 264,
+      "line": 269,
       "notebook": "07_mcp.ipynb",
       "reasons": [
         "mcp_tool_result->_response_warnings->_doctor_warnings->_notebook_export_relevant_change->call:subprocess.run"
@@ -3120,12 +3298,28 @@
       "notebook": "03_execute.ipynb",
       "reasons": []
     },
+    "_node_start_line": {
+      "allowed": true,
+      "cell_id": "8c4d000c",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "02_edit.ipynb",
+      "reasons": []
+    },
     "_none_if_blank": {
       "allowed": true,
       "cell_id": "7e5f19b2",
       "external_effects": false,
       "line": 2,
       "notebook": "08_edit_interactive.ipynb",
+      "reasons": []
+    },
+    "_norm_lines": {
+      "allowed": true,
+      "cell_id": "374b0010",
+      "external_effects": false,
+      "line": 23,
+      "notebook": "02_edit.ipynb",
       "reasons": []
     },
     "_normalize_cell_type_filter": {
@@ -3332,6 +3526,17 @@
       "line": 11,
       "notebook": "03_execute.ipynb",
       "reasons": []
+    },
+    "_outside_edit_probe": {
+      "allowed": false,
+      "cell_id": "c8cb286b",
+      "external_effects": true,
+      "line": 8,
+      "notebook": "02_edit.ipynb",
+      "reasons": [
+        "call:outside.unlink",
+        "call:outside_py.unlink"
+      ]
     },
     "_owner_output": {
       "allowed": true,
@@ -3868,7 +4073,7 @@
       "allowed": true,
       "cell_id": "efed7008",
       "external_effects": false,
-      "line": 157,
+      "line": 162,
       "notebook": "07_mcp.ipynb",
       "reasons": []
     },
@@ -4025,6 +4230,22 @@
       "external_effects": false,
       "line": 2,
       "notebook": "00_foundation.ipynb",
+      "reasons": []
+    },
+    "_replacement_source": {
+      "allowed": true,
+      "cell_id": "d271e936",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "02_edit.ipynb",
+      "reasons": []
+    },
+    "_require_op": {
+      "allowed": true,
+      "cell_id": "5d075f59",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "02_edit.ipynb",
       "reasons": []
     },
     "_resolve_allowed_name": {
@@ -4199,6 +4420,14 @@
       "external_effects": false,
       "line": 2,
       "notebook": "01_read.ipynb",
+      "reasons": []
+    },
+    "_selected_indices": {
+      "allowed": true,
+      "cell_id": "0a269fbe",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "02_edit.ipynb",
       "reasons": []
     },
     "_semantic_code_class_names": {
@@ -4686,7 +4915,7 @@
       "allowed": true,
       "cell_id": "efed7008",
       "external_effects": false,
-      "line": 205,
+      "line": 210,
       "notebook": "07_mcp.ipynb",
       "reasons": []
     },
@@ -4759,6 +4988,14 @@
       "notebook": "03_execute.ipynb",
       "reasons": []
     },
+    "_unified_diff": {
+      "allowed": true,
+      "cell_id": "374b0010",
+      "external_effects": false,
+      "line": 35,
+      "notebook": "02_edit.ipynb",
+      "reasons": []
+    },
     "_unique_strings": {
       "allowed": true,
       "cell_id": "c8b5469d",
@@ -4789,6 +5026,14 @@
       "external_effects": false,
       "line": 2,
       "notebook": "01_read.ipynb",
+      "reasons": []
+    },
+    "_validate_edit_budget": {
+      "allowed": true,
+      "cell_id": "e3beccd9",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "02_edit.ipynb",
       "reasons": []
     },
     "_validation_problem": {
@@ -4847,11 +5092,19 @@
       "notebook": "07_mcp.ipynb",
       "reasons": []
     },
+    "_with_directive_prefix": {
+      "allowed": true,
+      "cell_id": "6e29d69c",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "02_edit.ipynb",
+      "reasons": []
+    },
     "_workbench_summary_lines": {
       "allowed": true,
       "cell_id": "efed7008",
       "external_effects": false,
-      "line": 194,
+      "line": 199,
       "notebook": "07_mcp.ipynb",
       "reasons": []
     },
@@ -5298,6 +5551,14 @@
       "notebook": "07_mcp.ipynb",
       "reasons": []
     },
+    "delete_lines": {
+      "allowed": true,
+      "cell_id": "374b0010",
+      "external_effects": false,
+      "line": 66,
+      "notebook": "02_edit.ipynb",
+      "reasons": []
+    },
     "demo_fn": {
       "allowed": true,
       "cell_id": "51e75d68",
@@ -5392,6 +5653,27 @@
       "line": 2,
       "notebook": "tests/fixtures/nbskill_tool_fixture.ipynb",
       "reasons": []
+    },
+    "edit": {
+      "allowed": true,
+      "cell_id": "167ffb52",
+      "external_effects": false,
+      "line": 51,
+      "notebook": "02_edit.ipynb",
+      "reasons": []
+    },
+    "edit_notebook": {
+      "allowed": false,
+      "cell_id": "72e3cfc8",
+      "external_effects": true,
+      "line": 2,
+      "notebook": "02_edit.ipynb",
+      "reasons": [
+        "_apply_text_edit->_edit_cell_source->replace_text->call:replace",
+        "_apply_text_edit->_edit_cell_source->replace_text->call:source.replace",
+        "_apply_text_edit->_edit_cell_source->replace_texts->replace_text->call:replace",
+        "_apply_text_edit->_edit_cell_source->replace_texts->replace_text->call:source.replace"
+      ]
     },
     "edit_notebook_tool": {
       "allowed": false,
@@ -5722,6 +6004,14 @@
       "notebook": "00_foundation.ipynb",
       "reasons": []
     },
+    "insert_lines": {
+      "allowed": true,
+      "cell_id": "374b0010",
+      "external_effects": false,
+      "line": 49,
+      "notebook": "02_edit.ipynb",
+      "reasons": []
+    },
     "install_nbdev_pre_commit_hooks": {
       "allowed": false,
       "cell_id": "94da0ea4",
@@ -5882,7 +6172,7 @@
       "allowed": false,
       "cell_id": "efed7008",
       "external_effects": true,
-      "line": 225,
+      "line": 230,
       "notebook": "07_mcp.ipynb",
       "reasons": [
         "_response_warnings->_doctor_warnings->_notebook_export_relevant_change->call:subprocess.run"
@@ -6176,6 +6466,14 @@
       "notebook": "00_foundation.ipynb",
       "reasons": []
     },
+    "replace_lines": {
+      "allowed": true,
+      "cell_id": "374b0010",
+      "external_effects": false,
+      "line": 59,
+      "notebook": "02_edit.ipynb",
+      "reasons": []
+    },
     "replace_str_nb": {
       "allowed": true,
       "cell_id": "replace_str_nb_01",
@@ -6183,6 +6481,28 @@
       "line": 4,
       "notebook": "13_cli.ipynb",
       "reasons": []
+    },
+    "replace_text": {
+      "allowed": false,
+      "cell_id": "374b0010",
+      "external_effects": true,
+      "line": 82,
+      "notebook": "02_edit.ipynb",
+      "reasons": [
+        "call:replace",
+        "call:source.replace"
+      ]
+    },
+    "replace_texts": {
+      "allowed": false,
+      "cell_id": "374b0010",
+      "external_effects": true,
+      "line": 93,
+      "notebook": "02_edit.ipynb",
+      "reasons": [
+        "replace_text->call:replace",
+        "replace_text->call:source.replace"
+      ]
     },
     "reset_global_usage_summary": {
       "allowed": false,

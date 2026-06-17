@@ -3,8 +3,8 @@
 # %% auto #0
 __all__ = ['tracked_call', 'context', 'write_nb', 'replace_str_nb', 'update_cell', 'batch_edit_nb', 'split_nb_chapter', 'exec_nb',
            'diff_nb', 'style_check', 'nbskill_validate', 'convert', 'build_nbskill_skill', 'install_nbskill',
-           'symbol_connection', 'reference', 'agent_workbench', 'nbskill_status', 'nbskill_mcp', 'nbskill_mcp_start',
-           'nbskill_mcp_stop', 'nbskill_mcp_restart']
+           'symbol_connection', 'reference', 'agent_workbench', 'nbskill_status', 'nbskill_mcp_log',
+           'nbskill_mcp_log_problems', 'nbskill_mcp', 'nbskill_mcp_start', 'nbskill_mcp_stop', 'nbskill_mcp_restart']
 
 # %% ../nbs/13_cli.ipynb #bb21ab3c
 import json, os, shlex, signal, subprocess, time, traceback
@@ -513,6 +513,32 @@ def nbskill_status(json_output: bool = False):  # Print JSON instead of text
     print(json.dumps(data, indent=2, sort_keys=True) if json_output else _format_status(data))
     return None
 
+
+# %% ../nbs/13_cli.ipynb #038460c6
+@call_parse
+@tracked_call
+def nbskill_mcp_log(
+    path: str | None = None,  # MCP JSONL log path; defaults to NBSKILL_MCP_LOG or ~/.nbskill-mcp.jsonl
+    limit: int = 20,  # Maximum problem and tool rows to print
+    json_output: bool = False,  # Print JSON instead of text
+):
+    "Print concise nbskill MCP log metrics and recent problems."
+    report = nbskill.mcp.mcp_log_report(path=path, limit=limit)
+    print(json.dumps(report, indent=2, sort_keys=True) if json_output else nbskill.mcp.format_mcp_log_report(report, limit=limit))
+    return None
+
+
+@call_parse
+@tracked_call
+def nbskill_mcp_log_problems(
+    path: str | None = None,  # MCP JSONL log path; defaults to NBSKILL_MCP_LOG or ~/.nbskill-mcp.jsonl
+    limit: int = 20,  # Maximum problem rows to print
+    json_output: bool = False,  # Print JSON instead of text
+):
+    "Print only the problem-focused nbskill MCP log summary."
+    report = nbskill.mcp.mcp_log_report(path=path, limit=limit)
+    print(json.dumps(report, indent=2, sort_keys=True) if json_output else nbskill.mcp.format_mcp_log_report(report, limit=limit, problems_only=True))
+    return None
 
 # %% ../nbs/13_cli.ipynb #a0106df5
 @call_parse

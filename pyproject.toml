@@ -50,6 +50,8 @@ nbskill_mcp = "nbskill.cli:nbskill_mcp"
 nbskill_mcp_start = "nbskill.cli:nbskill_mcp_start"
 nbskill_mcp_stop = "nbskill.cli:nbskill_mcp_stop"
 nbskill_mcp_restart = "nbskill.cli:nbskill_mcp_restart"
+nbskill_mcp_log = "nbskill.cli:nbskill_mcp_log"
+nbskill_mcp_log_problems = "nbskill.cli:nbskill_mcp_log_problems"
 nbskill_status = "nbskill.cli:nbskill_status"
 agent_workbench = "nbskill.cli:agent_workbench"
 

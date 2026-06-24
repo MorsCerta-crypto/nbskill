@@ -61,6 +61,7 @@ from .review import run_style_check
 from .review import style_check
 from .review import style_report
 from .review import diff_nb
+from .review import visible_text_inventory
 from .review import notebook_autofix
 from .write import should_run_cell_feedback
 from .write import source_lines_cells
@@ -73,7 +74,7 @@ def as_text(value):
 _CAPTURE_LOCK = threading.RLock()
 
 # %% ../nbs/07_mcp.ipynb #54bed38d
-_REDACT_KEYS = {"new", "new_lines", "source_lines", "replacement_lines", "cells", "edits", "operations", "source", "old_str", "new_str"}
+_REDACT_KEYS = {"new", "new_lines", "source_lines", "replacement_lines", "cells", "edits", "operations", "source", "old_str", "new_str", "smoke_snippets"}
 
 # %% ../nbs/07_mcp.ipynb #17643142
 _REMOVED_SCRIPT_NAMES = (
@@ -334,6 +335,53 @@ def _mcp_feedback_output(path, cell_ids, auto_feedback=True, feedback_timeout=10
     return f"Auto feedback (up to id={target_id}):\n{output}".rstrip()
 
 # %% ../nbs/07_mcp.ipynb #56bbc791
+def _mcp_smoke_preview(text, limit=1200):
+    text = as_text(text).rstrip()
+    if not text: return ""
+    if len(text) <= limit: return text
+    omitted = len(text) - limit
+    return f"{text[:limit].rstrip()}\n... truncated {omitted} chars ..."
+
+
+def _mcp_smoke_output_lines(label, text):
+    preview = _mcp_smoke_preview(text)
+    if not preview: return []
+    lines = preview.splitlines()
+    return [f"  {label}: {lines[0]}", *[f"  {line}" for line in lines[1:]]]
+
+
+def _run_mcp_smoke_snippets(path, snippets, timeout=10):
+    snippets = [str(snippet).strip() for snippet in (snippets or []) if str(snippet).strip()]
+    if not snippets: return "", []
+    cwd = git_root(path or ".") or _git_base(path or ".").resolve()
+    lines, warnings = ["Smoke snippets:"], []
+    for idx, snippet in enumerate(snippets, 1):
+        try:
+            proc = subprocess.run(
+                [sys.executable, "-c", snippet], cwd=str(cwd), text=True,
+                capture_output=True, timeout=timeout,
+            )
+        except subprocess.TimeoutExpired as exc:
+            lines.append(f"- snippet {idx}: timeout after {timeout}s")
+            lines.extend(_mcp_smoke_output_lines("stdout", exc.stdout))
+            lines.extend(_mcp_smoke_output_lines("stderr", exc.stderr))
+            warnings.append({
+                "code": "smoke_snippet_timeout",
+                "message": f"Smoke snippet {idx} timed out after {timeout}s.",
+            })
+            continue
+        status = "ok" if proc.returncode == 0 else f"failed exit={proc.returncode}"
+        lines.append(f"- snippet {idx}: {status}")
+        lines.extend(_mcp_smoke_output_lines("stdout", proc.stdout))
+        lines.extend(_mcp_smoke_output_lines("stderr", proc.stderr))
+        if proc.returncode != 0:
+            warnings.append({
+                "code": "smoke_snippet_failed",
+                "message": f"Smoke snippet {idx} failed with exit code {proc.returncode}.",
+            })
+    return "\n".join(lines), warnings
+
+
 def _append_mcp_feedback(message, path, cell_ids, auto_feedback=True, feedback_timeout=10, feedback_safe=True, detail="summary", warnings=None):
     feedback = _mcp_feedback_output(path, cell_ids, auto_feedback, feedback_timeout, feedback_safe, detail, warnings)
     return "\n\n".join(chunk for chunk in [message.rstrip(), feedback] if chunk)
@@ -1230,7 +1278,7 @@ def _response_scope_cell_ids(tool, arguments, preview):
         ids = set(re.findall(r"\bCell id=([^\s:]+)", text))
         return ids or None
     if tool == "diff_nb":
-        ids = set(re.findall(r"--- code cell ([^\s]+) ---", text))
+        ids = set(re.findall(r"--- (?:code|public-ui) cell ([^\s]+) ---", text))
         return ids if ids else set()
     if tool == "edit_notebook":
         ids = arguments.get("affected_cell_ids") or []
@@ -1470,13 +1518,25 @@ def _style_summary_lines(report):
 
 def _diff_summary_lines(text):
     text = as_text(text)
-    cells = re.findall(r"--- code cell ([^\s-]+) ---", text)
+    cells = re.findall(r"--- (?:code|public-ui) cell ([^\s-]+) ---", text)
     added = sum(1 for line in text.splitlines() if line.startswith("+") and not line.startswith("+++"))
     deleted = sum(1 for line in text.splitlines() if line.startswith("-") and not line.startswith("---"))
     lines = [f"changed_cells={len(cells)} added_lines={added} deleted_lines={deleted}"]
     if cells: lines.append("cells=" + ", ".join(cells[:8]))
     first = _first_nonblank(text)
     if not cells and first: lines.append(_short_item(first))
+    return lines
+
+
+def _visible_text_summary_lines(records):
+    records = records or []
+    lines = [f"records={len(records)}"]
+    for item in records[:5]:
+        cell = item.get("cell_id", "")
+        line = item.get("line") or ""
+        call = item.get("call", "")
+        text = _short_item(item.get("text", ""), limit=80)
+        lines.append(f"- {cell}:{line} {call}: {text}".rstrip())
     return lines
 
 
@@ -1504,6 +1564,17 @@ def _edit_summary_lines(data):
         f"changed_ops={len(diffs)}",
     ]
     if affected: lines.append("cells=" + ", ".join(affected[:8]))
+    summary = data.get("replacement_summary") or []
+    if summary:
+        lines.append(f"replacements={len(summary)}")
+        for row in summary[:5]:
+            old = _short_item(row.get("old", ""), limit=40)
+            new = _short_item(row.get("new", ""), limit=40)
+            lines.append(
+                f"- {old} -> {new}: matched={row.get('matched', 0)} "
+                f"changed={row.get('changed', 0)} not_found={row.get('not_found', 0)}"
+            )
+    if data.get("export_confirmation"): lines.append(data["export_confirmation"])
     return lines
 
 
@@ -1535,6 +1606,7 @@ def _tool_summary_lines(tool, arguments, full_text, preview, status, structured,
     elif tool == "doctor": lines.extend(_doctor_summary_lines(structured.get("doctor")))
     elif tool == "style_check": lines.extend(_style_summary_lines(structured.get("style_report")))
     elif tool == "diff_nb": lines.extend(_diff_summary_lines(full_text))
+    elif tool == "visible_text_inventory": lines.extend(_visible_text_summary_lines(structured.get("visible_text_inventory")))
     elif tool == "reference": lines.extend(_reference_summary_lines(structured.get("reference")))
     elif tool == "edit_notebook": lines.extend(_edit_summary_lines(structured.get("edit_notebook") or structured))
     elif tool == "exec_nb": lines.extend(_exec_summary_lines(full_text))
@@ -1975,9 +2047,17 @@ _MCP_REVIEW_TOOL_CATALOG = {
         'feature': 'review',
         'usefulness': 'core',
         'tags': ('review', 'notebook', 'diff'),
-        'description': 'Notebook-aware code-cell diff that avoids raw .ipynb noise and can map generated Python diffs back to notebook owners.',
-        'when_to_use': 'Use before final reporting or when reviewing notebook edits without expanding JSON metadata churn.',
+        'description': 'Notebook-aware diff that avoids raw .ipynb noise; use surface="public-ui" to review likely user-visible FastHTML/HTML text separately from code churn.',
+        'when_to_use': 'Use before final reporting or when reviewing notebook edits without expanding JSON metadata churn; choose surface="public-ui" for customer-visible copy review.',
         'combine_with': 'Could be grouped with style_check under review, but diff parameters and output are meaningfully different.',
+    },
+    'visible_text_inventory': {
+        'feature': 'review',
+        'usefulness': 'core',
+        'tags': ('review', 'notebook', 'ui-copy', 'fasthtml'),
+        'description': 'List likely user-visible text literals from FastHTML or HTML-producing notebook code cells, including component children and labels such as alt/title/placeholder.',
+        'when_to_use': 'Use before UI/content edits to find public copy targets without manually grepping notebooks and generated modules.',
+        'combine_with': 'Pair with diff_nb(surface="public-ui") after edits to review only the visible copy changes.',
     },
     'style_check': {
         'feature': 'review',
@@ -2080,8 +2160,10 @@ mcp = FastMCP(
         "scope. Use reference for indexed reference implementations. Normal tool output is concise; use "
         "detail='debug' only when troubleshooting. Notebook operations are concurrency-safe: calls touching "
         "the same notebook are serialized, calls touching different notebooks can run in parallel, and "
-        "execution uses a global semaphore. Keep documentation before exported code and show-off examples "
-        "after it."
+        "execution uses a global semaphore. Prefer an iterative notebook loop: write small exploratory "
+        "code freely, execute it, show visible outputs/errors, then wrap working code into functions/classes. "
+        "For UI/content edits, use smoke snippets or exec output to prove the user-visible result. "
+        "Keep documentation before exported code and show-off examples after it."
     ),
 )
 mcp.add_middleware(_NbskillMCPLogMiddleware())
@@ -2282,6 +2364,7 @@ async def edit_notebook_tool(
     path: str, edits: list[dict], validate_code: bool = True,
     default_cell_type: str = "code", auto_feedback: bool = True,
     feedback_timeout: int = 10, feedback_safe: bool = True, dry_run: bool = False,
+    smoke_snippets: list[str] | None = None, smoke_timeout: int = 10,
     tool_timeout: float = 110.0, detail: str = "summary", ctx: Context = None,
 ) -> ToolResult:
     "Apply deterministic notebook edit operations atomically."
@@ -2291,12 +2374,16 @@ async def edit_notebook_tool(
     edits = _mcp_workspace_edit_paths(edits, root)
     tool_timeout = _mcp_clamp_float(tool_timeout, 110.0, 0.001, 110.0, "tool_timeout")
     feedback_timeout = _mcp_clamp_int(feedback_timeout, 10, 1, 60, "feedback_timeout")
+    smoke_timeout = _mcp_clamp_int(smoke_timeout, 10, 1, 60, "smoke_timeout")
     arguments = dict(
         path=path, edits=edits, validate_code=validate_code, default_cell_type=default_cell_type,
         auto_feedback=auto_feedback, feedback_timeout=feedback_timeout, feedback_safe=feedback_safe,
-        dry_run=dry_run, tool_timeout=tool_timeout, detail=detail, workspace_root=str(root) if root else None,
+        dry_run=dry_run, smoke_snippets=smoke_snippets, smoke_timeout=smoke_timeout,
+        tool_timeout=tool_timeout, detail=detail, workspace_root=str(root) if root else None,
     )
     process_arguments = dict(arguments, auto_feedback=False)
+    process_arguments.pop("smoke_snippets", None)
+    process_arguments.pop("smoke_timeout", None)
     try:
         result = await asyncio.to_thread(_capture_edit_notebook_process_call, process_arguments, tool_timeout)
     except TimeoutError as exc:
@@ -2311,6 +2398,9 @@ async def edit_notebook_tool(
             auto_feedback=auto_feedback, feedback_timeout=feedback_timeout,
             feedback_safe=feedback_safe, detail=detail, warnings=warnings,
         )
+        smoke_text, smoke_warnings = _run_mcp_smoke_snippets(path, smoke_snippets, timeout=smoke_timeout)
+        warnings.extend(smoke_warnings)
+        full_output = "\n\n".join(chunk for chunk in [full_output.rstrip(), smoke_text] if chunk)
         result = dict(result, warnings=warnings, text=full_output)
     return mcp_tool_result(
         "edit_notebook", arguments, full_output, detail=detail, warnings=warnings,
@@ -2447,11 +2537,11 @@ async def exec_nb_tool(
 
 # %% ../nbs/07_mcp.ipynb #mcpdiffnb
 @mcp.tool(**_mcp_tool_meta("diff_nb"))
-async def _diff_nb_tool(path: str, ref_a: str | None = "HEAD", ref_b: str | None = None, adds: bool = True, changes: bool = True, dels: bool = False, cell_id: str | None = None, after_id: str | None = None, show_owner: bool = False, detail: str = "summary", ctx: Context = None) -> ToolResult:
-    "Diff notebook code cells without expanding raw notebook JSON; optionally filter by cell id or map generated Python to its owner."
+async def _diff_nb_tool(path: str, ref_a: str | None = "HEAD", ref_b: str | None = None, adds: bool = True, changes: bool = True, dels: bool = False, cell_id: str | None = None, after_id: str | None = None, show_owner: bool = False, surface: str = "code", detail: str = "summary", ctx: Context = None) -> ToolResult:
+    "Diff notebook code cells without expanding raw notebook JSON; use surface='public-ui' for visible text review."
     root = await _mcp_workspace_root(ctx)
     path = _mcp_workspace_path(path, root)
-    arguments = dict(path=path, ref_a=ref_a, ref_b=ref_b, adds=adds, changes=changes, dels=dels, cell_id=cell_id, after_id=after_id, show_owner=show_owner, detail=detail, workspace_root=str(root) if root else None)
+    arguments = dict(path=path, ref_a=ref_a, ref_b=ref_b, adds=adds, changes=changes, dels=dels, cell_id=cell_id, after_id=after_id, show_owner=show_owner, surface=surface, detail=detail, workspace_root=str(root) if root else None)
     try:
         if show_owner and Path(path).suffix == ".py":
             return mcp_tool_result("diff_nb", arguments, _owner_output(path), detail=detail)
@@ -2738,3 +2828,30 @@ def main(
         raise
     finally:
         _mcp_log_event("server_stop", transport=transport)
+
+# %% ../nbs/07_mcp.ipynb #ba8f4a5f
+@mcp.tool(**_mcp_tool_meta("visible_text_inventory"))
+async def _visible_text_inventory_tool(
+    path: str = ".", include_re: str | None = None, max_records: int = 200,
+    detail: str = "summary", ctx: Context = None,
+) -> ToolResult:
+    "List likely public UI text from FastHTML/HTML-producing notebook cells."
+    root = await _mcp_workspace_root(ctx)
+    path = _mcp_workspace_path(path, root)
+    max_records = _mcp_clamp_int(max_records, 200, 1, 1000, "max_records")
+    arguments = dict(
+        path=path, include_re=include_re, max_records=max_records,
+        detail=detail, workspace_root=str(root) if root else None,
+    )
+    try:
+        out, err = StringIO(), StringIO()
+        with _CAPTURE_LOCK:
+            with redirect_stdout(out), redirect_stderr(err):
+                records = visible_text_inventory(path=path, include_re=include_re, max_records=max_records)
+        full_output = "\n".join(chunk.rstrip() for chunk in [out.getvalue(), err.getvalue()] if chunk)
+    except Exception as exc:
+        return _mcp_tool_error_result("visible_text_inventory", arguments, exc, detail=detail)
+    return mcp_tool_result(
+        "visible_text_inventory", arguments, full_output, detail=detail,
+        visible_text_inventory=records,
+    )

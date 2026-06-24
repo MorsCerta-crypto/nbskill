@@ -144,16 +144,47 @@ def replace_text(text, old, new, start_line=None, end_line=None):
     return _join_lines([*lines[:start], *segment.splitlines(), *lines[end:]])
 
 
-def replace_texts(text, replacements=None, olds=None, news=None, start_line=None, end_line=None):
-    """Apply several literal text replacements in order."""
+def _replacement_items(replacements=None, olds=None, news=None):
     if replacements is None:
         if olds is None or news is None: raise ValueError("replace_texts needs replacements or olds/news")
         if len(olds) != len(news): raise ValueError("olds and news must have the same length")
         replacements = [{"old": old, "new": new} for old, new in zip(olds, news)]
+    return [dict(item) for item in replacements]
+
+
+def replace_texts(text, replacements=None, olds=None, news=None, start_line=None, end_line=None):
+    """Apply several literal text replacements in order."""
     result = str(text)
-    for item in replacements:
+    for item in _replacement_items(replacements, olds, news):
         result = replace_text(result, item.get("old"), item.get("new", ""), start_line=start_line, end_line=end_line)
     return result
+
+
+def _replacement_match_count(source, old, start_line=None, end_line=None):
+    if old in {None, ""}: return 0
+    source = str(source)
+    if start_line is None and end_line is None: return source.count(str(old))
+    lines = source.splitlines()
+    start, end = _norm_lines(source, start_line or 1, end_line)
+    return _join_lines(lines[start:end]).count(str(old))
+
+
+def _replacement_statuses(source, edit):
+    op = edit["op"]
+    if op == "replace_text": items = [{"old": edit.get("old"), "new": edit.get("new", "")}]
+    elif op == "replace_texts": items = _replacement_items(edit.get("replacements"), edit.get("olds"), edit.get("news"))
+    else: return []
+    statuses, current = [], str(source)
+    for item in items:
+        old, new = item.get("old"), item.get("new", "")
+        matched = _replacement_match_count(current, old, edit.get("start_line"), edit.get("end_line"))
+        updated = replace_text(current, old, new, edit.get("start_line"), edit.get("end_line"))
+        statuses.append({
+            "old": str(old), "new": str(new), "matched": matched,
+            "changed": updated != current, "not_found": matched == 0,
+        })
+        current = updated
+    return statuses
 
 # %% ../nbs/02_edit.ipynb #df4cf6e4
 _TEXT_OPS = {"replace_lines", "insert_lines", "delete_lines", "replace_text", "replace_texts"}
@@ -367,9 +398,9 @@ def _edit_cell_source(source, edit):
     raise ValueError(f"{op!r} is not a text operation")
 
 # %% ../nbs/02_edit.ipynb #c5ac4b3a
-def _append_cell_diff(diffs, cell, before, after, op):
+def _append_cell_diff(diffs, cell, before, after, op, replacements=None):
     diff = _unified_diff(before, after, fromfile=f"{getattr(cell, 'id', '')}:before", tofile=f"{getattr(cell, 'id', '')}:after")
-    diffs.append({
+    record = {
         "op": op,
         "cell_id": getattr(cell, "id", ""),
         "cell_type": getattr(cell, "cell_type", ""),
@@ -378,7 +409,48 @@ def _append_cell_diff(diffs, cell, before, after, op):
         "before_hash": source_hash(before),
         "after_hash": source_hash(after),
         "diff": diff,
-    })
+    }
+    if replacements is not None: record["replacements"] = replacements
+    diffs.append(record)
+
+
+def _short_replacement_value(value, limit=40):
+    text = str(value).replace("\n", "\\n")
+    return text if len(text) <= limit else text[:limit - 3] + "..."
+
+
+def _aggregate_replacement_summary(diffs):
+    rows = {}
+    for diff in diffs:
+        for item in diff.get("replacements") or []:
+            key = (item.get("old", ""), item.get("new", ""))
+            row = rows.setdefault(key, {
+                "old": key[0], "new": key[1], "matched": 0,
+                "changed": 0, "not_found": 0,
+            })
+            row["matched"] += int(item.get("matched") or 0)
+            row["changed"] += int(bool(item.get("changed")))
+            row["not_found"] += int(bool(item.get("not_found")))
+    return list(rows.values())
+
+
+def _format_replacement_summary(summary):
+    if not summary: return ""
+    lines = ["Replacement summary:", "old | new | matched | changed | not_found"]
+    for row in summary:
+        lines.append(
+            f"{_short_replacement_value(row['old'])} | {_short_replacement_value(row['new'])} | "
+            f"{row['matched']} | {row['changed']} | {row['not_found']}"
+        )
+    return "\n".join(lines)
+
+
+def _format_export_confirmation(path, commit):
+    if not commit.get("exported"): return ""
+    py_path = commit.get("exported_py_path") or ""
+    if not py_path: return ""
+    drift = "no drift remaining" if commit.get("export_no_drift") else "drift check unavailable"
+    return f"exported {py_path} from {path}; {drift}"
 
 # %% ../nbs/02_edit.ipynb #6a4e960e
 def _apply_text_edit(nb, edit, diffs, affected):
@@ -387,8 +459,9 @@ def _apply_text_edit(nb, edit, diffs, affected):
     for idx in indices:
         cell = nb.cells[idx]
         before = cell_source(cell)
+        replacements = _replacement_statuses(before, edit) if edit["op"] in {"replace_text", "replace_texts"} else None
         after = _edit_cell_source(before, edit)
-        _append_cell_diff(diffs, cell, before, after, edit["op"])
+        _append_cell_diff(diffs, cell, before, after, edit["op"], replacements=replacements)
         if after != before:
             cell.source = after
             clear_outputs(cell)
@@ -526,8 +599,13 @@ def edit_notebook(
     changed = commit["changed"]
     diffs = _cap_edit_diffs(diffs)
     changed_diffs = [item for item in diffs if item.get("changed")]
+    replacement_summary = _aggregate_replacement_summary(diffs)
+    export_confirmation = _format_export_confirmation(path, commit)
     status = "dry_run" if dry_run and changed else ("changed" if changed else "no_change")
     text = f"edit_notebook {status}: {len(changed_diffs)} changed operation(s), {len(affected)} affected cell(s)"
+    replacement_text = _format_replacement_summary(replacement_summary)
+    if replacement_text: text = f"{text}\n\n{replacement_text}"
+    if export_confirmation: text = f"{text}\n{export_confirmation}"
     diff_text = "\n\n".join(item["diff"] for item in changed_diffs if item.get("diff"))
     diff_text = cap_text(diff_text, _EDIT_MAX_DIFF_CHARS)
     if diff_text: text = f"{text}\n\n{diff_text}"
@@ -547,6 +625,10 @@ def edit_notebook(
         "planned_hash": commit["planned_hash"],
         "readback_hashes": commit["readback_hashes"],
         "exported": commit["exported"],
+        "exported_py_path": commit.get("exported_py_path", ""),
+        "export_no_drift": commit.get("export_no_drift", False),
+        "export_confirmation": export_confirmation,
+        "replacement_summary": replacement_summary,
         "warnings": [],
         "text": text,
     }

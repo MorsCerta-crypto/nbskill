@@ -1270,6 +1270,7 @@ def commit_notebook(
     if validate_code and changed: validate_code_cells(trial.cells)
 
     exported = False
+    export_no_drift = False
     py_path = exported_py_path(path, trial)
     if changed and not dry_run:
         _clear_changed_outputs(trial, affected or None)
@@ -1290,6 +1291,9 @@ def commit_notebook(
             if py_path is not None: _restore_file_bytes(py_path, before_py_bytes)
             raise
         readback = read_nb(path)
+        if exported and py_path is not None and py_path.exists():
+            info = _nbskill_notebook_metadata(readback, create=False) or {}
+            export_no_drift = info.get("exported_py_hash") == file_hash(py_path)
         after_hash = notebook_hash(readback)
         readback_hashes = _readback_cell_hashes(readback, affected)
     else:
@@ -1306,6 +1310,7 @@ def commit_notebook(
         "readback_hashes": readback_hashes,
         "exported": exported,
         "exported_py_path": str(py_path) if py_path is not None else "",
+        "export_no_drift": export_no_drift,
     }
 
 # %% ../nbs/00_foundation.ipynb #79b42816

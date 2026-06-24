@@ -335,10 +335,19 @@ def diff_nb(
     dels: bool = False,  # Include deleted cells
     cell_id: str | None = None,  # Restrict output to one cell id
     after_id: str | None = None,  # Restrict output to cells after this id
+    surface: str = "code",  # Review surface: "code" or "public-ui"
 ):
-    "Print nbdev-style diffs for code cells only; summarize nbskill metadata-only changes."
+    "Print notebook diffs for code cells or likely public UI text."
     return nbskill.review.diff_nb(
-        path, ref_a=ref_a, ref_b=ref_b, adds=adds, changes=changes, dels=dels, cell_id=cell_id, after_id=after_id,
+        path,
+        ref_a=ref_a,
+        ref_b=ref_b,
+        adds=adds,
+        changes=changes,
+        dels=dels,
+        cell_id=cell_id,
+        after_id=after_id,
+        surface=surface,
     )
 
 # %% ../nbs/13_cli.ipynb #22848a82

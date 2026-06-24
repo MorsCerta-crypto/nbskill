@@ -3,7 +3,7 @@
 # %% auto #0
 __all__ = ['skip_style_paths', 'public_function_literacy_problems', 'notebook_validation_problems', 'notebook_size_problems',
            'reset_global_usage_summary', 'notebook_autofix', 'style_report', 'run_style_check', 'style_check',
-           'validate_nbs', 'code_source', 'diff_nb']
+           'validate_nbs', 'code_source', 'visible_text_inventory', 'diff_nb']
 
 # %% ../nbs/04_review.ipynb #3cff0f46
 import ast
@@ -1011,6 +1011,124 @@ def _format_style_delta_report(path, diagnostics, changed_cell_ids, usage_text):
         lines.append(f"- {item.get('source', 'nbskill')}: {item.get('path', path)}{cell}{line} {detail}".rstrip())
     return "\n\n".join(["\n".join(lines), usage_text])
 
+# %% ../nbs/04_review.ipynb #b0f566d1
+_FASTHTML_VISIBLE_TEXT_CALLS = set("""
+A Abbr Address Article Aside B Body Button Caption Code Dd Details Div Dt Em Fieldset
+Figcaption Figure Footer Form H1 H2 H3 H4 H5 H6 Header Html I Img Input Label Legend Li Main Nav
+Ol Option P Pre Section Select Small Span Strong Summary Table Tbody Td Textarea Tfoot Th
+Thead Title Tr Ul Titled
+""".split())
+_VISIBLE_TEXT_KEYWORDS = {"alt", "aria_label", "aria-label", "label", "placeholder", "title"}
+_NON_VISIBLE_TEXT_CALLS = {
+    "AssertionError", "Exception", "FileNotFoundError", "OSError", "Path", "RuntimeError",
+    "StringIO", "SystemExit", "TypeError", "ValueError", "Warning",
+}
+
+
+def _literal_visible_text(node):
+    if isinstance(node, ast.Constant) and isinstance(node.value, str): return node.value
+    return None
+
+
+def _looks_like_visible_text(text):
+    text = str(text or "").strip()
+    if not text: return False
+    if text.startswith(("#|", "http://", "https://")): return False
+    return re.search(r"[A-Za-z0-9]", text) is not None
+
+
+def _source_top_level_symbols(source):
+    try: tree = ast.parse(source)
+    except SyntaxError: return []
+    names = []
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)): names.append(node.name)
+        elif isinstance(node, ast.Assign):
+            names.extend(target.id for target in node.targets if isinstance(target, ast.Name))
+    return names
+
+
+def _visible_text_records_from_source(path, cell_id, source):
+    try: tree = ast.parse(source)
+    except SyntaxError: return []
+    symbols = ", ".join(_source_top_level_symbols(source)[:4])
+    records = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call): continue
+        call = short_call_name(node.func, default="")
+        visible_call = call in _FASTHTML_VISIBLE_TEXT_CALLS or (call[:1].isupper() and call not in _NON_VISIBLE_TEXT_CALLS)
+        if not visible_call: continue
+        for arg in node.args:
+            text = _literal_visible_text(arg)
+            if _looks_like_visible_text(text):
+                records.append({
+                    "path": str(path), "cell_id": str(cell_id), "line": getattr(arg, "lineno", None),
+                    "symbol": symbols, "call": call, "text": text.strip(),
+                })
+        for kw in node.keywords:
+            if kw.arg not in _VISIBLE_TEXT_KEYWORDS: continue
+            text = _literal_visible_text(kw.value)
+            if _looks_like_visible_text(text):
+                records.append({
+                    "path": str(path), "cell_id": str(cell_id), "line": getattr(kw.value, "lineno", None),
+                    "symbol": symbols, "call": f"{call}.{kw.arg}", "text": text.strip(),
+                })
+    return records
+
+
+def _format_visible_text_records(records):
+    if not records: return "No likely public UI text found"
+    lines = ["cell_id | line | symbol | call | text"]
+    for item in records:
+        text = str(item.get("text", "")).replace("\n", "\\n")
+        lines.append(
+            f"{item.get('cell_id', '')} | {item.get('line') or ''} | "
+            f"{item.get('symbol', '')} | {item.get('call', '')} | {text}"
+        )
+    return "\n".join(lines)
+
+
+def visible_text_inventory(path='.', include_re=None, max_records=200):
+    "Print likely user-visible text from FastHTML/HTML-producing notebook code cells."
+    pattern = re.compile(include_re) if include_re else None
+    records = []
+    for nb_path in notebook_paths(path):
+        nb = read_nb(nb_path)
+        for cell in nb.cells:
+            source = code_source(cell)
+            if source is None: continue
+            for item in _visible_text_records_from_source(nb_path, getattr(cell, "id", ""), source):
+                if pattern and not pattern.search(item["text"]): continue
+                records.append(item)
+                if len(records) >= max_records: break
+            if len(records) >= max_records: break
+        if len(records) >= max_records: break
+    text = _format_visible_text_records(records)
+    print(text)
+    return cli_return(records)
+
+
+def _public_ui_diff_lines(path, cell_id, source):
+    records = _visible_text_records_from_source(path, cell_id, source or "")
+    return [f"{item['call']}: {item['text']}" for item in records]
+
+
+def _format_public_ui_diff(path, old, new, adds=True, changes=True, dels=False, selected=None):
+    blocks = []
+    cell_ids = list(dict.fromkeys([*old.keys(), *new.keys()]))
+    for cid in cell_ids:
+        if selected is not None and cid not in selected: continue
+        old_lines = _public_ui_diff_lines(path, cid, old.get(cid, "")) if cid in old else []
+        new_lines = _public_ui_diff_lines(path, cid, new.get(cid, "")) if cid in new else []
+        if cid not in old:
+            if not adds: continue
+        elif cid not in new:
+            if not dels: continue
+        elif old_lines == new_lines or not changes: continue
+        diff = source_diff("\n".join(old_lines), "\n".join(new_lines))
+        if diff.strip(): blocks.append(f"--- public-ui cell {cid} ---\n{diff}")
+    return "\n\n".join(blocks) if blocks else "No public UI text changes"
+
 # %% ../nbs/04_review.ipynb #fe9b3c86
 def diff_nb(
     path: str,  # Notebook path
@@ -1021,9 +1139,12 @@ def diff_nb(
     dels: bool = False,  # Include deleted code cells
     cell_id: str | None = None,  # Limit output to comma/space-separated cell ids
     after_id: str | None = None,  # Limit output to cells after this id in ref_b/the working tree
+    surface: str = "code",  # Review surface: "code" or "public-ui"
 ):
-    "Print nbdev-style diffs for code cells only; summarize nbskill metadata-only changes."
+    "Print nbdev-style diffs for code cells, or a public UI text surface."
     ref_a, ref_b = none_if_string(ref_a), none_if_string(ref_b)
+    surface = (surface or "code").replace("_", "-").lower()
+    if surface not in {"code", "public-ui"}: raise ValueError("surface must be 'code' or 'public-ui'")
     if ref_a is None and ref_b is None and _git_root_rel(path)[0] is None:
         old, new = {}, _working_tree_code_sources(path)
     else:
@@ -1040,11 +1161,17 @@ def diff_nb(
             cli_error(hint)
     old = {cid: src for cid, src in old.items() if src is not None}
     new = {cid: src for cid, src in new.items() if src is not None}
+    selected = _diff_filter_ids(path, ref_b=ref_b, cell_id=cell_id, after_id=after_id)
+    if surface == "public-ui":
+        report = _format_public_ui_diff(path, old, new, adds=adds, changes=changes, dels=dels, selected=selected)
+        metadata_summary = _metadata_summary(_nbskill_metadata_change_count(path, ref_a, ref_b))
+        if metadata_summary: report = f"{report}\n\n{metadata_summary}"
+        print(report)
+        return cli_return(report)
     blocks = []
     if adds:    blocks += [(cid, source_diff("", new[cid])) for cid in new if cid not in old]
     if changes: blocks += [(cid, source_diff(old[cid], new[cid])) for cid in new if cid in old and new[cid] != old[cid]]
     if dels:    blocks += [(cid, source_diff(old[cid], "")) for cid in old if cid not in new]
-    selected = _diff_filter_ids(path, ref_b=ref_b, cell_id=cell_id, after_id=after_id)
     if selected is not None: blocks = [(cid, diff) for cid, diff in blocks if cid in selected]
     text = "\n\n".join(f"--- code cell {cid} ---\n{diff}" for cid, diff in blocks if diff.strip())
     metadata_summary = _metadata_summary(_nbskill_metadata_change_count(path, ref_a, ref_b))

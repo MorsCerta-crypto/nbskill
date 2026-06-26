@@ -56,7 +56,7 @@ def build_skill_from_readme(
 # %% ../nbs/06_skill.ipynb #e2009808
 def _nbskill_mcp_pids():
     try:
-        from .cli import _find_nbskill_mcp_processes
+        from nbskill.cli import _find_nbskill_mcp_processes
         return _find_nbskill_mcp_processes(all_projects=True)
     except Exception:
         pass
@@ -78,7 +78,7 @@ def _nbskill_mcp_pids():
 def nbskill_mcp_restart_notice(timeout=5.0, force=True, dry_run=False):
     "Restart running nbskill MCP server processes and return a user-facing result."
     try:
-        from .cli import _stop_nbskill_mcp_processes
+        from nbskill.cli import _stop_nbskill_mcp_processes
         result = _stop_nbskill_mcp_processes(all_projects=True, timeout=timeout, force=force, dry_run=dry_run)
     except Exception as exc:
         running = _nbskill_mcp_pids()

@@ -2459,6 +2459,7 @@ dependencies = [
     { name = "lancedb" },
     { name = "lisette" },
     { name = "nbdev" },
+    { name = "packaging" },
     { name = "safepyrun" },
     { name = "sentence-transformers" },
 ]
@@ -2479,6 +2480,7 @@ requires-dist = [
     { name = "lancedb", specifier = ">=0.25.0" },
     { name = "lisette", specifier = ">=0.1.33" },
     { name = "nbdev", specifier = ">=3.0.15" },
+    { name = "packaging", specifier = ">=24" },
     { name = "safepyrun", specifier = ">=0.1.0" },
     { name = "sentence-transformers", specifier = ">=5.5.1" },
 ]

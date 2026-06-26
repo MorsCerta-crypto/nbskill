@@ -2700,7 +2700,7 @@ async def _reference_tool(
     repos: str | None = None,
     url: str | None = None,
     name: str | None = None,
-    version: str = "HEAD",
+    version: str | None = None,
     package: str | None = None,
     path: str | None = None,
     kind: str | None = None,
@@ -2711,6 +2711,7 @@ async def _reference_tool(
     explain: bool = True,
     all: bool = False,
     force: bool = False,
+    allow_download: bool = True,
     tool_timeout: float = 120.0,
     detail: str = "summary",
     ctx: Context = None,
@@ -2727,13 +2728,14 @@ async def _reference_tool(
         action=action, query=query, top_k=top_k, include_branch=include_branch, current_repo=current_repo, repos=repos,
         url=url, name=name, version=version, package=package, path=path, kind=kind, module=module, symbol=symbol,
         include_local=include_local, candidate_k=candidate_k, explain=explain,
-        all=all, force=force, tool_timeout=tool_timeout, detail=detail, workspace_root=str(root) if root else None,
+        all=all, force=force, allow_download=allow_download,
+        tool_timeout=tool_timeout, detail=detail, workspace_root=str(root) if root else None,
     )
     try:
         if action == "add":
             if not url: raise ValueError("reference action='add' needs url")
             result_data = await asyncio.wait_for(
-                asyncio.to_thread(reference_add, url, name=name, version=version, package=package, path=path),
+                asyncio.to_thread(reference_add, url, name=name, version=version or "HEAD", package=package, path=path),
                 timeout=tool_timeout,
             )
         elif action == "list":
@@ -2750,7 +2752,8 @@ async def _reference_tool(
                     reference_query,
                     query, top_k=top_k, include_branch=include_branch, current_repo=current_repo, repos=repos, path=path,
                     kind=kind, package=package, module=module, symbol=symbol,
-                    include_local=include_local, candidate_k=candidate_k, explain=explain,
+                    version=version, include_local=include_local, candidate_k=candidate_k,
+                    explain=explain, allow_download=allow_download,
                 ),
                 timeout=tool_timeout,
             )

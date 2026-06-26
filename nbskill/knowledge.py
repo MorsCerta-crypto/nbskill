@@ -4,7 +4,7 @@
 __all__ = ['reference_home', 'reference_add', 'reference_ingest', 'reference_list', 'reference_query']
 
 # %% ../nbs/12_knowledge.ipynb #911ef06b
-import ast, hashlib, importlib.util, json, math, os, re, shutil, subprocess, tempfile, time
+import ast, hashlib, importlib.util, json, math, os, re, shutil, subprocess, tempfile, time, urllib.request
 
 try:
     import tomllib
@@ -24,6 +24,8 @@ _REFERENCE_MAX_FILE_BYTES = 1000000
 _REFERENCE_MAX_REPOS_PER_INGEST = 10
 _REFERENCE_MAX_ROWS_PER_REPO = 20000
 _REFERENCE_MAX_TABLE_ROWS_FOR_COUNTERS = 100000
+_REFERENCE_MAX_VERSIONS_PER_PACKAGE = 3
+_PYPI_JSON_URL = "https://pypi.org/pypi/{package}/json"
 
 
 def _clamp_int(value, default, minimum, maximum, name):
@@ -147,22 +149,37 @@ def _reference_table(path, key):
     try: return db.open_table(name)
     except Exception: return None
 
+
 def _lance_rows(path, key):
     table = _reference_table(path, key)
     if table is None: return []
     try: return [dict(row) for row in table.to_arrow().to_pylist()]
     except Exception: return []
 
+
+def _row_has_vector(row):
+    vector = row.get("vector")
+    if vector is None: return False
+    try: return len(vector) > 0
+    except TypeError: return False
+
+
 def _prepare_lance_rows(key, rows):
     if key != "items": return list(rows)
     rows = [dict(row) for row in rows]
-    vectors = _embed_reference_texts(row.get("search_text", "") for row in rows)
-    backend = _reference_embedding_backend(len(vectors[0]) if vectors else None)
-    for row, vector in zip(rows, vectors):
+    missing = [row for row in rows if not _row_has_vector(row)]
+    vectors = _embed_reference_texts(row.get("search_text", "") for row in missing) if missing else []
+    dims = len(vectors[0]) if vectors else next((len(row.get("vector") or []) for row in rows if _row_has_vector(row)), None)
+    backend = _reference_embedding_backend(dims)
+    for row, vector in zip(missing, vectors):
         row["vector"] = vector
         row["embedding_backend"] = backend
+    for row in rows:
         row["returned_count"] = int(row.get("returned_count") or 0)
+        if _row_has_vector(row) and not row.get("embedding_backend"):
+            row["embedding_backend"] = backend
     return rows
+
 
 def _write_lance_table(path, key, rows):
     db = _reference_db(path)
@@ -290,7 +307,7 @@ def _merge_lancedb_rows(*groups):
 def _lance_literal(value):
     return "'" + str(value).replace("'", "''") + "'"
 
-def _reference_filter_expr(repos=None, kind=None, package=None, module=None, symbol=None):
+def _reference_filter_expr(repos=None, kind=None, package=None, module=None, symbol=None, versions=None):
     clauses = []
     values = {"kind": kind, "package": package, "module": module, "symbol": symbol}
     for field, value in values.items():
@@ -298,11 +315,15 @@ def _reference_filter_expr(repos=None, kind=None, package=None, module=None, sym
     repo_names = _repo_filter(repos)
     if repo_names:
         clauses.append("repo IN (" + ", ".join(_lance_literal(repo) for repo in repo_names) + ")")
+    if versions:
+        clauses.append("version IN (" + ", ".join(_lance_literal(version) for version in versions) + ")")
     return " AND ".join(clauses)
 
-def _row_matches_reference_filter(row, repos=None, kind=None, package=None, module=None, symbol=None):
+
+def _row_matches_reference_filter(row, repos=None, kind=None, package=None, module=None, symbol=None, versions=None):
     repo_names = set(_repo_filter(repos) or [])
     if repo_names and row.get("repo") not in repo_names: return False
+    if versions and str(row.get("version")) not in {str(version) for version in versions}: return False
     for field, value in {"kind": kind, "package": package, "module": module, "symbol": symbol}.items():
         if value and row.get(field) != value: return False
     return True
@@ -471,7 +492,7 @@ def _dedupe_reference_rows(rows):
     deduped = {}
     for row in rows:
         source_hash = hashlib.sha1(str(row.get("source", "")).encode("utf-8")).hexdigest()
-        key = (row.get("repo"), row.get("kind"), row.get("symbol"), source_hash)
+        key = (row.get("repo"), row.get("version"), row.get("kind"), row.get("symbol"), source_hash)
         deduped[key] = _prefer_reference_row(deduped.get(key), row)
     return sorted(deduped.values(), key=lambda row: row.get("_reference_score", 0), reverse=True)
 
@@ -485,7 +506,7 @@ def _search_rows(builder, limit, filter_expr=None):
 
 def _lancedb_search(
     query, top_k=3, repos=None, path=None, kind=None, package=None, module=None, symbol=None,
-    candidate_k=None, current_repo=None, query_plan=None,
+    versions=None, candidate_k=None, current_repo=None, query_plan=None,
 ):
     table = _reference_table(path, "items")
     if table is None: return [], None, "lancedb"
@@ -496,7 +517,7 @@ def _lancedb_search(
     dims = next((len(row.get("vector") or []) for row in items if row.get("vector")), None)
     vector = _reference_vector(query, dims=dims)
     text_query = " ".join(_query_tokens(query)) or query
-    filter_expr = _reference_filter_expr(repos=repos, kind=kind, package=package, module=module, symbol=symbol)
+    filter_expr = _reference_filter_expr(repos=repos, kind=kind, package=package, module=module, symbol=symbol, versions=versions)
     try:
         hybrid = _search_rows(table.search(query_type="hybrid").vector(vector).text(text_query), limit, filter_expr)
     except Exception:
@@ -504,7 +525,7 @@ def _lancedb_search(
     vector_rows = _search_rows(table.search(vector).metric("cosine"), limit, filter_expr)
     fts_rows = _search_rows(table.search(text_query, query_type="fts"), limit, filter_expr)
     rows = _merge_lancedb_rows(("hybrid", hybrid), ("vector", vector_rows), ("bm25_fts", fts_rows))
-    rows = [row for row in rows if _row_matches_reference_filter(row, repos=repos, kind=kind, package=package, module=module, symbol=symbol)]
+    rows = [row for row in rows if _row_matches_reference_filter(row, repos=repos, kind=kind, package=package, module=module, symbol=symbol, versions=versions)]
     plan = query_plan or _query_feature_plan(query, kind=kind, candidate_k=candidate_k)
     for row in rows:
         row["_reference_score"] = _reference_rank_score(row, query=query, query_plan=plan, current_repo=current_repo)
@@ -571,6 +592,10 @@ def _row_tags(repo, package, module, kind, symbol, decorators, imports):
     return sorted({part for part in parts if part})
 
 # %% ../nbs/12_knowledge.ipynb #7c8dc517
+def _file_hash(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
 def _item_row(repo, version, package, kind, module, symbol, rel_path, source, **extra):
     source_excerpt = _source_excerpt(source)
     search_text = "\n".join(str(extra.get(key, "") or "") for key in ("signature", "docstring"))
@@ -583,12 +608,13 @@ def _item_row(repo, version, package, kind, module, symbol, rel_path, source, **
     return {
         "item_id": item_id, "repo": repo, "version": version, "package": package or "",
         "kind": kind, "module": module or "", "symbol": symbol or "", "path": str(rel_path),
+        "file_hash": extra.get("file_hash", ""),
         "cell_id": extra.get("cell_id", ""), "start_line": extra.get("start_line", 1),
         "end_line": extra.get("end_line", 1), "signature": extra.get("signature", ""),
         "docstring": extra.get("docstring", ""), "source": source_excerpt,
         "search_text": search_text, "tags": tags, "imports": imports,
         "decorators": decorators, "calls": calls,
-        "vector": _reference_vector(search_text), "embedding_backend": _reference_embedding_backend(),
+        "vector": extra.get("vector"), "embedding_backend": extra.get("embedding_backend", ""),
         "returned_count": int(extra.get("returned_count") or 0),
     }
 
@@ -599,14 +625,15 @@ def _class_block_source(source, node):
     lines = source.splitlines()
     return "\n".join(lines[node.lineno - 1:getattr(init, "end_lineno", init.lineno)])
 
-def _extract_def_rows(tree, source, repo, version, package, rel_path, module, cell_id=""):
+
+def _extract_def_rows(tree, source, repo, version, package, rel_path, module, cell_id="", file_hash=""):
     rows, imports = [], _import_names(tree)
     for node in tree.body:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             body = ast.get_source_segment(source, node) or ""
             rows.append(_item_row(
                 repo, version, package, "function", module, node.name, rel_path, body,
-                cell_id=cell_id, start_line=node.lineno, end_line=getattr(node, "end_lineno", node.lineno),
+                cell_id=cell_id, file_hash=file_hash, start_line=node.lineno, end_line=getattr(node, "end_lineno", node.lineno),
                 signature=_signature(node), docstring=ast.get_docstring(node) or "",
                 decorators=_decorator_names(node), imports=imports, calls=_call_names(node),
             ))
@@ -614,7 +641,7 @@ def _extract_def_rows(tree, source, repo, version, package, rel_path, module, ce
             body = _class_block_source(source, node)
             rows.append(_item_row(
                 repo, version, package, "class", module, node.name, rel_path, body,
-                cell_id=cell_id, start_line=node.lineno, end_line=getattr(node, "end_lineno", node.lineno),
+                cell_id=cell_id, file_hash=file_hash, start_line=node.lineno, end_line=getattr(node, "end_lineno", node.lineno),
                 signature=_signature(node), docstring=ast.get_docstring(node) or "",
                 decorators=_decorator_names(node), imports=imports, calls=_call_names(node),
             ))
@@ -623,7 +650,7 @@ def _extract_def_rows(tree, source, repo, version, package, rel_path, module, ce
                     method_body = ast.get_source_segment(source, child) or ""
                     rows.append(_item_row(
                         repo, version, package, "method", module, f"{node.name}.{child.name}", rel_path, method_body,
-                        cell_id=cell_id, start_line=child.lineno, end_line=getattr(child, "end_lineno", child.lineno),
+                        cell_id=cell_id, file_hash=file_hash, start_line=child.lineno, end_line=getattr(child, "end_lineno", child.lineno),
                         signature=_signature(child), docstring=ast.get_docstring(child) or "",
                         decorators=_decorator_names(child), imports=imports, calls=_call_names(child),
                     ))
@@ -634,13 +661,14 @@ def _extract_python_rows(path, root, repo, version, package):
     if not _reference_file_within_budget(path): return []
     rel_path = path.relative_to(root)
     source = path.read_text(encoding="utf-8", errors="replace")
+    file_hash = _file_hash(path)
     try: tree = ast.parse(source)
     except SyntaxError: return []
     rows = []
     module = _module_name_from_path(rel_path)
     if doc := ast.get_docstring(tree):
-        rows.append(_item_row(repo, version, package, "module", module, module, rel_path, doc, docstring=doc, imports=_import_names(tree)))
-    rows.extend(_extract_def_rows(tree, source, repo, version, package, rel_path, module))
+        rows.append(_item_row(repo, version, package, "module", module, module, rel_path, doc, docstring=doc, imports=_import_names(tree), file_hash=file_hash))
+    rows.extend(_extract_def_rows(tree, source, repo, version, package, rel_path, module, file_hash=file_hash))
     return rows
 
 # %% ../nbs/12_knowledge.ipynb #fc2e32e7
@@ -649,16 +677,17 @@ def _extract_notebook_rows(path, root, repo, version, package):
     rel_path = path.relative_to(root)
     try: nb = read_nb(path)
     except Exception: return []
+    file_hash = _file_hash(path)
     rows, module = [], _module_name_from_path(rel_path)
     for idx, cell in enumerate(nb.cells):
         source = cell_source(cell)
         cell_id = getattr(cell, "id", "") or str(idx)
         if getattr(cell, "cell_type", None) == "markdown" and source.strip():
-            rows.append(_item_row(repo, version, package, "notebook_doc", module, f"{module}#{cell_id}", rel_path, source, cell_id=cell_id))
+            rows.append(_item_row(repo, version, package, "notebook_doc", module, f"{module}#{cell_id}", rel_path, source, cell_id=cell_id, file_hash=file_hash))
         if getattr(cell, "cell_type", None) != "code": continue
         try: tree = ast.parse(source)
         except SyntaxError: continue
-        rows.extend(_extract_def_rows(tree, source, repo, version, package, rel_path, module, cell_id=cell_id))
+        rows.extend(_extract_def_rows(tree, source, repo, version, package, rel_path, module, cell_id=cell_id, file_hash=file_hash))
     return rows
 
 # %% ../nbs/12_knowledge.ipynb #90a6c090
@@ -709,7 +738,7 @@ def _readme_rows(root, repo, version, package):
         path = Path(root) / name
         if path.exists() and _reference_file_within_budget(path):
             source = path.read_text(encoding="utf-8", errors="replace")
-            rows.append(_item_row(repo, version, package, "readme", "", name, path.relative_to(root), source))
+            rows.append(_item_row(repo, version, package, "readme", "", name, path.relative_to(root), source, file_hash=_file_hash(path)))
     return rows
 
 # %% ../nbs/12_knowledge.ipynb #38aa179c
@@ -725,6 +754,7 @@ def _github_repo_slug(source):
     match = re.match(r"^(?:https://github\.com/|git@github\.com:)([\w.-]+/[\w.-]+)$", text)
     return match.group(1) if match else None
 
+
 def _clone_reference_with_gh(source, dest):
     slug = _github_repo_slug(source)
     if not slug or shutil.which("gh") is None: return False
@@ -732,14 +762,18 @@ def _clone_reference_with_gh(source, dest):
     if proc.returncode != 0: return False
     return True
 
+
 def _checkout_reference(repo, dest):
     source = repo["url"]
+    version = repo.get("version") or "HEAD"
+    if repo.get("source_kind") == "pypi" or str(source).startswith("pypi:"):
+        package = repo.get("package") or str(source).split(":", 1)[-1] or repo["name"]
+        return _download_pypi_release(package, version, dest)
     source_path = Path(source).expanduser()
     if source_path.exists() and not (source_path / ".git").exists():
         shutil.copytree(source_path, dest)
     elif not _clone_reference_with_gh(source, dest):
         subprocess.run(["git", "clone", "--quiet", source, str(dest)], check=True)
-    version = repo.get("version") or "HEAD"
     if version != "HEAD": _run_git(["checkout", "--quiet", version], dest)
     if (Path(dest) / ".git").exists():
         try: return _run_git(["rev-parse", "HEAD"], dest)
@@ -781,11 +815,35 @@ def _extract_reference_rows(root, repo, version, package):
     return rows
 
 # %% ../nbs/12_knowledge.ipynb #a717a326
+def _reference_reuse_key(row):
+    return (
+        row.get("repo"), row.get("path"), row.get("file_hash"), row.get("kind"), row.get("module"),
+        row.get("symbol"), row.get("cell_id"), row.get("start_line"), row.get("search_text"),
+    )
+
+
+def _reuse_reference_vectors(rows, existing_rows):
+    reusable = {_reference_reuse_key(row): row for row in existing_rows if _row_has_vector(row)}
+    reused = []
+    for row in rows:
+        row = dict(row)
+        existing = reusable.get(_reference_reuse_key(row))
+        if existing:
+            row["vector"] = existing.get("vector")
+            row["embedding_backend"] = existing.get("embedding_backend", "")
+        reused.append(row)
+    return reused
+
+
 def _write_reference_rows(repo_name, version, rows, path=None):
-    existing = [row for row in _lance_rows(path, "items") if row.get("repo") != repo_name]
-    _write_lance_table(path, "items", [*existing, *rows])
-    existing_edges = [row for row in _lance_rows(path, "edges") if row.get("repo") != repo_name]
+    existing_items = _lance_rows(path, "items")
+    rows = _reuse_reference_vectors(rows, existing_items)
+    kept_items = [row for row in existing_items if not (row.get("repo") == repo_name and str(row.get("version")) == str(version))]
+    _write_lance_table(path, "items", [*kept_items, *rows])
+    existing_edges = [row for row in _lance_rows(path, "edges") if not (row.get("repo") == repo_name and str(row.get("version")) == str(version))]
     _write_lance_table(path, "edges", [*existing_edges, *_reference_edge_rows(repo_name, version, rows)])
+    package = next((row.get("package") for row in rows if row.get("package")), repo_name)
+    if package: _prune_reference_versions(package, path=path)
     return len(rows)
 
 # %% ../nbs/12_knowledge.ipynb #858e0adf
@@ -871,12 +929,16 @@ def reference_ingest(
 def reference_list(path: str | None = None):
     "Return registered reference repositories and indexed item counts."
     data = _load_reference_registry(path)
-    counts = {}
+    counts, versions = {}, {}
     for row in _lance_rows(path, "items"):
-        counts[row.get("repo")] = counts.get(row.get("repo"), 0) + 1
+        repo = row.get("repo")
+        version = str(row.get("version") or "")
+        counts[repo] = counts.get(repo, 0) + 1
+        if version: versions.setdefault(repo, set()).add(version)
     repos = []
     for name, repo in sorted(data["repos"].items()):
-        repos.append({**repo, "indexed_items": counts.get(name, 0)})
+        repo_versions = sorted(versions.get(name, set()), key=_version_sort_key, reverse=True)
+        repos.append({**repo, "indexed_items": counts.get(name, 0), "indexed_versions": repo_versions})
     return {"path": str(_lancedb_path(path)), "count": len(repos), "repos": repos}
 
 # %% ../nbs/12_knowledge.ipynb #7d1cc855
@@ -941,7 +1003,7 @@ def _public_reference_hit(row):
     return {
         "repo": row.get("repo"), "version": row.get("version"), "package": row.get("package") or None,
         "repo_kind": row.get("repo_kind") or None, "kind": row.get("kind"), "module": row.get("module"), "symbol": row.get("symbol"),
-        "path": row.get("path"), "cell_id": row.get("cell_id") or None,
+        "path": row.get("path"), "file_hash": row.get("file_hash") or None, "cell_id": row.get("cell_id") or None,
         "line": row.get("start_line"), "signature": row.get("signature"),
         "docstring": docstring, "docstring_first_line": _first_docstring_line(docstring),
         "source": row.get("source"), "tags": tags, "imports": _reference_list_value(row.get("imports")),
@@ -986,10 +1048,12 @@ def _reference_lookup_hints(hit):
         if path: hints.append(f"context(target={path!r}, scope='nbs', overview=False)")
         return hints
     hints = []
+    version = hit.get("version")
+    version_arg = f", version={version!r}" if version else ""
     if hit.get("repo") and symbol:
-        hints.append(f"reference(action='query', repos={hit['repo']!r}, symbol={symbol!r}, include_branch=True)")
+        hints.append(f"reference(action='query', repos={hit['repo']!r}, symbol={symbol!r}{version_arg}, include_branch=True)")
     if hit.get("repo") and hit.get("module"):
-        hints.append(f"reference(action='query', repos={hit['repo']!r}, module={hit['module']!r})")
+        hints.append(f"reference(action='query', repos={hit['repo']!r}, module={hit['module']!r}{version_arg})")
     return hints
 
 def _reference_quality(hit):
@@ -1081,22 +1145,33 @@ def reference_query(
     repos=None,  # Optional repo name or comma-separated names to search
     path: str | None = None,  # Override reference home
     kind: str | None = None,  # Optional item kind filter: readme, module, function, class, method
-    package: str | None = None,  # Optional package filter
+    package: str | None = None,  # Optional package filter and auto-download target
+    version: str | None = None,  # Optional uv-style package version specifier, e.g. '>=1.0,<2' or '1.2.3'
     module: str | None = None,  # Optional module filter
     symbol: str | None = None,  # Optional symbol filter
     include_local: bool = True,  # Include current repository reuse_advice matches
     candidate_k: int | None = None,  # Candidate pool size before final reranking
     explain: bool = True,  # Include score breakdowns and why text
+    allow_download: bool = True,  # Download a missing requested package version from PyPI
 ):
     "Search indexed reference implementations and return a high-level reuse context."
     top_k = _clamp_int(top_k, 3, 1, _REFERENCE_MAX_TOP_K, "top_k")
     candidate_k = _clamp_int(candidate_k, top_k * 25, top_k, _REFERENCE_MAX_CANDIDATE_K, "candidate_k")
     repo_names = _repo_filter(repos)
+    version_state, versions = None, None
+    if package:
+        version_state = _ensure_library_version_indexed(package, version_spec=version, path=path, allow_download=allow_download)
+        if version_state and version_state.get("version"):
+            versions = [version_state["version"]]
+    elif version:
+        versions = _matching_indexed_versions(None, version_spec=version, path=path)
     plan = _query_feature_plan(query, kind=kind, candidate_k=candidate_k)
+    if version_state: plan["library_version"] = version_state
+    if versions: plan["version_filter"] = versions
     if include_local: plan["applied_search_passes"] = [*plan["applied_search_passes"], "local_reuse"]
     rows, reason, backend = _lancedb_search(
         query, top_k=top_k, repos=repo_names, path=path, kind=kind, package=package, module=module, symbol=symbol,
-        candidate_k=candidate_k, current_repo=current_repo, query_plan=plan,
+        versions=versions, candidate_k=candidate_k, current_repo=current_repo, query_plan=plan,
     )
     row_by_id, reference_hits = {}, []
     for row in rows:
@@ -1115,8 +1190,187 @@ def reference_query(
     for hit in hits:
         item_id = hit.pop("_item_id", None)
         if item_id in counts: hit["returned_count"] = counts[item_id]
-    filters = {"repos": repo_names, "kind": kind, "package": package, "module": module, "symbol": symbol}
+    filters = {"repos": repo_names, "kind": kind, "package": package, "version": version, "resolved_versions": versions, "module": module, "symbol": symbol}
     return {
         "query": query, "backend": backend, "note": reason, "filters": filters, "count": len(hits),
         "context": _reference_context_markdown(hits), "query_plan": plan, "hits": hits,
     }
+
+# %% ../nbs/12_knowledge.ipynb #fb15becf
+def _packaging_version(version):
+    from packaging.version import Version
+    return Version(str(version))
+
+
+def _packaging_specifier(spec):
+    from packaging.specifiers import SpecifierSet
+    return SpecifierSet(str(spec))
+
+
+def _package_repo_name(package):
+    return _norm_dist_name(package) or "package"
+
+
+def _row_package_key(row):
+    return _norm_dist_name(row.get("package") or row.get("repo"))
+
+
+def _normal_version_spec(spec):
+    text = str(spec or "").strip()
+    if not text or text.lower() in {"latest", "head", "main", "master"}: return None
+    if re.match(r"^(===|==|!=|<=|>=|<|>|~=)", text) or "," in text:
+        return text
+    return f"=={text}"
+
+
+def _version_matches(version, spec=None):
+    normalized = _normal_version_spec(spec)
+    if not normalized: return True
+    try:
+        return _packaging_version(version) in _packaging_specifier(normalized)
+    except Exception:
+        return str(version) == str(spec).strip().lstrip("=")
+
+
+def _version_sort_key(version):
+    text = str(version or "")
+    try:
+        return (1, _packaging_version(text))
+    except Exception:
+        return (0, text)
+
+
+def _indexed_package_versions(package=None, path=None):
+    package_key = _norm_dist_name(package) if package else None
+    versions = set()
+    for row in _lance_rows(path, "items"):
+        if package_key and _row_package_key(row) != package_key: continue
+        if row.get("version"): versions.add(str(row["version"]))
+    return sorted(versions, key=_version_sort_key, reverse=True)
+
+
+def _matching_indexed_versions(package=None, version_spec=None, path=None):
+    versions = _indexed_package_versions(package, path=path)
+    return [version for version in versions if _version_matches(version, version_spec)]
+
+
+def _pypi_json(package):
+    url = _PYPI_JSON_URL.format(package=str(package).strip())
+    request = urllib.request.Request(url, headers={"User-Agent": "nbskill-reference/1"})
+    with urllib.request.urlopen(request, timeout=20) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def _include_prerelease(version_spec=None):
+    return bool(re.search(r"[A-Za-z]", str(version_spec or "")))
+
+
+def _pypi_release_versions(package, version_spec=None):
+    releases = (_pypi_json(package).get("releases") or {})
+    versions = []
+    for version, files in releases.items():
+        usable = [file for file in files or [] if not file.get("yanked")]
+        if not usable or not _version_matches(version, version_spec): continue
+        try:
+            parsed = _packaging_version(version)
+        except Exception:
+            continue
+        if parsed.is_prerelease and not _include_prerelease(version_spec): continue
+        versions.append(str(version))
+    return sorted(versions, key=_version_sort_key, reverse=True)
+
+
+def _resolve_library_version(package, version_spec=None, path=None, allow_download=True):
+    if allow_download:
+        try:
+            versions = _pypi_release_versions(package, version_spec=version_spec)
+        except Exception as exc:
+            indexed = _matching_indexed_versions(package, version_spec=version_spec, path=path)
+            if indexed: return indexed[0]
+            raise RuntimeError(f"Could not resolve package {package!r} from PyPI: {type(exc).__name__}: {exc}") from exc
+        if versions: return versions[0]
+        raise ValueError(f"No PyPI release for {package!r} matches version spec {version_spec!r}")
+    indexed = _matching_indexed_versions(package, version_spec=version_spec, path=path)
+    if indexed: return indexed[0]
+    normalized = _normal_version_spec(version_spec)
+    if normalized and normalized.startswith("==") and "," not in normalized:
+        return normalized[2:].strip()
+    return None
+
+
+def _package_version_indexed(package, version, path=None):
+    if not package or not version: return False
+    package_key = _norm_dist_name(package)
+    version = str(version)
+    return any(_row_package_key(row) == package_key and str(row.get("version")) == version for row in _lance_rows(path, "items"))
+
+
+def _pypi_release_files(package, version):
+    releases = (_pypi_json(package).get("releases") or {})
+    return [file for file in releases.get(str(version), []) if not file.get("yanked")]
+
+
+def _download_pypi_release(package, version, dest):
+    files = _pypi_release_files(package, version)
+    if not files: raise ValueError(f"No downloadable PyPI files found for {package!r} {version!r}")
+    chosen = next((file for file in files if file.get("packagetype") == "sdist"), files[0])
+    with tempfile.TemporaryDirectory(prefix="nbskill-pypi-download-") as archive_root:
+        archive_dir = Path(archive_root)
+        archive = archive_dir / (chosen.get("filename") or f"{package}-{version}.tar.gz")
+        request = urllib.request.Request(chosen["url"], headers={"User-Agent": "nbskill-reference/1"})
+        with urllib.request.urlopen(request, timeout=60) as response:
+            archive.write_bytes(response.read())
+        unpacked = archive_dir / "unpacked"
+        unpacked.mkdir(parents=True, exist_ok=True)
+        shutil.unpack_archive(str(archive), str(unpacked))
+        roots = [child for child in unpacked.iterdir()]
+        source = roots[0] if len(roots) == 1 and roots[0].is_dir() else unpacked
+        if Path(dest).exists(): shutil.rmtree(dest)
+        shutil.copytree(source, dest)
+    return str(version)
+
+
+def _ensure_library_version_indexed(package, version_spec=None, path=None, allow_download=True):
+    if not package: return None
+    resolved = _resolve_library_version(package, version_spec=version_spec, path=path, allow_download=allow_download)
+    if not resolved:
+        return {"package": package, "version": None, "downloaded": False, "indexed": False}
+    if _package_version_indexed(package, resolved, path=path):
+        return {"package": package, "version": resolved, "downloaded": False, "indexed": True}
+    if not allow_download:
+        return {"package": package, "version": resolved, "downloaded": False, "indexed": False}
+    data = _load_reference_registry(path)
+    repo_name = _package_repo_name(package)
+    now = time.time()
+    existing = data["repos"].get(repo_name, {})
+    data["repos"][repo_name] = {
+        **existing,
+        "name": repo_name,
+        "url": f"pypi:{package}",
+        "source_kind": "pypi",
+        "version": resolved,
+        "package": package,
+        "updated_ts": now,
+        "created_ts": existing.get("created_ts", now),
+    }
+    _write_reference_registry(data, path)
+    report = reference_ingest(name=repo_name, path=path, force=False)
+    return {"package": package, "version": resolved, "downloaded": True, "indexed": True, "ingest": report.get("ingested", [])}
+
+
+def _reference_versions_to_prune(package, path=None, keep=_REFERENCE_MAX_VERSIONS_PER_PACKAGE):
+    versions = _indexed_package_versions(package, path=path)
+    return versions[max(0, int(keep)):]
+
+
+def _prune_reference_versions(package, path=None, keep=_REFERENCE_MAX_VERSIONS_PER_PACKAGE):
+    drop = set(_reference_versions_to_prune(package, path=path, keep=keep))
+    if not drop: return {"removed_versions": [], "removed_items": 0}
+    package_key = _norm_dist_name(package)
+    old_items = _lance_rows(path, "items")
+    items = [row for row in old_items if not (_row_package_key(row) == package_key and str(row.get("version")) in drop)]
+    kept_ids = {row.get("item_id") for row in items if row.get("item_id")}
+    edges = [row for row in _lance_rows(path, "edges") if row.get("caller_id") in kept_ids and row.get("callee_id") in kept_ids]
+    _write_lance_table(path, "items", items)
+    _write_lance_table(path, "edges", edges)
+    return {"removed_versions": sorted(drop, key=_version_sort_key, reverse=True), "removed_items": len(old_items) - len(items)}

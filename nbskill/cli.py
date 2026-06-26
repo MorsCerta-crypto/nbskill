@@ -460,7 +460,7 @@ def reference(
     repos: str | None = None,  # Optional repo name or comma-separated names to search
     url: str | None = None,  # Repository URL/path for action=add
     name: str | None = None,  # Reference name for add/ingest
-    version: str = "HEAD",  # Git ref for action=add
+    version: str | None = None,  # Git ref for action=add; uv-style package version spec for action=query
     package: str | None = None,  # Package filter or package name
     path: str | None = None,  # Override reference home
     kind: str | None = None,  # Optional query filter: readme, module, function, class, method
@@ -471,12 +471,13 @@ def reference(
     explain: bool = True,  # Include score breakdowns and why text
     all: bool = False,  # Ingest all registered references
     force: bool = False,  # Re-ingest even when the indexed version matches
+    allow_download: bool = True,  # Download missing requested package versions for action=query
 ):
     "Manage and search reference implementations."
     action = str(action or "query").lower()
     if action == "add":
         if not url: raise ValueError("reference action='add' needs url")
-        result = nbskill.knowledge.reference_add(url, name=name, version=version, package=package, path=path)
+        result = nbskill.knowledge.reference_add(url, name=name, version=version or "HEAD", package=package, path=path)
     elif action == "list":
         result = nbskill.knowledge.reference_list(path=path)
     elif action == "ingest":
@@ -485,8 +486,8 @@ def reference(
         if not query: raise ValueError("reference action='query' needs query")
         result = nbskill.knowledge.reference_query(
             query, top_k=top_k, include_branch=include_branch, current_repo=current_repo, repos=repos, path=path,
-            kind=kind, package=package, module=module, symbol=symbol,
-            include_local=include_local, candidate_k=candidate_k, explain=explain,
+            kind=kind, package=package, version=version, module=module, symbol=symbol,
+            include_local=include_local, candidate_k=candidate_k, explain=explain, allow_download=allow_download,
         )
     else:
         raise ValueError("action must be add, list, ingest, or query")

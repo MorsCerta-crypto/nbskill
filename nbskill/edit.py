@@ -31,6 +31,9 @@ _EDIT_MAX_OPERATIONS = 50
 _EDIT_MAX_SOURCE_CHARS = 200000
 _EDIT_MAX_AFFECTED_CELLS = 200
 _EDIT_MAX_DIFF_CHARS = 50000
+_EDIT_WARN_AFFECTED_CELLS = 5
+_EDIT_WARN_CODE_LINES = 20
+_EDIT_WARN_TOP_LEVEL_FUNCTIONS = 3
 
 # %% ../nbs/02_edit.ipynb #0327a438
 def _edit_text_budget(value):
@@ -47,6 +50,66 @@ def _validate_edit_budget(edits):
     chars = _edit_text_budget(edits)
     if chars > _EDIT_MAX_SOURCE_CHARS:
         raise ValueError(f"edit_notebook budget exceeded: {chars} text chars exceeds limit {_EDIT_MAX_SOURCE_CHARS}")
+
+# %% ../nbs/02_edit.ipynb #36c97823
+def _craft_warning(code, message, path, cell_id=None, **extra):
+    warning = {"code": code, "message": message, "path": str(path), "severity": "warning", **extra}
+    if cell_id: warning["cell_id"] = cell_id
+    return warning
+
+
+def _code_content_lines(source):
+    return [line for line in str(source or "").splitlines() if line.strip() and not line.lstrip().startswith("#|")]
+
+
+def _top_level_function_count(source):
+    raw = str(source or "").strip("\n")
+    if not raw: return 0
+    _directive_lines, body_lines = _cell_directive_body_lines(raw)
+    try:
+        tree = ast.parse("\n".join(body_lines))
+    except SyntaxError:
+        return 0
+    return sum(1 for node in tree.body if _is_function_def(node))
+
+
+def _edit_notebook_craft_warnings(path, nb, affected_cell_ids):
+    warnings, affected = [], set(affected_cell_ids)
+    if len(affected_cell_ids) > _EDIT_WARN_AFFECTED_CELLS:
+        warnings.append(_craft_warning(
+            "many-affected-cells",
+            f"This edit touched {len(affected_cell_ids)} cells; split it into smaller edit_notebook calls and run a focused check after each one.",
+            path,
+            affected_cells=len(affected_cell_ids),
+        ))
+    for cell in nb.cells:
+        cell_id = getattr(cell, "id", "")
+        if cell_id not in affected or getattr(cell, "cell_type", None) != "code": continue
+        source = cell_source(cell)
+        line_count = len(_code_content_lines(source))
+        if line_count > _EDIT_WARN_CODE_LINES:
+            warnings.append(_craft_warning(
+                "large-code-cell",
+                "This code cell is large; split this into markdown + implementation + example + test cells.",
+                path,
+                cell_id=cell_id,
+                line_count=line_count,
+            ))
+        function_count = _top_level_function_count(source)
+        if function_count > _EDIT_WARN_TOP_LEVEL_FUNCTIONS:
+            warnings.append(_craft_warning(
+                "multi-function-cell",
+                f"This code cell defines {function_count} top-level functions; try op=\"explode_cells\" on cell_id={cell_id!r}.",
+                path,
+                cell_id=cell_id,
+                function_count=function_count,
+            ))
+    return warnings
+
+
+def _format_edit_warnings(warnings):
+    if not warnings: return ""
+    return "\n".join(f"- {warning['code']}: {warning['message']}" for warning in warnings)
 
 # %% ../nbs/02_edit.ipynb #2b915028
 def _cap_edit_diffs(diffs):
@@ -587,6 +650,7 @@ def edit_notebook(
             raise ValueError(
                 f"edit_notebook budget exceeded: {len(affected)} affected cells exceeds limit {_EDIT_MAX_AFFECTED_CELLS}"
             )
+        warnings = _edit_notebook_craft_warnings(path, trial, affected)
         commit = commit_notebook(
             path,
             trial,
@@ -603,6 +667,8 @@ def edit_notebook(
     export_confirmation = _format_export_confirmation(path, commit)
     status = "dry_run" if dry_run and changed else ("changed" if changed else "no_change")
     text = f"edit_notebook {status}: {len(changed_diffs)} changed operation(s), {len(affected)} affected cell(s)"
+    warning_text = _format_edit_warnings(warnings)
+    if warning_text: text = f"{text}\n\nNotebook craft warnings:\n{warning_text}"
     replacement_text = _format_replacement_summary(replacement_summary)
     if replacement_text: text = f"{text}\n\n{replacement_text}"
     if export_confirmation: text = f"{text}\n{export_confirmation}"
@@ -629,7 +695,7 @@ def edit_notebook(
         "export_no_drift": commit.get("export_no_drift", False),
         "export_confirmation": export_confirmation,
         "replacement_summary": replacement_summary,
-        "warnings": [],
+        "warnings": warnings,
         "text": text,
     }
 

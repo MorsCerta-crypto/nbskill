@@ -198,7 +198,8 @@ A typical agent session stays small and reversible:
 ``` bash
 context nbs/02_write.ipynb
 context write_nb --scope nbs/02_write.ipynb
-# apply a focused MCP edit_notebook operation
+# apply a focused MCP edit_notebook operation, preferably replace_lines or a small insert_cells
+# write Markdown rationale, smallest code, visible example, hidden focused test
 diff_nb nbs/02_write.ipynb
 exec_nb nbs/02_write.ipynb --check_only
 style_check nbs/02_write.ipynb --changed_only
@@ -208,7 +209,25 @@ Use
 [`nbskill_mcp`](https://MorsCerta-crypto.github.io/nbskill/cli.html#nbskill_mcp)
 when the client can call MCP tools directly. Prefer MCP edits for source
 notebooks and avoid changing generated Python unless you are
-deliberately debugging export output.
+deliberately debugging export output. Use `style_check(changed_only=True)`
+after edits so the feedback highlights problems introduced by the current
+diff.
+
+A good notebook change should read like a small story:
+
+``` python
+# Markdown cell before the code:
+# "We normalize empty titles here because imported notebooks may omit them."
+
+#| export
+def normalized_title(title):
+    return title.strip() or "Untitled"
+
+normalized_title("  Demo  ")
+
+#| hide
+assert normalized_title("  ") == "Untitled"
+```
 
 ## How this repo is organized
 

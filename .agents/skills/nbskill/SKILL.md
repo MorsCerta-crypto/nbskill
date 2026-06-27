@@ -34,9 +34,13 @@ work.
    nontrivial parsing, notebook, AST, filesystem, or formatting logic.
 5. Edit notebooks only with `mcp__nbskill__.edit_notebook`, using stable
    cell ids or narrow line edits and expected hashes when available.
+   Prefer `replace_lines` and small `insert_cells` operations over
+   whole-cell replacement unless the whole cell is the smallest coherent
+   change.
 6. Verify with the smallest useful MCP check: `mcp__nbskill__.diff_nb`,
    `mcp__nbskill__.exec_nb(check_only=True)`,
-   `mcp__nbskill__.style_check`, or `mcp__nbskill__.doctor`.
+   `mcp__nbskill__.style_check(changed_only=True)`, or
+   `mcp__nbskill__.doctor`.
 
 Do not edit raw notebook JSON or generated Python for normal notebook
 source changes.
@@ -52,6 +56,13 @@ the code, so use them together:
 2. Let a small example cell exercise the code and show off how it works.
 3. Let focused tests check the important behavior without hiding the
    intent.
+
+A good notebook change usually has this shape:
+
+1. A short markdown cell explains why the behavior exists.
+2. One focused exported code cell implements it.
+3. A visible example cell calls the behavior.
+4. A hidden test cell asserts one important outcome.
 
 When you edit a notebook because of a bug, design constraint, production
 failure, or surprising behavior, mention that reason in nearby markdown.

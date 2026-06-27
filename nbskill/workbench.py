@@ -53,7 +53,7 @@ BUILTIN_TASTE_PROFILE = {
 DEFAULT_BUDGETS = {
     "max_files": 2,
     "max_cells": 3,
-    "max_added_lines": 80,
+    "max_added_lines": 60,
     "max_context_notebooks": 20,
     "max_context_chars": 50000,
     "max_rendered_plan_chars": 50000,
@@ -727,7 +727,9 @@ def score_patch(
     added_lines = _added_line_delta(baseline, current)
     added_public = _added_public_symbols(baseline, current)
     unused_private = _unused_added_private_helpers(baseline, current)
-    empirical_warnings = _empirical_warnings(baseline, current, contract, execution)
+    empirical_warnings = _empirical_event_warnings(execution, contract)
+    story_warnings = _symbol_story_warnings(baseline, current, contract)
+    score_warnings = [*empirical_warnings, *story_warnings]
     hard_failures = []
     if len(touched_files) > budgets.get("max_files", DEFAULT_BUDGETS["max_files"]):
         hard_failures.append({"code": "max_files", "limit": budgets.get("max_files"), "actual": len(touched_files)})
@@ -741,7 +743,7 @@ def score_patch(
         hard_failures.append({"code": "private_helper_added_unused", "symbols": unused_private})
     hard_failures.extend(_export_pair_failures(current, touched_files))
     if _empirical_settings(contract).get("enforce"):
-        hard_failures.extend(empirical_warnings)
+        hard_failures.extend(score_warnings)
     if current["validation_problem_count"] > baseline.get("validation_problem_count", 0):
         hard_failures.append({"code": "validation_errors_added"})
     if current["order_problem_count"] > baseline.get("order_problem_count", 0):
@@ -761,7 +763,8 @@ def score_patch(
         "added_lines": added_lines,
         "added_public_symbols": added_public,
         "added_unused_private_helpers": unused_private,
-        "empirical_warnings": empirical_warnings,
+        "empirical_warnings": score_warnings,
+        "story_warnings": story_warnings,
         "style_delta": _style_delta(baseline, current),
         "baseline": baseline,
         "current": current,
@@ -840,11 +843,12 @@ def _render_notebook_craft_lines():
     "Render notebook craft guidance for the workbench executor."
     body = """
 Notebook craft:
+- Small notebook loop: inspect existing cells, run or sketch a tiny proof, write Markdown rationale, write the smallest code, add a visible example, add a focused hidden test, execute the narrowest check.
+- Prefer replace_lines or one small insert_cells call over whole-cell replacement.
 - Keep notebooks coherent: small markdown and code cells, one idea at a time.
 - Add descriptions before code, examples with visible outputs, and small tests near the behavior they protect.
 - Explain rationale: why the shape solves the problem, what tradeoffs it rejects, and why nearby alternatives do not fit.
-- Add cross-references for exported symbols: where the code is used later, and why that reuse matters.
-- End with diff_nb plus doctor(scopes='error,warning,style') or style_check, and resolve new notebook smells before stopping.
+- End with diff_nb plus style_check(changed_only=True) or doctor(scopes='error,warning,style'), and resolve new notebook smells before stopping.
 """
     return ["", *body.strip().splitlines()]
 
@@ -938,7 +942,7 @@ def agent_workbench_result(
                 "generated/source sync",
                 "new doctor errors",
             ] + (["empirical_loop"] if empirical_hard else []),
-            "soft": ["style_delta", "readability_delta", "test_clarity"]
+            "soft": ["style_delta", "readability_delta", "test_clarity", "notebook_story"]
             + ([] if empirical_hard else ["empirical_loop"]),
         },
     }

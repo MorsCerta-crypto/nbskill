@@ -189,17 +189,20 @@ def _public_function_literacy_problems_for_nb(nb_path, nb):
         line_count = _docstring_line_count(node)
         if line_count == 0:
             detail = f"public function {node.name!r} needs a one-line docstring for context summaries"
-            problems.append(_public_function_contract_problem(nb_path, cell, node, "public-function-docstring", "one-line docstring",detail, docstring_lines=line_count))
+            problems.append(_public_function_contract_problem(nb_path, cell, node, "public-function-docstring", "one-line docstring", detail, docstring_lines=line_count))
         elif line_count != 1:
             detail = f"public function {node.name!r} has {line_count} docstring lines; keep it to one line for context summaries"
-            problems.append(_public_function_contract_problem(nb_path, cell, node, "public-function-docstring", "one-line docstring",detail, docstring_lines=line_count))
+            problems.append(_public_function_contract_problem(nb_path, cell, node, "public-function-docstring", "one-line docstring", detail, docstring_lines=line_count))
         if node.name in call_parse_names: continue
         if node.name not in references["markdown"]:
-            problems.append(_public_function_contract_problem(nb_path, cell, node, "public-function-markdown", "Markdown docs cell mentioning the function"))
+            detail = f"public function {node.name!r}: add a short Markdown rationale cell mentioning the function before the exported code"
+            problems.append(_public_function_contract_problem(nb_path, cell, node, "public-function-markdown", "short Markdown rationale cell", detail))
         if node.name not in references["example"]:
-            problems.append(_public_function_contract_problem(nb_path, cell, node, "public-function-example", "example cell that calls the function"))
+            detail = f"public function {node.name!r}: add a small example cell that calls the function"
+            problems.append(_public_function_contract_problem(nb_path, cell, node, "public-function-example", "small example cell that calls the function", detail))
         if node.name not in references["test"]:
-            problems.append(_public_function_contract_problem(nb_path, cell, node, "public-function-test", "test cell that asserts or checks the function"))
+            detail = f"public function {node.name!r}: add a focused test cell that asserts the behavior"
+            problems.append(_public_function_contract_problem(nb_path, cell, node, "public-function-test", "focused test cell that asserts the behavior", detail))
     return problems
 
 # %% ../nbs/04_review.ipynb #1ec78aa2
@@ -261,12 +264,12 @@ def _large_cell_problems(nb_path, cell, function_limit=_LARGE_CELL_FUNCTION_LIMI
     line_limit = _LARGE_CODE_CELL_LINE_LIMIT if code_cell else _LARGE_MARKDOWN_CELL_LINE_LIMIT
     allow_long_cell = code_cell and _single_top_level_function_cell(tree)
     if line_count > line_limit and not allow_long_cell:
-        detail = f"{line_count} {cell_type} content lines; keep one idea per cell"
+        detail = f"{line_count} {cell_type} content lines; keep one idea per cell; split this into markdown rationale, one focused implementation cell, example, and test when it exports behavior"
         problems.append(_problem("large-cell", nb_path, cell, detail, line_count=line_count))
     if tree is None: return problems
     function_count = _top_level_function_count(tree)
     if function_count > function_limit:
-        detail = f"{function_count} top-level functions; split into one-idea cells"
+        detail = f"{function_count} top-level functions; split into one-idea cells; try edit_notebook op=\"explode_cells\" for this cell"
         problems.append(_problem("large-cell", nb_path, cell, detail, function_count=function_count))
     return problems
 
@@ -301,6 +304,34 @@ def _format_problem(problem):
             fields.append(f"{key}={value!r}" if key in quoted else f"{key}={value}")
     suffix = " ".join(fields + ([problem.get("detail", "")] if problem.get("detail") else []))
     return f"- {problem['code']}: {problem['path']}{cell}{line} {suffix}".rstrip()
+
+# %% ../nbs/04_review.ipynb #c48d3f17
+_CRAFT_PROBLEM_CODES = {
+    "large-cell", "large-generated-py",
+    "public-function-docstring", "public-function-markdown", "public-function-example", "public-function-test",
+}
+_STORY_PROBLEM_CODES = {"public-function-markdown", "public-function-example", "public-function-test"}
+
+
+def _craft_diagnostics(diagnostics):
+    return [item for item in diagnostics if item.get("code") in _CRAFT_PROBLEM_CODES]
+
+
+def _craft_summary(diagnostics):
+    craft = _craft_diagnostics(diagnostics)
+    return dict(
+        craft_problem_count=len(craft),
+        large_cell_count=sum(1 for item in craft if item.get("code") == "large-cell"),
+        large_generated_py_count=sum(1 for item in craft if item.get("code") == "large-generated-py"),
+        public_function_story_problem_count=sum(1 for item in craft if item.get("code") in _STORY_PROBLEM_CODES),
+        public_function_docstring_problem_count=sum(1 for item in craft if item.get("code") == "public-function-docstring"),
+    )
+
+
+def _format_notebook_craft_report(diagnostics):
+    craft = _craft_diagnostics(diagnostics)
+    if not craft: return "Notebook craft: no large-cell or story diagnostics found."
+    return "\n".join(["Notebook craft:", *[_format_problem(problem) for problem in craft]])
 
 # %% ../nbs/04_review.ipynb #faf6154f
 def _nbskill_info(obj):
@@ -431,9 +462,11 @@ def _notebook_style_problem_lines(path=".", skip_folder_re=None, skip_path=None)
 
 # %% ../nbs/04_review.ipynb #36619e7d
 def _format_notebook_style_report(path=".", skip_folder_re=None, skip_path=None):
-    lines = _notebook_style_problem_lines(path, skip_folder_re=skip_folder_re, skip_path=skip_path)
-    if not lines: return "Notebook style report: no notebook hygiene problems found."
-    return "\n".join(["Notebook style report:", *lines])
+    problems = _notebook_style_problems(path, skip_folder_re=skip_folder_re, skip_path=skip_path)
+    if not problems: return "Notebook style report: no notebook hygiene problems found."
+    craft_text = _format_notebook_craft_report(problems)
+    lines = [_format_problem(problem) for problem in problems]
+    return "\n".join(["Notebook style report:", craft_text, *lines])
 
 # %% ../nbs/04_review.ipynb #e65e352e
 def _format_count_group(title, counts):
@@ -781,10 +814,11 @@ def style_report(
     if changed_cell_ids is not None:
         diagnostics = [item for item in diagnostics if item.get("cell_id") in changed_cell_ids]
     notebook_text = _format_notebook_style_report(path, skip_folder_re=skip_folder_re, skip_path=skip_path)
+    craft_text = _format_notebook_craft_report(diagnostics)
     usage_text = _format_global_usage_summary(usage)
     chkstyle_text = capped["text"].strip()
     if changed_cell_ids is not None: text = _format_style_delta_report(path, diagnostics, changed_cell_ids, usage_text)
-    else: text = "\n\n".join(chunk for chunk in [chkstyle_text, notebook_text, usage_text] if chunk)
+    else: text = "\n\n".join(chunk for chunk in [chkstyle_text, craft_text, notebook_text, usage_text] if chunk)
     summary = dict(
         notebook_problem_count=len(notebook_problems),
         chkstyle_problem_count=len([item for item in diagnostics if item.get("source") == "chkstyle"]),
@@ -794,7 +828,8 @@ def style_report(
         output_chars=capped["chars"],
         omitted_chars=capped["omitted_chars"],
         changed_only=changed_only,
-        changed_cell_count=len(changed_cell_ids or []))
+        changed_cell_count=len(changed_cell_ids or []),
+        **_craft_summary(diagnostics))
     return dict(
         path=str(path),
         summary=summary,
@@ -1002,14 +1037,15 @@ def _diff_filter_ids(path, ref_b=None, cell_id=None, after_id=None):
 # %% ../nbs/04_review.ipynb #41b9fd02
 def _format_style_delta_report(path, diagnostics, changed_cell_ids, usage_text):
     header = f"Style delta for changed code cells in {path}: {len(diagnostics)} diagnostic(s) across {len(changed_cell_ids)} changed cell(s)"
-    if not diagnostics: return "\n\n".join([header, usage_text])
+    craft_text = _format_notebook_craft_report(diagnostics)
+    if not diagnostics: return "\n\n".join([header, craft_text, usage_text])
     lines = [header]
     for item in diagnostics:
         cell = f" id={item['cell_id']}" if item.get("cell_id") else ""
         line = f" line={item['line']}" if item.get("line") else ""
         detail = item.get("detail") or item.get("code", "")
         lines.append(f"- {item.get('source', 'nbskill')}: {item.get('path', path)}{cell}{line} {detail}".rstrip())
-    return "\n\n".join(["\n".join(lines), usage_text])
+    return "\n\n".join(["\n".join(lines), craft_text, usage_text])
 
 # %% ../nbs/04_review.ipynb #b0f566d1
 _FASTHTML_VISIBLE_TEXT_CALLS = set("""
@@ -1105,7 +1141,8 @@ def visible_text_inventory(path='.', include_re=None, max_records=200):
         if len(records) >= max_records: break
     text = _format_visible_text_records(records)
     print(text)
-    return cli_return(records)
+    cli_return(records)
+    return records
 
 
 def _public_ui_diff_lines(path, cell_id, source):
@@ -1167,7 +1204,8 @@ def diff_nb(
         metadata_summary = _metadata_summary(_nbskill_metadata_change_count(path, ref_a, ref_b))
         if metadata_summary: report = f"{report}\n\n{metadata_summary}"
         print(report)
-        return cli_return(report)
+        cli_return(report)
+        return report
     blocks = []
     if adds:    blocks += [(cid, source_diff("", new[cid])) for cid in new if cid not in old]
     if changes: blocks += [(cid, source_diff(old[cid], new[cid])) for cid in new if cid in old and new[cid] != old[cid]]
@@ -1180,4 +1218,5 @@ def diff_nb(
     elif metadata_summary: report = f"No code cell changes\n{metadata_summary}"
     else: report = "No code cell changes"
     print(report)
-    return cli_return(report)
+    cli_return(report)
+    return report

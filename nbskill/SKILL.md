@@ -30,7 +30,9 @@ the client is using stale tool metadata.
 4.  Use `edit_notebook` for notebook edits. It supports whole-cell
     replacement, line edits, cell insertion/deletion/moves, and
     notebook-wide `replace_text`/`replace_texts` refactors with
-    expected-hash guards and structured diffs.
+    expected-hash guards and structured diffs. Prefer `replace_lines`
+    and small `insert_cells` operations over whole-cell replacement
+    unless the whole cell is the smallest coherent change.
 5.  Use
     [`exec_nb`](https://MorsCerta-crypto.github.io/nbskill/execute.html#exec_nb)
     for the narrowest behavior check, preferably with `check_only=True`
@@ -39,7 +41,7 @@ the client is using stale tool metadata.
     [`diff_nb`](https://MorsCerta-crypto.github.io/nbskill/review.html#diff_nb)
     plus `doctor(scopes="error,warning,style")` or
     [`style_check`](https://MorsCerta-crypto.github.io/nbskill/review.html#style_check)
-    on touched notebooks.
+    with `changed_only=True` on touched notebooks.
 
 Stay notebook-first: edit `nbs/*.ipynb` source notebooks, not generated
 `.py` files. Functions beginning with `_` are notebook-local unless

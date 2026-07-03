@@ -68,6 +68,55 @@ Keep edits surgical. Read the nearby notebook context, edit one coherent
 piece, then immediately check whether the result is what you wanted
 before continuing.
 
+## nbdev Development Shape
+
+When creating or revising nbdev notebooks, keep the literate-programming
+shape visible to the next MCP user:
+
+- New source notebooks should declare their export target near the top with
+  `#| default_exp module_name`. Add common imports such as
+  `from nbdev.showdoc import show_doc` and `from fastcore.test import *`
+  only when the notebook actually uses them.
+- Public functions, classes, and methods live in `#| export` cells. Internal
+  helpers that must be exported but should stay out of `__all__` use
+  `#| exporti`. Do not add export directives to scratch, example, or test
+  cells.
+- Prefer small, typed public APIs with concise docstrings. Use nbdev
+  docments comments on parameters and return values when they clarify the
+  public contract, but preserve nearby style for existing code.
+- Keep explanatory detail in markdown cells rather than long docstrings.
+  Markdown should say why the behavior exists, what tradeoff is being made,
+  and where future maintainers should look next.
+- Put usage examples close to the behavior they demonstrate. Examples should
+  be executable and useful; mark slow, flaky, external-service, or purely
+  illustrative examples with `#| eval: false`.
+- Put focused tests directly after the implementation or example they protect.
+  Use `fastcore.test` helpers such as `test_eq`, `test_ne`, `test_close`,
+  `test_is`, and `test_fail` where they fit. Test cells should normally start
+  with `#| hide` so they validate the notebook without cluttering docs.
+- For classes, keep the base class small. When a class grows across multiple
+  concepts, prefer nbdev's `@patch` pattern in separate exported cells, with
+  `self:ClassName` annotated on patched methods.
+- Use visual examples only when the output helps understanding. Always pair a
+  visual check with at least one programmatic assertion when the behavior can
+  be asserted.
+
+Common directives:
+
+- `#| default_exp module_name`: notebook exports to this module.
+- `#| export`: public exported code.
+- `#| exporti`: internal exported code, omitted from `__all__`.
+- `#| exports`: exported code that should show source in docs.
+- `#| hide`: hide setup or tests from docs.
+- `#| hide_input`: hide code while showing useful output.
+- `#| hide_output`: hide noisy output while showing code.
+- `#| eval: false`: skip execution during automated notebook tests.
+- `#| exec_doc`: re-execute dynamic documentation content.
+
+Do not add a manual `nbdev.nbdev_export()` cell to every notebook by default.
+Use the repository's normal export and test commands, or the nbskill MCP
+verification tools, unless a notebook already follows that pattern.
+
 ## Search Before Writing
 
 Before implementing a helper, first search for the behavior in this

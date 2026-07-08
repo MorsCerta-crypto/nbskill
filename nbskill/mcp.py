@@ -516,11 +516,12 @@ def _mcp_middleware_tool_arguments(context): return getattr(getattr(context, "me
 
 # %% ../nbs/07_mcp.ipynb #69aae6b0
 def _mcp_text_content_chars(content):
-    texts = []
-    for item in content or []:
+    if not content: return None
+    total = 0
+    for item in content:
         text = getattr(item, "text", None)
-        if text is not None: texts.append(str(text))
-    return len("\n".join(texts)) if texts else None
+        if isinstance(text, str): total += len(text)
+    return total
 
 
 def _mcp_result_log_fields(result):
@@ -529,12 +530,23 @@ def _mcp_result_log_fields(result):
     if isinstance(structured, dict):
         status = structured.get("status")
         if status is not None: fields["result_status"] = status
+        if structured.get("ok") is not None: fields["ok"] = structured.get("ok")
         for key in ("output_chars", "output_truncated", "omitted_chars"):
             if key in structured: fields[key] = structured[key]
         summary = structured.get("summary")
         if isinstance(summary, str): fields["summary_chars"] = len(summary)
         warnings = structured.get("warnings")
-        if isinstance(warnings, list): fields["warning_count"] = len(warnings)
+        if isinstance(warnings, list):
+            fields["warning_count"] = len(warnings)
+            codes = [item.get("code") for item in warnings if isinstance(item, dict) and item.get("code")]
+            if codes: fields["warning_codes"] = codes
+        error = structured.get("error")
+        if isinstance(error, dict):
+            if error.get("type") is not None: fields["error_type"] = error.get("type")
+            if error.get("message") is not None: fields["error"] = as_text(error.get("message"))
+        edit_data = structured.get("edit_notebook")
+        if isinstance(edit_data, dict) and edit_data.get("affected_cell_ids"):
+            fields["affected_cell_ids"] = edit_data.get("affected_cell_ids")
     visible_chars = _mcp_text_content_chars(getattr(result, "content", None))
     if visible_chars is not None: fields["visible_chars"] = visible_chars
     return fields
@@ -589,6 +601,18 @@ def _mcp_bump(mapping, key, amount=1):
     mapping[key] = mapping.get(key, 0) + amount
 
 
+def _mcp_problem_limit(limit):
+    if isinstance(limit, str) and limit.strip().lower() in {"0", "all", "none"}: return None
+    value = 20 if limit is None else int(limit)
+    return None if value <= 0 else max(1, value)
+
+
+def _mcp_top_counts(counts, limit=12):
+    items = sorted(counts.items(), key=lambda item: (-item[1], str(item[0])))
+    if limit is not None: items = items[:limit]
+    return {str(key): value for key, value in items if key not in (None, "")}
+
+
 def _mcp_log_report_path(path=None):
     if path is None: return _mcp_log_path()
     raw = str(path)
@@ -615,6 +639,17 @@ def _mcp_log_read_rows(path):
     return rows, problems, line_count
 
 
+def _mcp_log_window(rows, bad_json, until_line=None, until_ts=None):
+    if until_line is not None:
+        until_line = int(until_line)
+        rows = [row for row in rows if (row.get("_line") or 0) <= until_line]
+        bad_json = [row for row in bad_json if (row.get("line") or 0) <= until_line]
+    if until_ts:
+        until_ts = str(until_ts)
+        rows = [row for row in rows if (row.get("ts") or "") <= until_ts]
+    return rows, bad_json
+
+
 def _mcp_percentile(values, pct):
     values = sorted(value for value in values if value is not None)
     if not values: return None
@@ -633,11 +668,41 @@ def _mcp_log_target(row):
     return None
 
 
+def _mcp_normalize_error(error):
+    text = " ".join(as_text(error or "").split())
+    text = re.sub(r"line \d+", "line N", text)
+    text = re.sub(r"cell [A-Za-z0-9_-]+", "cell CELL", text)
+    text = re.sub(r"target '[^']+'", "target 'X'", text)
+    text = re.sub(r"scope '[^']+'", "scope 'X'", text)
+    return text if len(text) <= 160 else text[:157].rstrip() + "..."
+
+
+def _mcp_problem_class(problem):
+    kind = problem.get("kind")
+    text = as_text(problem.get("error") or "").lower()
+    target = as_text(problem.get("target") or "")
+    if kind in {"missing_output_chars", "truncated_output"}: return "observability"
+    if "intentional wrapper failure" in text: return "expected_test_failure"
+    if kind == "edit_process_timeout" and (float(problem.get("timeout") or 1) <= 0.01 or "07_mcp_edit_process" in target):
+        return "expected_timeout_test"
+    if kind == "failed_result" and "07_mcp_timeout" in target: return "expected_timeout_test"
+    user_phrases = (
+        "could not resolve", "no notebooks found", "unsupported edit op", "expected_hash mismatch",
+        "needs cell_id", "pass at least one edit", "unexpected keyword argument", "mode must be",
+        "no chapter matches", "unknown cell", "refusing to overwrite", "no git repository found",
+    )
+    if any(phrase in text for phrase in user_phrases): return "user_input_error"
+    if kind in {"tool_start_without_end", "tool_end_without_start", "server_error", "transport_error"}: return "server_or_transport_bug"
+    if kind == "failed_result": return "failed_result"
+    return "unknown"
+
+
 def _mcp_record_problem(problems, counts, limit, kind, **data):
     _mcp_bump(counts, kind)
     problem = {"kind": kind}
     problem.update({key: value for key, value in data.items() if value is not None})
-    if len(problems) < limit: problems.append(problem)
+    problem["classification"] = problem.get("classification") or _mcp_problem_class(problem)
+    if limit is None or len(problems) < limit: problems.append(problem)
 
 
 def _mcp_row_problem(row, kind, **extra):
@@ -681,6 +746,9 @@ def _mcp_log_call_record(start, end, event):
         "output_truncated": end.get("output_truncated"),
         "omitted_chars": end.get("omitted_chars"),
         "warning_count": end.get("warning_count"),
+        "warning_codes": end.get("warning_codes"),
+        "affected_cell_ids": end.get("affected_cell_ids"),
+        "ok": end.get("ok"),
         "target": _mcp_log_target(start),
         "error_type": end.get("error_type"),
         "error": end.get("error"),
@@ -776,60 +844,93 @@ def _mcp_tool_metrics(calls):
     return result
 
 
-def mcp_log_report(path=None, limit=20):
+def _mcp_edit_process_starts(rows):
+    return {
+        (row.get("pid"), row.get("child_pid")): row
+        for row in rows if row.get("event") == "edit_process_start"
+    }
+
+
+def _mcp_edit_timeout_problem(row, starts):
+    start = starts.get((row.get("pid"), row.get("child_pid"))) or {}
+    return _mcp_row_problem(
+        row, "edit_process_timeout", target=start.get("path") or row.get("path"),
+        timeout=start.get("timeout"), child_pid=row.get("child_pid"),
+    )
+
+
+def _mcp_problem_groups(problems, limit=12):
+    groups = {"by_kind": {}, "by_tool": {}, "by_classification": {}, "by_target": {}, "by_error": {}}
+    for problem in problems:
+        _mcp_bump(groups["by_kind"], problem.get("kind") or "unknown")
+        _mcp_bump(groups["by_classification"], problem.get("classification") or "unknown")
+        if problem.get("tool"): _mcp_bump(groups["by_tool"], problem.get("tool"))
+        if problem.get("target"): _mcp_bump(groups["by_target"], problem.get("target"))
+        if problem.get("error"): _mcp_bump(groups["by_error"], _mcp_normalize_error(problem.get("error")))
+    return {name: _mcp_top_counts(counts, limit=limit) for name, counts in groups.items()}
+
+
+def mcp_log_report(path=None, limit=20, until_line=None, until_ts=None):
     """Summarize nbskill MCP JSONL logs with metrics and actionable problems."""
-    limit = max(1, int(limit or 20))
+    problem_limit = _mcp_problem_limit(limit)
     report_path = _mcp_log_report_path(path)
     problems, problem_counts = [], {}
     if report_path is None:
-        _mcp_record_problem(problems, problem_counts, limit, "log_disabled")
-        return {"log_path": None, "exists": False, "size_bytes": 0, "line_count": 0, "bad_json_count": 0, "events": {}, "summary": {}, "tools": {}, "problem_counts": problem_counts, "problems": problems}
+        _mcp_record_problem(problems, problem_counts, None, "log_disabled")
+        return {"log_path": None, "exists": False, "size_bytes": 0, "line_count": 0, "bad_json_count": 0, "events": {}, "summary": {}, "tools": {}, "problem_counts": problem_counts, "problem_groups": _mcp_problem_groups(problems), "problem_total": len(problems), "problem_limit": problem_limit, "problems": problems[:problem_limit] if problem_limit is not None else problems}
     exists = report_path.exists()
     size_bytes = report_path.stat().st_size if exists else 0
     if not exists:
-        _mcp_record_problem(problems, problem_counts, limit, "log_missing", path=str(report_path))
-        return {"log_path": str(report_path), "exists": False, "size_bytes": 0, "line_count": 0, "bad_json_count": 0, "events": {}, "summary": {}, "tools": {}, "problem_counts": problem_counts, "problems": problems}
+        _mcp_record_problem(problems, problem_counts, None, "log_missing", path=str(report_path))
+        return {"log_path": str(report_path), "exists": False, "size_bytes": 0, "line_count": 0, "bad_json_count": 0, "events": {}, "summary": {}, "tools": {}, "problem_counts": problem_counts, "problem_groups": _mcp_problem_groups(problems), "problem_total": len(problems), "problem_limit": problem_limit, "problems": problems[:problem_limit] if problem_limit is not None else problems}
 
-    rows, bad_json, line_count = _mcp_log_read_rows(report_path)
+    rows, bad_json, raw_line_count = _mcp_log_read_rows(report_path)
+    rows, bad_json = _mcp_log_window(rows, bad_json, until_line=until_line, until_ts=until_ts)
     for problem in bad_json:
-        _mcp_record_problem(problems, problem_counts, limit, problem.pop("kind"), **problem)
+        _mcp_record_problem(problems, problem_counts, None, problem.pop("kind"), **problem)
     events = {}
     for row in rows: _mcp_bump(events, row.get("event") or "<missing>")
-    calls = _mcp_pair_tool_calls(rows, problems, problem_counts, limit)
-    _mcp_pair_protocol_events(rows, "initialize_start", {"initialize_end", "initialize_error"}, "initialize", problems, problem_counts, limit)
-    _mcp_pair_protocol_events(rows, "tools_list_start", {"tools_list_end", "tools_list_error"}, "tools_list", problems, problem_counts, limit)
+    calls = _mcp_pair_tool_calls(rows, problems, problem_counts, None)
+    _mcp_pair_protocol_events(rows, "initialize_start", {"initialize_end", "initialize_error"}, "initialize", problems, problem_counts, None)
+    _mcp_pair_protocol_events(rows, "tools_list_start", {"tools_list_end", "tools_list_error"}, "tools_list", problems, problem_counts, None)
 
     missing_output_by_tool, truncated_by_tool = {}, {}
     for call in calls:
+        clean_call = {key: value for key, value in call.items() if value is not None}
         if call.get("event") == "tool_error":
-            _mcp_record_problem(problems, problem_counts, limit, "transport_error", **{key: value for key, value in call.items() if value is not None})
+            _mcp_record_problem(problems, problem_counts, None, "transport_error", **clean_call)
         if call.get("result_status") == "failed":
-            _mcp_record_problem(problems, problem_counts, limit, "failed_result", **{key: value for key, value in call.items() if value is not None})
+            _mcp_record_problem(problems, problem_counts, None, "failed_result", **clean_call)
         if call.get("event") == "tool_end" and call.get("output_chars") is None:
             _mcp_bump(missing_output_by_tool, call.get("tool") or "")
         if call.get("output_truncated"):
             _mcp_bump(truncated_by_tool, call.get("tool") or "")
     if missing_output_by_tool:
-        _mcp_record_problem(problems, problem_counts, limit, "missing_output_chars", count=sum(missing_output_by_tool.values()), tools=missing_output_by_tool)
+        _mcp_record_problem(problems, problem_counts, None, "missing_output_chars", count=sum(missing_output_by_tool.values()), tools=missing_output_by_tool)
     if truncated_by_tool:
-        _mcp_record_problem(problems, problem_counts, limit, "truncated_output", count=sum(truncated_by_tool.values()), tools=truncated_by_tool)
+        _mcp_record_problem(problems, problem_counts, None, "truncated_output", count=sum(truncated_by_tool.values()), tools=truncated_by_tool)
+    edit_starts = _mcp_edit_process_starts(rows)
     for row in rows:
         if row.get("event") == "edit_process_timeout":
-            _mcp_record_problem(problems, problem_counts, limit, "edit_process_timeout", **_mcp_row_problem(row, "edit_process_timeout"))
+            _mcp_record_problem(problems, problem_counts, None, "edit_process_timeout", **_mcp_edit_timeout_problem(row, edit_starts))
         if row.get("event") == "server_error":
-            _mcp_record_problem(problems, problem_counts, limit, "server_error", **_mcp_row_problem(row, "server_error"))
+            _mcp_record_problem(problems, problem_counts, None, "server_error", **_mcp_row_problem(row, "server_error"))
 
     output_logged = sum(1 for call in calls if isinstance(call.get("output_chars"), (int, float)))
     output_missing = sum(1 for call in calls if call.get("event") == "tool_end" and call.get("output_chars") is None)
     protocol_problem_count = sum(value for key, value in problem_counts.items() if key.endswith("without_start") or key.endswith("without_end"))
+    visible_problems = problems if problem_limit is None else problems[:problem_limit]
     return {
         "log_path": str(report_path),
         "exists": True,
         "size_bytes": size_bytes,
-        "line_count": line_count,
+        "line_count": rows[-1].get("_line") if rows else min(raw_line_count, int(until_line or raw_line_count)),
+        "raw_line_count": raw_line_count,
         "bad_json_count": len(bad_json),
         "first_ts": rows[0].get("ts") if rows else None,
         "last_ts": rows[-1].get("ts") if rows else None,
+        "until_line": until_line,
+        "until_ts": until_ts,
         "events": dict(sorted(events.items())),
         "summary": {
             "event_rows": len(rows),
@@ -846,8 +947,15 @@ def mcp_log_report(path=None, limit=20):
             "protocol_problems": protocol_problem_count,
         },
         "tools": _mcp_tool_metrics(calls),
+        "observability": {
+            "missing_output_by_tool": _mcp_top_counts(missing_output_by_tool, limit=None),
+            "truncated_output_by_tool": _mcp_top_counts(truncated_by_tool, limit=None),
+        },
         "problem_counts": dict(sorted(problem_counts.items())),
-        "problems": problems,
+        "problem_groups": _mcp_problem_groups(problems),
+        "problem_total": len(problems),
+        "problem_limit": problem_limit,
+        "problems": visible_problems,
     }
 
 # %% ../nbs/07_mcp.ipynb #a7db71df
@@ -857,7 +965,10 @@ def _mcp_format_metric(value):
 
 def _mcp_problem_line(problem):
     parts = [problem.get("kind", "problem")]
-    for key in ("tool", "event", "result_status", "elapsed_ms", "ts", "line", "target", "error_type", "count"):
+    for key in (
+        "classification", "tool", "event", "result_status", "elapsed_ms", "ts", "line",
+        "target", "timeout", "child_pid", "error_type", "count",
+    ):
         value = problem.get(key)
         if value is not None: parts.append(f"{key}={value}")
     tools = problem.get("tools")
@@ -878,10 +989,19 @@ def _mcp_tool_metric_line(name, data):
     )
 
 
+def _mcp_group_line(name, values, limit):
+    if not values: return f"{name} none"
+    items = list(values.items()) if limit is None else list(values.items())[:limit]
+    return f"{name} " + " | ".join(f"{key}={value}" for key, value in items)
+
+
 def format_mcp_log_report(report, limit=20, problems_only=False):
     """Render `mcp_log_report` as a concise terminal-friendly summary."""
-    limit = max(1, int(limit or 20))
+    display_limit = _mcp_problem_limit(limit)
+    group_limit = 12 if display_limit is None else min(display_limit, 12)
     summary = report.get("summary") or {}
+    problem_total = report.get("problem_total", len(report.get("problems") or []))
+    shown_total = len(report.get("problems") or [])
     lines = [
         "nbskill mcp log",
         f"path={report.get('log_path')}",
@@ -895,21 +1015,31 @@ def format_mcp_log_report(report, limit=20, problems_only=False):
             f"output_logged={summary.get('output_logged_calls', 0)} output_missing={summary.get('output_missing_calls', 0)} "
             f"output_truncated={summary.get('output_truncated_calls', 0)} edit_process_timeouts={summary.get('edit_process_timeouts', 0)}"
         ),
+        f"problems_shown={shown_total} problem_total={problem_total}",
     ]
     problem_counts = report.get("problem_counts") or {}
     if problem_counts:
         counts = " ".join(f"{key}={value}" for key, value in sorted(problem_counts.items()))
         lines.append(f"problem_counts {counts}")
+    observability = report.get("observability") or {}
+    if observability:
+        lines.append(_mcp_group_line("missing_output_by_tool", observability.get("missing_output_by_tool") or {}, group_limit))
+        lines.append(_mcp_group_line("truncated_output_by_tool", observability.get("truncated_output_by_tool") or {}, group_limit))
+    groups = report.get("problem_groups") or {}
+    if groups:
+        lines.append("problem_groups:")
+        for name in ("by_classification", "by_tool", "by_target", "by_error"):
+            lines.append(_mcp_group_line(name, groups.get(name) or {}, group_limit))
     if not problems_only:
         tools = report.get("tools") or {}
-        slow_tools = sorted(tools.items(), key=lambda item: item[1].get("max_ms") or -1, reverse=True)[:limit]
+        slow_tools = sorted(tools.items(), key=lambda item: item[1].get("max_ms") or -1, reverse=True)[:group_limit]
         lines.append("slow_tools:")
         lines.extend(_mcp_tool_metric_line(name, data) for name, data in slow_tools) if slow_tools else lines.append("- none")
-        output_tools = sorted(tools.items(), key=lambda item: item[1].get("max_output_chars") or -1, reverse=True)[:limit]
+        output_tools = sorted(tools.items(), key=lambda item: item[1].get("max_output_chars") or -1, reverse=True)[:group_limit]
         lines.append("largest_output_tools:")
         lines.extend(_mcp_tool_metric_line(name, data) for name, data in output_tools) if output_tools else lines.append("- none")
     lines.append("problems:")
-    shown = (report.get("problems") or [])[:limit]
+    shown = report.get("problems") or []
     lines.extend(_mcp_problem_line(problem) for problem in shown) if shown else lines.append("- none")
     return "\n".join(lines)
 
@@ -2276,10 +2406,12 @@ async def _context_tool(
     around: int = 0,
     include_graph: bool = False,
     detail: str = "summary",
+    path: str | None = None,
     ctx: Context = None,
 ) -> ToolResult:
     "Resolve targets to project, notebook, chapter, cell, or symbol context."
     root = await _mcp_workspace_root(ctx)
+    if path is not None and targets is None and target == "project": target = path
     scope = _mcp_workspace_path(scope, root)
     target = _mcp_context_target_path(target, root)
     targets = _mcp_context_targets(targets, root)
@@ -2295,6 +2427,7 @@ async def _context_tool(
         around=around,
         include_graph=include_graph,
         detail=detail,
+        path=path,
         workspace_root=str(root) if root else None,
     )
     context_args = dict(target=target, targets=targets, scope=scope, overview=overview, mode=mode, around=around)
@@ -2351,17 +2484,19 @@ async def _filter_context_tool(
     max_chars_per_cell: int = 1200,
     verbose: bool = True,
     detail: str = "summary",
+    path: str | None = None,
     ctx: Context = None,
 ) -> ToolResult:
     "Search notebook cells across a scope with query and regex filters."
     root = await _mcp_workspace_root(ctx)
+    if path is not None and scope == ".": scope = path
     scope = _mcp_workspace_path(scope, root)
     max_matches = _mcp_clamp_int(max_matches, 50, 1, 200, "max_matches")
     max_chars_per_cell = _mcp_clamp_int(max_chars_per_cell, 1200, 100, 4000, "max_chars_per_cell")
     arguments = dict(
         scope=scope, query=query, include_re=include_re, exclude_re=exclude_re,
         max_matches=max_matches, max_chars_per_cell=max_chars_per_cell,
-        verbose=verbose, detail=detail, workspace_root=str(root) if root else None,
+        verbose=verbose, detail=detail, path=path, workspace_root=str(root) if root else None,
     )
     try:
         with notebook_locks(scope), _CAPTURE_LOCK:
@@ -2555,18 +2690,18 @@ async def exec_nb_tool(
 
 # %% ../nbs/07_mcp.ipynb #mcpdiffnb
 @mcp.tool(**_mcp_tool_meta("diff_nb"))
-async def _diff_nb_tool(path: str, ref_a: str | None = "HEAD", ref_b: str | None = None, adds: bool = True, changes: bool = True, dels: bool = False, cell_id: str | None = None, after_id: str | None = None, show_owner: bool = False, surface: str = "code", detail: str = "summary", ctx: Context = None) -> ToolResult:
+async def _diff_nb_tool(path: str, ref_a: str | None = "HEAD", ref_b: str | None = None, adds: bool = True, changes: bool = True, dels: bool = False, cell_id: str | None = None, after_id: str | None = None, show_owner: bool = False, surface: str = "code", max_output_chars: int | None = None, detail: str = "summary", ctx: Context = None) -> ToolResult:
     "Diff notebook code cells without expanding raw notebook JSON; use surface='public-ui' for visible text review."
     root = await _mcp_workspace_root(ctx)
     path = _mcp_workspace_path(path, root)
-    arguments = dict(path=path, ref_a=ref_a, ref_b=ref_b, adds=adds, changes=changes, dels=dels, cell_id=cell_id, after_id=after_id, show_owner=show_owner, surface=surface, detail=detail, workspace_root=str(root) if root else None)
+    arguments = dict(path=path, ref_a=ref_a, ref_b=ref_b, adds=adds, changes=changes, dels=dels, cell_id=cell_id, after_id=after_id, show_owner=show_owner, surface=surface, max_output_chars=max_output_chars, detail=detail, workspace_root=str(root) if root else None)
     try:
         if show_owner and Path(path).suffix == ".py":
             return mcp_tool_result("diff_nb", arguments, _owner_output(path), detail=detail)
-        full_output = capture_notebook_call(diff_nb, path, **{k: v for k, v in arguments.items() if k not in {"show_owner", "detail", "workspace_root"}})
+        full_output = capture_notebook_call(diff_nb, path, **{k: v for k, v in arguments.items() if k not in {"show_owner", "max_output_chars", "detail", "workspace_root"}})
     except Exception as exc:
         return _mcp_tool_error_result("diff_nb", arguments, exc, detail=detail)
-    return mcp_tool_result("diff_nb", arguments, full_output, detail=detail)
+    return mcp_tool_result("diff_nb", arguments, full_output, max_output_chars=max_output_chars, detail=detail)
 
 # %% ../nbs/07_mcp.ipynb #mcptool12
 @mcp.tool(**_mcp_tool_meta("execute_plan"))

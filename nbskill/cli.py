@@ -530,11 +530,16 @@ def nbskill_status(json_output: bool = False):  # Print JSON instead of text
 def nbskill_mcp_log(
     path: str | None = None,  # MCP JSONL log path; defaults to NBSKILL_MCP_LOG or ~/.nbskill-mcp.jsonl
     limit: int = 20,  # Maximum problem and tool rows to print
+    all_problems: bool = False,  # Print every problem row instead of applying limit
+    until_line: int | None = None,  # Ignore log rows after this 1-based line number
+    until_ts: str | None = None,  # Ignore log rows after this ISO timestamp
     json_output: bool = False,  # Print JSON instead of text
 ):
     "Print concise nbskill MCP log metrics and recent problems."
-    report = nbskill.mcp.mcp_log_report(path=path, limit=limit)
-    print(json.dumps(report, indent=2, sort_keys=True) if json_output else nbskill.mcp.format_mcp_log_report(report, limit=limit))
+    report_limit = 0 if all_problems else limit
+    report = nbskill.mcp.mcp_log_report(path=path, limit=report_limit, until_line=until_line, until_ts=until_ts)
+    text = nbskill.mcp.format_mcp_log_report(report, limit=report_limit)
+    print(json.dumps(report, indent=2, sort_keys=True) if json_output else text)
     return None
 
 
@@ -543,11 +548,16 @@ def nbskill_mcp_log(
 def nbskill_mcp_log_problems(
     path: str | None = None,  # MCP JSONL log path; defaults to NBSKILL_MCP_LOG or ~/.nbskill-mcp.jsonl
     limit: int = 20,  # Maximum problem rows to print
+    all_problems: bool = False,  # Print every problem row instead of applying limit
+    until_line: int | None = None,  # Ignore log rows after this 1-based line number
+    until_ts: str | None = None,  # Ignore log rows after this ISO timestamp
     json_output: bool = False,  # Print JSON instead of text
 ):
     "Print only the problem-focused nbskill MCP log summary."
-    report = nbskill.mcp.mcp_log_report(path=path, limit=limit)
-    print(json.dumps(report, indent=2, sort_keys=True) if json_output else nbskill.mcp.format_mcp_log_report(report, limit=limit, problems_only=True))
+    report_limit = 0 if all_problems else limit
+    report = nbskill.mcp.mcp_log_report(path=path, limit=report_limit, until_line=until_line, until_ts=until_ts)
+    text = nbskill.mcp.format_mcp_log_report(report, limit=report_limit, problems_only=True)
+    print(json.dumps(report, indent=2, sort_keys=True) if json_output else text)
     return None
 
 # %% ../nbs/13_cli.ipynb #a0106df5

@@ -48,8 +48,18 @@ source changes.
 ## How To Work With This Tool
 
 Use the strength of notebooks instead of treating them like plain source
-files. Markdown cells, markdown files, examples, and tests live close to
-the code, so use them together:
+files. A notebook is code, documentation, examples, and tests in one
+source artifact, not just code stored in a different file format.
+Markdown cells, examples, and small tests should leave understandable
+artifacts for the next agent: they show how code works, record important
+decisions, and prove the behavior still functions.
+
+Each cell should carry one single thought. When markdown refers to a
+public function, helper, class, method, or module, write the name in
+backticks, such as `context` or `edit_notebook`, so nbskill can connect
+the explanation to the symbol.
+
+Use these notebook surfaces together:
 
 1. Let markdown name the behavior, the current problem, and the reason a
    change exists.

@@ -997,8 +997,7 @@ def _mcp_group_line(name, values, limit):
 
 def format_mcp_log_report(report, limit=20, problems_only=False):
     """Render `mcp_log_report` as a concise terminal-friendly summary."""
-    display_limit = _mcp_problem_limit(limit)
-    group_limit = 12 if display_limit is None else min(display_limit, 12)
+    group_limit = 12
     summary = report.get("summary") or {}
     problem_total = report.get("problem_total", len(report.get("problems") or []))
     shown_total = len(report.get("problems") or [])

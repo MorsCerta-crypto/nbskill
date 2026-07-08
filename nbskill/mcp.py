@@ -37,7 +37,7 @@ from .edit_interactive import execute_project_plan
 from .edit_interactive import plan_result_text
 from .execute import exec_nb
 from .workbench import agent_workbench_result
-from .foundation import empty_failure_map, failure_map_path, load_failure_map
+from .foundation import bootstrap_nbskill_project, empty_failure_map, failure_map_path, load_failure_map
 from .foundation import cell_source, exported_py_path, generated_owner, git_root, git_status_paths
 from .foundation import notebook_paths, path_candidates, source_hash, stamp_export_metadata
 
@@ -72,6 +72,7 @@ def as_text(value):
 
 # %% ../nbs/07_mcp.ipynb #280b52f0
 _CAPTURE_LOCK = threading.RLock()
+_NBSKILL_BOOTSTRAPPED_ROOTS = set()
 
 # %% ../nbs/07_mcp.ipynb #54bed38d
 _REDACT_KEYS = {"new", "new_lines", "source_lines", "replacement_lines", "cells", "edits", "operations", "source", "old_str", "new_str", "smoke_snippets"}
@@ -963,10 +964,27 @@ async def _mcp_client_roots(ctx=None):
     return paths
 
 
+def _mcp_bootstrap_workspace(root):
+    if root is None: return None
+    try: key = str(Path(root).resolve())
+    except OSError: return None
+    with _CAPTURE_LOCK:
+        if key in _NBSKILL_BOOTSTRAPPED_ROOTS: return None
+        _NBSKILL_BOOTSTRAPPED_ROOTS.add(key)
+    try:
+        return bootstrap_nbskill_project(root)
+    except BaseException as exc:
+        _mcp_log_exception("project_bootstrap_error", exc, root=key)
+        return None
+
+
 async def _mcp_workspace_root(ctx=None):
     for path in await _mcp_client_roots(ctx):
         try:
-            if path.exists(): return path.resolve()
+            if path.exists():
+                root = path.resolve()
+                _mcp_bootstrap_workspace(root)
+                return root
         except OSError:
             continue
     return None

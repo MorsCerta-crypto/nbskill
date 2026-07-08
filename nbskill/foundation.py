@@ -6,24 +6,25 @@ __all__ = ['EXAMPLE_NOTEBOOK_PATH', 'NotebookCell', 'NotebookChapter', 'Notebook
            'example_notebook', 'revert_example_notebook', 'cli_return', 'cli_error', 'failure_map_path',
            'empty_failure_map', 'load_failure_map', 'git_run', 'git_root', 'git_status_paths', 'git_tracked_paths',
            'git_diff_stats', 'load_nbskill_config', 'notebook_paths', 'source_without_directives', 'source_hash',
-           'file_line_count', 'cap_text', 'generated_owner', 'install_nbdev_pre_commit_hooks', 'parse_literal',
-           'none_if_string', 'symbol_short_name', 'call_name', 'short_call_name', 'is_definition_node',
-           'node_start_line', 'is_export_directive', 'cell_source', 'parse_code_cell', 'CellType', 'SemanticType',
-           'Directive', 'directive_lines', 'apply_directives', 'Cell', 'Chapter', 'Notebook', 'NotebookSymbol',
-           'xml_escape', 'xml_attrs', 'cell_metadata', 'notebook_metadata', 'file_hash', 'exported_py_path',
-           'stamp_export_metadata', 'run_nbdev_export_from_project', 'export_notebook', 'ensure_cell_ids',
-           'notebook_hash', 'commit_notebook', 'parse_one_cell', 'find_cell_by_id', 'find_cell_by_text', 'replace_cell',
-           'clear_outputs', 'load_cells_text', 'validate_code_cells', 'parse_cells', 'first_line', 'cell_prefix',
-           'matches_filter', 'is_exported_code_cell', 'output_value_text', 'cell_output_text',
-           'stamp_notebook_metadata', 'cell_class_names', 'cell_matches_type', 'with_context', 'heading_title',
-           'chapter_spans', 'chapter_index_set', 'one_chapter']
+           'file_line_count', 'cap_text', 'generated_owner', 'install_nbdev_pre_commit_hooks',
+           'bootstrap_nbskill_project', 'parse_literal', 'none_if_string', 'symbol_short_name', 'call_name',
+           'short_call_name', 'is_definition_node', 'node_start_line', 'is_export_directive', 'cell_source',
+           'parse_code_cell', 'CellType', 'SemanticType', 'Directive', 'directive_lines', 'apply_directives', 'Cell',
+           'Chapter', 'Notebook', 'NotebookSymbol', 'xml_escape', 'xml_attrs', 'cell_metadata', 'notebook_metadata',
+           'file_hash', 'exported_py_path', 'stamp_export_metadata', 'run_nbdev_export_from_project', 'export_notebook',
+           'ensure_cell_ids', 'notebook_hash', 'commit_notebook', 'parse_one_cell', 'find_cell_by_id',
+           'find_cell_by_text', 'replace_cell', 'clear_outputs', 'load_cells_text', 'validate_code_cells',
+           'parse_cells', 'first_line', 'cell_prefix', 'matches_filter', 'is_exported_code_cell', 'output_value_text',
+           'cell_output_text', 'stamp_notebook_metadata', 'cell_class_names', 'cell_matches_type', 'with_context',
+           'heading_title', 'chapter_spans', 'chapter_index_set', 'one_chapter']
 
 # %% ../nbs/00_foundation.ipynb #2500639f
-import ast,hashlib,json,multiprocessing,os,queue,re,tempfile,traceback
+import ast,hashlib,json,multiprocessing,os,queue,re,tempfile,tomllib,traceback
 import shutil,subprocess,sys
 from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from dataclasses import dataclass, field
 from enum import Enum
+from importlib.resources import files
 from io import StringIO
 from pathlib import Path
 from fastcore.basics import in_jupyter, patch
@@ -458,6 +459,161 @@ def install_nbdev_pre_commit_hooks(path=".", run_nbdev_install_hooks=True):
     installed.parent.mkdir(parents=True, exist_ok=True)
     installed.write_text("nbskill hooks installed once\n", encoding="utf-8")
     return {"installed": True, "root": str(root), "hook": str(pre_commit)}
+
+# %% ../nbs/00_foundation.ipynb #00572440
+_NBSKILL_PROJECT_BOOTSTRAP_ENV = "NBSKILL_NO_PROJECT_BOOTSTRAP"
+_NBSKILL_AGENTS_TEMPLATE = "AGENTS.md"
+_NBSKILL_CI_PAUSE = "1"
+_NBSKILL_NBDEV_CONFIG = {
+    "allowed_metadata_keys": '["nbskill"]',
+    "jupyter_hooks": "true",
+    "allowed_cell_metadata_keys": '["nbskill"]',
+}
+
+
+def _project_root_path(path):
+    root = Path(path).expanduser()
+    if root.is_file(): root = root.parent
+    return root.resolve()
+
+
+def _read_nbskill_agents_template():
+    try:
+        return files("nbskill").joinpath(_NBSKILL_AGENTS_TEMPLATE).read_text(encoding="utf-8")
+    except (FileNotFoundError, ModuleNotFoundError, OSError):
+        pass
+    fallback = Path(__file__).with_name(_NBSKILL_AGENTS_TEMPLATE) if "__file__" in globals() else None
+    for path in (fallback, Path(_NBSKILL_AGENTS_TEMPLATE)):
+        if path is None: continue
+        try:
+            if path.exists(): return path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+    return None
+
+
+def _install_agents_md(root, overwrite=False):
+    path = root / "AGENTS.md"
+    if path.exists() and not overwrite:
+        return {"changed": False, "path": str(path), "reason": "exists"}
+    text = _read_nbskill_agents_template()
+    if text is None:
+        return {"changed": False, "path": str(path), "reason": "missing-template"}
+    try:
+        current = path.read_text(encoding="utf-8") if path.exists() else None
+    except OSError:
+        current = None
+    if current == text:
+        return {"changed": False, "path": str(path), "reason": "current"}
+    path.write_text(text, encoding="utf-8")
+    reason = "installed" if current is None else "updated"
+    return {"changed": True, "path": str(path), "reason": reason}
+
+# %% ../nbs/00_foundation.ipynb #de7d86cc
+def _set_cli_option(args, name, value):
+    pattern = re.compile(rf"(^|\s){re.escape(name)}(?:=|\s+)\S+")
+    if pattern.search(args):
+        return pattern.sub(lambda match: f"{match.group(1)}{name} {value}", args, count=1)
+    return f"{args} {name} {value}"
+
+
+def _nbdev_test_serial_command(text, pause=_NBSKILL_CI_PAUSE):
+    pattern = re.compile(r"(?P<cmd>\b(?:uv\s+run\s+)?nbdev-test\b)(?P<args>[^\n#]*)")
+
+    def repl(match):
+        raw_args = match.group("args")
+        args = raw_args.rstrip()
+        trailing = raw_args[len(args):]
+        args = _set_cli_option(args, "--n_workers", "0")
+        args = _set_cli_option(args, "--pause", str(pause))
+        return f"{match.group('cmd')}{args}{trailing}"
+
+    return pattern.sub(repl, text)
+
+
+def _patch_github_actions(root, pause=_NBSKILL_CI_PAUSE):
+    workflow_dir = root / ".github" / "workflows"
+    paths = sorted([*workflow_dir.glob("*.yml"), *workflow_dir.glob("*.yaml")]) if workflow_dir.exists() else []
+    results = []
+    for path in paths:
+        text = path.read_text(encoding="utf-8")
+        updated = _nbdev_test_serial_command(text, pause=pause)
+        changed = updated != text
+        if changed: path.write_text(updated, encoding="utf-8")
+        reason = "patched" if changed else "current"
+        results.append({"changed": changed, "path": str(path), "reason": reason})
+    return results
+
+# %% ../nbs/00_foundation.ipynb #dce067cb
+def _toml_section_bounds(lines, section):
+    header = f"[{section}]"
+    start = next((idx for idx, line in enumerate(lines) if line.strip() == header), None)
+    if start is None: return None, None
+    end = len(lines)
+    for idx in range(start + 1, len(lines)):
+        stripped = lines[idx].strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            end = idx
+            break
+    return start, end
+
+
+def _set_toml_section_keys(text, section, values):
+    lines = text.splitlines()
+    start, end = _toml_section_bounds(lines, section)
+    if start is None:
+        if lines and lines[-1].strip(): lines.append("")
+        lines.append(f"[{section}]")
+        start, end = len(lines) - 1, len(lines)
+    for key, value in values.items():
+        pattern = re.compile(rf"^\s*{re.escape(key)}\s*=")
+        found = next((idx for idx in range(start + 1, end) if pattern.match(lines[idx])), None)
+        line = f"{key} = {value}"
+        if found is None:
+            lines.insert(end, line)
+            end += 1
+        elif lines[found] != line:
+            lines[found] = line
+    return "\n".join(lines) + "\n"
+
+
+def _patch_pyproject_nbdev(root):
+    path = root / "pyproject.toml"
+    if not path.exists():
+        return {"changed": False, "path": str(path), "reason": "missing"}
+    text = path.read_text(encoding="utf-8")
+    updated = _set_toml_section_keys(text, "tool.nbdev", _NBSKILL_NBDEV_CONFIG)
+    try:
+        tomllib.loads(updated)
+    except tomllib.TOMLDecodeError as exc:
+        return {"changed": False, "path": str(path), "reason": f"invalid-toml: {exc}"}
+    changed = updated != text
+    if changed: path.write_text(updated, encoding="utf-8")
+    reason = "patched" if changed else "current"
+    return {"changed": changed, "path": str(path), "reason": reason}
+
+# %% ../nbs/00_foundation.ipynb #330c14fe
+def bootstrap_nbskill_project(path=".", overwrite_agents=False, pause=_NBSKILL_CI_PAUSE):
+    "Install nbskill project guardrails once a workspace root is known."
+    if os.environ.get(_NBSKILL_PROJECT_BOOTSTRAP_ENV):
+        return {"changed": False, "root": str(path), "reason": "disabled"}
+    root = _project_root_path(path)
+    if not root.exists():
+        return {"changed": False, "root": str(root), "reason": "missing-root"}
+    if not _looks_like_nbdev_project(root):
+        return {"changed": False, "root": str(root), "reason": "not-an-nbdev-project"}
+    agents = _install_agents_md(root, overwrite=overwrite_agents)
+    pyproject = _patch_pyproject_nbdev(root)
+    workflows = _patch_github_actions(root, pause=pause)
+    changed = agents.get("changed", False) or pyproject.get("changed", False)
+    changed = changed or any(item.get("changed", False) for item in workflows)
+    return {
+        "changed": changed,
+        "root": str(root),
+        "agents": agents,
+        "pyproject": pyproject,
+        "workflows": workflows,
+    }
 
 # %% ../nbs/00_foundation.ipynb #41efc12d
 def parse_literal(value):

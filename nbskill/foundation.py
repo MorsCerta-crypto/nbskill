@@ -29,7 +29,7 @@ from io import StringIO
 from pathlib import Path
 from fastcore.basics import in_jupyter, patch
 from fastcore.nbio import mk_cell, new_nb, write_nb
-from fastcore.script import _in_call_parse
+from fastcore.script import is_cli
 from fastcore.xtras import rtoken_hex
 
 # %% ../nbs/00_foundation.ipynb #demohelpcode
@@ -151,11 +151,11 @@ def revert_example_notebook(path=EXAMPLE_NOTEBOOK_PATH):
 
 # %% ../nbs/00_foundation.ipynb #dbc6a8c7
 def cli_return(value=None):
-    return None if _in_call_parse.get() else value
+    return None if is_cli() else value
 
 # %% ../nbs/00_foundation.ipynb #754aea72
 def cli_error(msg):
-    if _in_call_parse.get():
+    if is_cli():
         print(msg, file=sys.stderr)
         raise SystemExit(1)
     raise ValueError(msg)
@@ -1572,7 +1572,7 @@ def validate_code_cells(cells):
         try: ast.parse(source)
         except SyntaxError as err:
             msg = _format_syntax_error(source, err, idx)
-            if _in_call_parse.get(): raise SystemExit(msg)
+            if is_cli(): raise SystemExit(msg)
             raise ValueError(msg) from err
 
 # %% ../nbs/00_foundation.ipynb #0eae6c06

@@ -16,9 +16,10 @@ classifiers = [
     "Programming Language :: Python :: 3 :: Only",
 ]
 dependencies = [
+    "botocore>=1.43.42",
     "execnb>=0.2.2",
     "fastaistyle>=0.0.15",
-    "fastcore>=1.12.43",
+    "fastcore==1.14.5",
     "fastmcp>=3.3.1",
     "lancedb>=0.25.0",
     "lisette>=0.1.33",

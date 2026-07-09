@@ -2537,6 +2537,7 @@ dependencies = [
     { name = "lisette" },
     { name = "nbdev" },
     { name = "packaging" },
+    { name = "remold" },
     { name = "safepyrun" },
     { name = "sentence-transformers" },
 ]
@@ -2560,6 +2561,7 @@ requires-dist = [
     { name = "lisette", specifier = ">=0.1.33" },
     { name = "nbdev", specifier = ">=3.0.15" },
     { name = "packaging", specifier = ">=24" },
+    { name = "remold", specifier = ">=0.1.0" },
     { name = "safepyrun", specifier = ">=0.1.0" },
     { name = "sentence-transformers", specifier = ">=5.5.1" },
 ]

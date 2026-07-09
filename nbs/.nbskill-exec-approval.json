@@ -109,6 +109,14 @@
       "notebook": "02_edit.ipynb",
       "reasons": []
     },
+    "_apply_source_transform": {
+      "allowed": true,
+      "cell_id": "58c73632",
+      "external_effects": false,
+      "line": 34,
+      "notebook": "04_review.ipynb",
+      "reasons": []
+    },
     "_apply_structural_edit": {
       "allowed": true,
       "cell_id": "1745202e",
@@ -168,7 +176,7 @@
       "allowed": true,
       "cell_id": "1bfc40bd",
       "external_effects": false,
-      "line": 12,
+      "line": 15,
       "notebook": "04_review.ipynb",
       "reasons": []
     },
@@ -932,6 +940,14 @@
       "notebook": "07_mcp.ipynb",
       "reasons": []
     },
+    "_compact_simple_ifs_with_remold": {
+      "allowed": true,
+      "cell_id": "04fed3b8",
+      "external_effects": false,
+      "line": 5,
+      "notebook": "04_review.ipynb",
+      "reasons": []
+    },
     "_computed_cell_class_names": {
       "allowed": true,
       "cell_id": "ad24a972",
@@ -1359,6 +1375,22 @@
       "external_effects": false,
       "line": 2,
       "notebook": "02_edit.ipynb",
+      "reasons": []
+    },
+    "_cst_definition_split_sources": {
+      "allowed": true,
+      "cell_id": "17a4ad54",
+      "external_effects": false,
+      "line": 6,
+      "notebook": "04_review.ipynb",
+      "reasons": []
+    },
+    "_cst_split_definition": {
+      "allowed": true,
+      "cell_id": "17a4ad54",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "04_review.ipynb",
       "reasons": []
     },
     "_decode_cli_newlines": {
@@ -2309,7 +2341,7 @@
       "allowed": true,
       "cell_id": "b0f566d1",
       "external_effects": false,
-      "line": 103,
+      "line": 104,
       "notebook": "04_review.ipynb",
       "reasons": []
     },
@@ -4298,7 +4330,7 @@
       "allowed": true,
       "cell_id": "b0f566d1",
       "external_effects": false,
-      "line": 98,
+      "line": 99,
       "notebook": "04_review.ipynb",
       "reasons": []
     },
@@ -4783,6 +4815,22 @@
       "notebook": "03_execute.ipynb",
       "reasons": []
     },
+    "_safe_python_source": {
+      "allowed": true,
+      "cell_id": "58c73632",
+      "external_effects": false,
+      "line": 20,
+      "notebook": "04_review.ipynb",
+      "reasons": []
+    },
+    "_same_ast": {
+      "allowed": true,
+      "cell_id": "58c73632",
+      "external_effects": false,
+      "line": 15,
+      "notebook": "04_review.ipynb",
+      "reasons": []
+    },
     "_save_notebook": {
       "allowed": true,
       "cell_id": "0b709792",
@@ -4950,6 +4998,14 @@
       "cell_id": "b0f566d1",
       "external_effects": false,
       "line": 27,
+      "notebook": "04_review.ipynb",
+      "reasons": []
+    },
+    "_source_transform_result": {
+      "allowed": true,
+      "cell_id": "58c73632",
+      "external_effects": false,
+      "line": 29,
       "notebook": "04_review.ipynb",
       "reasons": []
     },

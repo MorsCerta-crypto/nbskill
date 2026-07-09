@@ -22,6 +22,7 @@ from fastcore.nbio import write_nb as _write_nb
 from fastcore.script import Param
 from nbdev.diff import nbs_pair, source_diff
 from nbdev.doclinks import nbdev_export as _run_nb_export
+from remold import cst, m, cstmap, code
 
 from nbskill.foundation import (
     empty_failure_map, failure_map_path, load_failure_map, cell_class_names,
@@ -595,6 +596,35 @@ def _source_ast_dump(source):
     except SyntaxError: return None
     return ast.dump(tree, include_attributes=False)
 
+
+def _same_ast(before, after):
+    before_dump, after_dump = _source_ast_dump(before), _source_ast_dump(after)
+    return before_dump is not None and before_dump == after_dump
+
+
+def _safe_python_source(source):
+    _, lines = _split_directive_lines(source)
+    if not "\n".join(lines).strip(): return False
+    for line in lines:
+        stripped = line.lstrip()
+        if stripped and (stripped.startswith(("%", "!", "?")) or stripped.endswith("?")): return False
+    return True
+
+
+def _source_transform_result(source, fixes):
+    fixes = {key: value for key, value in fixes.items() if value}
+    return {"source": source, "fixes": fixes, "changed": bool(fixes)}
+
+
+def _apply_source_transform(source, code, fn, ast_equal=True):
+    try: result = fn(source)
+    except Exception: return source, {}
+    fixed, count = result if isinstance(result, tuple) else (result, int(result != source))
+    if not fixed or fixed == source: return source, {}
+    fixed = fixed.rstrip("\n") + "\n"
+    if ast_equal and not _same_ast(source, fixed): return source, {}
+    return fixed, {code: count or 1}
+
 # %% ../nbs/04_review.ipynb #2fe9ebf4
 def _string_literal_lines(tree):
     lines = set()
@@ -628,26 +658,27 @@ def _remove_function_blank_lines(lines):
     return removed
 
 # %% ../nbs/04_review.ipynb #04fed3b8
-_SIMPLE_IF_BODY_TYPES = (ast.Assign, ast.AnnAssign, ast.AugAssign, ast.Expr, ast.Return, ast.Raise, ast.Pass, ast.Break, ast.Continue, ast.Delete)
+_SIMPLE_CST_BODY_TYPES = (cst.Assign, cst.AnnAssign, cst.AugAssign, cst.Expr, cst.Return, cst.Raise, cst.Pass, cst.Break, cst.Continue, cst.Del)
 
 
-def _merge_single_line_ifs(lines, max_len=180):
-    try: tree = ast.parse("\n".join(lines))
-    except SyntaxError: return 0
-    merged = 0
-    candidates = sorted((node for node in ast.walk(tree) if isinstance(node, ast.If)), key=lambda node: node.lineno, reverse=True)
-    for node in candidates:
-        if node.orelse or len(node.body) != 1 or not isinstance(node.body[0], _SIMPLE_IF_BODY_TYPES): continue
-        body = node.body[0]
-        if body.lineno != node.lineno + 1 or getattr(body, "end_lineno", body.lineno) != body.lineno: continue
-        header_line, body_line = lines[node.lineno - 1].rstrip(), lines[body.lineno - 1]
-        if not header_line.endswith(":") or not re.match(r"\s+\S", body_line): continue
-        combined = f"{header_line} {body_line.strip()}"
-        if len(combined) > max_len: continue
-        lines[node.lineno - 1] = combined
-        del lines[body.lineno - 1]
-        merged += 1
-    return merged
+def _compact_simple_ifs_with_remold(source, max_len=180):
+    changed = 0
+
+    def fix(node, _):
+        nonlocal changed
+        if node.orelse or not isinstance(node.body, cst.IndentedBlock): return None
+        if node.body.header.comment or len(node.body.body) != 1: return None
+        stmt = node.body.body[0]
+        if not isinstance(stmt, cst.SimpleStatementLine) or stmt.leading_lines: return None
+        if len(stmt.body) != 1 or not isinstance(stmt.body[0], _SIMPLE_CST_BODY_TYPES): return None
+        body = code(stmt).strip()
+        if "\n" in body: return None
+        replacement = f"if {code(node.test).strip()}: {body}"
+        if len(replacement) > max_len: return None
+        changed += 1
+        return replacement
+
+    return cstmap(m.If(), fix)(source), changed
 
 # %% ../nbs/04_review.ipynb #369f13b6
 def _merge_paren_only_lines(lines):
@@ -683,56 +714,53 @@ def _normalize_code_lines(lines):
 # %% ../nbs/04_review.ipynb #4617eed7
 def _fix_code_cell_source(source):
     original = str(source or "")
-    directives, lines = _split_directive_lines(original)
-    body = "\n".join(lines)
-    if not body.strip(): return {"source": original, "fixes": {}, "changed": False}
-    if any(line.lstrip().startswith(("%", "!", "?")) for line in lines if line.strip()):
-        return {"source": original, "fixes": {}, "changed": False}
+    if not _safe_python_source(original): return {"source": original, "fixes": {}, "changed": False}
     before_dump = _source_ast_dump(original)
     if before_dump is None: return {"source": original, "fixes": {}, "changed": False}
+    directives, lines = _split_directive_lines(original)
     counts = _normalize_code_lines(lines)
     _add_fix_count(counts, "function-blank-line", _remove_function_blank_lines(lines))
-    _add_fix_count(counts, "single-line-if", _merge_single_line_ifs(lines))
     _add_fix_count(counts, "paren-only-line", _merge_paren_only_lines(lines))
     if not original.endswith("\n"): _add_fix_count(counts, "final-newline")
     new_source = "\n".join([*directives, *lines]).rstrip("\n") + "\n"
+    new_source, compact = _apply_source_transform(new_source, "compact-if", _compact_simple_ifs_with_remold)
+    counts.update(compact)
+    if compact: counts["single-line-if"] = compact["compact-if"]
     if new_source == original: return {"source": original, "fixes": {}, "changed": False}
-    if _source_ast_dump(new_source) != before_dump:
-        return {"source": original, "fixes": {}, "changed": False}
-    return {"source": new_source, "fixes": {key: value for key, value in counts.items() if value}, "changed": True}
+    if _source_ast_dump(new_source) != before_dump: return {"source": original, "fixes": {}, "changed": False}
+    return _source_transform_result(new_source, counts)
 
 # %% ../nbs/04_review.ipynb #17a4ad54
-def _pure_function_split_sources(source):
-    directives, lines = _split_directive_lines(source)
-    if any(line.lstrip().startswith(("%", "!", "?")) for line in lines if line.strip()): return []
-    text = "\n".join(lines).strip("\n")
-    try: tree = ast.parse(text)
-    except SyntaxError: return []
-    funcs = [node for node in tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))]
-    if len(funcs) < 2 or len(funcs) != len(tree.body): return []
-    if any(getattr(node, "decorator_list", []) for node in funcs): return []
-    chunks, previous_end = [], 0
-    for index, node in enumerate(funcs):
-        start, end = node.lineno - 1, getattr(node, "end_lineno", node.lineno)
-        if any(line.strip() for line in lines[previous_end:start]): return []
-        chunk_lines = lines[start:end]
-        if index == 0: chunk_lines = [*directives, *chunk_lines]
-        chunk = "\n".join(chunk_lines).strip("\n") + "\n"
-        try: ast.parse(source_without_directives(chunk))
-        except SyntaxError: return []
+def _cst_split_definition(stmt):
+    return isinstance(stmt, (cst.FunctionDef, cst.ClassDef)) and not stmt.decorators
+
+
+def _cst_definition_split_sources(source):
+    if not _safe_python_source(source): return []
+    try: mod = cst.parse_module(source)
+    except Exception: return []
+    body = list(mod.body)
+    if len(body) < 2 or not all(_cst_split_definition(stmt) for stmt in body): return []
+    header = "".join(code(line) for line in mod.header)
+    chunks = []
+    for idx, stmt in enumerate(body):
+        chunk = (header if idx == 0 else "") + code(stmt)
+        chunk = chunk.strip("\n") + "\n"
+        if not _safe_python_source(chunk) or _source_ast_dump(chunk) is None: return []
         chunks.append(chunk)
-        previous_end = end
-    if any(line.strip() for line in lines[previous_end:]): return []
-    return chunks
+    return chunks if _same_ast(source, "".join(chunks)) else []
 
 # %% ../nbs/04_review.ipynb #1bfc40bd
 _AUTOFIX_LABELS = {
     "trailing-whitespace": "removed trailing whitespace",
     "excess-blank-lines": "collapsed excessive blank lines",
     "function-blank-line": "removed function-body blank lines",
+    "compact-if": "compacted simple if statements",
     "single-line-if": "merged single-line if statements",
     "paren-only-line": "merged parenthesis-only lines",
     "final-newline": "added final newline",
+    "split-definitions": "split pure definition cell",
+    "preserve-directives": "preserved nbdev directives while splitting",
     "split-functions": "split multi-function cell"}
 
 
@@ -762,9 +790,11 @@ def notebook_autofix(path=".", dry_run=False):
                         cell.source = source
                         clear_outputs(cell)
                     changed = True
-                split_sources = _pure_function_split_sources(source)
+                split_sources = _cst_definition_split_sources(source)
                 if split_sources:
+                    records.append(_autofix_record(nb_path, cell.id, "split-definitions", len(split_sources)))
                     records.append(_autofix_record(nb_path, cell.id, "split-functions", len(split_sources)))
+                    if source.lstrip().startswith("#|"): records.append(_autofix_record(nb_path, cell.id, "preserve-directives"))
                     if not dry_run:
                         new_cells = [mk_cell(chunk, cell_type="code") for chunk in split_sources]
                         new_cells[0].id = cell.id

@@ -29,7 +29,7 @@ from nbskill.foundation import (
     source_hash,
 )
 from .graph import symbol_usage_summary
-from .knowledge import reference_query
+from .knowledge import problem_statement_add, problem_statement_query, reference_query
 from .parallel import notebook_locks
 from .review import diff_nb
 
@@ -83,12 +83,19 @@ for the symbols in scope, and a managed notebook context prepared by a separate
 context-management step.
 
 Use only the provided tools: str_replace, edit_cell, add_cell, delete_cell,
-run_code, inspect_state, execute_cell, query_knowledge, and the context tools
-open_context, fold_context, delete_context, edit_context, context_view, and
-manage_context. Prefer manage_context to batch multiple context operations in
-one tool call. When more than one notebook is in scope, pass the notebook
-path/name to edit and execution tools so the target is explicit. Keep the work
-scoped to one small specific task.
+run_code, inspect_state, execute_cell, query_knowledge, query_problem_memory,
+record_problem_solution, and the context tools open_context, fold_context,
+delete_context, edit_context, context_view, and manage_context. Prefer
+manage_context to batch multiple context operations in one tool call. When more
+than one notebook is in scope, pass the notebook path/name to edit and execution
+tools so the target is explicit. Keep the work scoped to one small specific
+task.
+
+Problem-solving mindset: before choosing an approach, state the concrete
+problem you are solving, call query_problem_memory for similar old problems,
+compare the old solution with your current idea, and look for a simpler or
+better way to solve this task. After the task, call record_problem_solution for
+each reusable problem-solution pair you learned, with short evidence.
 
 For new behavior, use this loop:
 1. Scratch: run the smallest experiment with run_code in the live notebook
@@ -795,6 +802,13 @@ def _knowledge_context(query, top_k=3):
         hits.append(f"- {label or hit.get('path')}: {source}")
     return "\n".join(hits) if hits else "No relevant knowledge hits."
 
+
+def _problem_memory_context(query, top_k=5):
+    "Return compact reusable problem-solution memories for a query."
+    try: result = problem_statement_query(query, top_k=top_k)
+    except BaseException as exc: return f"Problem memory unavailable: {type(exc).__name__}: {exc}"
+    return result.get("context") or "No similar problem memories found."
+
 # %% ../nbs/08_edit_interactive.ipynb #44364a03
 def _symbol_impact_context(symbols):
     "Return a compact symbol impact summary for scoped symbols."
@@ -809,6 +823,7 @@ def _subagent_context(path, plan, symbols=None):
     return "\n\n".join([
         "Project description:\n" + _project_description(path),
         "Knowledge summary:\n" + _knowledge_context(plan),
+        "Problem memory:\n" + _problem_memory_context(plan),
         "Caller/callee impact:\n" + _symbol_impact_context(symbols),
     ])
 
@@ -1176,6 +1191,44 @@ def make_edit_tools(
         session.record_tool("query_knowledge", f"top_k={top_k}")
         return _knowledge_context(query, top_k=top_k)
 
+    def query_problem_memory(query: str, top_k: int = 5) -> str:
+        "Search stored problem-solution memories before choosing an approach."
+        top_k = _bounded_int(top_k, 5, 1, 10, "top_k")
+        session.record_tool("query_problem_memory", f"top_k={top_k}")
+        try:
+            result = problem_statement_query(query, top_k=top_k)
+        except BaseException as exc:
+            detail = f"{type(exc).__name__}: {exc}"
+            session.record_event("problem_memory_query", status="error", error=detail)
+            return "Problem memory unavailable: " + detail
+        session.record_event("problem_memory_query", status="ok", count=result.get("count", 0))
+        return result.get("context") or "No similar problem memories found."
+
+    def record_problem_solution(
+        problem: str,
+        solution: str,
+        evidence: str = "",
+        outcome: str = "applied",
+        tags: str = "",
+    ) -> str:
+        "Record a reusable problem-solution pair from this task."
+        session.record_tool("record_problem_solution", f"outcome={outcome}")
+        task = "; ".join(_bounded_items(session.log, 8))
+        try:
+            result = problem_statement_add(
+                problem, solution, task=task, project=str(Path.cwd()),
+                evidence=evidence, outcome=outcome, tags=tags,
+            )
+        except BaseException as exc:
+            detail = f"{type(exc).__name__}: {exc}"
+            session.record_event("problem_memory_recorded", status="error", error=detail)
+            return "Problem memory record failed: " + detail
+        session.record_event(
+            "problem_memory_recorded", status="ok", item_id=result["item_id"],
+            created=result["created"], outcome=outcome,
+        )
+        return "recorded problem_memory item_id=" + result["item_id"]
+
     return [
         str_replace,
         edit_cell,
@@ -1185,6 +1238,8 @@ def make_edit_tools(
         inspect_state,
         execute_cell,
         query_knowledge,
+        query_problem_memory,
+        record_problem_solution,
     ]
 
 # %% ../nbs/08_edit_interactive.ipynb #3540e8d9
@@ -1385,6 +1440,7 @@ def execute_plan(
     symbols: str | None = None,  # Optional comma-separated symbols for impact context
     injected_context: str | None = None,  # Optional precomputed project context
     context_steps: int = 2,  # Maximum context-management steps before/after editing
+    max_context_commands: int = _AGENT_MAX_CONTEXT_COMMANDS,  # Maximum streamed context commands per context step
     session_id: str | None = None,  # Reuse an in-memory edit session when provided
     reset_session: bool = False,  # Drop an existing in-memory session first
     feedback_rounds: int = 3,  # Maximum mutation feedback rounds
@@ -1401,6 +1457,10 @@ def execute_plan(
     )
     feedback_rounds = _bounded_int(
         feedback_rounds, 3, 1, _AGENT_MAX_FEEDBACK_ROUNDS, "feedback_rounds"
+    )
+    max_context_commands = _bounded_int(
+        max_context_commands, _AGENT_MAX_CONTEXT_COMMANDS, 0,
+        _AGENT_MAX_CONTEXT_COMMANDS, "max_context_commands"
     )
     session_key = str(session_id or "").strip() or _new_agent_session_id()
     model = model or os.environ.get("NBSKILL_AGENT") or "chatgpt/gpt-5.4-mini"
@@ -1422,6 +1482,7 @@ def execute_plan(
                 f"Session id: {session_key}",
                 f"Max steps: {max_steps}",
                 f"Feedback rounds: {feedback_rounds}",
+                f"Max context commands: {max_context_commands}",
                 "Plan:",
                 plan,
                 "",
@@ -1448,7 +1509,10 @@ def execute_plan(
         "Prepare context for the edit step. Open only chapters likely needed for this plan.\n"
         "Plan:\n" + plan
     )
-    run_context_session(session, model, prep, max_steps=context_steps)
+    run_context_session(
+        session, model, prep, max_steps=context_steps,
+        max_context_commands=max_context_commands,
+    )
     session.consume_feedback()
     initial_view = cap_text(
         render_managed_context(session.managed_context), _AGENT_MAX_NOTEBOOK_VIEW_CHARS
@@ -1472,12 +1536,15 @@ def execute_plan(
     session.context_msg_idx = 1
     session.refresh_view()
     prompt = (
-        "Execute the plan with the scratch, inspect, function, example, and test "
-        "loop from the system prompt. Use run_code for experiments, inspect_state "
-        "for live state checks, and execute_cell to validate the final example or "
-        "test when practical. Use manage_context to batch context operations when "
-        "you need to open, fold, or prune the active notebook view. Stop when the "
-        "notebook change is complete."
+        "Execute the plan with the problem-solving mindset and the scratch, inspect, "
+        "function, example, and test loop from the system prompt. First call "
+        "query_problem_memory for similar old problems, then compare the old solution "
+        "with your current idea before editing. Use run_code for experiments, "
+        "inspect_state for live state checks, and execute_cell to validate the final "
+        "example or test when practical. Use manage_context to batch context "
+        "operations when you need to open, fold, or prune the active notebook view. "
+        "Before finishing, call record_problem_solution for reusable lessons from "
+        "this task. Stop when the notebook change is complete."
     )
     round_summaries = []
     for round_idx in range(feedback_rounds):
@@ -1502,16 +1569,46 @@ def execute_plan(
             "wrong, fix it; otherwise test or move to the next plan step."
         )
     summary = round_summaries[-1] if round_summaries else "(no final response)"
+    if session.revision and not any(
+        event.get("kind") == "problem_memory_recorded" and event.get("status") == "ok"
+        for event in session.events
+    ):
+        memory_prompt = (
+            "Record reusable problem-solution memories from this task now. For each "
+            "concrete problem you solved, call record_problem_solution with concise "
+            "problem, solution, evidence, and tags. If nothing reusable was learned, "
+            "call record_problem_solution once with outcome='skipped' and explain why."
+        )
+        session.record_message("user", memory_prompt)
+        try:
+            memory_result = _call_feedback_chat(chat, memory_prompt, max_steps=min(max_steps, 3))
+        except BaseException as exc:
+            memory_result = f"problem memory recording failed: {type(exc).__name__}: {exc}"
+        memory_result = _normalize_chat_result(memory_result)
+        memory_summary = _bounded_text(response_text(memory_result).strip() or "(no memory response)")
+        session.record_message("assistant", memory_summary)
+        session.consume_feedback()
     cleanup = (
         "Clean up context after the edit step. Fold useful full chapters to summaries, "
         "delete irrelevant scratch context from active renders, and leave the index visible."
     )
-    run_context_session(session, model, cleanup, max_steps=context_steps)
+    run_context_session(
+        session, model, cleanup, max_steps=context_steps,
+        max_context_commands=max_context_commands,
+    )
     session.pending_feedback = ""
     for path in paths:
         _save_notebook(read_nb(path), path)
     session.record("Exported notebook(s) after subagent run")
     diff = final_diffs(paths).strip()
+    memory_events = [
+        event for event in _bounded_items(session.events)
+        if event.get("kind") == "problem_memory_recorded"
+    ]
+    memory_lines = [
+        f"- {event.get('status')} {event.get('item_id', '')} outcome={event.get('outcome', '')}".rstrip()
+        for event in memory_events
+    ]
     text = "\n".join(
         [
             "notebook subagent complete",
@@ -1544,6 +1641,9 @@ def execute_plan(
             "\n".join(_bounded_items(session.log))
             if session.log
             else "(no notebook operations)",
+            "",
+            "Problem memories:",
+            "\n".join(memory_lines) if memory_lines else "(no problem memories recorded)",
             "",
             f"Final revision: {session.revision}",
             f"Agent log: {session.log_path}",

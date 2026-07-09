@@ -19,14 +19,14 @@ dependencies = [
     "botocore>=1.43.42",
     "execnb>=0.2.2",
     "fastaistyle>=0.0.15",
-    "fastcore==1.14.5",
+    "fastcore==2.0.*",
     "fastmcp>=3.3.1",
     "lancedb>=0.25.0",
     "lisette>=0.1.33",
     "nbdev>=3.0.15",
     "packaging>=24",
     "remold>=0.1.0",
-    "safepyrun>=0.1.0",
+    "safepyrun>=0.2.3",
     "sentence-transformers>=5.5.1",
 ]
 

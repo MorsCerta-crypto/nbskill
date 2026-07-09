@@ -12,9 +12,9 @@ import ast,builtins,copy,difflib,glob,json,re
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
+from typing import Annotated
 
 from fastcore.nbio import mk_cell, new_nb, read_nb
-from fastcore.script import Param
 
 from .execute import exec_nb, run_notebook_test
 from .review import style_check
@@ -146,7 +146,7 @@ def replace_str(
 # %% ../nbs/02_write.ipynb #0f2f63da
 def write_nb(
     path: str,
-    cells: Param("Cell block text", str, opt=False, nargs="?") = "",
+    cells: Annotated[str, "Cell block text", {"opt": False, "nargs": "?"}] = "",
     before_id: str | None = None,
     after_id: str | None = None,
     chapter: str | None = None,
@@ -262,7 +262,7 @@ def _replace_cell_with_cells(nb, idx, cells):
 # %% ../nbs/02_write.ipynb #ba6abded
 def update_cell(
     path: str,  # Notebook path
-    new: Param("Replacement cell source, replacement text, or line-range replacement", str, opt=False, nargs="?") = "",
+    new: Annotated[str, "Replacement cell source, replacement text, or line-range replacement", {"opt": False, "nargs": "?"}] = "",
     new_file: str | None = None,  # Read replacement text from a UTF-8 file
     decode_newlines: bool = True,  # Decode CLI-style literal \n escapes in new text
     cell_id: str | None = None,  # Stable notebook cell id to update
@@ -338,7 +338,7 @@ def update_cell(
 def split_cell(
     path: str,  # Notebook path
     cell_id: str,  # Stable cell id to split
-    new: Param("Multi-cell replacement text separated by ---", str, opt=False, nargs="?") = "",
+    new: Annotated[str, "Multi-cell replacement text separated by ---", {"opt": False, "nargs": "?"}] = "",
     new_file: str | None = None,  # Read replacement text from a UTF-8 file
     decode_newlines: bool = True,  # Decode CLI-style literal \\n escapes in new text
     split_before: str | None = None,  # Split existing cell before the first line containing or matching this text
@@ -698,7 +698,7 @@ def _format_batch_details(details):
 
 # %% ../nbs/02_write.ipynb #04a5744e
 def batch_edit_nb(
-    plan: Param("JSON edit plan, or - to read stdin", str, opt=False, nargs="?") = "",
+    plan: Annotated[str, "JSON edit plan, or - to read stdin", {"opt": False, "nargs": "?"}] = "",
     plan_file: str | None = None,  # Read the JSON plan from a UTF-8 file
     path: str | None = None,  # Default notebook path for operations that omit path
     dry_run: bool = True,  # Show the plan and diffs without writing

@@ -150,12 +150,17 @@ def revert_example_notebook(path=EXAMPLE_NOTEBOOK_PATH):
     return path
 
 # %% ../nbs/00_foundation.ipynb #dbc6a8c7
+def _nbskill_cli_context():
+    command = Path(sys.argv[0]).name
+    return is_cli() and not in_jupyter() and command not in {"nbdev-test", "nbdev_test"}
+
+
 def cli_return(value=None):
-    return None if is_cli() else value
+    return None if _nbskill_cli_context() else value
 
 # %% ../nbs/00_foundation.ipynb #754aea72
 def cli_error(msg):
-    if is_cli():
+    if _nbskill_cli_context():
         print(msg, file=sys.stderr)
         raise SystemExit(1)
     raise ValueError(msg)

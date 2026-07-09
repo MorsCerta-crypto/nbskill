@@ -23,6 +23,7 @@ from nbskill.foundation import (
     git_tracked_paths, notebook_paths, source_without_directives,
 )
 from .graph import notebook_order_problems, placement_advice, reuse_advice, symbol_usage_summary
+from .knowledge import problem_statement_query
 from .read import file_context
 from .review import notebook_validation_problems, style_report
 
@@ -316,6 +317,13 @@ def _symbol_candidates(nb_path, tokens):
             if name.lower() in tokens or _score_text(name, tokens): names.append(name)
     return sorted(set(names))[:5]
 
+# %% ../nbs/11_agent_workbench.ipynb #37ef5284
+def _problem_memory_context(goal, top_k=5):
+    "Return reusable problem-solution context for a workbench goal."
+    try: result = problem_statement_query(goal, top_k=top_k)
+    except BaseException as exc: return f"Problem memory unavailable: {type(exc).__name__}: {exc}"
+    return result.get("context") or "No similar problem memories found."
+
 # %% ../nbs/11_agent_workbench.ipynb #24b0d9b7
 def compile_context(
     goal,  # Desired software-development outcome
@@ -361,6 +369,7 @@ def compile_context(
     symbol_summary = symbol_usage_summary(path, symbols) if symbols else ""
     reuse = reuse_advice(goal, path=path, top_k=5)
     placement = placement_advice(path=path, source=goal, top_k=5)
+    problem_memory = _problem_memory_context(goal)
     state = capture_state(path)
     context = {
         "goal": goal,
@@ -371,6 +380,7 @@ def compile_context(
         "symbols": symbols,
         "symbol_summary": cap_text(symbol_summary, 2000),
         "reuse_advice": reuse,
+        "problem_memory": problem_memory,
         "placement_advice": placement,
         "doctor_warnings": {
             "validation_problem_count": state["validation_problem_count"],
@@ -755,6 +765,15 @@ def score_patch(
         tools = [item.get("tool") for item in execution.get("history", []) if isinstance(item, dict)]
         if execution.get("revision", 0) and "execute_cell" not in tools:
             hard_failures.append({"code": "execution_modified_without_validation", "tools": tools})
+        if execution.get("revision", 0):
+            memory_events = [
+                event for event in execution.get("events", [])
+                if isinstance(event, dict)
+                and event.get("kind") == "problem_memory_recorded"
+                and event.get("status") == "ok"
+            ]
+            if not memory_events:
+                hard_failures.append({"code": "problem_memory_missing"})
     return {
         "passed": not hard_failures,
         "hard_failures": hard_failures,
@@ -822,6 +841,8 @@ def _render_context_lines(context):
     )
     lines.extend(["", "Evidence cells:"])
     lines.extend(f"- {item['path']} id={item['id']}" for item in context.get("evidence", []))
+    if context.get("problem_memory"):
+        lines.extend(["", "Problem memory:", context["problem_memory"]])
     reuse = context.get("reuse_advice") or {}
     if reuse.get("matches") or reuse.get("notebooks"):
         lines.extend(["", "Search-before-write:"])

@@ -909,23 +909,23 @@ wheels = [
 
 [[package]]
 name = "fastaudit"
-version = "0.1.0"
+version = "0.2.5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "fastcore" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/85/d2/e879e50b8336e43a82c1d46772b1f76bcf0da98a58032b2945ebeef669d0/fastaudit-0.1.0.tar.gz", hash = "sha256:ce19f97823a2b32824203e4da92a34ec96ddb4ff515b57a937b87a42808dcb59", size = 15378, upload-time = "2026-05-07T02:06:02.469Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/0d/0a/4da382ea4bbd9f6b93c75e2bc3c68b50dde6ece40cb3301e55fef0dbf43f/fastaudit-0.2.5.tar.gz", hash = "sha256:43c956a87e6016030809d790592c8d86c4668aec26b9e773d49844a0ec5b95fc", size = 29572, upload-time = "2026-06-22T04:06:20.258Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d7/2d/869ef2bb608ec098f32a5de02d93d57c47d316036ca79d9ef9b0e1384af7/fastaudit-0.1.0-py3-none-any.whl", hash = "sha256:ddbaf754d28537b9153bc4504f618b65d58fcafa3acd2d2af5f93d5ba94a71e1", size = 13342, upload-time = "2026-05-07T02:06:00.911Z" },
+    { url = "https://files.pythonhosted.org/packages/68/22/1a7e3c67e6297d8f8d6538bba23e94d218876c85fe4f3ff0e9e73d348e17/fastaudit-0.2.5-py3-none-any.whl", hash = "sha256:c04ed04e32760613722fec6cee5b88b40e1d185a934ab12cfadd253e4a0f42a5", size = 18307, upload-time = "2026-06-22T04:06:18.973Z" },
 ]
 
 [[package]]
 name = "fastcore"
-version = "1.14.5"
+version = "2.0.1"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/a1/82/6dd84e0498a51f08bb788d8f996bedc39e1c0536261c11e635ffaa2e56ee/fastcore-1.14.5.tar.gz", hash = "sha256:d6f1b4220913642964da6236047fe1e9474ecaeaf38737e144b296c31eb53a3a", size = 102968, upload-time = "2026-07-08T07:16:04.806Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c4/0a/f7c89cc3874b9ff0005c9f57c40294c6bc98171a4c0cf672baaf807b975d/fastcore-2.0.1.tar.gz", hash = "sha256:7abe5039ad25ce308c7df78cac871712cec1d825f59b1bb3a828307f6d075f57", size = 102994, upload-time = "2026-07-09T04:39:47.401Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/8b/c3/e2869af29faf757baeb0197fadc635b2e88fe103a8b1ab04722e74dbf07f/fastcore-1.14.5-py3-none-any.whl", hash = "sha256:4b870ee8dc7882b6c280e008ae4d0a355dc2ab4ae1c729a5301413c7f020cc11", size = 108052, upload-time = "2026-07-08T07:16:03.169Z" },
+    { url = "https://files.pythonhosted.org/packages/51/c0/725923cf1ad15ed55110b89b4092c8299c8e478a5089387af7a32db48904/fastcore-2.0.1-py3-none-any.whl", hash = "sha256:e5c6c9ea5436cac14d3223a5e6a978ec00554fe732d767a5cc93494628d42b90", size = 107807, upload-time = "2026-07-09T04:39:45.85Z" },
 ]
 
 [[package]]
@@ -2555,14 +2555,14 @@ requires-dist = [
     { name = "botocore", specifier = ">=1.43.42" },
     { name = "execnb", specifier = ">=0.2.2" },
     { name = "fastaistyle", specifier = ">=0.0.15" },
-    { name = "fastcore", specifier = "==1.14.5" },
+    { name = "fastcore", specifier = "==2.0.*" },
     { name = "fastmcp", specifier = ">=3.3.1" },
     { name = "lancedb", specifier = ">=0.25.0" },
     { name = "lisette", specifier = ">=0.1.33" },
     { name = "nbdev", specifier = ">=3.0.15" },
     { name = "packaging", specifier = ">=24" },
     { name = "remold", specifier = ">=0.1.0" },
-    { name = "safepyrun", specifier = ">=0.1.0" },
+    { name = "safepyrun", specifier = ">=0.2.3" },
     { name = "sentence-transformers", specifier = ">=5.5.1" },
 ]
 
@@ -3405,14 +3405,15 @@ wheels = [
 
 [[package]]
 name = "pyskills"
-version = "0.0.7"
+version = "0.0.19"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
+    { name = "fastaudit" },
     { name = "fastcore" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/91/49/165ce19bb4cf5ffb778f759174eada6c402ae672fa7e4389e7a761883d44/pyskills-0.0.7.tar.gz", hash = "sha256:50ea8ce660185857a283643044d67f63ae38b28830b7ce6f4252e1ea08cbd8ab", size = 22847, upload-time = "2026-05-04T02:25:32.308Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/2c/c5/f71b4f674c5cde6519714508b159ee284176422858b7f5aa7a7913d3d11f/pyskills-0.0.19.tar.gz", hash = "sha256:8886e494c7e1389b6f6cd3007e68a621948722d27626613770af7c759373d76e", size = 29577, upload-time = "2026-07-09T04:57:52.291Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/73/a9/2ba5c9ef83912102c3bf4acaae79add676b6a3912fd375fea5199c389811/pyskills-0.0.7-py3-none-any.whl", hash = "sha256:10b5a29c16dc6801a46155246a10ab705d595d11dde155990c1f153201844698", size = 21894, upload-time = "2026-05-04T02:25:30.767Z" },
+    { url = "https://files.pythonhosted.org/packages/12/5b/202d5f0b45562cc956d678438639b355eaf047506ba59215d79d0434649c/pyskills-0.0.19-py3-none-any.whl", hash = "sha256:25f4f818a73051433621efd859f359845f4c6ce378de079539b2fa784fb7e22b", size = 28665, upload-time = "2026-07-09T04:57:51.06Z" },
 ]
 
 [[package]]
@@ -3757,27 +3758,6 @@ wheels = [
 ]
 
 [[package]]
-name = "restrictedpython"
-version = "8.1"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/5f/1c/aec08bcb4ab14a1521579fbe21ceff2a634bb1f737f11cf7f9c8bb96e680/restrictedpython-8.1.tar.gz", hash = "sha256:4a69304aceacf6bee74bdf153c728221d4e3109b39acbfe00b3494927080d898", size = 838331, upload-time = "2025-10-19T14:11:32.531Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/1a/c0/3848f4006f7e164ee20833ca984067e4b3fc99fe7f1dfa88b4927e681299/restrictedpython-8.1-py3-none-any.whl", hash = "sha256:4769449c6cdb10f2071649ba386902befff0eff2a8fd6217989fa7b16aeae926", size = 27651, upload-time = "2025-10-19T14:11:30.201Z" },
-]
-
-[[package]]
-name = "restrictedpython-async"
-version = "0.0.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "restrictedpython" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/e0/5a/6e787cfd1558bf7c5e6a2e06dab7e8157805775c4227bfd1047be7077d0b/restrictedpython_async-0.0.1.tar.gz", hash = "sha256:441f84639200b674dd75a95f046ae0d64ce0e6fc12a0486bd4698d34b421a429", size = 6629, upload-time = "2026-02-14T04:46:51.767Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/d6/ea/6ae13afdd8c967e7e5ab9b6020c4857920ad22c4b032d72e2694caef69ee/restrictedpython_async-0.0.1-py3-none-any.whl", hash = "sha256:46b832a742c06e58e9a5e9f7258e6ceeb3897aeafb795f67a6323d0477dbc20d", size = 6834, upload-time = "2026-02-14T04:46:50.378Z" },
-]
-
-[[package]]
 name = "rfc3339-validator"
 version = "0.1.4"
 source = { registry = "https://pypi.org/simple" }
@@ -3928,7 +3908,7 @@ wheels = [
 
 [[package]]
 name = "safepyrun"
-version = "0.1.0"
+version = "0.2.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "fastaudit" },
@@ -3936,12 +3916,10 @@ dependencies = [
     { name = "httpx" },
     { name = "matplotlib" },
     { name = "pyskills" },
-    { name = "restrictedpython" },
-    { name = "restrictedpython-async" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/5f/53/39fe2d53773a22b07d9f9e6ae4461b1a499f5507dfe10de037bb24d7cab9/safepyrun-0.1.0.tar.gz", hash = "sha256:fd339bb7624248199f673566fdd4e166e4b7cbff4716d1bd81b0738e5178adda", size = 31406, upload-time = "2026-05-18T00:27:29.055Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/21/91/a9bd4c30d9470f57dde215b096d6ffae00f355ae5583c9b6b5ac108583c1/safepyrun-0.2.3.tar.gz", hash = "sha256:2c74d781011dfeffd31f2d4f0319593f4189a3e77a3e72f8f1f61e375669fcc5", size = 25239, upload-time = "2026-07-08T05:36:53.163Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f4/5e/cd466b953d56e074cfbc29c8ff8e8a439dd9728af05a0e787239e08de6bd/safepyrun-0.1.0-py3-none-any.whl", hash = "sha256:45959ea0ad91d30a8a61023887137c6bcc0273b72bf4cb6af53c4594684921d7", size = 32125, upload-time = "2026-05-18T00:27:27.352Z" },
+    { url = "https://files.pythonhosted.org/packages/17/cd/e2d8582fc3a631a3ce007e728f855a613918c000460f1d667f2ae6c93a64/safepyrun-0.2.3-py3-none-any.whl", hash = "sha256:3c6c434a2b8082c4dfbc1f725a7ec1b5d64d90b6334e56f19da625ac7cfb61d8", size = 19726, upload-time = "2026-07-08T05:36:51.767Z" },
 ]
 
 [[package]]

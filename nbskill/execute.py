@@ -685,7 +685,7 @@ class _SafeShell:
         with _temporary_sys_path(self.paths):
             _register_allowed(allow, self.g)
             _register_project_allowed(self.execution_policy, self.g)
-        self.runner = RunPython(g=self.g, ok_dests=_parse_str_list(ok_dests))
+        self.runner = RunPython(g=self.g, ok_dests=_parse_str_list(ok_dests), ban_defs=False)
 
     def run(self, source, timeout=30, verbose=False):
         self.exc = _magic_error(source)

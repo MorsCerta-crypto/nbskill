@@ -3,7 +3,7 @@
 # %% auto #0
 __all__ = ['tracked_call', 'context', 'write_nb', 'replace_str_nb', 'update_cell', 'batch_edit_nb', 'split_nb_chapter', 'exec_nb',
            'diff_nb', 'style_check', 'nbskill_validate', 'convert', 'build_nbskill_skill', 'install_nbskill',
-           'symbol_connection', 'reference', 'agent_workbench', 'nbskill_status', 'nbskill_mcp_log',
+           'symbol_connection', 'reference', 'problem_memory', 'agent_workbench', 'nbskill_status', 'nbskill_mcp_log',
            'nbskill_mcp_log_problems', 'nbskill_mcp', 'nbskill_mcp_start', 'nbskill_mcp_stop', 'nbskill_mcp_restart']
 
 # %% ../nbs/13_cli.ipynb #bb21ab3c
@@ -12,8 +12,9 @@ import json, os, shlex, signal, subprocess, time, traceback
 from contextlib import contextmanager
 from functools import wraps
 from pathlib import Path
+from typing import Annotated
 
-from fastcore.script import Param, call_parse
+from fastcore.script import call_parse
 
 import nbskill.convert
 import nbskill.execute
@@ -209,7 +210,7 @@ def context(
 @tracked_call
 def write_nb(
     path: str,  # Notebook path
-    cells: Param("Cell block text", str, opt=False, nargs="?") = "",  # Cells to write; use - to read stdin
+    cells: Annotated[str, "Cell block text", {"opt": False, "nargs": "?"}] = "",  # Cells to write; use - to read stdin
     cells_file: str | None = None,  # Read cell block text from a UTF-8 file to avoid shell escaping
     before_id: str | None = None,  # Insert before this stable cell id
     after_id: str | None = None,  # Insert after this stable cell id
@@ -251,7 +252,7 @@ def replace_str_nb(
 @tracked_call
 def update_cell(
     path: str,  # Notebook path
-    new: Param("Replacement cell source, replacement text, or line-range replacement", str, opt=False, nargs="?") = "",
+    new: Annotated[str, "Replacement cell source, replacement text, or line-range replacement", {"opt": False, "nargs": "?"}] = "",
     new_file: str | None = None,  # Read replacement text from a UTF-8 file
     decode_newlines: bool = True,  # Decode literal \n sequences from CLI text
     cell_id: str | None = None,  # Stable cell id
@@ -275,7 +276,7 @@ def update_cell(
 @call_parse
 @tracked_call
 def batch_edit_nb(
-    plan: Param("JSON edit plan, or - to read stdin", str, opt=False, nargs="?") = "",
+    plan: Annotated[str, "JSON edit plan, or - to read stdin", {"opt": False, "nargs": "?"}] = "",
     plan_file: str | None = None,  # Read JSON edit plan from a UTF-8 file
     path: str | None = None,  # Default notebook path for operations without a path
     dry_run: bool = True,  # Show the edit plan without writing
@@ -354,7 +355,7 @@ def diff_nb(
 @call_parse
 @tracked_call
 def style_check(
-    path: Param("File or folder to check", str, opt=False, nargs="?") = ".",  # File or folder to check
+    path: Annotated[str, "File or folder to check", {"opt": False, "nargs": "?"}] = ".",  # File or folder to check
     skip_folder_re: str | None = None,  # Regex for folders to skip
     skip_path: str | None = None,  # Comma-separated paths to skip
     strict: bool = False,  # Exit non-zero when diagnostics are present
@@ -380,7 +381,7 @@ def style_check(
 @call_parse
 @tracked_call
 def nbskill_validate(
-    path: Param("Notebook file, folder, or glob to validate", str, opt=False, nargs="?") = "nbs",
+    path: Annotated[str, "Notebook file, folder, or glob to validate", {"opt": False, "nargs": "?"}] = "nbs",
     strict: bool = True,  # Exit non-zero when validation problems are present
 ):
     "Validate nbskill metadata needed for safe notebook tools."
@@ -491,6 +492,40 @@ def reference(
         )
     else:
         raise ValueError("action must be add, list, ingest, or query")
+    return _print_json(result)
+
+# %% ../nbs/13_cli.ipynb #c2e9f385
+@call_parse
+@tracked_call
+def problem_memory(
+    action: str = "query",  # add, list, or query
+    query: str | None = None,  # Natural-language problem query for action=query
+    top_k: int = 5,  # Number of memories for action=query
+    problem: str | None = None,  # Problem statement for action=add
+    solution: str | None = None,  # Solution statement for action=add
+    task: str = "",  # Task where the pair was observed
+    project: str | None = None,  # Project path/label filter for query, or row project for add
+    evidence: str = "",  # Short evidence the solution worked
+    outcome: str = "applied",  # applied, partial, failed, skipped, etc.
+    tags: str | None = None,  # Optional comma-separated tags
+    path: str | None = None,  # Override reference/problem-memory home
+    limit: int = 20,  # Number of recent memories for action=list
+):
+    "Manage reusable problem-solution memories."
+    action = str(action or "query").lower()
+    if action == "add":
+        if not problem or not solution: raise ValueError("problem_memory action='add' needs problem and solution")
+        result = nbskill.knowledge.problem_statement_add(
+            problem, solution, task=task, project=project or ".",
+            evidence=evidence, outcome=outcome, tags=tags, path=path,
+        )
+    elif action == "list":
+        result = nbskill.knowledge.problem_statement_list(path=path, limit=limit)
+    elif action == "query":
+        if not query: raise ValueError("problem_memory action='query' needs query")
+        result = nbskill.knowledge.problem_statement_query(query, top_k=top_k, project=project, path=path)
+    else:
+        raise ValueError("action must be add, list, or query")
     return _print_json(result)
 
 # %% ../nbs/13_cli.ipynb #ec4e829f

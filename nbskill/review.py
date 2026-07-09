@@ -15,11 +15,11 @@ from collections import Counter
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
+from typing import Annotated
 
 from chkstyle.core import main as _chkstyle_main
 from fastcore.nbio import mk_cell, read_nb
 from fastcore.nbio import write_nb as _write_nb
-from fastcore.script import Param
 from nbdev.diff import nbs_pair, source_diff
 from nbdev.doclinks import nbdev_export as _run_nb_export
 from remold import cst, m, cstmap, code
@@ -897,7 +897,7 @@ _normalize_style_check_cli_aliases()
 
 # %% ../nbs/04_review.ipynb #d2f84049
 def style_check(
-    path: Param("File or folder to check", str, opt=False, nargs="?") = ".",  # File or folder to check
+    path: Annotated[str, "File or folder to check", {"opt": False, "nargs": "?"}] = ".",  # File or folder to check
     skip_folder_re: str | None = None,  # Regex for folders to skip
     skip_path: str | None = None,  # Folder name/path to skip
     strict: bool = False,  # Exit non-zero when style hints or notebook hygiene problems are found
@@ -933,7 +933,7 @@ def style_check(
 
 # %% ../nbs/04_review.ipynb #12c4df69
 def validate_nbs(
-    path: Param("Notebook file, folder, or glob to validate", str, opt=False, nargs="?") = "nbs",  # Notebook file, folder, or glob to validate
+    path: Annotated[str, "Notebook file, folder, or glob to validate", {"opt": False, "nargs": "?"}] = "nbs",  # Notebook file, folder, or glob to validate
     strict: bool = True,  # Exit non-zero when invalid metadata is found
 ):
     "Validate nbskill metadata needed for safe notebook tools."

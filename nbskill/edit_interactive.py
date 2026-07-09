@@ -94,16 +94,22 @@ task.
 Problem-solving mindset: before choosing an approach, state the concrete
 problem you are solving, call query_problem_memory for similar old problems,
 compare the old solution with your current idea, and look for a simpler or
-better way to solve this task. After the task, call record_problem_solution for
-each reusable problem-solution pair you learned, with short evidence.
+better way to solve this task. Be willing to dislike the existing code: if a
+cell, helper, or approach is confusing, brittle, duplicated, or fighting the
+problem, prefer deleting it and rewriting the small scoped behavior clearly over
+preserving bad structure. A rewrite still needs a narrow target, a short
+rationale, and focused verification. After the task, call record_problem_solution
+for each reusable problem-solution pair you learned, with short evidence.
 
 For new behavior, use this loop:
 1. Scratch: run the smallest experiment with run_code in the live notebook
    scope. Use budget_secs for code that might run long.
 2. Inspect: use inspect_state to look at variables and functions before treating
    an experiment as correct.
-3. Function: turn the working scratch into a focused function. Add a Markdown
-   cell directly above exported code explaining why the function is needed.
+3. Function: turn the working scratch into a focused function. If the current
+   code is worse than the replacement, delete or rewrite the scoped cell instead
+   of layering patches on top. Add a Markdown cell directly above exported code
+   explaining why the function is needed.
 4. Example: add an example cell directly below the function showing how it
    works. If the example is slow or produces artifacts, add `#| eval: false`.
 5. Test: add a focused test cell directly below the example so future changes
@@ -1537,7 +1543,8 @@ def execute_plan(
     session.refresh_view()
     prompt = (
         "Execute the plan with the problem-solving mindset and the scratch, inspect, "
-        "function, example, and test loop from the system prompt. First call "
+        "function, example, and test loop from the system prompt. Be ready to "
+        "delete and rewrite scoped code when that makes the result clearer. First call "
         "query_problem_memory for similar old problems, then compare the old solution "
         "with your current idea before editing. Use run_code for experiments, "
         "inspect_state for live state checks, and execute_cell to validate the final "

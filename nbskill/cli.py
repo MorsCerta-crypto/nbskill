@@ -317,11 +317,14 @@ def exec_nb(
     show_output: bool = True,  # Print visible outputs after execution
     allow_new: bool = False,  # Permit new code cells without prior execution approval
     check_only: bool = False,  # Execute without writing outputs back
+    safe: bool = True,  # Use safepyrun safe mode
+    allow: str | None = None,  # Comma-separated trusted callables to allow
+    ok_dests: str | None = None,  # Comma-separated allowed write destinations
 ):
     "Execute a notebook with the normal safe defaults."
     return nbskill.execute.exec_nb(
         path, up2id=up2id, chapter=chapter, timeout=timeout, show_output=show_output,
-        allow_new=allow_new, check_only=check_only,
+        allow_new=allow_new, check_only=check_only, safe=safe, allow=allow, ok_dests=ok_dests,
     )
 
 # %% ../nbs/13_cli.ipynb #d8e9c648

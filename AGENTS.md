@@ -68,6 +68,19 @@ Keep edits surgical. Read the nearby notebook context, edit one coherent
 piece, then immediately check whether the result is what you wanted
 before continuing.
 
+## Rewrite Incentive
+
+Surgical does not mean timid. It is good to be unhappy with code that is
+confusing, duplicated, brittle, or fighting the problem. When the existing
+shape is the problem, prefer deleting it and rewriting the small scoped
+behavior clearly instead of layering more patches on top.
+
+Treat deletion as a first-class improvement when it removes needless
+complexity. A rewrite should still be bounded: name the reason in nearby
+markdown, keep the public contract intentional, add or update the focused
+example/test, and verify the new shape. Do not preserve bad code merely
+because it already exists.
+
 ## nbdev Development Shape
 
 When creating or revising nbdev notebooks, keep the literate-programming

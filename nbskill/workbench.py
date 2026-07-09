@@ -141,6 +141,7 @@ def make_task_contract(
         "public_api": "forbidden",
         "edit_policy": {
             "prefer_existing_code": True,
+            "prefer_rewrite_when_existing_code_fights_problem": True,
             "forbid_generated_only_edits": True,
             "stop_when_smallest_valid_diff_passes": True,
         },
@@ -865,7 +866,8 @@ def _render_notebook_craft_lines():
     body = """
 Notebook craft:
 - Small notebook loop: inspect existing cells, run or sketch a tiny proof, write Markdown rationale, write the smallest code, add a visible example, add a focused hidden test, execute the narrowest check.
-- Prefer replace_lines or one small insert_cells call over whole-cell replacement.
+- Prefer replace_lines or one small insert_cells call when the existing shape is sound.
+- If the existing cell is confusing, brittle, duplicated, or fighting the problem, delete or rewrite the scoped code instead of layering patches on top.
 - Keep notebooks coherent: small markdown and code cells, one idea at a time.
 - Add descriptions before code, examples with visible outputs, and small tests near the behavior they protect.
 - Explain rationale: why the shape solves the problem, what tradeoffs it rejects, and why nearby alternatives do not fit.
@@ -899,8 +901,8 @@ def _render_workbench_plan(contract, taste, context):
         *_render_empirical_lines(contract),
         "",
         "Stop rules:",
-        "- Prefer the smallest valid diff over a broad complete rewrite.",
-        "- Modify existing code before adding helpers.",
+        "- Prefer the smallest clear diff; sometimes that is deleting bad code and rewriting the scoped behavior.",
+        "- Modify existing code before adding helpers, but do not preserve a bad shape just because it exists.",
         "- Do not add compatibility scaffolding unless the contract says so.",
         "- Stop once the contract is satisfied and verification is green.",
         "",

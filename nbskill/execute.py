@@ -17,19 +17,38 @@ import traceback
 from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
+from typing import Annotated
 
 import pyskills
 from execnb.shell import CaptureShell
 from fastcore.nbio import read_nb
 from fastcore.nbio import write_nb as _write_nb
-from safepyrun import RunPython
-from safepyrun.core import allow as _safepyrun_allow
 
 from nbskill.foundation import (
     _nbskill_cell_metadata, cell_source, cli_error, cli_return, one_chapter, output_text,
     output_value_text, parse_literal, source_hash, stamp_notebook_metadata,
 )
 from .parallel import execution_slot, notebook_locks
+
+# %% ../nbs/03_execute.ipynb #9c1fbc27
+def _ensure_safepyrun_fastcore_param():
+    import fastcore.script as fastcore_script
+    if hasattr(fastcore_script, "Param"): return
+
+    def Param(desc="", typ=str, **kwargs): return Annotated[typ, desc, kwargs]
+    fastcore_script.Param = Param
+
+
+def _safepyrun_imports():
+    _ensure_safepyrun_fastcore_param()
+    from safepyrun import RunPython
+    from safepyrun.core import allow
+    return RunPython, allow
+
+
+def _safepyrun_allow(*args, **kwargs):
+    _, allow = _safepyrun_imports()
+    return allow(*args, **kwargs)
 
 # %% ../nbs/03_execute.ipynb #d43ace86
 def _exec_limiters(up2id):
@@ -682,6 +701,7 @@ class _SafeShell:
             "__name__": "__main__",
             "__file__": str(self.path),
         }
+        RunPython, _ = _safepyrun_imports()
         with _temporary_sys_path(self.paths):
             _register_allowed(allow, self.g)
             _register_project_allowed(self.execution_policy, self.g)

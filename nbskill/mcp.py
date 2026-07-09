@@ -2619,6 +2619,9 @@ async def exec_nb_tool(
     show_output: bool = True,
     allow_new: bool = False,
     check_only: bool = False,
+    safe: bool = True,
+    allow: str | None = None,
+    ok_dests: str | None = None,
     tool_timeout: float = 150.0,
     detail: str = "summary",
     ctx: Context = None,
@@ -2629,13 +2632,14 @@ async def exec_nb_tool(
     tool_timeout = _mcp_clamp_float(tool_timeout, 150.0, 0.001, 150.0, "tool_timeout")
     arguments = dict(
         path=path, up2id=up2id, chapter=chapter, timeout=timeout, show_output=show_output,
-        allow_new=allow_new, check_only=check_only, tool_timeout=tool_timeout, detail=detail,
+        allow_new=allow_new, check_only=check_only, safe=safe, allow=allow,
+        ok_dests=ok_dests, tool_timeout=tool_timeout, detail=detail,
         workspace_root=str(root) if root else None,
     )
     try:
         call_args = dict(
             path=path, dest=None, exc_stop=False, up2id=up2id, chapter=chapter, timeout=timeout,
-            show_output=show_output, verbose=False, safe=True, allow=None, ok_dests=None,
+            show_output=show_output, verbose=False, safe=safe, allow=allow, ok_dests=ok_dests,
             cache_httpx=False, cache_dir=None, cache_domains=None, allow_new=allow_new, check_only=check_only,
         )
         full_output = await asyncio.to_thread(_capture_exec_nb_process_call, call_args, tool_timeout)
@@ -2646,7 +2650,7 @@ async def exec_nb_tool(
             warnings.append(_warning(
                 "safe-exec-audit-block",
                 "Safe execution blocked an audited operation.",
-                "Use an explicit CLI run for trusted notebooks that need broader execution permissions.",
+                "Pass ok_dests for trusted scratch writes, or safe=False only for trusted notebooks.",
             ))
         approval_blocked = "_ExecutionApprovalRequired" in full_output or "refusing to execute unapproved cell" in full_output
         if approval_blocked and not allow_new:

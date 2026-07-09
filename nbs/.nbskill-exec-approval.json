@@ -1812,6 +1812,14 @@
       "notebook": "13_cli.ipynb",
       "reasons": []
     },
+    "_ensure_safepyrun_fastcore_param": {
+      "allowed": true,
+      "cell_id": "9c1fbc27",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "03_execute.ipynb",
+      "reasons": []
+    },
     "_error_output": {
       "allowed": true,
       "cell_id": "e4a72f41",
@@ -4188,6 +4196,14 @@
       "notebook": "04_review.ipynb",
       "reasons": []
     },
+    "_problem_memory_context": {
+      "allowed": true,
+      "cell_id": "630fa23f",
+      "external_effects": false,
+      "line": 14,
+      "notebook": "08_edit_interactive.ipynb",
+      "reasons": []
+    },
     "_problem_message": {
       "allowed": true,
       "cell_id": "a9fdf5ae",
@@ -4821,6 +4837,22 @@
       "external_effects": false,
       "line": 20,
       "notebook": "04_review.ipynb",
+      "reasons": []
+    },
+    "_safepyrun_allow": {
+      "allowed": true,
+      "cell_id": "9c1fbc27",
+      "external_effects": false,
+      "line": 17,
+      "notebook": "03_execute.ipynb",
+      "reasons": []
+    },
+    "_safepyrun_imports": {
+      "allowed": true,
+      "cell_id": "9c1fbc27",
+      "external_effects": false,
+      "line": 10,
+      "notebook": "03_execute.ipynb",
       "reasons": []
     },
     "_same_ast": {
@@ -5683,10 +5715,10 @@
     },
     "agent_workbench": {
       "allowed": true,
-      "cell_id": "2927f514",
+      "cell_id": "ec4e829f",
       "external_effects": false,
-      "line": 2,
-      "notebook": "11_agent_workbench.ipynb",
+      "line": 4,
+      "notebook": "13_cli.ipynb",
       "reasons": []
     },
     "agent_workbench_result": {
@@ -6119,20 +6151,11 @@
     },
     "diff_nb": {
       "allowed": false,
-      "cell_id": "fe9b3c86",
-      "external_effects": true,
-      "line": 2,
-      "notebook": "04_review.ipynb",
-      "reasons": [
-        "_diff_filter_ids->_notebook_json_at_ref->_git_root_rel->call:subprocess.run",
-        "_diff_filter_ids->_notebook_json_at_ref->call:subprocess.run",
-        "_diff_filter_ids->call:replace",
-        "_git_ref_path_error->call:subprocess.run",
-        "_git_root_rel->call:subprocess.run",
-        "_nbskill_metadata_change_count->_notebook_json_at_ref->_git_root_rel->call:subprocess.run",
-        "_nbskill_metadata_change_count->_notebook_json_at_ref->call:subprocess.run",
-        "call:replace"
-      ]
+      "cell_id": "d8e9c648",
+      "external_effects": false,
+      "line": 4,
+      "notebook": "13_cli.ipynb",
+      "reasons": []
     },
     "directive": {
       "allowed": true,
@@ -6339,7 +6362,7 @@
       "allowed": true,
       "cell_id": "e1d50cfa",
       "external_effects": false,
-      "line": 56,
+      "line": 64,
       "notebook": "08_edit_interactive.ipynb",
       "reasons": []
     },
@@ -6347,7 +6370,7 @@
       "allowed": true,
       "cell_id": "e1d50cfa",
       "external_effects": false,
-      "line": 161,
+      "line": 173,
       "notebook": "08_edit_interactive.ipynb",
       "reasons": []
     },
@@ -6759,7 +6782,7 @@
       "allowed": true,
       "cell_id": "038460c6",
       "external_effects": false,
-      "line": 17,
+      "line": 22,
       "notebook": "13_cli.ipynb",
       "reasons": []
     },
@@ -6982,6 +7005,14 @@
       "external_effects": false,
       "line": 3,
       "notebook": "00_foundation.ipynb",
+      "reasons": []
+    },
+    "problem_memory": {
+      "allowed": true,
+      "cell_id": "c2e9f385",
+      "external_effects": false,
+      "line": 4,
+      "notebook": "13_cli.ipynb",
       "reasons": []
     },
     "project_context": {
@@ -7222,14 +7253,11 @@
     },
     "style_check": {
       "allowed": false,
-      "cell_id": "d2f84049",
-      "external_effects": true,
-      "line": 2,
-      "notebook": "04_review.ipynb",
-      "reasons": [
-        "reset_global_usage_summary->call:path.unlink",
-        "reset_global_usage_summary->call:path.write_text"
-      ]
+      "cell_id": "22848a82",
+      "external_effects": false,
+      "line": 4,
+      "notebook": "13_cli.ipynb",
+      "reasons": []
     },
     "style_check_tool": {
       "allowed": false,

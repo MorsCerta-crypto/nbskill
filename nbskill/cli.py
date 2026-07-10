@@ -5,7 +5,8 @@ __all__ = ['tracked_call', 'context', 'filter_context', 'write_nb', 'replace_str
            'split_nb_chapter', 'exec_nb', 'diff_nb', 'style_check', 'nbskill_validate', 'convert',
            'build_nbskill_skill', 'install_nbskill', 'symbol_connection', 'reference', 'problem_memory',
            'agent_workbench', 'nbskill_status', 'nbskill_mcp_log', 'nbskill_mcp_log_problems', 'nbskill_mcp',
-           'nbskill_mcp_start', 'nbskill_mcp_stop', 'nbskill_mcp_restart']
+           'find_nbskill_mcp_processes', 'stop_nbskill_mcp_processes', 'nbskill_mcp_start', 'nbskill_mcp_stop',
+           'nbskill_mcp_restart']
 
 # %% ../nbs/13_cli.ipynb #bb21ab3c
 import json, os, shlex, signal, subprocess, time, traceback
@@ -693,7 +694,8 @@ def _mcp_process_matches(row, project=None, all_projects=False):
     root = _mcp_project_root(project)
     if row.get("cwd") and _path_is_or_below(row["cwd"], root): return True
     return any(text in command for text in _mcp_project_match_texts(project))
-def _find_nbskill_mcp_processes(project=None, all_projects=False):
+def find_nbskill_mcp_processes(project=None, all_projects=False):
+    "Return running nbskill MCP server processes that match a project scope."
     rows = []
     for row in _mcp_process_rows():
         if not _mcp_process_matches(row, all_projects=True): continue
@@ -726,8 +728,9 @@ def _mcp_stop_target_rows(matches, all_rows=None):
         seen.add(pid)
         targets.append(row)
     return targets
-def _stop_nbskill_mcp_processes(project=None, all_projects=False, timeout=5.0, force=True, dry_run=False):
-    matches = _find_nbskill_mcp_processes(project=project, all_projects=all_projects)
+def stop_nbskill_mcp_processes(project=None, all_projects=False, timeout=5.0, force=True, dry_run=False):
+    "Stop running nbskill MCP server processes and return structured results."
+    matches = find_nbskill_mcp_processes(project=project, all_projects=all_projects)
     targets = _mcp_stop_target_rows(matches)
     result = {
         "project": None if all_projects else str(_mcp_project_root(project)),
@@ -802,7 +805,7 @@ def nbskill_mcp_stop(
     json_output: bool = False,  # Print JSON instead of text
 ):
     "Stop running nbskill MCP server processes for this project."
-    result = _stop_nbskill_mcp_processes(project=project, all_projects=all_projects, timeout=timeout, force=force, dry_run=dry_run)
+    result = stop_nbskill_mcp_processes(project=project, all_projects=all_projects, timeout=timeout, force=force, dry_run=dry_run)
     return _print_mcp_control_result(result, json_output=json_output)
 @call_parse
 def nbskill_mcp_restart(
@@ -814,7 +817,7 @@ def nbskill_mcp_restart(
     json_output: bool = False,  # Print JSON instead of text
 ):
     "Stop nbskill MCP stdio servers; clients must reconnect to start fresh code."
-    result = _stop_nbskill_mcp_processes(project=project, all_projects=all_projects, timeout=timeout, force=force, dry_run=dry_run)
+    result = stop_nbskill_mcp_processes(project=project, all_projects=all_projects, timeout=timeout, force=force, dry_run=dry_run)
     result["start"] = (
         "nbskill_mcp_restart only stops stdio MCP server processes. "
         "Reconnect or restart the MCP client to launch a fresh nbskill_mcp; "

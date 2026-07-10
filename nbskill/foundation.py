@@ -11,12 +11,12 @@ __all__ = ['EXAMPLE_NOTEBOOK_PATH', 'NotebookCell', 'NotebookChapter', 'Notebook
            'short_call_name', 'is_definition_node', 'node_start_line', 'is_export_directive', 'cell_source',
            'parse_code_cell', 'CellType', 'SemanticType', 'Directive', 'directive_lines', 'apply_directives', 'Cell',
            'Chapter', 'Notebook', 'NotebookSymbol', 'xml_escape', 'xml_attrs', 'cell_metadata', 'notebook_metadata',
-           'file_hash', 'exported_py_path', 'stamp_export_metadata', 'run_nbdev_export_from_project', 'export_notebook',
-           'ensure_cell_ids', 'notebook_hash', 'commit_notebook', 'parse_one_cell', 'find_cell_by_id',
-           'find_cell_by_text', 'replace_cell', 'clear_outputs', 'load_cells_text', 'validate_code_cells',
-           'parse_cells', 'first_line', 'cell_prefix', 'matches_filter', 'is_exported_code_cell', 'output_value_text',
-           'cell_output_text', 'stamp_notebook_metadata', 'cell_class_names', 'cell_matches_type', 'with_context',
-           'heading_title', 'chapter_spans', 'chapter_index_set', 'one_chapter']
+           'nbskill_cell_metadata', 'file_hash', 'exported_py_path', 'stamp_export_metadata',
+           'run_nbdev_export_from_project', 'export_notebook', 'ensure_cell_ids', 'notebook_hash', 'commit_notebook',
+           'parse_one_cell', 'find_cell_by_id', 'find_cell_by_text', 'replace_cell', 'clear_outputs', 'load_cells_text',
+           'validate_code_cells', 'parse_cells', 'first_line', 'cell_prefix', 'matches_filter', 'is_exported_code_cell',
+           'output_value_text', 'cell_output_text', 'stamp_notebook_metadata', 'cell_class_names', 'cell_matches_type',
+           'with_context', 'heading_title', 'chapter_spans', 'chapter_index_set', 'one_chapter']
 
 # %% ../nbs/00_foundation.ipynb #2500639f
 import ast,hashlib,json,multiprocessing,os,queue,re,tempfile,tomllib,traceback
@@ -1187,7 +1187,8 @@ def notebook_metadata(nb):
 
 
 # %% ../nbs/00_foundation.ipynb #5b39bc0b
-def _nbskill_cell_metadata(cell, create=True):
+def nbskill_cell_metadata(cell, create=True):
+    "Return the shared nbskill metadata block for a cell."
     meta = cell_metadata(cell) if create else (cell.get("metadata", {}) if isinstance(cell, dict) else getattr(cell, "metadata", {}) or {})
     info = meta.get(_NBSKILL_METADATA_KEY) if isinstance(meta, dict) else None
     if not isinstance(info, dict):
@@ -1476,7 +1477,7 @@ def commit_notebook(
 
 # %% ../nbs/00_foundation.ipynb #79b42816
 def _fresh_semantic_metadata(cell):
-    info = _nbskill_cell_metadata(cell, create=False)
+    info = nbskill_cell_metadata(cell, create=False)
     if not info: return None
     if info.get("cell_type") != getattr(cell, "cell_type", None): return None
     types = info.get("semantic_types")
@@ -1756,7 +1757,7 @@ def _computed_cell_class_names(cell):
 
 # %% ../nbs/00_foundation.ipynb #452e85f7
 def _refresh_cell_metadata(cell):
-    info = _nbskill_cell_metadata(cell)
+    info = nbskill_cell_metadata(cell)
     semantic_types = _computed_cell_class_names(cell)
     info["cell_type"] = getattr(cell, "cell_type", None)
     info["semantic_types"] = list(semantic_types)

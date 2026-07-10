@@ -25,7 +25,7 @@ from fastcore.nbio import read_nb
 from fastcore.nbio import write_nb as _write_nb
 
 from nbskill.foundation import (
-    _nbskill_cell_metadata, cell_source, cli_error, cli_return, one_chapter, output_text,
+    nbskill_cell_metadata, cell_source, cli_error, cli_return, one_chapter, output_text,
     output_value_text, parse_literal, source_hash, stamp_notebook_metadata,
 )
 from .parallel import execution_slot, notebook_locks
@@ -768,7 +768,7 @@ _TIMEOUT_SECONDS_KEY = "timeout_seconds"
 _EXECUTED_HASH_KEY = "executed_hash"
 
 # %% ../nbs/03_execute.ipynb #94178ce7
-# _nbskill_cell_metadata is imported from nbskill.foundation.
+# Execution approval and timeout markers share nbskill cell metadata with foundation.
 
 # %% ../nbs/03_execute.ipynb #131a6131
 def _cell_source_hash(cell): return source_hash(cell.get("source", ""), length=None)
@@ -780,7 +780,7 @@ class _ExecutionApprovalRequired(RuntimeError): pass
 # %% ../nbs/03_execute.ipynb #5a60da1d
 def _cell_has_execution_approval(cell, execution_policy=None):
     if getattr(cell, "execution_count", None) not in (None, 0): return True
-    info = _nbskill_cell_metadata(cell, create=False) or {}
+    info = nbskill_cell_metadata(cell, create=False) or {}
     if info.get(_EXECUTED_HASH_KEY) == _cell_source_hash(cell): return True
     return _cell_has_project_execution_approval(cell, execution_policy)
 
@@ -802,7 +802,7 @@ def _approval_required_error(cell, execution_policy=None):
 
 # %% ../nbs/03_execute.ipynb #7691adbc
 def _mark_executed(cell):
-    if cell.cell_type == "code": _nbskill_cell_metadata(cell)[_EXECUTED_HASH_KEY] = _cell_source_hash(cell)
+    if cell.cell_type == "code": nbskill_cell_metadata(cell)[_EXECUTED_HASH_KEY] = _cell_source_hash(cell)
 
 # %% ../nbs/03_execute.ipynb #7e35b99b
 def _timeout_stream(text):
@@ -825,7 +825,7 @@ def _cell_eval_false(cell):
 
 def _skip_timed_out_cell(cell):
     if cell.cell_type != "code": return False
-    meta = _nbskill_cell_metadata(cell)
+    meta = nbskill_cell_metadata(cell)
     current_hash = _cell_source_hash(cell)
     timeout_hash = meta.get(_TIMEOUT_HASH_KEY)
     if timeout_hash == current_hash:
@@ -843,7 +843,7 @@ def _skip_timed_out_cell(cell):
 
 # %% ../nbs/03_execute.ipynb #b3f484be
 def _mark_timeout(cell, timeout, outputs):
-    meta = _nbskill_cell_metadata(cell)
+    meta = nbskill_cell_metadata(cell)
     meta[_TIMEOUT_HASH_KEY] = _cell_source_hash(cell)
     meta[_TIMEOUT_SECONDS_KEY] = timeout
     msg = f"nbskill: cell id={cell.id} ran longer than {timeout}s and was stopped."
@@ -851,7 +851,7 @@ def _mark_timeout(cell, timeout, outputs):
 
 # %% ../nbs/03_execute.ipynb #986fbfcf
 def _clear_timeout_mark(cell):
-    meta = _nbskill_cell_metadata(cell)
+    meta = nbskill_cell_metadata(cell)
     meta.pop(_TIMEOUT_HASH_KEY, None)
     meta.pop(_TIMEOUT_SECONDS_KEY, None)
 

@@ -36,6 +36,7 @@ Documentation = "https://MorsCerta-crypto.github.io/nbskill/"
 
 [project.scripts]
 context = "nbskill.cli:context"
+filter_context = "nbskill.cli:filter_context"
 write_nb = "nbskill.cli:write_nb"
 update_cell = "nbskill.cli:update_cell"
 batch_edit_nb = "nbskill.cli:batch_edit_nb"

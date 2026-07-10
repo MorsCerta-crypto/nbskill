@@ -105,6 +105,7 @@ _QUERY_KEY_ALIASES = {
     "cell": "cell_id",
     "cell_id": "cell_id",
     "chapter": "chapter",
+    "section": "chapter",
     "type": "cell_type",
     "class": "cell_type",
     "cell_type": "cell_type",
@@ -112,6 +113,17 @@ _QUERY_KEY_ALIASES = {
     "text": "contains",
     "regex": "regex",
     "re": "regex",
+    "error": "has_error",
+    "errors": "has_error",
+    "has_error": "has_error",
+    "export": "export",
+    "exports": "export",
+    "exported": "export",
+    "header": "header",
+    "headers": "header",
+    "heading": "header",
+    "headings": "header",
+    "outline": "header",
 }
 
 # %% ../nbs/01_read.ipynb #4f3e6dfd
@@ -132,7 +144,9 @@ def _parse_query_terms(text):
     for term in shlex.split(str(text)):
         sep = "=" if "=" in term else ":" if ":" in term else None
         if sep is None:
-            bare.append(term)
+            key = _QUERY_KEY_ALIASES.get(term.strip().lower())
+            if key in {"has_error", "export", "header"}: spec[key] = "true"
+            else: bare.append(term)
             continue
         key, value = term.split(sep, 1)
         spec[_normalize_query_key(key)] = value
@@ -156,14 +170,49 @@ def _parse_query(query):
     return _parse_query(parsed)
 
 # %% ../nbs/01_read.ipynb #643079c0
+def _query_bool(value, default=True):
+    if value is None: return default
+    return str(value).strip().lower() not in {"0", "false", "no", "off", "none"}
+
+
+def _output_get(output, key, default=None):
+    return output.get(key, default) if isinstance(output, dict) else getattr(output, key, default)
+
+
+def _cell_has_error(cell):
+    return any(_output_get(output, "output_type") == "error" for output in (getattr(cell, "outputs", []) or []))
+
+
+def _cell_header_level(cell):
+    if getattr(cell, "cell_type", None) != "markdown": return None
+    line = first_line(cell_source(cell)).strip()
+    if not line.startswith("#"): return None
+    return len(line) - len(line.lstrip("#"))
+
+
+def _cell_matches_header(cell, value):
+    level = _cell_header_level(cell)
+    if level is None: return False
+    text = str(value or "").strip()
+    return level == int(text) if text.isdigit() else _query_bool(value)
+
+
+def _query_chapter_index_set(nb, name):
+    span = _one_chapter_span(nb.cells, name)
+    return set(range(span["start"], span["end"]))
+
+
 def _select_query_items(nb, spec):
     items = [find_cell_by_id(nb.cells, spec["cell_id"])] if spec.get("cell_id") else list(enumerate(nb.cells))
     if spec.get("chapter") is not None:
-        chapter_idxs = chapter_index_set(nb.cells, spec["chapter"])
+        chapter_idxs = _query_chapter_index_set(nb, spec["chapter"])
         items = [(i, c) for i, c in items if i in chapter_idxs]
     if spec.get("cell_type") is not None: items = [(i, c) for i, c in items if cell_matches_type(c, spec["cell_type"])]
-    if spec.get("contains") is not None: items = [(i, c) for i, c in items if spec["contains"] in c.source]
-    if spec.get("regex") is not None: items = [(i, c) for i, c in items if matches_filter(c.source, spec["regex"])]
+    if spec.get("header") is not None: items = [(i, c) for i, c in items if _cell_matches_header(c, spec["header"])]
+    if spec.get("export") is not None: items = [(i, c) for i, c in items if is_exported_code_cell(c) == _query_bool(spec["export"])]
+    if spec.get("has_error") is not None: items = [(i, c) for i, c in items if _cell_has_error(c) == _query_bool(spec["has_error"])]
+    if spec.get("contains") is not None: items = [(i, c) for i, c in items if spec["contains"] in cell_source(c)]
+    if spec.get("regex") is not None: items = [(i, c) for i, c in items if matches_filter(cell_source(c), spec["regex"])]
     return items
 
 # %% ../nbs/01_read.ipynb #5a2f23bf
@@ -635,20 +684,88 @@ def _context_named_notebook(target, notebooks):
         raise ValueError(f"Notebook target {target!r} matched multiple notebooks:\n{shown}")
     return matches[0] if matches else None
 
+# %% ../nbs/01_read.ipynb #b42007af
+_FILTER_CONTEXT_VIEWS = {"source", "summary", "cell"}
+
+
+def _filter_context_view(view):
+    view = "source" if view in (None, "", "cells") else str(view).lower()
+    if view not in _FILTER_CONTEXT_VIEWS:
+        raise ValueError(f"view must be one of {sorted(_FILTER_CONTEXT_VIEWS)}, not {view!r}")
+    return view
+
+
+def _filter_cell_summary(path, item):
+    source = item.get("source", "")
+    first = first_line(source).strip()
+    if not first: first = "(empty)"
+    error = item.get("error", "")
+    suffix = f" error={error}" if error else ""
+    return f"{path}#{item['cell_id']} idx={item['cell_idx']} type={item['cell_type']} {item['semantic_type']}{suffix} | {first}"
+
+
+def _filter_cell_error(cell):
+    for output in getattr(cell, "outputs", []) or []:
+        if _output_get(output, "output_type") == "error":
+            ename = _output_get(output, "ename", "Error")
+            evalue = _output_get(output, "evalue", "")
+            return f"{ename}: {evalue}".rstrip(": ")
+    return ""
+
+
+def _filter_match_record(path, idx, cell, max_chars_per_cell):
+    item = NotebookCell(cell, idx=idx).context_record()
+    item["source"] = _trim_context_source(item.get("source", ""), max_chars_per_cell)
+    item["output"] = _trim_context_source(item.get("output", ""), _CONTEXT_CELL_OUTPUT_CHARS)
+    item.update(path=str(path), error=_filter_cell_error(cell))
+    item["summary"] = _filter_cell_summary(path, item)
+    return item
+
+
+def _neighbor_records(path, nb, idx, before=0, after=0):
+    start = max(0, idx - max(0, int(before or 0)))
+    end = min(len(nb.cells), idx + max(0, int(after or 0)) + 1)
+    return [_filter_match_record(path, pos, nb.cells[pos], 0) for pos in range(start, end) if pos != idx]
+
+
+def _render_filter_source(item, line_numbers=False):
+    nl = chr(10)
+    header = f"{item['path']} id={item['cell_id']} idx={item['cell_idx']} type={item['cell_type']}"
+    source = _format_source(item.get("source", ""), line_numbers=line_numbers)
+    text = f"{header}{nl}{source}".rstrip()
+    if item.get("output"): text = f"{text}{nl}Output:{nl}{item['output']}"
+    return text
+
+
+def _render_filter_match(item, view="source", line_numbers=False):
+    if view == "summary": return item["summary"]
+    text = _render_filter_source(item, line_numbers=(line_numbers or view == "cell"))
+    if item.get("before") or item.get("after"):
+        before = [neighbor["summary"] for neighbor in item.get("before", [])]
+        after = [neighbor["summary"] for neighbor in item.get("after", [])]
+        text = _format_context_blocks(text, [("Before", before), ("After", after)])
+    return text
+
 # %% ../nbs/01_read.ipynb #c7fc16d9
 def filter_context(
     scope: str = ".",  # Project, folder, glob, or notebook used to choose notebooks
-    query=None,  # Optional query string/dict/list using id/type/chapter/contains/regex selectors
+    query=None,  # Optional query string/dict/list using id/type/chapter/contains/regex/errors/export/header selectors
     include_re: str | None = None,  # Optional regex that matched cell source must include
     exclude_re: str | None = None,  # Optional regex that matched cell source must not include
     max_matches: int = 50,  # Maximum matching cells to return
     max_chars_per_cell: int = 1200,  # Maximum source characters shown per cell; <=0 means no cap
+    view: str = "source",  # source, summary, or cell; cell implies stable line numbers
+    line_numbers: bool = False,  # Include 1-based source line numbers in source views
+    before: int = 0,  # Number of preceding neighbor cells to summarize for each match
+    after: int = 0,  # Number of following neighbor cells to summarize for each match
     verbose: bool = True,  # Print rendered context; pass False to only return structured data
 ):
     "Show notebook cells across a scope after applying query and regex filters."
-    if query is None and include_re is None and exclude_re is None:
-        raise ValueError("Pass query, include_re, or exclude_re to filter project context")
+    view = _filter_context_view(view)
+    if query is None and include_re is None and exclude_re is None and view != "summary":
+        raise ValueError("Pass query, include_re, exclude_re, or view='summary' to filter project context")
     matches, total = [], 0
+    before, after = max(0, int(before or 0)), max(0, int(after or 0))
     for path in _context_notebooks(scope):
         nb = read_nb(path)
         for idx, cell in _query_items(nb, query):
@@ -656,32 +773,31 @@ def filter_context(
             if not _context_match(source, include_re, exclude_re): continue
             total += 1
             if len(matches) >= max_matches: continue
-            matches.append({
-                "path": str(path),
-                "cell_id": getattr(cell, "id", ""),
-                "cell_idx": idx,
-                "cell_type": getattr(cell, "cell_type", ""),
-                "source": source.strip(),
-            })
+            item = _filter_match_record(path, idx, cell, max_chars_per_cell)
+            if before or after:
+                neighbors = _neighbor_records(path, nb, idx, before=before, after=after)
+                item["before"] = [n for n in neighbors if n["cell_idx"] < idx]
+                item["after"] = [n for n in neighbors if n["cell_idx"] > idx]
+            matches.append(item)
     nl = chr(10)
     filter_lines = [
         f"scope={scope}",
         f"query={query!r}",
         f"include_re={include_re!r}",
         f"exclude_re={exclude_re!r}",
+        f"view={view!r}",
+        f"before={before}",
+        f"after={after}",
         f"max_matches={max_matches}",
     ]
-    match_lines = [
-        f"{item['path']} id={item['cell_id']} idx={item['cell_idx']} type={item['cell_type']}{nl}"
-        + _trim_context_source(item["source"], max_chars_per_cell)
-        for item in matches
-    ]
+    match_lines = [_render_filter_match(item, view=view, line_numbers=line_numbers) for item in matches]
     title = f"Filtered context: {scope}{nl}Matches: {len(matches)} shown of {total}"
     text = _format_context_blocks(title, [("Filters", filter_lines), ("Matches", match_lines)])
     return _context_result(
         "filter_context", text, verbose=verbose, scope=str(scope), query=query,
         include_re=include_re, exclude_re=exclude_re, max_matches=max_matches,
-        max_chars_per_cell=max_chars_per_cell, total_matches=total, matches=matches,
+        max_chars_per_cell=max_chars_per_cell, view=view, line_numbers=line_numbers,
+        before=before, after=after, total_matches=total, matches=matches,
     )
 
 # %% ../nbs/01_read.ipynb #38ee5411

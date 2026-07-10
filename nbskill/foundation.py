@@ -28,7 +28,7 @@ from importlib.resources import files
 from io import StringIO
 from pathlib import Path
 from fastcore.basics import in_jupyter, patch
-from fastcore.nbio import mk_cell, new_nb, write_nb
+from fastcore.nbio import Notebook as FastcoreNotebook, cells2xml, mk_cell, new_nb, render_text, write_nb
 from fastcore.script import is_cli
 from fastcore.xtras import rtoken_hex
 

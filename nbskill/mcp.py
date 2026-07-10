@@ -2481,20 +2481,27 @@ async def _filter_context_tool(
     exclude_re: str | None = None,
     max_matches: int = 50,
     max_chars_per_cell: int = 1200,
+    view: str = "source",
+    line_numbers: bool = False,
+    before: int = 0,
+    after: int = 0,
     verbose: bool = True,
     detail: str = "summary",
     path: str | None = None,
     ctx: Context = None,
 ) -> ToolResult:
-    "Search notebook cells across a scope with query and regex filters."
+    "Search notebook cells across a scope with query, view, and neighbor filters."
     root = await _mcp_workspace_root(ctx)
     if path is not None and scope == ".": scope = path
     scope = _mcp_workspace_path(scope, root)
     max_matches = _mcp_clamp_int(max_matches, 50, 1, 200, "max_matches")
     max_chars_per_cell = _mcp_clamp_int(max_chars_per_cell, 1200, 100, 4000, "max_chars_per_cell")
+    before = _mcp_clamp_int(before, 0, 0, 20, "before")
+    after = _mcp_clamp_int(after, 0, 0, 20, "after")
     arguments = dict(
         scope=scope, query=query, include_re=include_re, exclude_re=exclude_re,
         max_matches=max_matches, max_chars_per_cell=max_chars_per_cell,
+        view=view, line_numbers=line_numbers, before=before, after=after,
         verbose=verbose, detail=detail, path=path, workspace_root=str(root) if root else None,
     )
     try:
@@ -2504,6 +2511,7 @@ async def _filter_context_tool(
                 data = filter_context(
                     scope=scope, query=query, include_re=include_re, exclude_re=exclude_re,
                     max_matches=max_matches, max_chars_per_cell=max_chars_per_cell,
+                    view=view, line_numbers=line_numbers, before=before, after=after,
                     verbose=verbose,
                 )
     except Exception as exc:

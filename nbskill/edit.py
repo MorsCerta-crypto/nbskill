@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from fastcore.basics import patch
-from fastcore.nbio import mk_cell, read_nb, write_nb
+from fastcore.nbio import Notebook as FastcoreNotebook, mk_cell, read_nb
 
 from nbskill.foundation import (
     Notebook,
@@ -21,7 +21,6 @@ from nbskill.foundation import (
     cell_source,
     clear_outputs,
     commit_notebook,
-    find_cell_by_id,
     source_hash,
 )
 from .parallel import notebook_locks
@@ -533,13 +532,22 @@ def _apply_text_edit(nb, edit, diffs, affected):
 # %% ../nbs/02_edit.ipynb #8436d989
 def _insert_at(nb, anchor_id, where, new_cells):
     if where not in {"before", "after"}: raise ValueError("where must be 'before' or 'after'")
-    if anchor_id is None:
-        target = 0 if where == "before" else len(nb.cells)
-    else:
-        idx, _ = find_cell_by_id(nb.cells, anchor_id)
-        target = idx if where == "before" else idx + 1
-    for offset, cell in enumerate(new_cells): nb.cells.insert(target + offset, cell)
-    return [getattr(cell, "id", "") for cell in new_cells]
+    model = FastcoreNotebook(nb)
+    inserted, last_id = [], None
+    for cell in new_cells:
+        kwargs = {"cell_type": getattr(cell, "cell_type", "code")}
+        if last_id is not None:
+            kwargs["after"] = last_id
+        elif anchor_id is not None:
+            kwargs[where] = anchor_id
+        elif where == "before" and len(model):
+            kwargs["before"] = model[0].id
+        added = model.add(cell_source(cell), **kwargs)
+        added.id = getattr(cell, "id", added.id)
+        clear_outputs(added)
+        inserted.append(getattr(added, "id", ""))
+        last_id = getattr(added, "id", "")
+    return inserted
 
 # %% ../nbs/02_edit.ipynb #1745202e
 def _apply_structural_edit(nb, edit, diffs, affected, default_cell_type):
@@ -594,13 +602,13 @@ def _apply_structural_edit(nb, edit, diffs, affected, default_cell_type):
         before_order = [getattr(cell, "id", "") for cell in nb.cells]
         moving = [nb.cells[idx] for idx in indices]
         moving_ids = [getattr(cell, "id", "") for cell in moving]
-        remaining = [cell for idx, cell in enumerate(nb.cells) if idx not in set(indices)]
         anchor_id = edit.get("anchor_id")
         where = edit.get("where", "after")
-        anchor_positions = {getattr(cell, "id", None): idx for idx, cell in enumerate(remaining)}
-        if anchor_id not in anchor_positions: raise ValueError(f"unknown anchor_id {anchor_id!r}")
-        target = anchor_positions[anchor_id] + (1 if where == "after" else 0)
-        nb.cells[:] = [*remaining[:target], *moving, *remaining[target:]]
+        if where not in {"before", "after"}: raise ValueError("where must be 'before' or 'after'")
+        try:
+            FastcoreNotebook(nb).move(moving_ids, **{where: anchor_id})
+        except KeyError as err:
+            raise ValueError(f"unknown anchor_id {anchor_id!r}") from err
         after_order = [getattr(cell, "id", "") for cell in nb.cells]
         affected.extend(moving_ids)
         diff = "\n".join([

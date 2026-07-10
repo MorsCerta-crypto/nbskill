@@ -627,9 +627,11 @@ def nbskill_mcp_log_problems(
 def nbskill_mcp(
     transport: str = "stdio",  # MCP transport; stdio is what Codex/Claude use for local servers
     show_banner: bool = False,  # Show FastMCP startup banner
+    reload: bool = False,  # Restart the FastMCP worker when source files change
+    reload_dir: str | None = None,  # Directory to watch for source changes
 ):
     "Run the nbskill MCP server."
-    return nbskill.mcp.main(transport=transport, show_banner=show_banner)
+    return nbskill.mcp.main(transport=transport, show_banner=show_banner, reload=reload, reload_dir=reload_dir)
 
 # %% ../nbs/13_cli.ipynb #35576b91
 _MCP_CONTROL_COMMANDS = {"nbskill_mcp_start", "nbskill_mcp_stop", "nbskill_mcp_restart"}
@@ -792,9 +794,12 @@ def _print_mcp_control_result(result, json_output=False):
 def nbskill_mcp_start(
     transport: str = "stdio",  # MCP transport; stdio is what Codex/Claude use for local per-project servers
     show_banner: bool = False,  # Show FastMCP startup banner
+    reload: bool = False,  # Restart the FastMCP worker when source files change
+    reload_dir: str | None = None,  # Directory to watch for source changes
 ):
     "Run the nbskill MCP server in the foreground."
-    return nbskill.mcp.main(transport=transport, show_banner=show_banner)
+    return nbskill.mcp.main(transport=transport, show_banner=show_banner, reload=reload, reload_dir=reload_dir)
+
 @call_parse
 def nbskill_mcp_stop(
     project: str | None = None,  # Project root to target; defaults to the current working directory
@@ -807,6 +812,7 @@ def nbskill_mcp_stop(
     "Stop running nbskill MCP server processes for this project."
     result = stop_nbskill_mcp_processes(project=project, all_projects=all_projects, timeout=timeout, force=force, dry_run=dry_run)
     return _print_mcp_control_result(result, json_output=json_output)
+
 @call_parse
 def nbskill_mcp_restart(
     project: str | None = None,  # Optional project root to target when all_projects is false

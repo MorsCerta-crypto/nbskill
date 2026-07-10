@@ -53,7 +53,7 @@ BUILTIN_TASTE_PROFILE = {
 # %% ../nbs/11_agent_workbench.ipynb #63de5b2c
 DEFAULT_BUDGETS = {
     "max_files": 2,
-    "max_cells": 3,
+    "max_cells": 4,
     "max_added_lines": 60,
     "max_context_notebooks": 20,
     "max_context_chars": 50000,
@@ -147,11 +147,16 @@ def make_task_contract(
         },
         "empirical": {
             "enabled": True,
-            "enforce": False,
+            "enforce": True,
             "require_scratch_before_write": True,
             "require_inspect_before_write": True,
             "require_execute_after_write": True,
             "require_story_for_new_export": True,
+        },
+        "sandbox": {
+            "read": ["project"], "write": ["target_notebooks"],
+            "network": "ask", "subprocess": "ask",
+            "approval": "per_request",
         },
         "verification": list(DEFAULT_VERIFICATION),
         "taste": {},

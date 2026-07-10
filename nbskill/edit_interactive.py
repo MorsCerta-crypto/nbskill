@@ -4,8 +4,9 @@
 __all__ = ['EDIT_INTERACTIVE_SYSTEM', 'CONTEXT_SESSION_SYSTEM', 'capture_call_text', 'notebook_view', 'notebooks_view',
            'ManagedContextMessage', 'managed_notebook_context', 'render_managed_context', 'EditSession',
            'find_context_command', 'apply_context_command', 'run_chat_with_context_commands', 'make_edit_tools',
-           'make_context_tools', 'make_chat', 'run_context_session', 'response_text', 'plan_result_text', 'final_diff',
-           'final_diffs', 'execute_plan', 'execute_project_plan']
+           'AgentRuntime', 'approve_agent_session', 'make_context_tools', 'make_chat', 'run_context_session',
+           'response_text', 'plan_result_text', 'final_diff', 'final_diffs', 'execute_plan', 'agent_session',
+           'execute_project_plan']
 
 # %% ../nbs/08_edit_interactive.ipynb #c7e88003
 import ast
@@ -84,7 +85,7 @@ context-management step.
 
 Use only the provided tools: str_replace, edit_cell, add_cell, delete_cell,
 run_code, inspect_state, execute_cell, query_knowledge, query_problem_memory,
-record_problem_solution, and the context tools open_context, fold_context,
+record_problem_solution, inspect_project, inspect_library, and the context tools open_context, fold_context,
 delete_context, edit_context, context_view, and manage_context. Prefer
 manage_context to batch multiple context operations in one tool call. When more
 than one notebook is in scope, pass the notebook path/name to edit and execution
@@ -103,7 +104,7 @@ for each reusable problem-solution pair you learned, with short evidence.
 
 For new behavior, use this loop:
 1. Scratch: run the smallest experiment with run_code in the live notebook
-   scope. Use budget_secs for code that might run long.
+   scope. Use budget_secs for code that might run long. Effectful scratch requests pause for user approval; preserve the session id and continue after the decision.
 2. Inspect: use inspect_state to look at variables and functions before treating
    an experiment as correct.
 3. Function: turn the working scratch into a focused function. If the current
@@ -1248,6 +1249,274 @@ def make_edit_tools(
         record_problem_solution,
     ]
 
+# %% ../nbs/08_edit_interactive.ipynb #6fc7d5e0
+def _agent_runtime_capabilities(source):
+    "Return effectful capabilities visible in one Python source string."
+    try: tree = ast.parse(source)
+    except SyntaxError: return {"python.invalid"}
+    caps = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call): continue
+        name = ast.unparse(node.func) if hasattr(ast, "unparse") else ""
+        if name == "open" and len(node.args) > 1:
+            mode = getattr(node.args[1], "value", "")
+            if any(flag in str(mode) for flag in "wax+"): caps.add("filesystem.write")
+        if any(name.endswith("." + item) for item in (
+            "write_text", "write_bytes", "touch", "mkdir", "unlink", "rmdir", "rename", "replace",
+            "remove", "rmtree",
+        )): caps.add("filesystem.write")
+        if name.startswith(("subprocess.", "os.system", "os.popen")):
+            caps.add("subprocess")
+        if name.startswith(("httpx.", "requests.", "urllib.")):
+            caps.add("network")
+    return caps
+
+# %% ../nbs/08_edit_interactive.ipynb #e0d9fa24
+def _agent_runtime_output_text(output):
+    "Render one safe-shell output without exposing notebook JSON."
+    if isinstance(output, dict):
+        if "data" in output:
+            data = output["data"]
+            if isinstance(data, dict): return "display:\n" + str(data.get("text/plain", data))
+            return "display:\n" + str(data)
+        if output.get("text"): return str(output["text"])
+        if output.get("ename"): return output["ename"] + ": " + str(output.get("evalue", ""))
+    return str(getattr(output, "text", "") or getattr(output, "data", "") or output)
+
+# %% ../nbs/08_edit_interactive.ipynb #0e066d39
+class AgentRuntime:
+    "One persistent audited Python runtime for an edit session notebook."
+    def __init__(self, path):
+        self.path, self.shell, self.journal = Path(path), None, []
+
+    def reset(self):
+        "Drop stale Python state after an earlier notebook cell changes."
+        self.shell = None
+
+    def _shell(self):
+        if self.shell is None:
+            from nbskill.execute import _SafeShell
+            self.shell = _SafeShell(self.path)
+        return self.shell
+
+    def run(self, source, timeout, allowed=()):
+        "Run source in the persistent safe shell or return an approval request."
+        caps = _agent_runtime_capabilities(source)
+        blocked = sorted(caps - set(allowed))
+        digest = source_hash(source, length=None)
+        if blocked:
+            return {
+                "status": "waiting_for_approval", "capabilities": blocked,
+                "source_hash": digest, "source": source,
+            }
+        shell = self._shell()
+        outputs = shell.run(source, timeout=timeout)
+        status = "error" if shell.exc else "ok"
+        text = "\n".join(_agent_runtime_output_text(item) for item in outputs if item).strip()
+        if status == "ok": self.journal.append({"source": source, "timeout": timeout, "source_hash": digest})
+        return {"status": status, "output": text, "error": str(shell.exc or "")}
+
+# %% ../nbs/08_edit_interactive.ipynb #888dbf8f
+def _agent_runtime_timeout_risk(source):
+    "Reject obvious unbounded loops before they can trap the persistent runtime."
+    try: tree = ast.parse(source)
+    except SyntaxError: return False
+    return any(isinstance(node, ast.While) and isinstance(node.test, ast.Constant) and node.test.value is True for node in ast.walk(tree))
+
+# %% ../nbs/08_edit_interactive.ipynb #03bf1662
+class AgentRuntime(AgentRuntime):
+    "Persistent safe runtime with an explicit guard for statically endless code."
+    def run(self, source, timeout, allowed=()):
+        if _agent_runtime_timeout_risk(source):
+            return {"status": "error", "output": "", "error": f"TimeoutError: refused obvious unbounded loop (budget_secs={timeout})"}
+        return super().run(source, timeout, allowed=allowed)
+
+# %% ../nbs/08_edit_interactive.ipynb #e52392a8
+def _session_runtime(session, path):
+    "Return the persistent safe runtime for `path` in one agent session."
+    runtimes = getattr(session, "agent_runtimes", None)
+    if runtimes is None:
+        runtimes = session.agent_runtimes = {}
+    key = session._state_key(path)
+    if key not in runtimes: runtimes[key] = AgentRuntime(path)
+    return runtimes[key]
+
+# %% ../nbs/08_edit_interactive.ipynb #c7eb50a5
+def _session_reset_runtime(session, path=None):
+    "Invalidate one runtime after source changes, or every runtime on reset."
+    runtimes = getattr(session, "agent_runtimes", {})
+    if path is None:
+        for runtime in runtimes.values(): runtime.reset()
+        return
+    runtime = runtimes.get(session._state_key(path))
+    if runtime is not None: runtime.reset()
+
+# %% ../nbs/08_edit_interactive.ipynb #f9410b30
+def _session_approval(session, path, source, capabilities):
+    "Store one exact approval request and return its stable public shape."
+    requests = getattr(session, "approval_requests", None)
+    if requests is None: requests = session.approval_requests = {}
+    source_hash_value = source_hash(source, length=None)
+    approval_id = source_hash(f"{path}|{source_hash_value}|{','.join(capabilities)}", length=16)
+    request = {
+        "approval_id": approval_id, "notebook": str(path),
+        "source_hash": source_hash_value, "capabilities": list(capabilities),
+        "status": "waiting_for_approval",
+    }
+    requests[approval_id] = {**request, "source": source}
+    session.pending_approval = request
+    session.record_event("approval_requested", **request)
+    return request
+
+# %% ../nbs/08_edit_interactive.ipynb #899918ef
+def approve_agent_session(session, approval_id, decision="deny"):
+    "Apply one approval decision without changing the requested source hash."
+    request = getattr(session, "approval_requests", {}).get(str(approval_id))
+    if request is None: raise ValueError(f"Unknown approval_id {approval_id!r}")
+    decision = str(decision or "deny").lower()
+    if decision not in {"once", "session", "deny"}:
+        raise ValueError("decision must be once, session, or deny")
+    if decision != "deny":
+        allowed = getattr(session, "approved_capabilities", set())
+        if decision == "session": allowed.update(request["capabilities"])
+        else: allowed.add("approval:" + request["approval_id"])
+        session.approved_capabilities = allowed
+    request["decision"] = decision
+    session.pending_approval = None
+    session.record_event("approval_decided", approval_id=approval_id, decision=decision)
+    return request
+
+# %% ../nbs/08_edit_interactive.ipynb #1e316a2e
+def _session_allowed_capabilities(session, source):
+    "Return capabilities approved for this source or the whole session."
+    allowed = set(getattr(session, "approved_capabilities", set()))
+    caps = {item for item in allowed if not item.startswith("approval:")}
+    digest = source_hash(source, length=None)
+    for request in getattr(session, "approval_requests", {}).values():
+        if request.get("source_hash") == digest and "approval:" + request["approval_id"] in allowed:
+            caps.update(request["capabilities"])
+    return caps
+
+# %% ../nbs/08_edit_interactive.ipynb #db6803b0
+_edit_interactive_finish_write = _finish_write
+
+# %% ../nbs/08_edit_interactive.ipynb #4aef8c0d
+def _finish_write(session, path, message, result, tool_name=None):
+    "Discard stale runtime before recording the successful notebook mutation."
+    if isinstance(result, dict) and result.get("changed"):
+        _session_reset_runtime(session, path)
+    return _edit_interactive_finish_write(session, path, message, result, tool_name=tool_name)
+
+# %% ../nbs/08_edit_interactive.ipynb #8ecebe2e
+_edit_interactive_make_edit_tools = make_edit_tools
+
+# %% ../nbs/08_edit_interactive.ipynb #c2a30cbf
+def make_edit_tools(session):
+    "Create notebook tools with one persistent audited runtime per target notebook."
+    existing = {tool.__name__: tool for tool in _edit_interactive_make_edit_tools(session)}
+
+    def _safe_run(path, source, header, budget_secs=None):
+        budget = _bounded_int(budget_secs, session.timeout, 1, _AGENT_MAX_TIMEOUT_SECONDS, "budget_secs")
+        runtime = _session_runtime(session, path)
+        result = runtime.run(source, budget, allowed=_session_allowed_capabilities(session, source))
+        if result["status"] == "waiting_for_approval":
+            request = _session_approval(session, path, source, result["capabilities"])
+            text = header + " status=waiting_for_approval\n" + json.dumps(request, sort_keys=True)
+            session.session_note(text)
+            return StopResponse(text)
+        chunks = [f"{header} status={result['status']} budget_secs={budget}"]
+        if result.get("output"): chunks.extend(["output:", result["output"]])
+        if result.get("error"): chunks.extend(["error:", result["error"]])
+        return "\n".join(chunks)
+
+    def run_code(source: str, notebook: str | None=None, budget_secs: int | None=None) -> str:
+        "Run scratch Python in the persistent audited notebook runtime."
+        path, source = session.target_path(notebook), str(source or "")
+        session.record_tool("run_code", f"notebook={path}, chars={len(source)}")
+        report = _safe_run(path, source, f"SCRATCH notebook={path}", budget_secs)
+        status = "waiting_for_approval" if "waiting_for_approval" in str(report) else ("error" if " status=error" in str(report) else "ok")
+        if status == "ok": session.live_state(path).update(_session_runtime(session, path)._shell().g)
+        session.record_event("scratch", tool="run_code", notebook=str(path), status=status, chars=len(source))
+        session.record(f"Ran safe scratch code in {path} ({status})")
+        return report
+
+    def inspect_state(name: str | None=None, notebook: str | None=None) -> str:
+        "Inspect variables and functions in the persistent audited runtime."
+        path, target = session.target_path(notebook), _none_if_blank(name)
+        ns = _session_runtime(session, path)._shell().g
+        session.record_tool("inspect_state", f"notebook={path}, name={target!r}")
+        if target is None:
+            names = sorted(key for key in ns if not key.startswith("__"))
+            result = "\n".join([f"state notebook={path} names={len(names)}", *[f"- {key}: {type(ns[key]).__name__}" for key in names]])
+        elif target not in ns:
+            result = f"state notebook={path} name={target} status=missing"
+        else:
+            value = ns[target]
+            result = "\n".join([f"state notebook={path} name={target} status=ok", f"type={type(value).__module__}.{type(value).__qualname__}", "repr=" + cap_text(repr(value), 2000)])
+        session.record_event("inspect", tool="inspect_state", notebook=str(path), status="ok" if "status=missing" not in result else "missing", name=target)
+        return result
+
+    def execute_cell(id: str, rerun_all: bool=False, notebook: str | None=None, budget_secs: int | None=None) -> str:
+        "Execute through one cell using the persistent audited runtime."
+        path = session.target_path(notebook)
+        with notebook_locks(path):
+            nb = read_nb(path)
+            target_idx, _ = _edit_find_cell_by_id(nb.cells, id)
+            cells = list(nb.cells)
+        if rerun_all: _session_reset_runtime(session, path); session.set_executed_until(path, -1)
+        start = session.executed_until(path) + 1
+        if target_idx < start: start = target_idx
+        reports, status = [], "ok"
+        for idx in range(start, target_idx + 1):
+            cell = cells[idx]
+            source = cell_source(cell)
+            if cell.cell_type != "code" or re.match(r"\s*#\|\s*eval:\s*false\b", source, re.I):
+                reports.append(f"CELL {idx} id={cell.id} notebook={path} status=skipped")
+                continue
+            report = _safe_run(path, source, f"CELL {idx} id={cell.id} notebook={path}", budget_secs)
+            reports.append(str(report))
+            if "waiting_for_approval" in str(report): status = "waiting_for_approval"; break
+            session.set_executed_until(path, idx)
+            if " status=error" in str(report): status = "error"; break
+        session.record_event("execute", tool="execute_cell", notebook=str(path), status=status, cell_id=id, rerun_all=rerun_all)
+        return "\n\n".join([f"status={status}", *reports])
+
+    def inspect_project(target: str, verbose: bool=False) -> str:
+        "Read bounded notebook or symbol context outside the active chapter when needed."
+        from nbskill.read import file_context
+        session.record_tool("inspect_project", target)
+        text = cap_text(capture_call_text(file_context, path=target, verbose=verbose), 8000)
+        tag = "project:" + source_hash(target, length=10)
+        session.managed_context.append(ManagedContextMessage(tag, "external project context", text, visible=True))
+        session.update_context_view()
+        return text
+
+    def inspect_library(query: str, package: str="", version: str="", top_k: int=3) -> str:
+        "Inspect indexed library code; downloads require the network capability."
+        from nbskill.knowledge import reference_query
+        source = f"library:{package}:{version}:{query}"
+        wants_download = bool(package)
+        allowed = _session_allowed_capabilities(session, source)
+        if wants_download and "network" not in allowed:
+            request = _session_approval(session, session.path, source, ["network"])
+            text = "library inspection status=waiting_for_approval\n" + json.dumps(request, sort_keys=True)
+            session.session_note(text)
+            return StopResponse(text)
+        result = reference_query(query, top_k=_bounded_int(top_k, 3, 1, 5, "top_k"), package=package or None, version=version or None, allow_download=wants_download)
+        report = result.get("context") or "No relevant library context found."
+        tag = "library:" + source_hash(source, length=10)
+        session.managed_context.append(ManagedContextMessage(tag, "external library report", cap_text(report, 8000), visible=True))
+        session.record_tool("inspect_library", f"package={package or 'indexed'}")
+        session.update_context_view()
+        return report
+
+    return [
+        existing["str_replace"], existing["edit_cell"], existing["add_cell"], existing["delete_cell"],
+        run_code, inspect_state, execute_cell, existing["query_knowledge"],
+        existing["query_problem_memory"], existing["record_problem_solution"],
+        inspect_project, inspect_library,
+    ]
+
 # %% ../nbs/08_edit_interactive.ipynb #3540e8d9
 def make_context_tools(session):
     "Create managed-context tools for a separate context session."
@@ -1676,6 +1945,103 @@ def execute_plan(
         "operations": _bounded_items(session.log),
         "log_path": str(session.log_path),
         "diff": diff,
+    }
+
+# %% ../nbs/08_edit_interactive.ipynb #ae8bae2a
+def _agent_session_file(session_id):
+    "Return the durable local checkpoint path for one agent session."
+    safe = re.sub(r"[^A-Za-z0-9_.-]+", "-", str(session_id))
+    return Path("log") / f"agent-session-{safe}.json"
+
+# %% ../nbs/08_edit_interactive.ipynb #bd196cd0
+def _checkpoint_agent_session(session):
+    "Persist resumable agent reasoning, context, approvals, and safe replay journal."
+    runtimes = getattr(session, "agent_runtimes", {})
+    data = {
+        "session_id": session.session_id,
+        "target_paths": [str(path) for path in session.target_paths],
+        "timeout": session.timeout, "revision": session.revision,
+        "log": session.log, "tool_log": session.tool_log, "history": session.history,
+        "events": session.events, "messages": session.messages,
+        "feedback_notes": session.feedback_notes,
+        "managed_context": [vars(msg).copy() for msg in session.managed_context],
+        "context_command_log": session.context_command_log,
+        "approval_requests": getattr(session, "approval_requests", {}),
+        "approved_capabilities": sorted(getattr(session, "approved_capabilities", set())),
+        "runtime_journal": {key: runtime.journal for key, runtime in runtimes.items()},
+    }
+    dest = _agent_session_file(session.session_id)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(json.dumps(data, indent=2, default=str), encoding="utf-8")
+    return dest
+
+# %% ../nbs/08_edit_interactive.ipynb #87d973cc
+def _restore_agent_session(paths, timeout, session_id):
+    "Restore an agent checkpoint; replay only prior pure runtime commands."
+    path = _agent_session_file(session_id)
+    if not path.exists(): return None
+    try: data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError): return None
+    if [str(item) for item in paths] != data.get("target_paths"): return None
+    session = EditSession(path=paths, target_paths=paths, timeout=timeout, session_id=session_id)
+    for name in ("log", "tool_log", "history", "events", "messages", "feedback_notes", "context_command_log"):
+        setattr(session, name, list(data.get(name, [])))
+    session.revision = int(data.get("revision", 0))
+    session.managed_context = [ManagedContextMessage(**item) for item in data.get("managed_context", [])]
+    session.approval_requests = dict(data.get("approval_requests", {}))
+    session.approved_capabilities = set(data.get("approved_capabilities", []))
+    for key, journal in data.get("runtime_journal", {}).items():
+        runtime = _session_runtime(session, Path(key))
+        for item in journal:
+            source = item.get("source", "")
+            if not _agent_runtime_capabilities(source): runtime.run(source, item.get("timeout", timeout))
+    return session
+
+# %% ../nbs/08_edit_interactive.ipynb #a9fc3583
+_edit_interactive_get_agent_session = _get_agent_session
+
+# %% ../nbs/08_edit_interactive.ipynb #e9c3db29
+def _get_agent_session(paths, timeout, session_id=None, reset_session=False):
+    "Reuse an in-memory session or restore its durable checkpoint before planning."
+    sid = str(session_id or "").strip() or _new_agent_session_id()
+    if reset_session:
+        _AGENT_SESSIONS.pop(sid, None)
+        _agent_session_file(sid).unlink(missing_ok=True)
+    session = _AGENT_SESSIONS.get(sid) or _restore_agent_session(paths, timeout, sid)
+    if session is None:
+        session = _edit_interactive_get_agent_session(paths, timeout, session_id=sid)
+    else:
+        _AGENT_SESSIONS[sid] = session
+        session.target_paths, session.path, session.timeout = [Path(path) for path in paths], Path(paths[0]), timeout
+        session.chat = None
+        session.notebook_msg_idx = session.context_msg_idx = None
+        if not session.managed_context:
+            session.managed_context = managed_notebook_context(session.target_paths, session.revision)
+    _checkpoint_agent_session(session)
+    return session
+
+# %% ../nbs/08_edit_interactive.ipynb #dbe821a3
+def agent_session(session_id, action="status", approval_id=None, decision="deny"):
+    "Inspect, approve, deny, or cancel a durable edit-interactive session."
+    session = _AGENT_SESSIONS.get(str(session_id))
+    if session is None:
+        raise ValueError("Agent session is not active; resume it with execute_plan and the same session_id.")
+    action = str(action or "status").lower()
+    if action == "approve":
+        if approval_id is None: raise ValueError("approval_id is required for action='approve'")
+        approve_agent_session(session, approval_id, decision)
+    elif action == "cancel":
+        session.pending_approval = None
+        session.record_event("session_cancelled", status="ok")
+    elif action != "status":
+        raise ValueError("action must be status, approve, or cancel")
+    checkpoint = _checkpoint_agent_session(session)
+    return {
+        "session_id": session.session_id,
+        "status": "waiting_for_approval" if getattr(session, "pending_approval", None) else "ready",
+        "approval": getattr(session, "pending_approval", None),
+        "checkpoint": str(checkpoint),
+        "events": _bounded_items(session.events),
     }
 
 # %% ../nbs/08_edit_interactive.ipynb #256a672a

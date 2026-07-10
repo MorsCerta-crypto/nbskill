@@ -3,7 +3,8 @@
 # %% auto #0
 __all__ = ['mcp', 'as_text', 'capture_call', 'capture_notebook_call', 'mcp_log_report', 'format_mcp_log_report',
            'mcp_tool_result', 'nbskill_status', 'doctor_tool', 'edit_notebook_tool', 'exec_nb_tool',
-           'execute_plan_tool', 'agent_workbench_tool', 'style_check_tool', 'convert_tool', 'create_mcp', 'main']
+           'execute_plan_tool', 'agent_workbench_tool', 'agent_session_tool', 'style_check_tool', 'convert_tool',
+           'create_mcp', 'main']
 
 # %% ../nbs/07_mcp.ipynb #mcpimports1
 import asyncio
@@ -28,6 +29,10 @@ from fastmcp import Context, FastMCP
 from fastmcp.server.middleware import Middleware
 from fastmcp.tools import ToolResult
 from mcp.types import TextContent
+
+# %% ../nbs/07_mcp.ipynb #429133a1
+if __package__ in (None, ""):
+    __package__ = "nbskill"
 
 # %% ../nbs/07_mcp.ipynb #mcpimports3
 from nbdev.doclinks import nbdev_export as _run_nb_export
@@ -2843,6 +2848,34 @@ async def agent_workbench_tool(
     except (Exception, SystemExit) as exc:
         return _mcp_tool_error_result("agent_workbench", arguments, exc, detail=detail)
 
+# %% ../nbs/07_mcp.ipynb #cd18f774
+@mcp.tool(name="agent_session", description="Inspect or resume a checkpointed edit-interactive agent session.")
+async def agent_session_tool(
+    session_id: str,
+    action: str="status",
+    approval_id: str | None=None,
+    decision: str="deny",
+    detail: str="summary",
+    ctx: Context=None,
+) -> ToolResult:
+    "Inspect, approve, deny, or cancel a persistent agent session."
+    arguments = dict(
+        session_id=session_id, action=action, approval_id=approval_id,
+        decision=decision, detail=detail,
+    )
+    try:
+        from nbskill.edit_interactive import agent_session
+        result = await asyncio.to_thread(
+            agent_session, session_id, action=action,
+            approval_id=approval_id, decision=decision,
+        )
+        return mcp_tool_result(
+            "agent_session", arguments, json.dumps(result, default=str),
+            detail=detail, agent_session=result,
+        )
+    except (Exception, SystemExit) as exc:
+        return _mcp_tool_error_result("agent_session", arguments, exc, detail=detail)
+
 # %% ../nbs/07_mcp.ipynb #mcptool15
 @mcp.tool(**_mcp_tool_meta("style_check"))
 async def style_check_tool(
@@ -3011,19 +3044,43 @@ def create_mcp():
     return mcp
 
 # %% ../nbs/07_mcp.ipynb #bc41ce66
+def _fastmcp_reload_command(transport="stdio", show_banner=False, reload_dir=None):
+    "Return the FastMCP CLI command used for development auto-reload."
+    fastmcp = shutil.which("fastmcp")
+    if not fastmcp:
+        sibling = Path(sys.executable).with_name("fastmcp")
+        if sibling.exists(): fastmcp = str(sibling)
+    if not fastmcp:
+        raise RuntimeError("reload needs the FastMCP CLI executable on PATH")
+    server_spec = f"{Path(__file__).resolve()}:mcp"
+    command = [fastmcp, "run", server_spec, "--transport", transport, "--reload"]
+    if not show_banner: command.append("--no-banner")
+    if reload_dir: command.extend(["--reload-dir", str(Path(reload_dir).expanduser())])
+    return command
+
+# %% ../nbs/07_mcp.ipynb #bc9b02ef
 def main(
     transport: str = "stdio",  # MCP transport; stdio is what Codex/Claude use for local servers
     show_banner: bool = False,  # Show FastMCP startup banner
+    reload: bool = False,  # Restart the FastMCP worker when source files change
+    reload_dir: str | None = None,  # Directory to watch; defaults to FastMCP's current directory
 ):
-    "Run the nbskill MCP server."
-    _mcp_log_event("server_start", transport=transport, show_banner=show_banner, cwd=str(Path.cwd()), python=sys.executable)
+    "Run the nbskill MCP server, optionally with FastMCP development auto-reload."
+    _mcp_log_event(
+        "server_start", transport=transport, show_banner=show_banner, reload=reload,
+        reload_dir=reload_dir, cwd=str(Path.cwd()), python=sys.executable,
+    )
     try:
+        if reload:
+            command = _fastmcp_reload_command(transport, show_banner, reload_dir)
+            _mcp_log_event("server_reload_start", command=command)
+            return subprocess.run(command, check=False).returncode
         mcp.run(transport=transport, show_banner=show_banner)
     except BaseException as exc:
-        _mcp_log_exception("server_error", exc, transport=transport)
+        _mcp_log_exception("server_error", exc, transport=transport, reload=reload)
         raise
     finally:
-        _mcp_log_event("server_stop", transport=transport)
+        _mcp_log_event("server_stop", transport=transport, reload=reload)
 
 # %% ../nbs/07_mcp.ipynb #ba8f4a5f
 @mcp.tool(**_mcp_tool_meta("visible_text_inventory"))

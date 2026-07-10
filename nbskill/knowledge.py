@@ -394,12 +394,19 @@ def _row_call_terms(row):
 def _row_decorator_terms(row):
     return _row_feature_set(row, "decorators", fallback_tags=True)
 
+_GENERIC_REFERENCE_QUERY_TERMS = {
+    "code", "data", "dry", "file", "function", "hash", "implementation", "item", "method",
+    "query", "run", "search", "test", "text", "value",
+}
+
+
 def _query_feature_plan(query, kind=None, candidate_k=None):
     text = str(query or "")
     tokens = _query_tokens(text)
     token_set = set(tokens)
     identifiers = [item for item in re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*\b", text) if len(item) > 1]
     symbol_like = sorted({item for item in identifiers if "_" in item or "." in item or re.search(r"[a-z][A-Z]", item)})
+    specific_tokens = token_set - _GENERIC_REFERENCE_QUERY_TERMS
     import_hints = set(re.findall(r"\b(?:import|from)\s+([A-Za-z_][\w.]*)", text))
     dotted_heads = {item.split(".")[0] for item in identifiers if "." in item}
     libraries = sorted((token_set & _REFERENCE_LIBRARY_HINTS) | {item.lower() for item in import_hints | dotted_heads})
@@ -415,6 +422,8 @@ def _query_feature_plan(query, kind=None, candidate_k=None):
     wants_docs = bool(token_set & _REFERENCE_KIND_TERMS["readme"])
     return {
         "tokens": sorted(token_set),
+        "specific_tokens": sorted(specific_tokens),
+        "generic_tokens": sorted(token_set & _GENERIC_REFERENCE_QUERY_TERMS),
         "symbol_like": symbol_like,
         "library_hints": sorted(libraries),
         "call_hints": sorted({item.lower() for item in call_hints}),
@@ -444,6 +453,7 @@ def _is_test_reference_row(row):
 def _reference_score_breakdown(row, query="", query_plan=None, current_repo=None):
     plan = query_plan or _query_feature_plan(query)
     tokens = set(plan.get("tokens") or _reference_tokens(query))
+    specific_tokens = set(plan.get("specific_tokens") or tokens)
     symbol = str(row.get("symbol", "") or "").lower()
     symbol_text = symbol.replace("_", " ")
     symbol_terms = set(re.findall(r"[a-z0-9]+", symbol_text))
@@ -454,12 +464,15 @@ def _reference_score_breakdown(row, query="", query_plan=None, current_repo=None
     library_hits = set(plan.get("library_hints") or []) & imports
     call_hits = set(plan.get("call_hints") or []) & calls
     symbol_hits = set(plan.get("symbol_like") or []) & ({symbol} | {symbol.replace("_", "-")})
-    token_symbol_hits = tokens & symbol_terms
+    token_symbol_hits = specific_tokens & symbol_terms
     text_hits = tokens & text_terms
+    specific_text_hits = specific_tokens & text_terms
+    coverage = len(specific_text_hits) / len(specific_tokens) if specific_tokens else 0.0
     breakdown = {
         "base": _reference_base_score(row, query=query),
         "symbol": min(12.0, 8.0 * len(symbol_hits) + 2.5 * len(token_symbol_hits)),
         "text": min(9.0, 0.7 * len(text_hits)),
+        "coverage": round(6.0 * coverage, 3),
         "imports": min(10.0, 4.0 * len(library_hits)),
         "calls": min(8.0, 4.0 * len(call_hits)),
         "kind": 0.0,
@@ -474,8 +487,10 @@ def _reference_score_breakdown(row, query="", query_plan=None, current_repo=None
         status = _dependency_status(row.get("package"), current_repo=current_repo)
         if status == "direct_import": breakdown["dependency"] += 2.0
     generic = symbol in _GENERIC_REFERENCE_SYMBOLS
-    weak_evidence = breakdown["text"] + breakdown["imports"] + breakdown["calls"] + breakdown["kind"] < 4.0
+    weak_evidence = breakdown["text"] + breakdown["coverage"] + breakdown["imports"] + breakdown["calls"] + breakdown["kind"] < 4.0
     if _is_test_reference_row(row) and not plan.get("wants_tests"): breakdown["penalty"] -= 8.0
+    if specific_tokens and not specific_text_hits and not symbol_hits and not library_hits and not call_hits:
+        breakdown["penalty"] -= 10.0
     if generic and weak_evidence: breakdown["penalty"] -= 6.0
     if row_kind in {"readme", "module", "notebook_doc"} and plan.get("wants_implementation"):
         breakdown["penalty"] -= 4.0
@@ -1191,6 +1206,14 @@ def reference_query(
         reference_hits.append(_finish_reference_hit(hit, explain=explain))
     local_hits = _local_reference_hits(query, current_repo=current_repo, top_k=top_k, explain=explain) if include_local else []
     hits = sorted([*local_hits, *reference_hits], key=lambda hit: hit.get("score") or 0, reverse=True)[:top_k]
+    if len(plan.get("specific_tokens") or []) >= 2 and not plan.get("symbol_like"):
+        hits = [
+            hit for hit in hits
+            if (hit.get("score_breakdown") or {}).get("coverage", 0) > 0
+            or (hit.get("score_breakdown") or {}).get("imports", 0) > 0
+            or (hit.get("score_breakdown") or {}).get("calls", 0) > 0
+        ]
+        if not hits: reason = "No high-confidence reference hits matched the query's specific terms."
     returned_rows = [row_by_id[hit["_item_id"]] for hit in hits if hit.get("_item_id") in row_by_id]
     counts = _bump_reference_return_counts(returned_rows, path=path)
     for hit in hits:

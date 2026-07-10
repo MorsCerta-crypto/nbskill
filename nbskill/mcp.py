@@ -2395,14 +2395,14 @@ def _mcp_context_targets(targets, root):
     return [_mcp_context_target_path(item, root) for item in targets]
 
 # %% ../nbs/07_mcp.ipynb #15b9ce0c
-def _mcp_context_tool_args(root, target, targets, scope, overview, mode, around, include_graph, detail, path):
+def _mcp_context_tool_args(root, target, targets, scope, overview, mode, around, include_graph, detail, path, resolution="auto"):
     if path is not None and targets is None and target == "project": target = path
     scope = _mcp_workspace_path(scope, root)
     target = _mcp_context_target_path(target, root)
     targets = _mcp_context_targets(targets, root)
     around = _mcp_clamp_int(around, 0, 0, 20, "around")
     target_is_project = targets is None and str(target or "") in {"project", ".", ""}
-    arguments = dict(target=target, targets=targets, scope=scope, overview=overview, mode=mode, around=around)
+    arguments = dict(target=target, targets=targets, scope=scope, overview=overview, mode=mode, around=around, resolution=resolution)
     arguments.update(include_graph=include_graph, detail=detail, path=path, workspace_root=str(root) if root else None)
     context_args = dict(target=target, targets=targets, scope=scope, overview=overview, mode=mode, around=around)
     return arguments, context_args, target_is_project
@@ -2426,26 +2426,79 @@ def _mcp_context_graph_payload(scope, include_graph, target_is_project):
     return warnings, graph
 
 # %% ../nbs/07_mcp.ipynb #61402479
-def _mcp_context_result_payload(data, graph):
-    full_output = data["text"]
-    structured = {"context": data}
-    if graph is not None:
-        full_output = "\n\n".join([full_output, "Project graph:", _mcp_graph_summary(graph)])
-        structured["knowledge_graph"] = graph
+def _context_selected_source(data):
+    selection = data.get("selection") or {}
+    return as_text(data.get("source") or selection.get("source") or "")
+
+# %% ../nbs/07_mcp.ipynb #980bc9ed
+def _context_response_data(data, resolution):
+    payload = _compact_context_payload(data)
+    if resolution in {"auto", "summary"}:
+        payload.pop("source", None)
+        selection = dict(payload.get("selection") or {})
+        for key in ("source", "caller_usages", "callees", "callers", "definitions"):
+            selection.pop(key, None)
+        if selection: payload["selection"] = selection
+    return payload
+
+# %% ../nbs/07_mcp.ipynb #2af7c4a8
+def _context_response_text(data, graph, resolution="auto"):
+    allowed = {"auto", "summary", "implementation", "full"}
+    if resolution not in allowed:
+        raise ValueError(f"resolution must be one of {sorted(allowed)}, not {resolution!r}")
+    summary = "Context summary:\n" + "\n".join(_context_summary_lines(data))
+    source = _context_selected_source(data)
+    impact = _context_summary_lines({"selection": data.get("selection") or {}})[-2:]
+    outline = _short_item(source, limit=480) if source else ""
+    graph_text = _mcp_graph_summary(graph) if graph is not None else ""
+    omitted = []
+    if resolution == "summary":
+        omitted = [name for name, value in (("implementation", source), ("impact", impact), ("graph", graph_text)) if value]
+        return summary, omitted
+    if resolution == "auto":
+        sections = [summary]
+        if outline: sections.append("Implementation outline:\n" + outline)
+        if impact: sections.append("Impact:\n" + "\n".join(impact))
+        omitted = [name for name, value in (("implementation", source), ("graph", graph_text)) if value]
+        if omitted: sections.append("More: pass resolution='implementation' for source or resolution='full' for every layer.")
+        return "\n\n".join(sections), omitted
+    sections = [summary]
+    if source: sections.extend(["Implementation:", source])
+    if impact: sections.extend(["Impact:", "\n".join(impact)])
+    if resolution == "full":
+        if data.get("text"): sections.append(data["text"])
+        if graph_text: sections.extend(["Project graph:", graph_text])
+    else:
+        omitted = ["graph"] if graph_text else []
+    return "\n\n".join(sections), omitted
+
+# %% ../nbs/07_mcp.ipynb #0d055dbc
+def _mcp_context_result_payload(data, graph, resolution="auto"):
+    full_output, omitted_layers = _context_response_text(data, graph, resolution)
+    structured = {
+        "context": _context_response_data(data, resolution),
+        "resolution": resolution,
+        "omitted_layers": omitted_layers,
+    }
+    if graph is not None and resolution == "full": structured["knowledge_graph"] = graph
     return full_output, structured
 
 # %% ../nbs/07_mcp.ipynb #5450e1be
 _C = Context
 @mcp.tool(**_mcp_tool_meta("context"))
-async def _context_tool(target="project",targets=None,scope=".",overview=False,mode="auto",around=0,include_graph=False,detail="summary",path=None,ctx:_C=None):
-    "Resolve targets to project, notebook, chapter, cell, or symbol context."
+async def _context_tool(target="project",targets=None,scope=".",overview=False,mode="auto",around=0,include_graph=False,detail="summary",path=None,resolution="auto",ctx:_C=None):
+    """Resolve context in layers; resolution is auto, summary, implementation, or full."""
     root = await _mcp_workspace_root(ctx)
-    arguments, context_args, target_is_project = _mcp_context_tool_args(root, target, targets, scope, overview, mode, around, include_graph, detail, path)
+    if overview and resolution == "auto": resolution = "summary"
+    arguments, context_args, target_is_project = _mcp_context_tool_args(
+        root, target, targets, scope, overview, mode, around, include_graph, detail, path, resolution,
+    )
     scope = arguments["scope"]
     try: data = _mcp_run_context_call(scope, context_args)
     except Exception as exc: return _mcp_tool_error_result("context", arguments, exc, detail=detail)
     warnings, graph = _mcp_context_graph_payload(scope, include_graph, target_is_project)
-    full_output, structured = _mcp_context_result_payload(data, graph)
+    try: full_output, structured = _mcp_context_result_payload(data, graph, resolution)
+    except ValueError as exc: return _mcp_tool_error_result("context", arguments, exc, detail=detail)
     return mcp_tool_result("context", arguments, full_output, detail=detail, warnings=warnings, **structured)
 
 # %% ../nbs/07_mcp.ipynb #0cd3198d

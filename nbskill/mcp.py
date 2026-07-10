@@ -2378,7 +2378,7 @@ def _mcp_graph_summary(graph):
         lines.append(f"- {item.get('order')}. {item.get('title')}: {len(item.get('node_ids', []))} node(s)")
     return "\n".join(lines)
 
-# %% ../nbs/07_mcp.ipynb #5450e1be
+# %% ../nbs/07_mcp.ipynb #12aa2623
 def _mcp_context_target_path(target, root):
     if target in (None, ""): return target
     text = str(target)
@@ -2388,89 +2388,65 @@ def _mcp_context_target_path(target, root):
     path = _mcp_workspace_path(path_text, root)
     return f"{path}#{ref}" if sep else path
 
-
+# %% ../nbs/07_mcp.ipynb #f3c8b3a8
 def _mcp_context_targets(targets, root):
     if targets is None: return None
     if isinstance(targets, str): return [_mcp_context_target_path(targets, root)] if targets else []
     return [_mcp_context_target_path(item, root) for item in targets]
 
-
-@mcp.tool(**_mcp_tool_meta("context"))
-async def _context_tool(
-    target: str = "project",
-    targets: list[str] | None = None,
-    scope: str = ".",
-    overview: bool = False,
-    mode: str = "auto",
-    around: int = 0,
-    include_graph: bool = False,
-    detail: str = "summary",
-    path: str | None = None,
-    ctx: Context = None,
-) -> ToolResult:
-    "Resolve targets to project, notebook, chapter, cell, or symbol context."
-    root = await _mcp_workspace_root(ctx)
+# %% ../nbs/07_mcp.ipynb #15b9ce0c
+def _mcp_context_tool_args(root, target, targets, scope, overview, mode, around, include_graph, detail, path):
     if path is not None and targets is None and target == "project": target = path
     scope = _mcp_workspace_path(scope, root)
     target = _mcp_context_target_path(target, root)
     targets = _mcp_context_targets(targets, root)
     around = _mcp_clamp_int(around, 0, 0, 20, "around")
-    target_text = str(target or "")
-    target_is_project = targets is None and target_text in {"project", ".", ""}
-    arguments = dict(
-        target=target,
-        targets=targets,
-        scope=scope,
-        overview=overview,
-        mode=mode,
-        around=around,
-        include_graph=include_graph,
-        detail=detail,
-        path=path,
-        workspace_root=str(root) if root else None,
-    )
+    target_is_project = targets is None and str(target or "") in {"project", ".", ""}
+    arguments = dict(target=target, targets=targets, scope=scope, overview=overview, mode=mode, around=around)
+    arguments.update(include_graph=include_graph, detail=detail, path=path, workspace_root=str(root) if root else None)
     context_args = dict(target=target, targets=targets, scope=scope, overview=overview, mode=mode, around=around)
-    try:
-        with notebook_locks(scope), _CAPTURE_LOCK:
-            out, err = StringIO(), StringIO()
-            with redirect_stdout(out), redirect_stderr(err): data = context(**context_args)
-    except Exception as exc:
-        return _mcp_tool_error_result("context", arguments, exc, detail=detail)
+    return arguments, context_args, target_is_project
 
-    warnings = []
-    graph = None
+# %% ../nbs/07_mcp.ipynb #1da8bef2
+def _mcp_run_context_call(scope, context_args):
+    with notebook_locks(scope), _CAPTURE_LOCK:
+        out, err = StringIO(), StringIO()
+        with redirect_stdout(out), redirect_stderr(err): return context(**context_args)
+
+# %% ../nbs/07_mcp.ipynb #f1429256
+def _mcp_context_graph_payload(scope, include_graph, target_is_project):
+    warnings, graph = [], None
     if include_graph and target_is_project:
         try:
-            with notebook_locks(scope):
-                graph = notebook_knowledge_graph_data(scope)
+            with notebook_locks(scope): graph = notebook_knowledge_graph_data(scope)
         except Exception as exc:
-            warnings.append(_warning(
-                "knowledge_graph_failed",
-                f"Notebook knowledge graph failed: {type(exc).__name__}: {exc}",
-                "Call notebook_knowledge_graph locally or narrow the context scope.",
-                scope=str(scope),
-            ))
+            warnings.append(_warning("knowledge_graph_failed", f"Notebook knowledge graph failed: {type(exc).__name__}: {exc}", "Call notebook_knowledge_graph locally or narrow the context scope.", scope=str(scope)))
     elif include_graph:
-        warnings.append(_warning(
-            "knowledge_graph_requires_project",
-            "Knowledge graph context is only attached for project-level context targets.",
-            "Call context with target='project' and include_graph=True.",
-        ))
+        warnings.append(_warning("knowledge_graph_requires_project", "Knowledge graph context is only attached for project-level context targets.", "Call context with target='project' and include_graph=True."))
+    return warnings, graph
 
+# %% ../nbs/07_mcp.ipynb #61402479
+def _mcp_context_result_payload(data, graph):
     full_output = data["text"]
     structured = {"context": data}
     if graph is not None:
         full_output = "\n\n".join([full_output, "Project graph:", _mcp_graph_summary(graph)])
         structured["knowledge_graph"] = graph
+    return full_output, structured
 
-    return mcp_tool_result(
-        "context",
-        arguments,
-        full_output,
-        detail=detail,
-        warnings=warnings,
-        **structured,
-    )
+# %% ../nbs/07_mcp.ipynb #5450e1be
+_C = Context
+@mcp.tool(**_mcp_tool_meta("context"))
+async def _context_tool(target="project",targets=None,scope=".",overview=False,mode="auto",around=0,include_graph=False,detail="summary",path=None,ctx:_C=None):
+    "Resolve targets to project, notebook, chapter, cell, or symbol context."
+    root = await _mcp_workspace_root(ctx)
+    arguments, context_args, target_is_project = _mcp_context_tool_args(root, target, targets, scope, overview, mode, around, include_graph, detail, path)
+    scope = arguments["scope"]
+    try: data = _mcp_run_context_call(scope, context_args)
+    except Exception as exc: return _mcp_tool_error_result("context", arguments, exc, detail=detail)
+    warnings, graph = _mcp_context_graph_payload(scope, include_graph, target_is_project)
+    full_output, structured = _mcp_context_result_payload(data, graph)
+    return mcp_tool_result("context", arguments, full_output, detail=detail, warnings=warnings, **structured)
 
 # %% ../nbs/07_mcp.ipynb #0cd3198d
 @mcp.tool(**_mcp_tool_meta("filter_context"))

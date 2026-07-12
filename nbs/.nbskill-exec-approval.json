@@ -6156,7 +6156,7 @@
     },
     "_route": {
       "allowed": true,
-      "cell_id": "eae94bad",
+      "cell_id": "2aaf9e26",
       "external_effects": false,
       "line": 1,
       "notebook": "nbs/data/03_execute_decorated_warning/nbs/decorated.ipynb",
@@ -7415,7 +7415,7 @@
     },
     "api_handler": {
       "allowed": true,
-      "cell_id": "7ef86d71",
+      "cell_id": "f51fa61f",
       "external_effects": false,
       "line": 2,
       "notebook": "nbs/data/03_execute_decorated_warning/nbs/decorated.ipynb",
@@ -7881,10 +7881,10 @@
     },
     "double_answer": {
       "allowed": true,
-      "cell_id": "fixture-double-answer",
+      "cell_id": "tool-double-answer",
       "external_effects": false,
       "line": 2,
-      "notebook": "tests/fixtures/nbskill_tool_fixture.ipynb",
+      "notebook": "nbs/data/index_tool.ipynb",
       "reasons": []
     },
     "edit": {
@@ -9230,7 +9230,7 @@
     },
     "unused_demo": {
       "allowed": true,
-      "cell_id": "de674049",
+      "cell_id": "846d7e23",
       "external_effects": false,
       "line": 1,
       "notebook": "nbs/data/03_execute_uncalled_warning/nbs/uncalled.ipynb",
@@ -9246,7 +9246,7 @@
     },
     "used_demo": {
       "allowed": true,
-      "cell_id": "f4f399ea",
+      "cell_id": "05c1abae",
       "external_effects": false,
       "line": 1,
       "notebook": "nbs/data/03_execute_called_warning/nbs/called.ipynb",

@@ -3052,7 +3052,10 @@ def _fastmcp_reload_command(transport="stdio", show_banner=False, reload_dir=Non
         if sibling.exists(): fastmcp = str(sibling)
     if not fastmcp:
         raise RuntimeError("reload needs the FastMCP CLI executable on PATH")
-    server_spec = f"{Path(__file__).resolve()}:mcp"
+    notebook_file = Path("nbskill/mcp.py")
+    if not notebook_file.is_file(): notebook_file = Path.cwd().parent / notebook_file
+    module_file = globals().get("__file__") or notebook_file
+    server_spec = f"{Path(module_file).resolve()}:mcp"
     command = [fastmcp, "run", server_spec, "--transport", transport, "--reload"]
     if not show_banner: command.append("--no-banner")
     if reload_dir: command.extend(["--reload-dir", str(Path(reload_dir).expanduser())])

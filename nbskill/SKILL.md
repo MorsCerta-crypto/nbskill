@@ -33,11 +33,15 @@ the client is using stale tool metadata.
     expected-hash guards and structured diffs. Prefer `replace_lines`
     and small `insert_cells` operations over whole-cell replacement
     unless the whole cell is the smallest coherent change.
-5.  Use
+5.  For a behavior change, add or revise a focused notebook test before
+    the implementation when a useful reproducer exists. Run the focused
+    check before the edit, then run it again after. Assert the promised
+    behavior, not formatting, `repr`, or incidental order.
+6.  Use
     [`exec_nb`](https://MorsCerta-crypto.github.io/nbskill/execute.html#exec_nb)
     for the narrowest behavior check, preferably with `check_only=True`
     when outputs do not need to be written.
-6.  Finish with
+7.  Finish with
     [`diff_nb`](https://MorsCerta-crypto.github.io/nbskill/review.html#diff_nb)
     plus `doctor(scopes="error,warning,style")` or
     [`style_check`](https://MorsCerta-crypto.github.io/nbskill/review.html#style_check)
@@ -45,7 +49,9 @@ the client is using stale tool metadata.
 
 Stay notebook-first: edit `nbs/*.ipynb` source notebooks, not generated
 `.py` files. Functions beginning with `_` are notebook-local unless
-deliberately promoted to a public helper.
+deliberately promoted to a public helper. Treat a cross-notebook
+private-symbol warning from `doctor` as incomplete work: promote the
+helper deliberately or remove the call.
 
 ## Search Before Writing
 
@@ -104,6 +110,10 @@ implementation, a visible example, or a focused test. Avoid cells that
 mix several jobs, duplicate imports, hide unused code, or bundle many
 assertions together.
 
+Keep imports in their own cell. Do not combine them with definitions,
+examples, or test setup: documentation builds can run import cells in an
+isolated namespace.
+
 Documentation should explain the shape of the code, not just repeat it.
 Say why the behavior exists, what problem it solves, what tradeoff it
 chooses, and why an obvious alternative is not being used. For shared
@@ -123,6 +133,10 @@ Notebook directives matter:
   `#| eval: false`.
 - Cells that should not appear in documentation, such as test cells,
   start with `#| hide`.
+
+After exporting a library change, verify it in a clean process or restart
+the active kernel. Reloading one module can leave direct imports and
+patched classes stale.
 
 ## References
 

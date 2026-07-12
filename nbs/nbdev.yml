@@ -7,3 +7,8 @@ website:
   description: "LLM-skill for working with nb"
   repo-branch: main
   repo-url: "https://github.com/MorsCerta-crypto/nbskill"
+
+format-links:
+  - html
+  - format: commonmark
+    text: Markdown

@@ -205,6 +205,10 @@ exec_nb nbs/02_write.ipynb --check_only
 style_check nbs/02_write.ipynb --changed_only
 ```
 
+Keep imports in their own cell. Do not combine them with definitions, examples, or test setup, because documentation builds can run import cells in an isolated namespace.
+
+For a behavior change, add or revise a focused notebook test before the implementation when a useful reproducer exists. Run the focused check before the edit, then run it again after. Assert the promised behavior, not formatting, `repr`, or incidental order.
+
 Use
 [`nbskill_mcp`](https://MorsCerta-crypto.github.io/nbskill/cli.html#nbskill_mcp)
 when the client can call MCP tools directly. Prefer MCP edits for source
@@ -213,19 +217,19 @@ deliberately debugging export output. Use `style_check(changed_only=True)`
 after edits so the feedback highlights problems introduced by the current
 diff.
 
+After exporting a library change, verify it in a clean process or restart the active kernel. Reloading one module can leave direct imports and patched classes stale.
+
 A good notebook change should read like a small story:
 
 ``` python
 # Markdown cell before the code:
 # "We normalize empty titles here because imported notebooks may omit them."
 
-#| export
 def normalized_title(title):
     return title.strip() or "Untitled"
 
 normalized_title("  Demo  ")
 
-#| hide
 assert normalized_title("  ") == "Untitled"
 ```
 

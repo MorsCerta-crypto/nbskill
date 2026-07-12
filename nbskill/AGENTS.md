@@ -26,10 +26,13 @@ For those tasks:
 5. Verify with the smallest useful MCP check:
    `mcp__nbskill__.diff_nb`, `mcp__nbskill__.exec_nb(check_only=True)`,
    `mcp__nbskill__.style_check`, or `mcp__nbskill__.doctor`.
+6. For a behavior change, add or revise a focused notebook test before the implementation when a useful reproducer exists. Run the focused check before the edit, then run it again after. Assert the promised behavior, not formatting, `repr`, or incidental order.
 
 Do not edit raw notebook JSON or generated Python for normal notebook
 source changes. If a generated Python file needs work, inspect and edit
 the owning notebook unless the user explicitly asks otherwise.
+
+Functions beginning with `_` are local to their notebook. If `doctor` reports a cross-notebook private-symbol call, promote the helper deliberately or remove the call before completing the task.
 
 ## Notebook Workflow
 
@@ -90,6 +93,7 @@ shape visible to the next MCP user:
   `#| default_exp module_name`. Add common imports such as
   `from nbdev.showdoc import show_doc` and `from fastcore.test import *`
   only when the notebook actually uses them.
+- Keep imports in their own cell. The cell may contain several import lines, but no definitions, setup, examples, or tests.
 - Public functions, classes, and methods live in `#| export` cells. Internal
   helpers that must be exported but should stay out of `__all__` use
   `#| exporti`. Do not add export directives to scratch, example, or test
@@ -181,6 +185,8 @@ Prefer a tight loop:
    `mcp__nbskill__.style_check`, `mcp__nbskill__.diff_nb`, or
    `mcp__nbskill__.doctor`.
 4. Only then continue to the next edit.
+
+After exporting a library change, verify it in a clean process or restart the active kernel. Reloading one module can leave direct imports and patched classes stale.
 
 Stop once the requested change is handled and verification is clear. Do
 not broaden scope, reformat unrelated cells, or edit generated Python

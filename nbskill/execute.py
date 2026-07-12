@@ -124,12 +124,13 @@ def _write_execution_policy(policy):
 
 # %% ../nbs/03_execute.ipynb #aa608db2
 _EXTERNAL_EFFECT_CALLS = {
-    "httpx.delete", "httpx.get", "httpx.patch", "httpx.post", "httpx.put", "httpx.request", "httpx.stream",
+    "aiosqlite.connect", "asyncpg.connect", "httpx.delete", "httpx.get", "httpx.patch", "httpx.post", "httpx.put", "httpx.request", "httpx.stream",
+    "psycopg.connect", "psycopg2.connect", "pymongo.MongoClient", "redis.Redis", "redis.StrictRedis",
     "os.chmod", "os.chown", "os.makedirs", "os.mkdir", "os.popen", "os.remove", "os.replace", "os.rename",
     "os.rmdir", "os.symlink", "os.system", "os.unlink",
     "requests.delete", "requests.get", "requests.patch", "requests.post", "requests.put", "requests.request",
     "shutil.copy", "shutil.copy2", "shutil.copytree", "shutil.move", "shutil.rmtree",
-    "socket.create_connection", "socket.socket",
+    "socket.create_connection", "socket.socket", "sqlalchemy.create_async_engine", "sqlalchemy.create_engine", "sqlite3.connect",
     "subprocess.Popen", "subprocess.call", "subprocess.check_call", "subprocess.check_output", "subprocess.run",
     "urllib.request.urlopen",
 }
@@ -230,7 +231,7 @@ def _execution_policy_function_defs(nb):
         except SyntaxError: continue
         for node in tree.body:
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name not in functions:
-                functions[node.name] = {"node": node, "cell_id": getattr(cell, "id", ""), "line": node.lineno}
+                functions[node.name] = {"node": node, "cell_id": getattr(cell, "id", ""), "line": node.lineno, "source_hash": source_hash(cell_source(cell))}
     return functions
 
 
@@ -262,13 +263,14 @@ def _execution_policy_notebook(path):
     except ValueError: return str(full)
 
 
-def _coerce_execution_policy_entry(entry, default_allowed):
+def _coerce_execution_policy_entry(entry, default_allowed, source_hash=None):
     if isinstance(entry, dict):
         entry = dict(entry)
         allowed = entry.get("allowed", default_allowed)
     else:
         allowed = entry if isinstance(entry, bool) else default_allowed
         entry = {}
+    if source_hash and entry.get("source_hash") != source_hash: allowed = default_allowed
     entry["allowed"] = bool(allowed)
     return entry
 
@@ -298,9 +300,10 @@ def _sync_execution_policy(path, nb):
 
     for name in sorted(functions):
         reasons = effects.get(name, [])
-        entry = _coerce_execution_policy_entry(entries.get(name), default_allowed=not bool(reasons))
+        entry = _coerce_execution_policy_entry(entries.get(name), not bool(reasons), functions[name]["source_hash"])
         entry.update({
             "cell_id": str(functions[name]["cell_id"]),
+            "source_hash": functions[name]["source_hash"],
             "external_effects": bool(reasons),
             "line": int(functions[name]["line"]),
             "notebook": notebook,

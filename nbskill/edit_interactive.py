@@ -1269,6 +1269,8 @@ def _agent_runtime_capabilities(source):
             caps.add("subprocess")
         if name.startswith(("httpx.", "requests.", "urllib.")):
             caps.add("network")
+        if name.startswith(("aiosqlite.", "asyncpg.", "psycopg.", "psycopg2.", "pymongo.", "redis.", "sqlalchemy.", "sqlite3.")):
+            caps.add("database")
     return caps
 
 # %% ../nbs/08_edit_interactive.ipynb #e0d9fa24
@@ -1374,12 +1376,11 @@ def approve_agent_session(session, approval_id, decision="deny"):
     request = getattr(session, "approval_requests", {}).get(str(approval_id))
     if request is None: raise ValueError(f"Unknown approval_id {approval_id!r}")
     decision = str(decision or "deny").lower()
-    if decision not in {"once", "session", "deny"}:
-        raise ValueError("decision must be once, session, or deny")
-    if decision != "deny":
+    if decision not in {"once", "deny"}:
+        raise ValueError("decision must be once or deny")
+    if decision == "once":
         allowed = getattr(session, "approved_capabilities", set())
-        if decision == "session": allowed.update(request["capabilities"])
-        else: allowed.add("approval:" + request["approval_id"])
+        allowed.add("approval:" + request["approval_id"])
         session.approved_capabilities = allowed
     request["decision"] = decision
     session.pending_approval = None

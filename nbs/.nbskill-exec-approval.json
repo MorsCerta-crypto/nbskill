@@ -542,14 +542,6 @@
       "notebook": "04_review.ipynb",
       "reasons": []
     },
-    "_cell_content_match": {
-      "allowed": true,
-      "cell_id": "f22b5d3c",
-      "external_effects": false,
-      "line": 2,
-      "notebook": "02_edit.ipynb",
-      "reasons": []
-    },
     "_cell_context": {
       "allowed": true,
       "cell_id": "ae2a548b",
@@ -572,14 +564,6 @@
       "external_effects": false,
       "line": 2,
       "notebook": "01_read.ipynb",
-      "reasons": []
-    },
-    "_cell_directive_body_lines": {
-      "allowed": true,
-      "cell_id": "99565769",
-      "external_effects": false,
-      "line": 2,
-      "notebook": "02_edit.ipynb",
       "reasons": []
     },
     "_cell_eval_false": {
@@ -894,14 +878,6 @@
       "external_effects": false,
       "line": 101,
       "notebook": "08_edit_interactive.ipynb",
-      "reasons": []
-    },
-    "_check_expected_hash": {
-      "allowed": true,
-      "cell_id": "44af041e",
-      "external_effects": false,
-      "line": 2,
-      "notebook": "02_edit.ipynb",
       "reasons": []
     },
     "_checkout_reference": {
@@ -3213,14 +3189,6 @@
       "external_effects": false,
       "line": 2,
       "notebook": "00_foundation.ipynb",
-      "reasons": []
-    },
-    "_is_function_def": {
-      "allowed": true,
-      "cell_id": "ff8e1afb",
-      "external_effects": false,
-      "line": 2,
-      "notebook": "02_edit.ipynb",
       "reasons": []
     },
     "_is_import_cell": {
@@ -6156,11 +6124,12 @@
     },
     "_route": {
       "allowed": true,
-      "cell_id": "82b7d904",
+      "cell_id": "457115b1",
       "external_effects": false,
       "line": 1,
       "notebook": "nbs/data/03_execute_decorated_warning/nbs/decorated.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "8fe6c2e75204"
     },
     "_row_call_terms": {
       "allowed": false,
@@ -6376,14 +6345,6 @@
       "external_effects": false,
       "line": 2,
       "notebook": "01_read.ipynb",
-      "reasons": []
-    },
-    "_selected_indices": {
-      "allowed": true,
-      "cell_id": "0a269fbe",
-      "external_effects": false,
-      "line": 2,
-      "notebook": "02_edit.ipynb",
       "reasons": []
     },
     "_semantic_code_class_names": {
@@ -7415,11 +7376,12 @@
     },
     "api_handler": {
       "allowed": true,
-      "cell_id": "3ea08154",
+      "cell_id": "440a6c43",
       "external_effects": false,
       "line": 2,
       "notebook": "nbs/data/03_execute_decorated_warning/nbs/decorated.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "3d91f57085de"
     },
     "apply_context_command": {
       "allowed": true,

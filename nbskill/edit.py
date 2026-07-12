@@ -4,28 +4,17 @@
 __all__ = ['insert_lines', 'replace_lines', 'delete_lines', 'replace_text', 'replace_texts', 'edit_notebook', 'NotebookEditor']
 
 # %% ../nbs/02_edit.ipynb #256e7289
-import ast
-import copy
-import difflib
-import re
+import ast,copy,difflib,re
 from dataclasses import dataclass
 from pathlib import Path
-
 from fastcore.basics import patch
 from fastcore.nbio import Notebook as FastcoreNotebook, mk_cell, read_nb
-
-from nbskill.foundation import (
-    Notebook,
-    apply_directives,
-    cap_text,
-    cell_source,
-    clear_outputs,
-    commit_notebook,
-    source_hash,
-)
+from .foundation import (
+    Notebook,apply_directives,cap_text,cell_source,clear_outputs,commit_notebook,source_hash)
 from .parallel import notebook_locks
 from .write import append_notebook_edit_feedback
 
+# %% ../nbs/02_edit.ipynb #871eb22e
 _EDIT_MAX_OPERATIONS = 50
 _EDIT_MAX_SOURCE_CHARS = 200000
 _EDIT_MAX_AFFECTED_CELLS = 200
@@ -50,28 +39,44 @@ def _validate_edit_budget(edits):
     if chars > _EDIT_MAX_SOURCE_CHARS:
         raise ValueError(f"edit_notebook budget exceeded: {chars} text chars exceeds limit {_EDIT_MAX_SOURCE_CHARS}")
 
+# %% ../nbs/02_edit.ipynb #6793c9e4
+def _cell_directive_body_lines(source):
+    lines = str(source or "").strip("\n").splitlines()
+    directives, body_start = [], len(lines)
+    for idx, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped: continue
+        if not stripped.startswith("#|"):
+            body_start = idx
+            break
+        directive = stripped[2:].strip()
+        if not directive.startswith("default_exp"):
+            directives.append(stripped)
+    return directives, lines[body_start:]
+
 # %% ../nbs/02_edit.ipynb #36c97823
 def _craft_warning(code, message, path, cell_id=None, **extra):
     warning = {"code": code, "message": message, "path": str(path), "severity": "warning", **extra}
     if cell_id: warning["cell_id"] = cell_id
     return warning
 
-
+# %% ../nbs/02_edit.ipynb #6501f025
 def _code_content_lines(source):
     return [line for line in str(source or "").splitlines() if line.strip() and not line.lstrip().startswith("#|")]
 
-
+# %% ../nbs/02_edit.ipynb #f2a1d051
 def _top_level_function_count(source):
     raw = str(source or "").strip("\n")
     if not raw: return 0
-    _directive_lines, body_lines = _cell_directive_body_lines(raw)
-    try:
-        tree = ast.parse("\n".join(body_lines))
-    except SyntaxError:
-        return 0
+    _, body_lines = _cell_directive_body_lines(raw)
+    try: tree = ast.parse("\n".join(body_lines))
+    except SyntaxError: return 0
     return sum(1 for node in tree.body if _is_function_def(node))
 
+# %% ../nbs/02_edit.ipynb #ed36998e
+def _is_function_def(node): return isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
 
+# %% ../nbs/02_edit.ipynb #03a6cf9f
 def _edit_notebook_craft_warnings(path, nb, affected_cell_ids):
     warnings, affected = [], set(affected_cell_ids)
     if len(affected_cell_ids) > _EDIT_WARN_AFFECTED_CELLS:
@@ -79,40 +84,29 @@ def _edit_notebook_craft_warnings(path, nb, affected_cell_ids):
             "many-affected-cells",
             f"This edit touched {len(affected_cell_ids)} cells; split it into smaller edit_notebook calls and run a focused check after each one.",
             path,
-            affected_cells=len(affected_cell_ids),
-        ))
+            affected_cells=len(affected_cell_ids)))
     for cell in nb.cells:
         cell_id = getattr(cell, "id", "")
         if cell_id not in affected or getattr(cell, "cell_type", None) != "code": continue
         source = cell_source(cell)
         line_count = len(_code_content_lines(source))
         if line_count > _EDIT_WARN_CODE_LINES:
-            warnings.append(_craft_warning(
-                "large-code-cell",
+            warnings.append(_craft_warning("large-code-cell",
                 "This code cell is large; split this into markdown + implementation + example + test cells.",
-                path,
-                cell_id=cell_id,
-                line_count=line_count,
-            ))
+                path,cell_id=cell_id,line_count=line_count))
         function_count = _top_level_function_count(source)
         if function_count > _EDIT_WARN_TOP_LEVEL_FUNCTIONS:
-            warnings.append(_craft_warning(
-                "multi-function-cell",
+            warnings.append(_craft_warning("multi-function-cell",
                 f"This code cell defines {function_count} top-level functions; try op=\"explode_cells\" on cell_id={cell_id!r}.",
-                path,
-                cell_id=cell_id,
-                function_count=function_count,
-            ))
+                path,cell_id=cell_id,function_count=function_count))
     return warnings
-
 
 def _format_edit_warnings(warnings):
     if not warnings: return ""
     return "\n".join(f"- {warning['code']}: {warning['message']}" for warning in warnings)
 
 # %% ../nbs/02_edit.ipynb #2b915028
-def _cap_edit_diffs(diffs):
-    return [{**item, "diff": cap_text(item.get("diff", ""), _EDIT_MAX_DIFF_CHARS)} for item in diffs]
+def _cap_edit_diffs(diffs): return [{**item, "diff": cap_text(item.get("diff", ""), _EDIT_MAX_DIFF_CHARS)} for item in diffs]
 
 # %% ../nbs/02_edit.ipynb #374b0010
 def _coerce_lines(lines):
@@ -124,18 +118,17 @@ def _coerce_lines(lines):
         out.extend(parts if parts else [""])
     return out
 
+# %% ../nbs/02_edit.ipynb #842ff027
+def _join_lines(lines): return chr(10).join(str(line) for line in lines)
 
-def _join_lines(lines):
-    return chr(10).join(str(line) for line in lines)
-
-
+# %% ../nbs/02_edit.ipynb #56ae36e7
 def _line_no(value, n_lines, name):
     try: value = int(value)
     except (TypeError, ValueError) as err: raise ValueError(f"{name} must be an integer") from err
     if value < 0: value = n_lines + value + 1
     return value
 
-
+# %% ../nbs/02_edit.ipynb #1c1dc6f2
 def _norm_lines(text, start_line, end_line=None):
     """Return zero-based inclusive-exclusive indexes for 1-based line bounds."""
     lines = str(text).splitlines()
@@ -147,21 +140,16 @@ def _norm_lines(text, start_line, end_line=None):
         raise ValueError(f"line bounds must be within 1:{n_lines}; got {start_line!r}:{end_line!r}")
     return start - 1, end
 
-
+# %% ../nbs/02_edit.ipynb #ca95c7cb
 def _unified_diff(before, after, fromfile="before", tofile="after", context=2):
     """Return a compact unified diff, or an empty string when text is unchanged."""
     if before == after: return ""
     lines = difflib.unified_diff(
-        str(before).splitlines(),
-        str(after).splitlines(),
-        fromfile=fromfile,
-        tofile=tofile,
-        lineterm="",
-        n=context,
-    )
+        str(before).splitlines(),str(after).splitlines(),
+        fromfile=fromfile,tofile=tofile,lineterm="",n=context)
     return chr(10).join(lines)
 
-
+# %% ../nbs/02_edit.ipynb #d1fe5c51
 def insert_lines(text, insert_line, new_lines):
     """Insert `new_lines` before a 1-based line boundary in `text`; use n+1 to append."""
     lines = str(text).splitlines()
@@ -171,14 +159,14 @@ def insert_lines(text, insert_line, new_lines):
     if idx < 1 or idx > len(lines) + 1: raise ValueError(f"insert_line must be within 1:{len(lines) + 1}; got {insert_line!r}")
     return _join_lines([*lines[:idx - 1], *_coerce_lines(new_lines), *lines[idx - 1:]])
 
-
+# %% ../nbs/02_edit.ipynb #eeed410e
 def replace_lines(text, start_line, end_line=None, replacement_lines=None):
     """Replace a 1-based inclusive line range in `text`."""
     lines = str(text).splitlines()
     start, end = _norm_lines(text, start_line, end_line)
     return _join_lines([*lines[:start], *_coerce_lines(replacement_lines), *lines[end:]])
 
-
+# %% ../nbs/02_edit.ipynb #d971fe90
 def delete_lines(text, start_line=None, end_line=None, re_filter=None, invert_filter=False):
     """Delete a 1-based inclusive line range, or lines matching `re_filter`."""
     lines = str(text).splitlines()
@@ -194,7 +182,7 @@ def delete_lines(text, start_line=None, end_line=None, re_filter=None, invert_fi
     start, end = _norm_lines(text, start_line, end_line)
     return _join_lines([*lines[:start], *lines[end:]])
 
-
+# %% ../nbs/02_edit.ipynb #01f7c099
 def replace_text(text, old, new, start_line=None, end_line=None):
     """Replace literal `old` with `new`, optionally inside a line range."""
     if old in {None, ""}: raise ValueError("replace_text needs a non-empty old value")
@@ -205,7 +193,7 @@ def replace_text(text, old, new, start_line=None, end_line=None):
     segment = _join_lines(lines[start:end]).replace(str(old), str(new))
     return _join_lines([*lines[:start], *segment.splitlines(), *lines[end:]])
 
-
+# %% ../nbs/02_edit.ipynb #56f794fd
 def _replacement_items(replacements=None, olds=None, news=None):
     if replacements is None:
         if olds is None or news is None: raise ValueError("replace_texts needs replacements or olds/news")
@@ -213,7 +201,7 @@ def _replacement_items(replacements=None, olds=None, news=None):
         replacements = [{"old": old, "new": new} for old, new in zip(olds, news)]
     return [dict(item) for item in replacements]
 
-
+# %% ../nbs/02_edit.ipynb #2e377048
 def replace_texts(text, replacements=None, olds=None, news=None, start_line=None, end_line=None):
     """Apply several literal text replacements in order."""
     result = str(text)
@@ -221,7 +209,7 @@ def replace_texts(text, replacements=None, olds=None, news=None, start_line=None
         result = replace_text(result, item.get("old"), item.get("new", ""), start_line=start_line, end_line=end_line)
     return result
 
-
+# %% ../nbs/02_edit.ipynb #c2ceb6ad
 def _replacement_match_count(source, old, start_line=None, end_line=None):
     if old in {None, ""}: return 0
     source = str(source)
@@ -230,7 +218,7 @@ def _replacement_match_count(source, old, start_line=None, end_line=None):
     start, end = _norm_lines(source, start_line or 1, end_line)
     return _join_lines(lines[start:end]).count(str(old))
 
-
+# %% ../nbs/02_edit.ipynb #f8827898
 def _replacement_statuses(source, edit):
     op = edit["op"]
     if op == "replace_text": items = [{"old": edit.get("old"), "new": edit.get("new", "")}]
@@ -291,25 +279,6 @@ def _cells_from_structs(cells, default_cell_type="code", directive=None):
         made.append(_cell_from_source(source, cell_type=cell_type))
     return made
 
-# %% ../nbs/02_edit.ipynb #99565769
-def _cell_directive_body_lines(source):
-    lines = str(source or "").strip("\n").splitlines()
-    directives, body_start = [], len(lines)
-    for idx, line in enumerate(lines):
-        stripped = line.strip()
-        if not stripped: continue
-        if not stripped.startswith("#|"):
-            body_start = idx
-            break
-        directive = stripped[2:].strip()
-        if not directive.startswith("default_exp"):
-            directives.append(stripped)
-    return directives, lines[body_start:]
-
-# %% ../nbs/02_edit.ipynb #ff8e1afb
-def _is_function_def(node):
-    return isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-
 # %% ../nbs/02_edit.ipynb #8c4d000c
 def _node_start_line(node):
     starts = [node.lineno, *[decorator.lineno for decorator in getattr(node, "decorator_list", [])]]
@@ -368,6 +337,47 @@ def _explode_cell(cell):
     new_cells[0].id = getattr(cell, "id", new_cells[0].id)
     return new_cells
 
+# %% ../nbs/02_edit.ipynb #ce1b29ba
+def _check_expected_hash(nb, edit, indices):
+    expected = edit.get("expected_hash")
+    if expected is None: return
+    if isinstance(expected, dict):
+        for idx in indices:
+            cell = nb.cells[idx]
+            cell_id = getattr(cell, "id", "")
+            want = expected.get(cell_id)
+            if want is not None and want != source_hash(cell_source(cell)):
+                raise ValueError(f"expected_hash mismatch for cell {cell_id}")
+        return
+    if len(indices) != 1: raise ValueError("single expected_hash only works with one selected cell")
+    cell = nb.cells[indices[0]]
+    if str(expected) != source_hash(cell_source(cell)):
+        raise ValueError(f"expected_hash mismatch for cell {getattr(cell, 'id', '')}")
+
+# %% ../nbs/02_edit.ipynb #d26c837b
+def _cell_content_match(cell, edit):
+    if edit.get("cell_type") and getattr(cell, "cell_type", None) != edit.get("cell_type"): return False
+    checks = []
+    source = cell_source(cell)
+    if edit.get("contains") is not None: checks.append(str(edit["contains"]) in source)
+    if edit.get("re_filter") is not None: checks.append(bool(re.search(str(edit["re_filter"]), source, re.MULTILINE)))
+    matched = all(checks) if checks else True
+    return not matched if edit.get("invert_filter") else matched
+
+# %% ../nbs/02_edit.ipynb #e276a9ca
+def _selected_indices(nb, edit):
+    ids = []
+    if edit.get("cell_id") is not None: ids = [edit["cell_id"]]
+    elif edit.get("cell_ids") is not None: ids = list(edit["cell_ids"])
+    elif edit.get("target") == "all":
+        return [idx for idx, cell in enumerate(nb.cells) if _cell_content_match(cell, edit)]
+    else:
+        raise ValueError(f"{edit.get('op')} needs cell_id, cell_ids, or target='all'")
+    seen = _cell_by_id_map(nb)
+    missing = [cell_id for cell_id in ids if cell_id not in seen]
+    if missing: raise ValueError(f"unknown cell id(s): {missing}")
+    return [seen[cell_id][0] for cell_id in ids if _cell_content_match(seen[cell_id][1], edit)]
+
 # %% ../nbs/02_edit.ipynb #64a3f9d0
 def _apply_explode_edit(nb, edit, diffs, affected):
     indices = sorted(_selected_indices(nb, edit))
@@ -402,47 +412,6 @@ def _apply_explode_edit(nb, edit, diffs, affected):
         nb.cells[idx:idx + 1] = new_cells
         affected.extend(exploded_ids)
         shift += len(new_cells) - 1
-
-# %% ../nbs/02_edit.ipynb #f22b5d3c
-def _cell_content_match(cell, edit):
-    if edit.get("cell_type") and getattr(cell, "cell_type", None) != edit.get("cell_type"): return False
-    checks = []
-    source = cell_source(cell)
-    if edit.get("contains") is not None: checks.append(str(edit["contains"]) in source)
-    if edit.get("re_filter") is not None: checks.append(bool(re.search(str(edit["re_filter"]), source, re.MULTILINE)))
-    matched = all(checks) if checks else True
-    return not matched if edit.get("invert_filter") else matched
-
-# %% ../nbs/02_edit.ipynb #0a269fbe
-def _selected_indices(nb, edit):
-    ids = []
-    if edit.get("cell_id") is not None: ids = [edit["cell_id"]]
-    elif edit.get("cell_ids") is not None: ids = list(edit["cell_ids"])
-    elif edit.get("target") == "all":
-        return [idx for idx, cell in enumerate(nb.cells) if _cell_content_match(cell, edit)]
-    else:
-        raise ValueError(f"{edit.get('op')} needs cell_id, cell_ids, or target='all'")
-    seen = _cell_by_id_map(nb)
-    missing = [cell_id for cell_id in ids if cell_id not in seen]
-    if missing: raise ValueError(f"unknown cell id(s): {missing}")
-    return [seen[cell_id][0] for cell_id in ids if _cell_content_match(seen[cell_id][1], edit)]
-
-# %% ../nbs/02_edit.ipynb #44af041e
-def _check_expected_hash(nb, edit, indices):
-    expected = edit.get("expected_hash")
-    if expected is None: return
-    if isinstance(expected, dict):
-        for idx in indices:
-            cell = nb.cells[idx]
-            cell_id = getattr(cell, "id", "")
-            want = expected.get(cell_id)
-            if want is not None and want != source_hash(cell_source(cell)):
-                raise ValueError(f"expected_hash mismatch for cell {cell_id}")
-        return
-    if len(indices) != 1: raise ValueError("single expected_hash only works with one selected cell")
-    cell = nb.cells[indices[0]]
-    if str(expected) != source_hash(cell_source(cell)):
-        raise ValueError(f"expected_hash mismatch for cell {getattr(cell, 'id', '')}")
 
 # %% ../nbs/02_edit.ipynb #dbb9f898
 def _edit_cell_source(source, edit):
@@ -714,9 +683,7 @@ class NotebookEditor:
     path: object
     validate_code: bool = True
     auto_feedback: bool = False
-
-    def __post_init__(self):
-        self.path = str(self.path)
+    def __post_init__(self): self.path = str(self.path)
 
     def apply(self, *edits, **kw):
         'Apply one or more structured edit ops atomically.'
@@ -737,25 +704,31 @@ class NotebookEditor:
         if directive is not None: cell['directive'] = directive
         return self.apply({'op': 'insert_cells', 'anchor_id': anchor_id, 'where': where, 'cells': [cell]}, **kw)
 
-    def explode(self, cell_id=None, **kw):
-        'Split top-level function definitions in one cell, or matching cells, into separate cells.'
-        edit = {'op': 'explode_cells'}
-        if cell_id is None: edit['target'] = 'all'
-        else: edit['cell_id'] = cell_id
-        return self.apply(edit, **kw)
+# %% ../nbs/02_edit.ipynb #0822f836
+@patch
+def explode(self, cell_id=None, **kw):
+    'Split top-level function definitions in one cell, or matching cells, into separate cells.'
+    edit = {'op': 'explode_cells'}
+    if cell_id is None: edit['target'] = 'all'
+    else: edit['cell_id'] = cell_id
+    return self.apply(edit, **kw)
 
-    def delete(self, cell_id, **kw):
-        'Delete one cell by id.'
-        return self.apply({'op': 'delete_cells', 'cell_id': cell_id}, **kw)
+# %% ../nbs/02_edit.ipynb #3d4bdff7
+@patch
+def delete(self, cell_id, **kw):
+    'Delete one cell by id.'
+    return self.apply({'op': 'delete_cells', 'cell_id': cell_id}, **kw)
 
-    def replace_text(self, old, new='', cell_id=None, **kw):
-        'Replace literal text in one cell, or across the notebook when cell_id is omitted.'
-        edit = {'op': 'replace_text', 'old': old, 'new': new}
-        if cell_id is None: edit['target'] = 'all'
-        else: edit['cell_id'] = cell_id
-        return self.apply(edit, **kw)
+# %% ../nbs/02_edit.ipynb #d7f6a5d1
+@patch
+def replace_text(self, old, new='', cell_id=None, **kw):
+    'Replace literal text in one cell, or across the notebook when cell_id is omitted.'
+    edit = {'op': 'replace_text', 'old': old, 'new': new}
+    if cell_id is None: edit['target'] = 'all'
+    else: edit['cell_id'] = cell_id
+    return self.apply(edit, **kw)
 
-
+# %% ../nbs/02_edit.ipynb #ae27dcfe
 @patch
 def edit(self: Notebook):
     'Return a NotebookEditor bound to this notebook path.'

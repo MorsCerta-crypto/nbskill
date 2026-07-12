@@ -675,7 +675,7 @@ def _private_defs_in_source(source):
         })
     return records
 
-
+# %% ../nbs/11_agent_workbench.ipynb #9da268aa
 def _private_symbol_records(state):
     "Return private definition records across captured notebook sources."
     records = []
@@ -685,9 +685,10 @@ def _private_symbol_records(state):
                 records.append({"path": nb_path, "cell_id": cell_id, **item})
     return records
 
-
+# %% ../nbs/11_agent_workbench.ipynb #f49301d1
 def _name_load_count(source, name, skip_span=None):
     "Count load references to a name, optionally skipping one line span."
+    if not name or name not in source: return 0
     try:
         tree = ast.parse(source)
     except SyntaxError:
@@ -704,7 +705,7 @@ def _name_load_count(source, name, skip_span=None):
         count += 1
     return count
 
-
+# %% ../nbs/11_agent_workbench.ipynb #de967f48
 def _unused_added_private_helpers(baseline, current):
     "Return newly added private helpers that have no load-site usage."
     before = {(item["path"], item["symbol"]) for item in _private_symbol_records(baseline)}
@@ -728,7 +729,7 @@ def _unused_added_private_helpers(baseline, current):
             })
     return unused
 
-
+# %% ../nbs/11_agent_workbench.ipynb #710687d8
 def score_patch(
     baseline,  # State captured before the agent run
     contract,  # Task contract containing budgets and gates

@@ -691,22 +691,26 @@ class NotebookEditor:
         kw.setdefault('auto_feedback', self.auto_feedback)
         return edit_notebook(self.path, list(edits), **kw)
 
-    def replace_cell(self, cell_id, source, directive=None, cell_type=None, **kw):
-        'Replace one cell source, optionally stamping directives onto code.'
-        edit = {'op': 'replace_cell', 'cell_id': cell_id, 'source': source}
-        if directive is not None: edit['directive'] = directive
-        if cell_type is not None: edit['cell_type'] = cell_type
-        return self.apply(edit, **kw)
+# %% ../nbs/02_edit.ipynb #79034c16
+@patch
+def replace_cell(self:NotebookEditor, cell_id, source, directive=None, cell_type=None, **kw):
+    'Replace one cell source, optionally stamping directives onto code.'
+    edit = {'op': 'replace_cell', 'cell_id': cell_id, 'source': source}
+    if directive is not None: edit['directive'] = directive
+    if cell_type is not None: edit['cell_type'] = cell_type
+    return self.apply(edit, **kw)
 
-    def insert(self, anchor_id, source, where='after', directive=None, cell_type='code', **kw):
-        'Insert one cell relative to anchor_id; pass None to append.'
-        cell = {'source': source, 'cell_type': cell_type}
-        if directive is not None: cell['directive'] = directive
-        return self.apply({'op': 'insert_cells', 'anchor_id': anchor_id, 'where': where, 'cells': [cell]}, **kw)
+# %% ../nbs/02_edit.ipynb #e2d0a48a
+@patch
+def insert(self:NotebookEditor, anchor_id, source, where='after', directive=None, cell_type='code', **kw):
+    'Insert one cell relative to anchor_id; pass None to append.'
+    cell = {'source': source, 'cell_type': cell_type}
+    if directive is not None: cell['directive'] = directive
+    return self.apply({'op': 'insert_cells', 'anchor_id': anchor_id, 'where': where, 'cells': [cell]}, **kw)
 
 # %% ../nbs/02_edit.ipynb #0822f836
 @patch
-def explode(self, cell_id=None, **kw):
+def explode(self:NotebookEditor, cell_id=None, **kw):
     'Split top-level function definitions in one cell, or matching cells, into separate cells.'
     edit = {'op': 'explode_cells'}
     if cell_id is None: edit['target'] = 'all'
@@ -715,13 +719,13 @@ def explode(self, cell_id=None, **kw):
 
 # %% ../nbs/02_edit.ipynb #3d4bdff7
 @patch
-def delete(self, cell_id, **kw):
+def delete(self:NotebookEditor, cell_id, **kw):
     'Delete one cell by id.'
     return self.apply({'op': 'delete_cells', 'cell_id': cell_id}, **kw)
 
 # %% ../nbs/02_edit.ipynb #d7f6a5d1
 @patch
-def replace_text(self, old, new='', cell_id=None, **kw):
+def replace_text(self:NotebookEditor, old, new='', cell_id=None, **kw):
     'Replace literal text in one cell, or across the notebook when cell_id is omitted.'
     edit = {'op': 'replace_text', 'old': old, 'new': new}
     if cell_id is None: edit['target'] = 'all'

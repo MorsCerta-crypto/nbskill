@@ -32,6 +32,38 @@
       "notebook": "08_edit_interactive.ipynb",
       "reasons": []
     },
+    "_agent_runtime_capabilities": {
+      "allowed": true,
+      "cell_id": "6fc7d5e0",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "08_edit_interactive.ipynb",
+      "reasons": []
+    },
+    "_agent_runtime_output_text": {
+      "allowed": true,
+      "cell_id": "e0d9fa24",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "08_edit_interactive.ipynb",
+      "reasons": []
+    },
+    "_agent_runtime_timeout_risk": {
+      "allowed": true,
+      "cell_id": "888dbf8f",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "08_edit_interactive.ipynb",
+      "reasons": []
+    },
+    "_agent_session_file": {
+      "allowed": true,
+      "cell_id": "ae8bae2a",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "08_edit_interactive.ipynb",
+      "reasons": []
+    },
     "_aggregate_replacement_summary": {
       "allowed": true,
       "cell_id": "c5ac4b3a",
@@ -887,6 +919,17 @@
         "_run_git->call:subprocess.run",
         "call:shutil.copytree",
         "call:subprocess.run"
+      ]
+    },
+    "_checkpoint_agent_session": {
+      "allowed": false,
+      "cell_id": "bd196cd0",
+      "external_effects": true,
+      "line": 2,
+      "notebook": "08_edit_interactive.ipynb",
+      "reasons": [
+        "call:dest.parent.mkdir",
+        "call:dest.write_text"
       ]
     },
     "_chkstyle_diagnostics": {
@@ -6059,6 +6102,14 @@
         "_doctor_warnings->_notebook_export_relevant_change->call:subprocess.run"
       ]
     },
+    "_restore_agent_session": {
+      "allowed": true,
+      "cell_id": "87d973cc",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "08_edit_interactive.ipynb",
+      "reasons": []
+    },
     "_restore_file_bytes": {
       "allowed": false,
       "cell_id": "0d020917",
@@ -6349,6 +6400,38 @@
       "external_effects": false,
       "line": 6,
       "notebook": "12_knowledge.ipynb",
+      "reasons": []
+    },
+    "_session_allowed_capabilities": {
+      "allowed": true,
+      "cell_id": "1e316a2e",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "08_edit_interactive.ipynb",
+      "reasons": []
+    },
+    "_session_approval": {
+      "allowed": true,
+      "cell_id": "f9410b30",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "08_edit_interactive.ipynb",
+      "reasons": []
+    },
+    "_session_reset_runtime": {
+      "allowed": true,
+      "cell_id": "c7eb50a5",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "08_edit_interactive.ipynb",
+      "reasons": []
+    },
+    "_session_runtime": {
+      "allowed": true,
+      "cell_id": "e52392a8",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "08_edit_interactive.ipynb",
       "reasons": []
     },
     "_set_cli_option": {
@@ -7282,6 +7365,17 @@
       "notebook": "04_review.ipynb",
       "reasons": []
     },
+    "agent_session": {
+      "allowed": false,
+      "cell_id": "dbe821a3",
+      "external_effects": true,
+      "line": 2,
+      "notebook": "08_edit_interactive.ipynb",
+      "reasons": [
+        "_checkpoint_agent_session->call:dest.parent.mkdir",
+        "_checkpoint_agent_session->call:dest.write_text"
+      ]
+    },
     "agent_workbench": {
       "allowed": true,
       "cell_id": "ec4e829f",
@@ -7341,6 +7435,14 @@
       "external_effects": false,
       "line": 48,
       "notebook": "00_foundation.ipynb",
+      "reasons": []
+    },
+    "approve_agent_session": {
+      "allowed": true,
+      "cell_id": "899918ef",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "08_edit_interactive.ipynb",
       "reasons": []
     },
     "as_text": {

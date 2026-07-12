@@ -2022,10 +2022,17 @@ def _get_agent_session(paths, timeout, session_id=None, reset_session=False):
 
 # %% ../nbs/08_edit_interactive.ipynb #dbe821a3
 def agent_session(session_id, action="status", approval_id=None, decision="deny"):
-    "Inspect, approve, deny, or cancel a durable edit-interactive session."
-    session = _AGENT_SESSIONS.get(str(session_id))
+    "Inspect, approve, deny, or restore a durable edit-interactive session."
+    sid = str(session_id)
+    session = _AGENT_SESSIONS.get(sid)
     if session is None:
-        raise ValueError("Agent session is not active; resume it with execute_plan and the same session_id.")
+        checkpoint = _agent_session_file(sid)
+        if checkpoint.exists():
+            data = json.loads(checkpoint.read_text(encoding="utf-8"))
+            paths = [Path(item) for item in data.get("target_paths", [])]
+            session = _restore_agent_session(paths, int(data.get("timeout", 30)), sid)
+            if session is not None: _AGENT_SESSIONS[sid] = session
+        if session is None: raise ValueError("Unknown agent session; resume with the original session id.")
     action = str(action or "status").lower()
     if action == "approve":
         if approval_id is None: raise ValueError("approval_id is required for action='approve'")
@@ -2035,12 +2042,11 @@ def agent_session(session_id, action="status", approval_id=None, decision="deny"
         session.record_event("session_cancelled", status="ok")
     elif action != "status":
         raise ValueError("action must be status, approve, or cancel")
-    checkpoint = _checkpoint_agent_session(session)
     return {
         "session_id": session.session_id,
         "status": "waiting_for_approval" if getattr(session, "pending_approval", None) else "ready",
         "approval": getattr(session, "pending_approval", None),
-        "checkpoint": str(checkpoint),
+        "checkpoint": str(_checkpoint_agent_session(session)),
         "events": _bounded_items(session.events),
     }
 

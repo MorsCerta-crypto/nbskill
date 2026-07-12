@@ -6156,7 +6156,7 @@
     },
     "_route": {
       "allowed": true,
-      "cell_id": "2aaf9e26",
+      "cell_id": "82b7d904",
       "external_effects": false,
       "line": 1,
       "notebook": "nbs/data/03_execute_decorated_warning/nbs/decorated.ipynb",
@@ -7415,7 +7415,7 @@
     },
     "api_handler": {
       "allowed": true,
-      "cell_id": "f51fa61f",
+      "cell_id": "3ea08154",
       "external_effects": false,
       "line": 2,
       "notebook": "nbs/data/03_execute_decorated_warning/nbs/decorated.ipynb",
@@ -7790,14 +7790,6 @@
       "notebook": "02_edit.ipynb",
       "reasons": []
     },
-    "demo_fn": {
-      "allowed": true,
-      "cell_id": "51e75d68",
-      "external_effects": false,
-      "line": 2,
-      "notebook": "data/nbs/data/test_nbskill_contract/demo.ipynb",
-      "reasons": []
-    },
     "demo_path": {
       "allowed": false,
       "cell_id": "b49ce285",
@@ -7878,14 +7870,6 @@
         "_mcp_workspace_root->_mcp_bootstrap_workspace->_mcp_log_exception->_mcp_log_event->call:path.parent.mkdir",
         "mcp_tool_result->_response_warnings->_doctor_warnings->_notebook_export_relevant_change->call:subprocess.run"
       ]
-    },
-    "double_answer": {
-      "allowed": true,
-      "cell_id": "tool-double-answer",
-      "external_effects": false,
-      "line": 2,
-      "notebook": "nbs/data/index_tool.ipynb",
-      "reasons": []
     },
     "edit": {
       "allowed": true,
@@ -9228,28 +9212,12 @@
         "_track_tool->_record_tool_start->_write_failure_map->call:path.write_text"
       ]
     },
-    "unused_demo": {
-      "allowed": true,
-      "cell_id": "846d7e23",
-      "external_effects": false,
-      "line": 1,
-      "notebook": "nbs/data/03_execute_uncalled_warning/nbs/uncalled.ipynb",
-      "reasons": []
-    },
     "update_cell": {
       "allowed": true,
       "cell_id": "604104a0",
       "external_effects": false,
       "line": 4,
       "notebook": "13_cli.ipynb",
-      "reasons": []
-    },
-    "used_demo": {
-      "allowed": true,
-      "cell_id": "05c1abae",
-      "external_effects": false,
-      "line": 1,
-      "notebook": "nbs/data/03_execute_called_warning/nbs/called.ipynb",
       "reasons": []
     },
     "validate_code_cells": {

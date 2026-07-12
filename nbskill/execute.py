@@ -272,6 +272,20 @@ def _coerce_execution_policy_entry(entry, default_allowed):
     entry["allowed"] = bool(allowed)
     return entry
 
+# %% ../nbs/03_execute.ipynb #94944b97
+def _prune_execution_policy_entries(path, nb, entries, notebook):
+    root = _project_root_for_notebook(path)
+    cell_ids = {notebook: {str(cell.id) for cell in nb.cells}}
+    for name, entry in list(entries.items()):
+        if not isinstance(entry, dict) or not entry.get("cell_id") or not entry.get("notebook"): continue
+        entry_notebook = entry["notebook"]
+        if entry_notebook not in cell_ids:
+            notebook_path = Path(entry_notebook)
+            if not notebook_path.is_absolute(): notebook_path = root / notebook_path
+            try: cell_ids[entry_notebook] = {str(cell.id) for cell in read_nb(notebook_path).cells}
+            except OSError: cell_ids[entry_notebook] = set()
+        if str(entry["cell_id"]) not in cell_ids[entry_notebook]: entries.pop(name)
+
 # %% ../nbs/03_execute.ipynb #7c076bd7
 def _sync_execution_policy(path, nb):
     policy = _read_execution_policy(path)
@@ -280,6 +294,8 @@ def _sync_execution_policy(path, nb):
     effects = _execution_policy_function_effects(functions, aliases=aliases)
     entries = policy.setdefault("functions", {})
     notebook = _execution_policy_notebook(path)
+    _prune_execution_policy_entries(path, nb, entries, notebook)
+
     for name in sorted(functions):
         reasons = effects.get(name, [])
         entry = _coerce_execution_policy_entry(entries.get(name), default_allowed=not bool(reasons))

@@ -602,20 +602,6 @@ wheels = [
 ]
 
 [[package]]
-name = "clikernel"
-version = "0.1.6"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "execnb" },
-    { name = "fastcore" },
-    { name = "mcp" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/3c/0d/4eff8db56fd977da08e72cf4a0f254b71ccba4a0072c8265c090291858ca/clikernel-0.1.6.tar.gz", hash = "sha256:35a720b4636093712afd0bd063fa552a41049d0b5966ecd7dd6ae4292ff54d48", size = 43626, upload-time = "2026-07-10T21:15:16.668Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/dd/b7/7ec151c78112c2281dd02af1ce442b49a6fe32012f1223ef025a68883bae/clikernel-0.1.6-py3-none-any.whl", hash = "sha256:172243f22e338d953ed4b27ef9c5ebd6e70439ed222e566d15314b9c1bb7ecdf", size = 32350, upload-time = "2026-07-10T21:15:15.222Z" },
-]
-
-[[package]]
 name = "codesigs"
 version = "0.0.3"
 source = { registry = "https://pypi.org/simple" }
@@ -2694,7 +2680,6 @@ name = "nbskill"
 source = { editable = "." }
 dependencies = [
     { name = "botocore" },
-    { name = "clikernel" },
     { name = "execnb" },
     { name = "fastaistyle" },
     { name = "fastcore" },
@@ -2720,7 +2705,6 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "botocore", specifier = ">=1.43.42" },
-    { name = "clikernel", specifier = ">=0.1.6" },
     { name = "execnb", specifier = ">=0.2.2" },
     { name = "fastaistyle", specifier = ">=0.0.15" },
     { name = "fastcore", specifier = "==2.0.*" },

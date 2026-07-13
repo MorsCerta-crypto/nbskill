@@ -355,11 +355,13 @@ def compile_context(
     overview_cards = []
     for nb_path in notebooks:
         overview = _call_text(file_context, path=str(nb_path), verbose=True)
-        overview_cards.append({
-            "path": str(nb_path),
-            "score": _score_text(overview, tokens),
-            "overview": cap_text(overview, 1800),
-        })
+        overview_cards.append(
+            dict(
+                path=str(nb_path),
+                score=_score_text(overview, tokens),
+                overview=cap_text(overview, 1800),
+            )
+        )
     selected = sorted(overview_cards, key=lambda item: (-item["score"], item["path"]))[:3]
     if not any(item["score"] for item in selected): selected = overview_cards[:3]
     evidence = []
@@ -379,24 +381,24 @@ def compile_context(
     placement = placement_advice(path=path, source=goal, top_k=5)
     problem_memory = _problem_memory_context(goal)
     state = capture_state(path)
-    context = {
-        "goal": goal,
-        "contract": contract,
-        "taste": taste,
-        "selected_notebooks": selected,
-        "evidence": evidence,
-        "symbols": symbols,
-        "symbol_summary": cap_text(symbol_summary, 2000),
-        "reuse_advice": reuse,
-        "problem_memory": problem_memory,
-        "placement_advice": placement,
-        "doctor_warnings": {
-            "validation_problem_count": state["validation_problem_count"],
-            "order_problem_count": state["order_problem_count"],
-        },
-        "style_summary": state["style"].get("summary", {}),
-        "verification_hints": contract.get("verification", []),
-    }
+    context = dict(
+        goal=goal,
+        contract=contract,
+        taste=taste,
+        selected_notebooks=selected,
+        evidence=evidence,
+        symbols=symbols,
+        symbol_summary=cap_text(symbol_summary, 2000),
+        reuse_advice=reuse,
+        problem_memory=problem_memory,
+        placement_advice=placement,
+        doctor_warnings=dict(
+            validation_problem_count=state["validation_problem_count"],
+            order_problem_count=state["order_problem_count"],
+        ),
+        style_summary=state["style"].get("summary", {}),
+        verification_hints=contract.get("verification", []),
+    )
     serialized = json.dumps(context, default=str)
     if len(serialized) > max_context_chars:
         context["reuse_advice"] = {"summary": "omitted: context budget reached"}
@@ -957,15 +959,15 @@ def agent_workbench_result(
     )
     rendered_plan = cap_text(_render_workbench_plan(contract, taste, context), max_plan_chars)
     empirical_hard = _empirical_settings(contract).get("enforce")
-    result = {
-        "summary": "agent_workbench prepared execution context",
-        "contract": contract,
-        "taste": taste,
-        "context": context,
-        "baseline": baseline,
-        "rendered_plan": rendered_plan,
-        "expected_gates": {
-            "hard": [
+    result = dict(
+        summary="agent_workbench prepared execution context",
+        contract=contract,
+        taste=taste,
+        context=context,
+        baseline=baseline,
+        rendered_plan=rendered_plan,
+        expected_gates=dict(
+            hard=[
                 "max_files",
                 "max_cells",
                 "max_added_lines",
@@ -973,10 +975,10 @@ def agent_workbench_result(
                 "generated/source sync",
                 "new doctor errors",
             ] + (["empirical_loop"] if empirical_hard else []),
-            "soft": ["style_delta", "readability_delta", "test_clarity", "notebook_story"]
+            soft=["style_delta", "readability_delta", "test_clarity", "notebook_story"]
             + ([] if empirical_hard else ["empirical_loop"]),
-        },
-    }
+        ),
+    )
     if execute:
         if not notebook:
             raise ValueError("agent_workbench execute=True requires notebook")

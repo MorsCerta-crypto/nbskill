@@ -546,7 +546,11 @@ def problem_memory(
     project: str | None = None,  # Project path/label filter for query, or row project for add
     evidence: str = "",  # Short evidence the solution worked
     outcome: str = "applied",  # applied, partial, failed, skipped, etc.
-    tags: str | None = None,  # Optional comma-separated tags
+    tags: str | None = None,  # At least four namespaced tags
+    repository: str = "",  # Repository containing the verified evidence
+    commit: str = "",  # Source commit for the evidence
+    verification: str = "",  # Command that verified the solution
+    verified_at: float | None = None,  # Verification time as a Unix timestamp
     path: str | None = None,  # Override reference/problem-memory home
     limit: int = 20,  # Number of recent memories for action=list
 ):
@@ -556,7 +560,8 @@ def problem_memory(
         if not problem or not solution: raise ValueError("problem_memory action='add' needs problem and solution")
         result = nbskill.knowledge.problem_statement_add(
             problem, solution, task=task, project=project or ".",
-            evidence=evidence, outcome=outcome, tags=tags, path=path,
+            evidence=evidence, outcome=outcome, tags=tags, repository=repository, commit=commit,
+            verification=verification, verified_at=verified_at, path=path,
         )
     elif action == "list":
         result = nbskill.knowledge.problem_statement_list(path=path, limit=limit)

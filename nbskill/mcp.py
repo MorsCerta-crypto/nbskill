@@ -2969,13 +2969,17 @@ async def _problem_memory_tool(
     evidence: str = "",
     outcome: str = "applied",
     tags: str | None = None,
+    repository: str = "",
+    commit: str = "",
+    verification: str = "",
+    verified_at: float | None = None,
     path: str | None = None,
     limit: int = 20,
     tool_timeout: float = 120.0,
     detail: str = "summary",
     ctx: Context = None,
 ) -> ToolResult:
-    "Manage reusable problem-solution memories with exact tag filters."
+    "Manage reusable problem-solution memories with provenance and exact tag diagnostics."
     root = await _mcp_workspace_root(ctx)
     path = _mcp_workspace_path(path, root) if path else path
     action = str(action or "query").lower()
@@ -2984,7 +2988,8 @@ async def _problem_memory_tool(
     tool_timeout = _mcp_clamp_float(tool_timeout, 120.0, 0.001, 120.0, "tool_timeout")
     arguments = dict(
         action=action, query=query, top_k=top_k, problem=problem, solution=solution, task=task,
-        project=project, evidence=evidence, outcome=outcome, tags=tags, path=path, limit=limit,
+        project=project, evidence=evidence, outcome=outcome, tags=tags, repository=repository,
+        commit=commit, verification=verification, verified_at=verified_at, path=path, limit=limit,
         tool_timeout=tool_timeout, detail=detail, workspace_root=str(root) if root else None,
     )
     try:
@@ -2993,7 +2998,8 @@ async def _problem_memory_tool(
             result_data = await asyncio.wait_for(
                 asyncio.to_thread(
                     problem_statement_add, problem, solution, task=task, project=project or str(root or "."),
-                    evidence=evidence, outcome=outcome, tags=tags, path=path,
+                    evidence=evidence, outcome=outcome, tags=tags, repository=repository, commit=commit,
+                    verification=verification, verified_at=verified_at, path=path,
                 ),
                 timeout=tool_timeout,
             )

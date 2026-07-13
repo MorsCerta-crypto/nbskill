@@ -1237,6 +1237,9 @@ def _reference_query_index(
     )
 
 # %% ../nbs/12_knowledge.ipynb #cd1ddc70
+_PROBLEM_TAG_NAMES = {"topic", "sub-topic", "library", "problem-category", "solution-category"}
+
+
 def _problem_tags(tags=None):
     "Return normalized problem-memory tags."
     if tags is None: return []
@@ -1268,28 +1271,26 @@ def _problem_key(problem, solution):
     return _stable_item_id("problem_statement", problem.lower(), solution.lower()), problem, solution
 
 # %% ../nbs/12_knowledge.ipynb #b6332f88
-def _problem_row(problem, solution, task="", project=".", evidence="", outcome="applied", tags=None):
+def _problem_row(
+    problem, solution, task="", project=".", evidence="", outcome="applied", tags=None,
+    repository="", commit="", verification="", verified_at=None,
+):
     "Create one problem-memory row before embedding."
     item_id, problem, solution = _problem_key(problem, solution)
     now = time.time()
     tag_list = _problem_tags(tags)
-    if len(tag_list) < 4:
-        raise ValueError(f"problem-solution pairs need at least 4 tags; got {len(tag_list)}")
-    return {
-        "item_id": item_id,
-        "kind": "problem_statement",
-        "problem": problem,
-        "solution": solution,
-        "task": str(task or ""),
-        "project": _problem_project(project),
-        "evidence": str(evidence or ""),
-        "outcome": str(outcome or "applied"),
-        "tags": tag_list,
-        "search_text": _problem_text(problem, solution, task=task, evidence=evidence, tags=tag_list),
-        "observed_count": 1,
-        "created_at": now,
-        "last_seen": now,
-    }
+    invalid = [tag for tag in tag_list if ":" not in tag or tag.partition(":")[0] not in _PROBLEM_TAG_NAMES or not tag.partition(":")[2]]
+    tag_names = {tag.partition(":")[0] for tag in tag_list if tag not in invalid}
+    if invalid or len(tag_names) < 4:
+        raise ValueError("problem-solution pairs need at least 4 distinct namespaced tags")
+    return dict(
+        item_id=item_id, kind="problem_statement", problem=problem, solution=solution,
+        task=str(task or ""), project=_problem_project(project), evidence=str(evidence or ""),
+        outcome=str(outcome or "applied").lower(), tags=tag_list,
+        provenance=dict(repository=str(repository or ""), commit=str(commit or ""), verification=str(verification or ""), verified_at=now if verified_at is None else float(verified_at)),
+        search_text=_problem_text(problem, solution, task=task, evidence=evidence, tags=tag_list),
+        observed_count=1, created_at=now, last_seen=now,
+    )
 
 # %% ../nbs/12_knowledge.ipynb #7e6e37ff
 def _merge_problem_row(existing, incoming):
@@ -1298,6 +1299,10 @@ def _merge_problem_row(existing, incoming):
     old_search = merged.get("search_text")
     for key in ("task", "project", "evidence", "outcome"):
         if incoming.get(key): merged[key] = incoming[key]
+    provenance = {**dict(merged.get("provenance") or {})}
+    for key, value in (incoming.get("provenance") or {}).items():
+        if value not in ("", None): provenance[key] = value
+    merged["provenance"] = provenance
     merged["tags"] = sorted({*_problem_tags(merged.get("tags")), *_problem_tags(incoming.get("tags"))})
     merged["observed_count"] = int(merged.get("observed_count") or 0) + 1
     merged["last_seen"] = incoming["last_seen"]
@@ -1318,11 +1323,18 @@ def problem_statement_add(
     project: str = ".",  # Project path or label
     evidence: str = "",  # Short evidence that the solution worked
     outcome: str = "applied",  # applied, partial, failed, skipped, etc.
-    tags=None,  # Optional tags as a list or comma-separated string
+    tags=None,  # At least four namespaced tags
+    repository: str = "",  # Repository containing the verified evidence
+    commit: str = "",  # Source commit for the evidence
+    verification: str = "",  # Command that verified the solution
+    verified_at: float | None = None,  # Verification time as a Unix timestamp
     path: str | None = None,  # Override reference home
 ):
     "Store or update one reusable problem-solution statement."
-    incoming = _problem_row(problem, solution, task=task, project=project, evidence=evidence, outcome=outcome, tags=tags)
+    incoming = _problem_row(
+        problem, solution, task=task, project=project, evidence=evidence, outcome=outcome, tags=tags,
+        repository=repository, commit=commit, verification=verification, verified_at=verified_at,
+    )
     rows, updated = [], incoming
     replaced = False
     for row in _lance_rows(path, "problems"):
@@ -1337,34 +1349,37 @@ def problem_statement_add(
     return {"item_id": updated["item_id"], "created": not replaced, "row": updated}
 
 # %% ../nbs/12_knowledge.ipynb #f3f5b691
-def _problem_score(row, query):
-    "Score a stored problem against a new query."
+def _problem_score(row, query, components=False):
+    "Score a stored problem against a new query with evidence-aware signals."
     query_tokens = set(_query_tokens(query))
     row_tokens = set(_query_tokens(row.get("search_text", "")))
-    tag_hits = query_tokens & set(_problem_tags(row.get("tags")))
     try: observed = int(row.get("observed_count") or 0)
     except (TypeError, ValueError): observed = 0
-    vector_score = 0.0
-    try: vector_score = max(0.0, 1.0 - float(row.get("_distance", 1.0))) * 8
-    except (TypeError, ValueError): pass
-    return round(vector_score + len(query_tokens & row_tokens) + 2 * len(tag_hits) + min(observed, 5) * 0.2, 6)
+    try: age_days = max(0.0, time.time() - float(row.get("last_seen") or 0)) / 86400
+    except (TypeError, ValueError): age_days = 366
+    try: vector = max(0.0, 1.0 - float(row.get("_distance", 1.0))) * 8
+    except (TypeError, ValueError): vector = 0.0
+    values = dict(
+        vector=vector, lexical=len(query_tokens & row_tokens),
+        tags=2 * len(query_tokens & set(_problem_tags(row.get("tags")))), observed=min(observed, 5) * 0.2,
+        outcome={"applied": 1.0, "partial": 0.2, "skipped": -0.5, "failed": -1.0}.get(row.get("outcome"), 0.0),
+        evidence=0.5 if row.get("evidence") else 0.0,
+        recency=0.6 if age_days <= 90 else 0.2 if age_days <= 365 else -0.4,
+    )
+    return values if components else round(sum(values.values()), 6)
 
 # %% ../nbs/12_knowledge.ipynb #9274bdc7
-def _problem_hit(row, query):
-    "Return the public problem-memory hit shape."
-    return {
-        "item_id": row.get("item_id"),
-        "problem": row.get("problem", ""),
-        "solution": row.get("solution", ""),
-        "task": row.get("task", ""),
-        "project": row.get("project", ""),
-        "evidence": row.get("evidence", ""),
-        "outcome": row.get("outcome", ""),
-        "tags": _problem_tags(row.get("tags")),
-        "observed_count": int(row.get("observed_count") or 0),
-        "score": _problem_score(row, query),
-        "search_sources": row.get("search_sources") or [],
-    }
+def _problem_hit(row, query, requested_tags=None):
+    "Return the public problem-memory hit shape with ranking diagnostics."
+    tags = _problem_tags(row.get("tags"))
+    return dict(
+        item_id=row.get("item_id"), problem=row.get("problem", ""), solution=row.get("solution", ""),
+        task=row.get("task", ""), project=row.get("project", ""), evidence=row.get("evidence", ""),
+        outcome=row.get("outcome", ""), tags=tags, provenance=dict(row.get("provenance") or {}),
+        matched_tags=sorted(set(tags) & set(_problem_tags(requested_tags))),
+        observed_count=int(row.get("observed_count") or 0), score=_problem_score(row, query),
+        score_components=_problem_score(row, query, components=True), search_sources=row.get("search_sources") or [],
+    )
 
 # %% ../nbs/12_knowledge.ipynb #24f325c0
 def _problem_candidates(query, path=None, candidate_k=50, tags=None):
@@ -1416,11 +1431,19 @@ def problem_statement_query(
     if project is not None:
         project_label = _problem_project(project)
         rows = [row for row in rows if row.get("project") == project_label]
-    hits = [_problem_hit(row, query) for row in rows]
+    diagnostics = dict(requested_tags=tag_list, exact_tag_match_count=len(rows), code=None, suggested_tags=[])
+    if tag_list and not rows:
+        broader, _, _ = _problem_candidates(query, path=path, candidate_k=top_k * 20)
+        if project is not None: broader = [row for row in broader if row.get("project") == project_label]
+        diagnostics.update(
+            code="no_exact_tag_match", message="No memories matched every requested tag. Try fewer tags.",
+            broader_match_count=len(broader), suggested_tags=sorted({tag for row in broader for tag in _problem_tags(row.get("tags"))}),
+        )
+    hits = [_problem_hit(row, query, tag_list) for row in rows]
     hits = sorted(hits, key=lambda hit: hit["score"], reverse=True)[:top_k]
     return dict(
         query=query, backend=backend, note=note, count=len(hits),
-        filters={"project": project, "tags": tag_list},
+        filters={"project": project, "tags": tag_list}, diagnostics=diagnostics,
         context=_problem_context_markdown(hits), hits=hits,
     )
 

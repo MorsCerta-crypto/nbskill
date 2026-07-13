@@ -7,22 +7,16 @@ __all__ = ['notebook_order_problems', 'notebook_order_problem_lines', 'symbol_gr
            'placement_advice', 'notebook_advice_problems']
 
 # %% ../nbs/10_graph.ipynb #09416808
-import ast
-import builtins
-import copy
-import json
-import re
+import ast, builtins, copy, json, re
 from pathlib import Path
 
 from fastcore.basics import patch
 from fastcore.nbio import read_nb
+from .foundation import NotebookSymbol, call_name, cell_source, cli_error, cli_return, notebook_paths
+from .foundation import parse_code_cell, path_candidates, source_without_directives, symbol_short_name
+from .foundation import xml_attrs, xml_escape
 
-from nbskill.foundation import (
-    NotebookSymbol, call_name, cell_source, cli_error, cli_return, notebook_paths,
-    parse_code_cell, path_candidates, source_without_directives, symbol_short_name,
-    xml_attrs, xml_escape,
-)
-
+# %% ../nbs/10_graph.ipynb #b723ec92
 _GRAPH_MAX_NOTEBOOKS = 80
 _GRAPH_MAX_CELLS = 5000
 _GRAPH_MAX_RECORDS = 20000
@@ -30,14 +24,14 @@ _GRAPH_MAX_EDGES = 40000
 _GRAPH_MAX_SIMILARITY_RECORDS = 1000
 _GRAPH_JSON_MAX_CHARS = 200000
 
-
+# %% ../nbs/10_graph.ipynb #9481cf56
 def _graph_limited_notebook_paths(path, max_notebooks=_GRAPH_MAX_NOTEBOOKS):
     paths = notebook_paths(path)
     if max_notebooks and len(paths) > max_notebooks:
         raise ValueError(f"Graph budget exceeded: {len(paths)} notebooks exceeds limit {max_notebooks}; narrow the path.")
     return paths
 
-
+# %% ../nbs/10_graph.ipynb #e58a0c94
 def _graph_check_size(notebooks=0, cells=0, records=0, edges=0):
     if _GRAPH_MAX_NOTEBOOKS and notebooks > _GRAPH_MAX_NOTEBOOKS:
         raise ValueError(f"Graph budget exceeded: {notebooks} notebooks exceeds limit {_GRAPH_MAX_NOTEBOOKS}.")
@@ -93,15 +87,11 @@ def _cell_definition_records(path, module, idx, cell):
     records = []
     for node in tree.body:
         for symbol, symbol_node, kind in _node_definitions(node):
-            records.append({
-                "symbol": symbol,
-                "kind": kind,
-                "module": module,
-                "path": str(path),
-                "cell_id": getattr(cell, "id", ""),
-                "cell_idx": idx,
-                "calls": _call_names(symbol_node),
-            })
+            records.append(dict(
+                symbol=symbol, kind=kind, module=module, path=str(path),
+                cell_id=getattr(cell, "id", ""), cell_idx=idx,
+                calls=_call_names(symbol_node)
+            ))
     return records
 
 # %% ../nbs/10_graph.ipynb #9f9de949
@@ -111,13 +101,10 @@ def _cell_call_record(path, idx, cell):
     if tree is None: return None
     calls = _call_names(tree)
     if not calls: return None
-    return {
-        "path": str(path),
-        "cell_id": getattr(cell, "id", ""),
-        "cell_idx": idx,
-        "calls": calls,
-        "call_sites": _call_site_records(tree, source),
-    }
+    return dict(
+        path=str(path), cell_id=getattr(cell, "id", ""), cell_idx=idx,
+        calls=calls, call_sites=_call_site_records(tree, source)
+    )
 
 # %% ../nbs/10_graph.ipynb #967de6cc
 def _import_module_name(node):
@@ -136,14 +123,10 @@ def _cell_import_records(path, idx, cell):
         module = _import_module_name(node)
         if module is None: continue
         for alias in node.names:
-            records.append({
-                "module": module,
-                "symbol": alias.name,
-                "local": alias.asname or alias.name,
-                "path": str(path),
-                "cell_id": getattr(cell, "id", ""),
-                "cell_idx": idx,
-            })
+            records.append(dict(
+                module=module, symbol=alias.name, local=alias.asname or alias.name,
+                path=str(path), cell_id=getattr(cell, "id", ""), cell_idx=idx
+            ))
     return records
 
 # %% ../nbs/10_graph.ipynb #8ce0cfb4
@@ -171,7 +154,7 @@ def _collect_graph(path="nbs"):
             record = _cell_call_record(nb_path, idx, cell)
             if record: callers.append(record)
             _graph_check_size(notebooks=len(nb_paths), cells=cell_count, records=len(definitions) + len(callers) + len(imports))
-    return {"definitions": definitions, "callers": callers, "imports": imports}
+    return dict(definitions=definitions, callers=callers, imports=imports)
 
 # %% ../nbs/10_graph.ipynb #5649a185
 _BUILTIN_CALL_NAMES = set(dir(builtins)) | {"display", "get_ipython"}
@@ -295,7 +278,7 @@ class _CallRootVisitor(ast.NodeVisitor):
     def visit_Call(self, node):
         name = _call_root_name(node.func)
         if name and not self._is_local(name):
-            self.records.append({"symbol": name, "line": getattr(node, "lineno", None), "deferred": bool(self.local_scopes)})
+            self.records.append(dict(symbol=name, line=getattr(node, "lineno", None), deferred=bool(self.local_scopes)))
         self.generic_visit(node)
 
 # %% ../nbs/10_graph.ipynb #f5ac828d
@@ -337,17 +320,11 @@ def _first_later_binding(locations, name, idx):
 
 # %% ../nbs/10_graph.ipynb #af9d84cd
 def _order_problem(kind, nb_path, item, call, detail, confidence="medium"):
-    return {
-        "code": kind,
-        "path": str(nb_path),
-        "cell_id": getattr(item["cell"], "id", ""),
-        "line": call.get("line"),
-        "symbol": call["symbol"],
-        "detail": detail,
-        "severity": "warning",
-        "source": "nbskill",
-        "confidence": confidence,
-    }
+    return dict(
+        code=kind, path=str(nb_path), cell_id=getattr(item["cell"], "id", ""),
+        line=call.get("line"), symbol=call["symbol"], detail=detail,
+        severity="warning", source="nbskill", confidence=confidence
+    )
 
 # %% ../nbs/10_graph.ipynb #8498a435
 def _format_order_problem(problem):
@@ -428,14 +405,10 @@ def _callee_locations(graph, symbol):
 
 # %% ../nbs/10_graph.ipynb #c9c730f6
 def _definition_location(record):
-    return {
-        "symbol": record["symbol"],
-        "kind": record.get("kind"),
-        "module": record.get("module"),
-        "path": record["path"],
-        "cell_id": record["cell_id"],
-        "cell_idx": record["cell_idx"],
-    }
+    return dict(
+        symbol=record["symbol"], kind=record.get("kind"), module=record.get("module"),
+        path=record["path"], cell_id=record["cell_id"], cell_idx=record["cell_idx"]
+    )
 
 # %% ../nbs/10_graph.ipynb #dd8332e5
 def _symbol_start_nodes(graph, symbol):
@@ -451,12 +424,9 @@ def _symbol_edge_records(graph, symbol):
                 key = (record["symbol"], callee, record["path"], record["cell_id"], call)
                 if key in seen: continue
                 seen.add(key)
-                edges.append({
-                    "from": record["symbol"],
-                    "to": callee,
-                    "call": call,
-                    "from_location": _definition_location(record),
-                })
+                edge = dict(to=callee, call=call, from_location=_definition_location(record))
+                edge["from"] = record["symbol"]
+                edges.append(edge)
     return edges
 
 # %% ../nbs/10_graph.ipynb #d072efa9
@@ -506,6 +476,7 @@ def _symbol_connection_data(path, start, end, max_depth=6):
 
 # %% ../nbs/10_graph.ipynb #59cfbbe7
 def symbol_graph_data(path, symbol):
+    "Return structured definitions, callers, and callees for a symbol."
     graph = _collect_graph(_graph_scope(path))
     definitions = _definitions_for_symbol(graph, symbol)
     callers = _caller_records_for_symbol(graph, symbol)
@@ -513,14 +484,11 @@ def symbol_graph_data(path, symbol):
     for definition in definitions:
         callee_symbols.extend(_resolve_callees(graph, definition["calls"]))
     callee_symbols = sorted(set(item for item in callee_symbols if item != symbol))
-    return {
-        "symbol": symbol,
-        "definitions": definitions,
-        "callers": callers,
-        "caller_usages": _caller_usage_records(callers, symbol),
-        "callees": callee_symbols,
-        "graph": graph,
-    }
+    return dict(
+        symbol=symbol, definitions=definitions, callers=callers,
+        caller_usages=_caller_usage_records(callers, symbol),
+        callees=callee_symbols, graph=graph
+    )
 
 # %% ../nbs/10_graph.ipynb #a4f1382b
 @patch(cls_method=True, nm="from_graph_data")
@@ -530,7 +498,7 @@ def _from_graph_data(cls: NotebookSymbol, data):
     record = definitions[0] if definitions else {"symbol": data.get("symbol", "")}
     return cls.from_record(record, data=data)
 
-
+# %% ../nbs/10_graph.ipynb #7e9414d7
 @patch
 def definitions(self: NotebookSymbol):
     "Return definition records for this symbol."
@@ -542,7 +510,7 @@ def callers(self: NotebookSymbol):
     "Return call records that reference this symbol."
     return self.data.get("callers", [])
 
-
+# %% ../nbs/10_graph.ipynb #b14c1d71
 @patch
 def caller_usages(self: NotebookSymbol):
     "Return formatted caller usage snippets for this symbol."
@@ -587,13 +555,10 @@ def _caller_usage_records(records, symbol):
             key = (record["path"], record["cell_id"], site.get("lineno"), site.get("line"))
             if key in seen: continue
             seen.add(key)
-            items.append({
-                "path": record["path"],
-                "cell_id": record["cell_id"],
-                "lineno": site.get("lineno"),
-                "name": site.get("name"),
-                "line": site.get("line"),
-            })
+            items.append(dict(
+                path=record["path"], cell_id=record["cell_id"],
+                lineno=site.get("lineno"), name=site.get("name"), line=site.get("line")
+            ))
     return items
 
 # %% ../nbs/10_graph.ipynb #610687e3
@@ -607,16 +572,17 @@ def _caller_usage_lines(records, symbol, limit=8):
 
 # %% ../nbs/10_graph.ipynb #6271f92e
 def symbol_graph_public_data(data):
-    return {
-        "symbol": data["symbol"],
-        "definitions": data["definitions"][:200],
-        "callers": data["callers"][:200],
-        "caller_usages": data["caller_usages"][:50],
-        "callees": [
-            {"symbol": symbol, "locations": _callee_locations(data["graph"], symbol)}
+    "Return the compact public view of symbol graph data."
+    return dict(
+        symbol=data["symbol"],
+        definitions=data["definitions"][:200],
+        callers=data["callers"][:200],
+        caller_usages=data["caller_usages"][:50],
+        callees=[
+            dict(symbol=symbol, locations=_callee_locations(data["graph"], symbol))
             for symbol in data["callees"][:200]
         ],
-    }
+    )
 
 # %% ../nbs/10_graph.ipynb #c3d1d403
 def _format_symbol_graph_data(data):
@@ -752,36 +718,34 @@ _KG_REQUIRED_TOP_KEYS = {"version", "kind", "project", "nodes", "edges", "layers
 _KG_REQUIRED_NODE_KEYS = {"id", "type", "name"}
 _KG_REQUIRED_EDGE_KEYS = {"source", "target", "type", "confidence", "evidence"}
 
-
+# %% ../nbs/10_graph.ipynb #bb3fd17e
 def _kg_id(*parts):
     return "::".join(str(part).replace("::", ":") for part in parts if part not in (None, ""))
 
-
+# %% ../nbs/10_graph.ipynb #ae6b4b1b
 def _kg_clean(extra):
     return {key: value for key, value in extra.items() if value is not None and value != ""}
 
 # %% ../nbs/10_graph.ipynb #38c0c450
 def _kg_project_summary(scope, ordered_paths, state):
-    return {
-        "path": str(scope),
-        "notebook_count": len(ordered_paths),
-        "node_count": len(state["nodes"]),
-        "edge_count": len(state["edges"]),
-    }
+    return dict(
+        path=str(scope), notebook_count=len(ordered_paths),
+        node_count=len(state["nodes"]), edge_count=len(state["edges"])
+    )
 
 # %% ../nbs/10_graph.ipynb #9dee544b
 def _kg_node(node_id, kind, name, **extra):
-    data = {"id": node_id, "type": kind, "name": str(name)}
+    data = dict(id=node_id, type=kind, name=str(name))
     data.update(_kg_clean(extra))
     return data
 
-
+# %% ../nbs/10_graph.ipynb #3d53a995
 def _kg_edge(source, target, kind, confidence="high", evidence=""):
-    return {"source": source, "target": target, "type": kind, "confidence": confidence, "evidence": evidence}
+    return dict(source=source, target=target, type=kind, confidence=confidence, evidence=evidence)
 
-
+# %% ../nbs/10_graph.ipynb #8b858e7b
 def _kg_issue(code, detail, severity="warning", **extra):
-    data = {"code": code, "detail": detail, "severity": severity}
+    data = dict(code=code, detail=detail, severity=severity)
     data.update(_kg_clean(extra))
     return data
 
@@ -789,11 +753,11 @@ def _kg_issue(code, detail, severity="warning", **extra):
 def _notebook_node_id(path):
     return _kg_id("notebook", path)
 
-
+# %% ../nbs/10_graph.ipynb #8d511019
 def _cell_node_id(path, cell_idx, cell_id=None):
     return _kg_id("cell", path, cell_id or cell_idx)
 
-
+# %% ../nbs/10_graph.ipynb #a35adf2c
 def _symbol_node_id(record):
     return _kg_id("symbol", record.get("module"), record.get("symbol"), record.get("cell_id"))
 
@@ -801,7 +765,7 @@ def _symbol_node_id(record):
 def _import_node_id(record):
     return _kg_id("import", record.get("path"), record.get("cell_id"), record.get("local") or record.get("symbol"))
 
-
+# %% ../nbs/10_graph.ipynb #a5bf5e5b
 def _heading_node_id(path, cell_idx, title):
     return _kg_id("heading", path, cell_idx, title)
 
@@ -810,7 +774,7 @@ def _add_kg_node(nodes, node):
     nodes.setdefault(node["id"], node)
     return node["id"]
 
-
+# %% ../nbs/10_graph.ipynb #631a0cb7
 def _add_kg_edge(edges, seen, edge):
     if _GRAPH_MAX_EDGES and len(edges) >= _GRAPH_MAX_EDGES: return
     key = (edge["source"], edge["target"], edge["type"], edge.get("evidence", ""))
@@ -818,21 +782,21 @@ def _add_kg_edge(edges, seen, edge):
         edges.append(edge)
         seen.add(key)
 
-
+# %% ../nbs/10_graph.ipynb #7eb884c7
 def _append_layer_node(layers, layer_id, name, node_id, kind="notebook"):
     layer = layers.setdefault(layer_id, {"id": layer_id, "type": kind, "name": name, "node_ids": []})
     if node_id not in layer["node_ids"]:
         layer["node_ids"].append(node_id)
     return layer
 
-
+# %% ../nbs/10_graph.ipynb #b61bc62c
 def _kg_records_by_cell(records):
     by_cell = {}
     for record in records:
         by_cell.setdefault((record.get("path"), record.get("cell_id")), []).append(record)
     return by_cell
 
-
+# %% ../nbs/10_graph.ipynb #24e30fb8
 def _symbol_ids_by_name(nodes):
     by_name = {}
     for node in nodes.values():
@@ -847,7 +811,7 @@ def _validate_kg_top_level(data):
         for key in sorted(_KG_REQUIRED_TOP_KEYS - set(data))
     ]
 
-
+# %% ../nbs/10_graph.ipynb #6d752f6e
 def _validate_kg_nodes(nodes):
     issues, node_ids, duplicate_ids = [], set(), set()
     for idx, node in enumerate(nodes):
@@ -881,7 +845,7 @@ def _validate_kg_edges(edges, node_ids):
                 issues.append(_kg_issue("dangling-edge", f"Edge {idx} has unknown {field}: {ref}.", edge_index=idx, field=field, node_id=ref))
     return issues
 
-
+# %% ../nbs/10_graph.ipynb #7b8d9159
 def _validate_kg_node_refs(items, node_ids, code, label):
     issues = []
     for item in items:
@@ -891,7 +855,7 @@ def _validate_kg_node_refs(items, node_ids, code, label):
                 issues.append(_kg_issue(code, detail, item_id=item.get("id"), order=item.get("order"), node_id=node_id))
     return issues
 
-
+# %% ../nbs/10_graph.ipynb #e8cd56d4
 def _notebook_knowledge_graph_validate(data):
     if not isinstance(data, dict):
         return [_kg_issue("invalid-graph", "Graph data must be a dictionary.", severity="error")]
@@ -906,7 +870,7 @@ def _notebook_knowledge_graph_validate(data):
 def _kg_state():
     return {"nodes": {}, "edges": [], "edge_seen": set(), "layers": {}, "tour": [], "symbol_nodes_by_name": {}}
 
-
+# %% ../nbs/10_graph.ipynb #38c3be5b
 def _kg_cell_base(state, nb_path, module, notebook_id, layer_id, cell_idx, cell, previous_cell_id, heading_layer):
     cell_id = getattr(cell, "id", "")
     node_id = _add_kg_node(state["nodes"], _kg_node(_cell_node_id(nb_path, cell_idx, cell_id), "cell", f"{Path(nb_path).name}#{cell_idx}", path=nb_path, cell_id=cell_id, cell_idx=cell_idx, cell_type=cell.cell_type))
@@ -918,7 +882,7 @@ def _kg_cell_base(state, nb_path, module, notebook_id, layer_id, cell_idx, cell,
         _add_kg_edge(state["edges"], state["edge_seen"], _kg_edge(previous_cell_id, node_id, "precedes", evidence="notebook cell order"))
     return node_id, cell_id
 
-
+# %% ../nbs/10_graph.ipynb #4492c23f
 def _kg_heading(state, nb_path, notebook_id, cell_idx, cell, cell_id, node_id, heading_layer):
     heading = _markdown_heading(cell)
     if not heading:
@@ -940,7 +904,7 @@ def _kg_definition_nodes(state, nb_path, module, layer_id, cell_idx, cell_id, no
             _append_layer_node(state["layers"], heading_layer["id"], heading_layer["name"], symbol_id, kind="heading")
         _add_kg_edge(state["edges"], state["edge_seen"], _kg_edge(node_id, symbol_id, "defines", evidence=f"definition in cell {cell_idx}"))
 
-
+# %% ../nbs/10_graph.ipynb #6328c384
 def _kg_import_nodes(state, nb_path, module, layer_id, cell_idx, cell_id, node_id, records, heading_layer):
     for record in records:
         label = record.get("local") or record.get("symbol") or record.get("module")
@@ -981,7 +945,7 @@ def _merge_symbol_nodes_by_name(state):
             if node_id not in bucket:
                 bucket.append(node_id)
 
-
+# %% ../nbs/10_graph.ipynb #f739623d
 def _kg_add_call_edges(state, graph):
     _merge_symbol_nodes_by_name(state)
     for record in graph["definitions"]:
@@ -1018,7 +982,7 @@ def _add_similarity_edges(catalog, nodes, edges, seen):
             if source and target:
                 _add_kg_edge(edges, seen, _kg_edge(source, target, "similar_to", confidence="medium", evidence="normalized AST shape matches"))
 
-
+# %% ../nbs/10_graph.ipynb #9354aa94
 def _format_notebook_knowledge_graph(data):
     project = data.get("project", {})
     lines = [
@@ -1046,20 +1010,16 @@ def notebook_knowledge_graph_data(path="nbs"):
         _kg_add_notebook(state, nb_path, nb_order, graph)
     _kg_add_call_edges(state, graph)
     _add_similarity_edges(catalog, state["nodes"], state["edges"], state["edge_seen"])
-    data = {
-        "version": 1,
-        "kind": "nbskill_notebook_graph",
-        "project": _kg_project_summary(scope, ordered_paths, state),
-        "nodes": list(state["nodes"].values()),
-        "edges": state["edges"],
-        "layers": list(state["layers"].values()),
-        "tour": state["tour"],
-        "issues": [],
-    }
+    data = dict(
+        version=1, kind="nbskill_notebook_graph",
+        project=_kg_project_summary(scope, ordered_paths, state),
+        nodes=list(state["nodes"].values()), edges=state["edges"],
+        layers=list(state["layers"].values()), tour=state["tour"], issues=[]
+    )
     data["issues"] = _notebook_knowledge_graph_validate(data)
     return data
 
-
+# %% ../nbs/10_graph.ipynb #4f4d3630
 def notebook_knowledge_graph(path="nbs", json_output=False):
     """Print a typed notebook knowledge graph summary, or JSON when requested."""
     data = notebook_knowledge_graph_data(path)
@@ -1102,22 +1062,22 @@ class _ShapeNormalizer(ast.NodeTransformer):
         node.value = "_"
         return node
 
-
+# %% ../nbs/10_graph.ipynb #80a4852b
 def _tokens_from_text(text):
     return sorted(set(re.findall(r"[a-z0-9]+", str(text).lower())))
 
-
+# %% ../nbs/10_graph.ipynb #9a1d3733
 def _normalized_ast_shape(node):
     normalized = copy.deepcopy(node)
     normalized = _ShapeNormalizer().visit(normalized)
     ast.fix_missing_locations(normalized)
     return ast.dump(normalized, annotate_fields=False, include_attributes=False)
 
-
+# %% ../nbs/10_graph.ipynb #643b4a71
 def _decorator_names(node):
     return sorted(filter(None, (call_name(item) for item in getattr(node, "decorator_list", []))))
 
-
+# %% ../nbs/10_graph.ipynb #f95ad994
 def _cell_import_names(tree):
     names = []
     for node in ast.walk(tree):
@@ -1136,14 +1096,14 @@ def _markdown_heading(cell):
     headings = [line.strip("# ").strip() for line in lines if line.lstrip().startswith("#")]
     return " ".join(headings)
 
-
+# %% ../nbs/10_graph.ipynb #72f0aa78
 def _heading_before(cells, idx):
     for cell in reversed(cells[:idx]):
         heading = _markdown_heading(cell)
         if heading: return heading
     return ""
 
-
+# %% ../nbs/10_graph.ipynb #672d16f1
 def _notebook_text_profile(path, nb, module):
     headings = [_markdown_heading(cell) for cell in nb.cells]
     headings = [heading for heading in headings if heading]
@@ -1156,37 +1116,25 @@ def _notebook_text_profile(path, nb, module):
         for node in tree.body:
             symbols.extend(symbol for symbol, _, _ in _node_definitions(node))
     text = " ".join([module, Path(path).stem, *headings, *symbols, *imports])
-    return {
-        "path": str(path),
-        "module": module,
-        "headings": headings,
-        "symbols": sorted(set(symbols)),
-        "imports": sorted(set(imports)),
-        "tokens": _tokens_from_text(text),
-    }
+    return dict(
+        path=str(path), module=module, headings=headings,
+        symbols=sorted(set(symbols)), imports=sorted(set(imports)),
+        tokens=_tokens_from_text(text)
+    )
 
-
+# %% ../nbs/10_graph.ipynb #e84c198a
 def _catalog_record(path, module, idx, cell, node, symbol, kind, heading, imports):
     docstring = ast.get_docstring(node) or ""
     text = " ".join([symbol, kind, module, heading, docstring, " ".join(imports)])
     exported = str(cell_source(cell)).lstrip().startswith("#| export")
-    return {
-        "symbol": symbol,
-        "kind": kind,
-        "module": module,
-        "path": str(path),
-        "cell_id": getattr(cell, "id", ""),
-        "cell_idx": idx,
-        "exported": exported,
-        "private": symbol_short_name(symbol).startswith("_"),
-        "docstring": docstring,
-        "heading": heading,
-        "tokens": _tokens_from_text(text),
-        "calls": sorted(set(_call_names(node))),
-        "imports": imports,
-        "decorators": _decorator_names(node),
-        "ast_shape": _normalized_ast_shape(node),
-    }
+    return dict(
+        symbol=symbol, kind=kind, module=module, path=str(path),
+        cell_id=getattr(cell, "id", ""), cell_idx=idx, exported=exported,
+        private=symbol_short_name(symbol).startswith("_"), docstring=docstring,
+        heading=heading, tokens=_tokens_from_text(text),
+        calls=sorted(set(_call_names(node))), imports=imports,
+        decorators=_decorator_names(node), ast_shape=_normalized_ast_shape(node)
+    )
 
 # %% ../nbs/10_graph.ipynb #e02e7d4c
 def symbol_catalog(path="nbs"):
@@ -1214,53 +1162,33 @@ def symbol_catalog(path="nbs"):
                     _graph_check_size(notebooks=len(nb_paths), cells=cell_count, records=len(symbols))
     return {"symbols": symbols, "notebooks": notebooks, "graph": _collect_graph(path)}
 
-
+# %% ../nbs/10_graph.ipynb #6440e184
 def _source_record_from_node(source, imports, symbol, symbol_node, kind):
     docstring = ast.get_docstring(symbol_node) or ""
     text = " ".join([source, symbol, kind, docstring, " ".join(imports)])
-    return {
-        "symbol": symbol,
-        "kind": kind,
-        "module": "",
-        "path": "<source>",
-        "cell_id": "",
-        "cell_idx": 0,
-        "exported": False,
-        "private": symbol_short_name(symbol).startswith("_"),
-        "docstring": docstring,
-        "heading": "",
-        "tokens": _tokens_from_text(text),
-        "calls": sorted(set(_call_names(symbol_node))),
-        "imports": imports,
-        "decorators": _decorator_names(symbol_node),
-        "ast_shape": _normalized_ast_shape(symbol_node),
-    }
+    return dict(
+        symbol=symbol, kind=kind, module="", path="<source>", cell_id="", cell_idx=0,
+        exported=False, private=symbol_short_name(symbol).startswith("_"),
+        docstring=docstring, heading="", tokens=_tokens_from_text(text),
+        calls=sorted(set(_call_names(symbol_node))), imports=imports,
+        decorators=_decorator_names(symbol_node), ast_shape=_normalized_ast_shape(symbol_node)
+    )
 
-
+# %% ../nbs/10_graph.ipynb #194377fb
 def _source_advice_record(source):
     tree = ast.parse(source_without_directives(source))
     imports = _cell_import_names(tree)
     for node in tree.body:
         for symbol, symbol_node, kind in _node_definitions(node):
             return _source_record_from_node(source, imports, symbol, symbol_node, kind)
-    return {
-        "symbol": "",
-        "kind": "source",
-        "path": "<source>",
-        "cell_id": "",
-        "cell_idx": 0,
-        "exported": False,
-        "private": False,
-        "docstring": "",
-        "heading": "",
-        "tokens": _tokens_from_text(source),
-        "calls": [],
-        "imports": imports,
-        "decorators": [],
-        "ast_shape": "",
-    }
+    return dict(
+        symbol="", kind="source", path="<source>", cell_id="", cell_idx=0,
+        exported=False, private=False, docstring="", heading="",
+        tokens=_tokens_from_text(source), calls=[], imports=imports,
+        decorators=[], ast_shape=""
+    )
 
-
+# %% ../nbs/10_graph.ipynb #7f7c9beb
 def _advice_target(goal="", source=None, record=None):
     if record is not None: return dict(record)
     if source:
@@ -1271,7 +1199,7 @@ def _advice_target(goal="", source=None, record=None):
             target["tokens"] = _tokens_from_text(source)
         target["tokens"] = sorted(set(target.get("tokens", [])) | set(_tokens_from_text(goal)))
         return target
-    return {"symbol": "", "tokens": _tokens_from_text(goal), "calls": [], "imports": [], "ast_shape": ""}
+    return dict(symbol="", tokens=_tokens_from_text(goal), calls=[], imports=[], ast_shape="")
 
 # %% ../nbs/10_graph.ipynb #347b4662
 def _jaccard(left, right):
@@ -1279,7 +1207,7 @@ def _jaccard(left, right):
     if not left and not right: return 0.0
     return len(left & right) / max(1, len(left | right))
 
-
+# %% ../nbs/10_graph.ipynb #73b8d735
 def _reuse_score(target, record):
     name_score = 20 * _jaccard(_tokens_from_text(target.get("symbol", "")), record.get("tokens", []))
     token_score = 18 * _jaccard(target.get("tokens", []), record.get("tokens", []))
@@ -1294,7 +1222,7 @@ def _reuse_score(target, record):
         shape_score = 45
     return round(name_score + token_score + call_score + import_score + decorator_score + shape_score, 2)
 
-
+# %% ../nbs/10_graph.ipynb #c8388d2b
 def _reuse_reasons(target, record):
     reasons = []
     shared_tokens = set(target.get("tokens", [])) & set(record.get("tokens", []))
@@ -1311,18 +1239,14 @@ def _reuse_reasons(target, record):
         reasons.append("shared decorators")
     return reasons or ["name or notebook text overlap"]
 
-
+# %% ../nbs/10_graph.ipynb #71412207
 def _reuse_match(target, record, score):
-    return {
-        "symbol": record["symbol"],
-        "kind": record["kind"],
-        "path": record["path"],
-        "cell_id": record["cell_id"],
-        "score": score,
-        "exported": record.get("exported", False),
-        "private": record.get("private", False),
-        "reasons": _reuse_reasons(target, record),
-    }
+    return dict(
+        symbol=record["symbol"], kind=record["kind"], path=record["path"],
+        cell_id=record["cell_id"], score=score,
+        exported=record.get("exported", False), private=record.get("private", False),
+        reasons=_reuse_reasons(target, record)
+    )
 
 # %% ../nbs/10_graph.ipynb #7485be4a
 def _notebook_relevance(goal_tokens, notebook):
@@ -1331,7 +1255,7 @@ def _notebook_relevance(goal_tokens, notebook):
     heading_score = 10 * _jaccard(goal_tokens, heading_tokens)
     return round(token_score + heading_score, 2)
 
-
+# %% ../nbs/10_graph.ipynb #3b782559
 def reuse_advice(goal, path="nbs", source=None, top_k=5):
     "Return existing symbols and notebooks to inspect before implementing code."
     catalog = symbol_catalog(path)
@@ -1364,7 +1288,7 @@ def _caller_paths_for_symbol(graph, symbol):
             callers.append(caller.get("path", ""))
     return callers
 
-
+# %% ../nbs/10_graph.ipynb #98158bb0
 def _score_notebook_for_target(target, notebook, graph):
     target_symbol = target.get("symbol", "")
     symbols = set(notebook.get("symbols", []))
@@ -1401,7 +1325,7 @@ def _target_record(catalog, symbol=None, source=None):
                 return dict(record)
     return _advice_target(source=source or "")
 
-
+# %% ../nbs/10_graph.ipynb #b8491de2
 def _placement_advice_from_catalog(catalog, target, notebook=None, top_k=5):
     target = dict(target)
     if notebook: target["path"] = str(notebook)
@@ -1431,7 +1355,7 @@ def _placement_advice_from_catalog(catalog, target, notebook=None, top_k=5):
         "candidates": candidates,
     }
 
-
+# %% ../nbs/10_graph.ipynb #961aa8ac
 def placement_advice(path="nbs", symbol=None, source=None, notebook=None, top_k=5):
     "Return ranked notebook candidates plus evidence for a symbol or source snippet."
     catalog = symbol_catalog(path)
@@ -1450,7 +1374,7 @@ def _advice_problem(code, record, detail="", **kwargs):
         **kwargs,
     }
 
-
+# %% ../nbs/10_graph.ipynb #696542a3
 def _similar_function_problems(catalog, threshold=55):
     problems = []
     for record in catalog["symbols"]:
@@ -1476,7 +1400,7 @@ def _similar_function_problems(catalog, threshold=55):
         ))
     return problems
 
-
+# %% ../nbs/10_graph.ipynb #70410e9d
 def _misplaced_function_problems(catalog, min_gap=1.5):
     problems = []
     for record in catalog["symbols"]:
@@ -1529,7 +1453,7 @@ def _private_boundary_problems(catalog):
             })
     return problems
 
-
+# %% ../nbs/10_graph.ipynb #9d0a2189
 def notebook_advice_problems(path="nbs"):
     "Return reuse and placement advisory diagnostics for notebook style reports."
     catalog = symbol_catalog(path)

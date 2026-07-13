@@ -93,7 +93,7 @@ def _format_source(source, line_numbers=False):
     lines = source.splitlines() or [""]
     return "\n".join(f"{idx} | {line}" for idx, line in enumerate(lines, start=1))
 
-
+# %% ../nbs/01_read.ipynb #ba1a2456
 def _format_full(items, show_ids=False, line_numbers=False):
     chunks = []
     for idx, cell in items:
@@ -175,34 +175,34 @@ def _query_bool(value, default=True):
     if value is None: return default
     return str(value).strip().lower() not in {"0", "false", "no", "off", "none"}
 
-
+# %% ../nbs/01_read.ipynb #f1cb3b56
 def _output_get(output, key, default=None):
     return output.get(key, default) if isinstance(output, dict) else getattr(output, key, default)
 
-
+# %% ../nbs/01_read.ipynb #efe04c52
 def _cell_has_error(cell):
     return any(_output_get(output, "output_type") == "error" for output in (getattr(cell, "outputs", []) or []))
 
-
+# %% ../nbs/01_read.ipynb #e1d82fc4
 def _cell_header_level(cell):
     if getattr(cell, "cell_type", None) != "markdown": return None
     line = first_line(cell_source(cell)).strip()
     if not line.startswith("#"): return None
     return len(line) - len(line.lstrip("#"))
 
-
+# %% ../nbs/01_read.ipynb #70a031f9
 def _cell_matches_header(cell, value):
     level = _cell_header_level(cell)
     if level is None: return False
     text = str(value or "").strip()
     return level == int(text) if text.isdigit() else _query_bool(value)
 
-
+# %% ../nbs/01_read.ipynb #cc1580d7
 def _query_chapter_index_set(nb, name):
     span = _one_chapter_span(nb.cells, name)
     return set(range(span["start"], span["end"]))
 
-
+# %% ../nbs/01_read.ipynb #03514d3c
 def _select_query_items(nb, spec):
     items = [find_cell_by_id(nb.cells, spec["cell_id"])] if spec.get("cell_id") else list(enumerate(nb.cells))
     if spec.get("chapter") is not None:
@@ -235,7 +235,7 @@ def _context_result(kind, text, verbose=True, **data):
     if verbose and text: print(text)
     return result
 
-
+# %% ../nbs/01_read.ipynb #8d0e4bde
 def _context_root(path):
     start = Path(path).expanduser()
     if start.suffix == ".ipynb": start = start.parent
@@ -245,7 +245,7 @@ def _context_root(path):
         if (item / "README.md").exists(): return item
     return start
 
-
+# %% ../nbs/01_read.ipynb #fc747b9c
 def _readme_context(root, max_sections=3):
     readme = Path(root) / "README.md"
     if not readme.exists(): return []
@@ -273,7 +273,7 @@ def _notebook_header_items(cells):
         if started: items.append((idx, cell))
     return items
 
-
+# %% ../nbs/01_read.ipynb #bcc8d074
 def _notebook_docstring(path):
     nb = read_nb(path)
     items = _notebook_header_items(nb.cells)
@@ -285,14 +285,14 @@ def _notebook_docstring(path):
         ],
     }
 
-
+# %% ../nbs/01_read.ipynb #68e77a75
 def _context_match(text, include_re=None, exclude_re=None):
     text = str(text or "")
     if include_re and not re.search(include_re, text, flags=re.MULTILINE): return False
     if exclude_re and re.search(exclude_re, text, flags=re.MULTILINE): return False
     return True
 
-
+# %% ../nbs/01_read.ipynb #4e1cb1e6
 def _format_context_blocks(title, blocks):
     lines = [title]
     for heading, body in blocks:
@@ -309,7 +309,7 @@ def _import_lines(cell):
     except SyntaxError: return []
     return [ast.unparse(node) for node in tree.body if isinstance(node, (ast.Import, ast.ImportFrom))]
 
-
+# %% ../nbs/01_read.ipynb #ef3eae3d
 def _definition_record(path, idx, cell, node, symbol=None, kind=None):
     symbol = symbol or getattr(node, "name", "")
     kind = kind or ("class" if isinstance(node, ast.ClassDef) else "function")
@@ -323,7 +323,7 @@ def _definition_record(path, idx, cell, node, symbol=None, kind=None):
         "text": "\n".join(lines),
     }
 
-
+# %% ../nbs/01_read.ipynb #0126343d
 def _definition_records(path, nb):
     records = []
     for idx, cell in enumerate(nb.cells):
@@ -334,7 +334,6 @@ def _definition_records(path, nb):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
                 records.append(_definition_record(path, idx, cell, node))
     return records
-
 
 # %% ../nbs/01_read.ipynb #contextoutput
 def _source_for_node(cell, node):
@@ -352,7 +351,7 @@ def _call_matches_context_symbol(name, symbol):
     short = symbol_short_name(symbol)
     return name == symbol or name.rsplit(".", 1)[-1] == short
 
-
+# %% ../nbs/01_read.ipynb #c65a6118
 def _cell_calls_symbol(cell, symbol):
     if getattr(cell, "cell_type", None) != "code": return False
     try: tree = ast.parse(source_without_directives(cell_source(cell)))
@@ -371,7 +370,7 @@ def _markdown_mentions(nb, symbol):
         if symbol in source or re.search(rf"\b{re.escape(short)}\b", source): items.append((idx, cell))
     return items
 
-
+# %% ../nbs/01_read.ipynb #472048bb
 def _example_test_records(nb, symbol):
     records = []
     for idx, cell in enumerate(nb.cells):
@@ -386,13 +385,12 @@ def _example_test_records(nb, symbol):
         })
     return records
 
-
+# %% ../nbs/01_read.ipynb #e7a2910d
 def _symbol_location(path, nb, symbol):
     idx = _find_symbol_cell(nb, symbol)
     cell = nb.cells[idx]
     node = _find_symbol_node(cell, symbol)
     return idx, cell, node
-
 
 # %% ../nbs/01_read.ipynb #contextcallees
 def _callee_summary(path, symbol, depth, seen=None, graph_data=None):
@@ -428,7 +426,7 @@ def _callee_summary(path, symbol, depth, seen=None, graph_data=None):
         items.append(item)
     return items
 
-
+# %% ../nbs/01_read.ipynb #ce62cb6c
 def _format_callee_items(items, indent=""):
     lines = []
     for item in items:
@@ -438,7 +436,6 @@ def _format_callee_items(items, indent=""):
             lines.extend(f"{indent}  {line}" for line in item["summary"].splitlines())
         lines.extend(_format_callee_items(item.get("callees", []), indent=indent + "  "))
     return lines
-
 
 # %% ../nbs/01_read.ipynb #76e0d320
 def _chapter_title_from_cell(cell):
@@ -451,7 +448,7 @@ def _normalize_chapter_title(value):
 # %% ../nbs/01_read.ipynb #411b4891
 def _chapter_spans_for_nb(cells): return chapter_spans(cells, levels=(2,), fallback="Notebook")
 
-
+# %% ../nbs/01_read.ipynb #050bf6f0
 def _all_heading_spans_for_nb(cells): return chapter_spans(cells, levels=range(1, 7), fallback="Notebook")
 
 # %% ../nbs/01_read.ipynb #fa91bd16
@@ -534,7 +531,7 @@ def _chapter_intro_markdown_items(cells, span):
         if source.strip(): items.append((idx, cell))
     return items
 
-
+# %% ../nbs/01_read.ipynb #409d6b1a
 def _chapter_intro_items(nb, span):
     idxs = set()
     items = []
@@ -858,10 +855,14 @@ def _context_notebooks(scope):
     notebooks = [str(item) for item in notebook_paths(scope or ".")]
     if not notebooks: raise ValueError(f"No notebooks found in scope {scope!r}")
     return notebooks
+
+# %% ../nbs/01_read.ipynb #2fcb2b5c
 def _context_existing_notebook(target):
     path = Path(str(target)).expanduser()
     if path.suffix == ".ipynb" and path.exists(): return str(path)
     return None
+
+# %% ../nbs/01_read.ipynb #86ddfc04
 def _context_named_notebook(target, notebooks):
     wanted = str(target)
     matches = []
@@ -876,14 +877,14 @@ def _context_named_notebook(target, notebooks):
 # %% ../nbs/01_read.ipynb #b42007af
 _FILTER_CONTEXT_VIEWS = {"source", "summary", "cell"}
 
-
+# %% ../nbs/01_read.ipynb #b5bde869
 def _filter_context_view(view):
     view = "source" if view in (None, "", "cells") else str(view).lower()
     if view not in _FILTER_CONTEXT_VIEWS:
         raise ValueError(f"view must be one of {sorted(_FILTER_CONTEXT_VIEWS)}, not {view!r}")
     return view
 
-
+# %% ../nbs/01_read.ipynb #a83898f5
 def _filter_cell_summary(path, item):
     source = item.get("source", "")
     first = first_line(source).strip()
@@ -892,7 +893,7 @@ def _filter_cell_summary(path, item):
     suffix = f" error={error}" if error else ""
     return f"{path}#{item['cell_id']} idx={item['cell_idx']} type={item['cell_type']} {item['semantic_type']}{suffix} | {first}"
 
-
+# %% ../nbs/01_read.ipynb #5b72e24f
 def _filter_cell_error(cell):
     for output in getattr(cell, "outputs", []) or []:
         if _output_get(output, "output_type") == "error":
@@ -901,7 +902,7 @@ def _filter_cell_error(cell):
             return f"{ename}: {evalue}".rstrip(": ")
     return ""
 
-
+# %% ../nbs/01_read.ipynb #b2141f3c
 def _filter_match_record(path, idx, cell, max_chars_per_cell):
     item = NotebookCell(cell, idx=idx).context_record()
     item["source"] = _trim_context_source(item.get("source", ""), max_chars_per_cell)
@@ -910,13 +911,13 @@ def _filter_match_record(path, idx, cell, max_chars_per_cell):
     item["summary"] = _filter_cell_summary(path, item)
     return item
 
-
+# %% ../nbs/01_read.ipynb #6014982e
 def _neighbor_records(path, nb, idx, before=0, after=0):
     start = max(0, idx - max(0, int(before or 0)))
     end = min(len(nb.cells), idx + max(0, int(after or 0)) + 1)
     return [_filter_match_record(path, pos, nb.cells[pos], 0) for pos in range(start, end) if pos != idx]
 
-
+# %% ../nbs/01_read.ipynb #4cf1a669
 def _render_filter_source(item, line_numbers=False):
     nl = chr(10)
     header = f"{item['path']} id={item['cell_id']} idx={item['cell_idx']} type={item['cell_type']}"
@@ -925,7 +926,7 @@ def _render_filter_source(item, line_numbers=False):
     if item.get("output"): text = f"{text}{nl}Output:{nl}{item['output']}"
     return text
 
-
+# %% ../nbs/01_read.ipynb #144bb237
 def _render_filter_match(item, view="source", line_numbers=False):
     if view == "summary": return item["summary"]
     text = _render_filter_source(item, line_numbers=(line_numbers or view == "cell"))
@@ -1013,6 +1014,8 @@ def _assignment_target_names(node):
         elif isinstance(target, (ast.Tuple, ast.List)):
             names.extend(elt.id for elt in target.elts if isinstance(elt, ast.Name))
     return names
+
+# %% ../nbs/01_read.ipynb #2bed43f2
 def _node_defines_symbol(node, symbol):
     parts = symbol.split(".")
     name = parts[-1]
@@ -1233,7 +1236,7 @@ def context(self: Notebook, **kw):
     'Show this notebook file context (see `file_context`).'
     return file_context(self.path, **kw)
 
-
+# %% ../nbs/01_read.ipynb #b894e2a0
 @patch
 def symbol(self: Notebook, symbol, **kw):
     'Show implementation context for `symbol` (see `symbol_context`).'
@@ -1243,14 +1246,14 @@ def symbol(self: Notebook, symbol, **kw):
 def _context_cell_semantic_type(cell):
     return NotebookCell(cell).semantic_type()
 
-
+# %% ../nbs/01_read.ipynb #66902d14
 def _context_cell_record(idx, cell):
     record = NotebookCell(cell, idx=idx).context_record()
     record["source"] = _trim_context_source(record.get("source", ""), _CONTEXT_CELL_SOURCE_CHARS)
     record["output"] = _trim_context_source(record.get("output", ""), _CONTEXT_CELL_OUTPUT_CHARS)
     return record
 
-
+# %% ../nbs/01_read.ipynb #8bc08135
 def _render_context_cell(item):
     nl = chr(10)
     header = f"Cell id={item['cell_id']} idx={item['cell_idx']} [{item['cell_type']}] ({item['semantic_type']})"
@@ -1262,17 +1265,17 @@ def _render_context_cell(item):
 def _exported_definition_records(path, nb):
     return [item for item in _definition_records(path, nb) if is_exported_code_cell(nb.cells[item["cell_idx"]])]
 
-
+# %% ../nbs/01_read.ipynb #32c9f1e2
 def _definition_records_for_cell(path, nb, cell_idx):
     return [item for item in _definition_records(path, nb) if item.get("cell_idx") == cell_idx]
 
-
+# %% ../nbs/01_read.ipynb #ab52fb0a
 def _symbol_source(path, nb, symbol):
     idx, cell, node = _symbol_location(path, nb, symbol)
     source = _source_for_node(cell, node) if node is not None else cell_source(cell).strip()
     return idx, cell, node, source
 
-
+# %% ../nbs/01_read.ipynb #330cf125
 def _source_mentions_symbols(source, symbols):
     for symbol in symbols:
         short = symbol_short_name(symbol)
@@ -1289,7 +1292,7 @@ def _related_cell_records(nb, symbols, definition_cell_idx=None):
         if _source_mentions_symbols(cell_source(cell), symbols): records.append(_context_cell_record(idx, cell))
     return records
 
-
+# %% ../nbs/01_read.ipynb #bd376346
 def _single_definition_for_cell(path, nb, cell_idx):
     definitions = _definition_records_for_cell(path, nb, cell_idx)
     if len(definitions) > 1:
@@ -1309,7 +1312,7 @@ def _implementation_context(path, idx, cell, symbol, source, verbose=True):
         location={"cell_id": getattr(cell, "id", ""), "cell_idx": idx}, source=source, symbols=[symbol],
     )
 
-
+# %% ../nbs/01_read.ipynb #25a20b07
 def _mentions_context(path, nb, symbols, definition_cell_idx=None, verbose=True):
     records = _related_cell_records(nb, symbols, definition_cell_idx=definition_cell_idx)
     label = ", ".join(symbols)
@@ -1335,7 +1338,7 @@ def _cell_context(path, cell_idx, overview=False, verbose=True):
     if overview: return _implementation_context(path, idx, cell, symbol, source, verbose=verbose)
     return symbol_context(path, symbol, depth=1, verbose=verbose)
 
-
+# %% ../nbs/01_read.ipynb #cde103db
 def _symbol_focus_context(path, symbol, overview=False, verbose=True):
     nb = read_nb(path)
     idx, cell, node, source = _symbol_source(path, nb, symbol)
@@ -1350,6 +1353,7 @@ def _markdown_heading_level(source):
         if match: return len(match.group(1))
     return None
 
+# %% ../nbs/01_read.ipynb #27651d9d
 def _notebook_markdown_records(cells):
     return [
         {
@@ -1362,6 +1366,7 @@ def _notebook_markdown_records(cells):
         if getattr(cell, "cell_type", None) == "markdown" and cell_source(cell).strip()
     ]
 
+# %% ../nbs/01_read.ipynb #b7116962
 def _notebook_overview_markdown_records(cells):
     records = _notebook_markdown_records(cells)
     first_chapter = next((item["cell_idx"] for item in records if item["heading_level"] == 2), None)
@@ -1370,13 +1375,16 @@ def _notebook_overview_markdown_records(cells):
     for span in _chapter_spans_for_nb(cells): wanted.update(idx for idx, _ in _chapter_intro_markdown_items(cells, span))
     return [item for item in records if item["cell_idx"] in wanted]
 
+# %% ../nbs/01_read.ipynb #dc32fbb9
 def _render_markdown_record(item):
     return f"Cell id={item['cell_id']}\n{item['source']}"
 
+# %% ../nbs/01_read.ipynb #3922f9de
 def _render_definition_record(item):
     nl = chr(10)
     return f"Cell id={item['cell_id']} {item['kind']} {item['symbol']}{nl}{item['text']}"
 
+# %% ../nbs/01_read.ipynb #bbdbbafb
 def _notebook_context(
     path: str,
     scope: str = ".",
@@ -1425,7 +1433,7 @@ def _context_cell_matches(target, notebooks):
                 matches.append(dict(path=str(path), cell_idx=idx, cell_id=target))
     return matches
 
-
+# %% ../nbs/01_read.ipynb #076d6f9b
 def _context_symbol_matches(target, notebooks):
     matches = []
     for path in notebooks:
@@ -1436,7 +1444,7 @@ def _context_symbol_matches(target, notebooks):
             matches.append(dict(path=str(path), cell_idx=idx, symbol=str(target)))
     return matches
 
-
+# %% ../nbs/01_read.ipynb #e254cfd2
 def _context_chapter_matches(target, notebooks):
     chapter_matches, subchapter_matches = [], []
     for path in notebooks:
@@ -1449,20 +1457,20 @@ def _context_chapter_matches(target, notebooks):
                 subchapter_matches.append(dict(path=str(path), chapter=span))
     return chapter_matches or subchapter_matches
 
-
+# %% ../nbs/01_read.ipynb #3b0fe227
 def _context_candidate_target(item):
     path = item.get("path", "")
     detail = item.get("cell_id") or item.get("symbol") or item.get("chapter", {}).get("title", "")
     return f"{path}#{detail}" if path and detail else (path or detail)
 
-
+# %% ../nbs/01_read.ipynb #606b2ba8
 def _context_candidate_line(kind, item):
     detail = item.get("cell_id") or item.get("symbol") or item.get("chapter", {}).get("title", "")
     target = _context_candidate_target(item)
     suffix = f" use {target!r}" if target else ""
     return f"- {kind}: {item.get('path', '')} {detail}{suffix}".rstrip()
 
-
+# %% ../nbs/01_read.ipynb #c8879eeb
 def _context_one_match(kind, target, matches):
     if len(matches) == 1: return matches[0]
     if not matches: return None
@@ -1505,7 +1513,7 @@ def _context_file_paths(root):
             if path.suffix.lower() in _CONTEXT_SEARCH_SKIP_SUFFIXES: continue
             yield path
 
-
+# %% ../nbs/01_read.ipynb #c64eadfa
 def _context_line_snippet(lines, idx, radius=1):
     start = max(0, idx - radius)
     stop = min(len(lines), idx + radius + 1)
@@ -1564,7 +1572,7 @@ def _literal_search_context(target, scope, notebooks, max_matches=50, max_chars_
 # %% ../nbs/01_read.ipynb #9a40cc35
 _CONTEXT_MODES = {"auto", "edit", "review", "overview"}
 
-
+# %% ../nbs/01_read.ipynb #89896fe6
 def _context_mode(mode, overview=False):
     if overview: return "overview"
     mode = "auto" if mode in (None, "") else str(mode).lower()
@@ -1572,20 +1580,20 @@ def _context_mode(mode, overview=False):
         raise ValueError(f"mode must be one of {sorted(_CONTEXT_MODES)}, not {mode!r}")
     return mode
 
-
+# %% ../nbs/01_read.ipynb #8424016f
 def _context_around(around):
     try: return max(0, int(around or 0))
     except (TypeError, ValueError) as exc:
         raise ValueError("around must be an integer") from exc
 
-
+# %% ../nbs/01_read.ipynb #b43e4e82
 def _context_target_items(targets):
     if targets is None: return None
     if isinstance(targets, str):
         return [targets] if targets else []
     return [str(item) for item in targets if str(item)]
 
-
+# %% ../nbs/01_read.ipynb #8f5d77f5
 def _context_symbol_graphs(path, symbols):
     symbols = [str(item) for item in dict.fromkeys(symbols or []) if item]
     if not symbols: return []
@@ -1599,7 +1607,7 @@ def _context_symbol_graphs(path, symbols):
         except Exception: pass
     return graphs
 
-
+# %% ../nbs/01_read.ipynb #7cf2bf30
 def _context_graph_text(graphs):
     if not graphs: return ""
     lines = ["Symbol graph"]
@@ -1618,19 +1626,19 @@ def _context_graph_text(graphs):
             lines.append(f"  callee: {callee_symbol}")
     return "\n".join(lines)
 
-
+# %% ../nbs/01_read.ipynb #9f6109ae
 def _context_cell_symbols(path, cell_idx):
     nb = read_nb(path)
     return [item["symbol"] for item in _definition_records_for_cell(path, nb, cell_idx)]
 
-
+# %% ../nbs/01_read.ipynb #5bfd35a3
 def _context_with_graphs(result, graphs):
     if not graphs: return result
     text = result.get("text", "")
     graph_text = _context_graph_text(graphs)
     return {**result, "text": f"{text}\n\n{graph_text}".rstrip(), "symbol_graphs": graphs}
 
-
+# %% ../nbs/01_read.ipynb #d3b95117
 def _context_neighbor_records(path, cell_idx, around):
     around = _context_around(around)
     if around <= 0: return []
@@ -1638,20 +1646,20 @@ def _context_neighbor_records(path, cell_idx, around):
     start, end = max(0, cell_idx - around), min(len(nb.cells), cell_idx + around + 1)
     return [{**_context_cell_record(idx, nb.cells[idx]), "path": str(path)} for idx in range(start, end) if idx != cell_idx]
 
-
+# %% ../nbs/01_read.ipynb #8b3582e0
 def _context_append_block(text, heading, items):
     items = [item for item in items if item]
     if not items: return text
     return f"{text.rstrip()}\n\n{heading}\n" + "\n\n".join(items)
 
-
+# %% ../nbs/01_read.ipynb #54620523
 def _context_with_neighbors(result, path, cell_idx, around):
     neighbors = _context_neighbor_records(path, cell_idx, around)
     if not neighbors: return result
     text = _context_append_block(result.get("text", ""), "Neighbor cells", [_render_context_cell(item) for item in neighbors])
     return {**result, "text": text, "neighbors": neighbors}
 
-
+# %% ../nbs/01_read.ipynb #5f8917fd
 def _context_edit_result(path, cell_idx, symbol=None, source=None, verbose=True):
     nb = read_nb(path)
     cell = nb.cells[cell_idx]
@@ -1670,7 +1678,7 @@ def _context_edit_result(path, cell_idx, symbol=None, source=None, verbose=True)
         source=source, source_hash=source_hash(source), symbols=symbols,
     )
 
-
+# %% ../nbs/01_read.ipynb #f08896aa
 def _context_cell_payload(path, cell_idx, mode, around):
     if mode == "edit":
         result, graphs = _context_edit_result(path, cell_idx, verbose=False), []
@@ -1680,7 +1688,7 @@ def _context_cell_payload(path, cell_idx, mode, around):
         result = _context_with_graphs(result, graphs)
     return _context_with_neighbors(result, path, cell_idx, around), graphs
 
-
+# %% ../nbs/01_read.ipynb #1ba93a84
 def _context_symbol_payload(path, symbol, mode, around):
     nb = read_nb(path)
     idx, cell, node, source = _symbol_source(path, nb, symbol)
@@ -1692,14 +1700,14 @@ def _context_symbol_payload(path, symbol, mode, around):
         result = _context_with_graphs(result, graphs)
     return _context_with_neighbors(result, path, idx, around), graphs
 
-
+# %% ../nbs/01_read.ipynb #bf571c42
 def _context_as_single(result, target, scope, resolved_kind, mode="auto", around=0, **extra):
     return _context_result(
         "context", result["text"], verbose=True, ok=True, target=str(target), scope=str(scope),
         mode=mode, around=around, resolved_kind=resolved_kind, selection=result, **extra,
     )
 
-
+# %% ../nbs/01_read.ipynb #acea6e74
 def _context_parse_qualified_target(target):
     text = str(target or "")
     if "#" not in text: return None
@@ -1708,7 +1716,7 @@ def _context_parse_qualified_target(target):
     path = _context_existing_notebook(path_text)
     return (str(path), ref) if path is not None else None
 
-
+# %% ../nbs/01_read.ipynb #3242b0cb
 def _context_cell_index_for_ref(nb, ref):
     if str(ref).isdigit():
         idx = int(ref)
@@ -1717,13 +1725,13 @@ def _context_cell_index_for_ref(nb, ref):
         if getattr(cell, "id", None) == ref: return idx
     return None
 
-
+# %% ../nbs/01_read.ipynb #6397c2d6
 def _context_qualified_candidates(path, nb, limit=8):
     cells = [f"{path}#{getattr(cell, 'id', '')}" for cell in nb.cells if getattr(cell, "id", "")]
     symbols = [f"{path}#{item['symbol']}" for item in _definition_records(path, nb)]
     return (cells[: limit // 2] + symbols)[:limit]
 
-
+# %% ../nbs/01_read.ipynb #b58f75e3
 def _context_unknown_qualified(path, ref, nb):
     candidates = _context_qualified_candidates(path, nb)
     shown = "\n".join(f"- {item}" for item in candidates)
@@ -1732,7 +1740,7 @@ def _context_unknown_qualified(path, ref, nb):
     exc.candidates = candidates
     raise exc
 
-
+# %% ../nbs/01_read.ipynb #26b8bff5
 def _context_qualified_payload(target, mode, around):
     parsed = _context_parse_qualified_target(target)
     if parsed is None: return None
@@ -1748,7 +1756,7 @@ def _context_qualified_payload(target, mode, around):
     except ValueError:
         _context_unknown_qualified(path, ref, nb)
 
-
+# %% ../nbs/01_read.ipynb #0d83b36e
 def _context_single(target="project", scope=".", mode="auto", around=0, verbose=True):
     target = "project" if target in (None, "") else str(target)
     scope = "." if scope in (None, "") else str(scope)
@@ -1794,7 +1802,7 @@ def _context_single(target="project", scope=".", mode="auto", around=0, verbose=
     result = _literal_search_context(target, scope, notebooks, verbose=False)
     return _context_as_single(result, target, scope, "search", mode=mode, around=around)
 
-
+# %% ../nbs/01_read.ipynb #03022f32
 def _context_error_entry(target, exc):
     return {
         "kind": "context_error", "ok": False, "target": str(target),
@@ -1803,7 +1811,7 @@ def _context_error_entry(target, exc):
         "text": f"Context error: {target}\n{type(exc).__name__}: {exc}",
     }
 
-
+# %% ../nbs/01_read.ipynb #75254862
 def _context_batch(targets, scope=".", mode="auto", around=0):
     scope = "." if scope in (None, "") else str(scope)
     items = _context_target_items(targets) or []
@@ -1822,7 +1830,7 @@ def _context_batch(targets, scope=".", mode="auto", around=0):
         targets=items, scope=scope, mode=mode, around=around, results=results,
     )
 
-
+# %% ../nbs/01_read.ipynb #faa6d792
 def context(
     target: str = "project",
     scope: str = ".",

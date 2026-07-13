@@ -2,23 +2,18 @@
 
 # %% auto #0
 __all__ = ['reference_home', 'reference_add', 'reference_ingest', 'reference_list', 'problem_statement_add',
-           'problem_statement_query', 'problem_statement_list', 'reference_discover', 'reference_propose',
-           'reference_query']
+           'problem_statement_query', 'problem_statement_list', 'reference_propose', 'reference_query',
+           'reference_discover']
 
 # %% ../nbs/12_knowledge.ipynb #911ef06b
-import ast, hashlib, importlib.util, json, math, os, re, shutil, subprocess, sys, tempfile, time, urllib.request
-
-try:
-    import tomllib
-except ImportError:
-    tomllib = None
-
+import ast,hashlib,importlib.util,json,math,os,re,shutil,subprocess,sys,tempfile,time,urllib.request,tomllib,lancedb
+from packaging.specifiers import SpecifierSet
+from packaging.version import Version
 from pathlib import Path
-
 from fastcore.nbio import read_nb
-
 from .foundation import cell_source
 
+# %% ../nbs/12_knowledge.ipynb #9a59dd2b
 _REFERENCE_MAX_TOP_K = 20
 _REFERENCE_MAX_CANDIDATE_K = 500
 _REFERENCE_MAX_FILES = 2000
@@ -29,60 +24,7 @@ _REFERENCE_MAX_TABLE_ROWS_FOR_COUNTERS = 100000
 _REFERENCE_MAX_VERSIONS_PER_PACKAGE = 3
 _PYPI_JSON_URL = "https://pypi.org/pypi/{package}/json"
 
-
-def _clamp_int(value, default, minimum, maximum, name):
-    if value is None: value = default
-    try:
-        value = int(value)
-    except (TypeError, ValueError):
-        raise ValueError(f"{name} must be an integer") from None
-    if value < minimum:
-        raise ValueError(f"{name} must be >= {minimum}")
-    return min(value, maximum)
-
-
-def _reference_file_within_budget(path):
-    try:
-        return Path(path).stat().st_size <= _REFERENCE_MAX_FILE_BYTES
-    except OSError:
-        return False
-
-# %% ../nbs/12_knowledge.ipynb #ab297e7b
-def reference_home(path=None):
-    "Return the global reference knowledge directory."
-    default = Path.home() / ".nbskill" / "reference_knowledge"
-    return Path(path or os.environ.get("NBSKILL_REFERENCE_HOME", default)).expanduser()
-
-# %% ../nbs/12_knowledge.ipynb #530dff8a
-def _reference_table_names():
-    return {
-        "repos": "reference_repos",
-        "items": "reference_items",
-        "edges": "reference_edges",
-        "problems": "problem_statements",
-    }
-
-# %% ../nbs/12_knowledge.ipynb #84bf6b2c
-def _require_sentence_transformers():
-    try:
-        import sentence_transformers
-        return sentence_transformers
-    except Exception as exc:
-        raise RuntimeError(f"sentence-transformers is required for reference knowledge: {type(exc).__name__}: {exc}") from exc
-
-def _reference_db(path=None):
-    lancedb, reason = _try_lancedb()
-    if lancedb is None: raise RuntimeError(f"LanceDB is required for reference knowledge: {reason}")
-    _require_sentence_transformers()
-    home = reference_home(path)
-    home.mkdir(parents=True, exist_ok=True)
-    return lancedb.connect(str(_lancedb_path(path)))
-
-# %% ../nbs/12_knowledge.ipynb #eb789ab3
-def _lancedb_path(path=None):
-    return reference_home(path) / "lancedb"
-
-# %% ../nbs/12_knowledge.ipynb #c2724539
+# %% ../nbs/12_knowledge.ipynb #055eb26b
 _REFERENCE_SYNONYM_GROUPS = [
     {"route", "endpoint", "handler", "url", "page"},
     {"button", "control", "clickable", "action"},
@@ -95,6 +37,175 @@ _REFERENCE_SYNONYM_GROUPS = [
     {"compose", "composition", "pipeline", "pipe", "chain"},
     {"patch", "monkeypatch"},
 ]
+
+# %% ../nbs/12_knowledge.ipynb #a3b32a66
+def _clamp_int(value, default, minimum, maximum, name):
+    if value is None: value = default
+    try: value = int(value)
+    except (TypeError, ValueError): raise ValueError(f"{name} must be an integer") from None
+    if value < minimum: raise ValueError(f"{name} must be >= {minimum}")
+    return min(value, maximum)
+
+# %% ../nbs/12_knowledge.ipynb #20dff30a
+def _reference_file_within_budget(path):
+    try: return Path(path).stat().st_size <= _REFERENCE_MAX_FILE_BYTES
+    except OSError: return False
+
+# %% ../nbs/12_knowledge.ipynb #84455c24
+def _reference_token_map():
+    token_map = {}
+    for group in _REFERENCE_SYNONYM_GROUPS:
+        expanded = set(group)
+        for token in group: token_map[token] = expanded
+    return token_map
+
+# %% ../nbs/12_knowledge.ipynb #75d1f4e0
+_REFERENCE_SENTENCE_MODEL = os.environ.get("NBSKILL_REFERENCE_SENTENCE_MODEL", "all-MiniLM-L6-v2")
+_REFERENCE_SENTENCE_TRANSFORMER = None
+_REFERENCE_SENTENCE_NOTE = None
+
+# %% ../nbs/12_knowledge.ipynb #e150dea3
+def _sentence_transformer():
+    global _REFERENCE_SENTENCE_TRANSFORMER, _REFERENCE_SENTENCE_NOTE
+    if _REFERENCE_SENTENCE_TRANSFORMER is not None: return _REFERENCE_SENTENCE_TRANSFORMER
+    try:
+        from sentence_transformers import SentenceTransformer
+    except Exception as exc:
+        _REFERENCE_SENTENCE_NOTE = f"sentence-transformers unavailable: {type(exc).__name__}: {exc}"
+        raise RuntimeError(_REFERENCE_SENTENCE_NOTE) from exc
+    try:
+        _REFERENCE_SENTENCE_TRANSFORMER = SentenceTransformer(_REFERENCE_SENTENCE_MODEL, local_files_only=True)
+        _REFERENCE_SENTENCE_NOTE = None
+        return _REFERENCE_SENTENCE_TRANSFORMER
+    except Exception as exc:
+        _REFERENCE_SENTENCE_NOTE = f"sentence-transformers model unavailable locally: {type(exc).__name__}: {exc}"
+        raise RuntimeError(_REFERENCE_SENTENCE_NOTE) from exc
+
+# %% ../nbs/12_knowledge.ipynb #fe32e380
+def _reference_tokens(text):
+    token_map = _reference_token_map()
+    tokens = []
+    for token in re.findall(r"[A-Za-z0-9_]+", str(text).lower()):
+        tokens.extend(sorted(token_map.get(token, {token})))
+    return tokens
+
+# %% ../nbs/12_knowledge.ipynb #8e9e0a2f
+def _reference_vector(text, dims=None):
+    model = _sentence_transformer()
+    vector = [float(value) for value in model.encode(str(text), normalize_embeddings=True)]
+    if dims is not None and len(vector) != dims:
+        raise RuntimeError(f"Embedding dimension mismatch: query vector has {len(vector)} dims, index has {dims}; reingest references")
+    return vector
+
+# %% ../nbs/12_knowledge.ipynb #df644c16
+def _embed_reference_texts(texts, dims=None):
+    texts = list(texts)
+    model = _sentence_transformer()
+    vectors = [[float(value) for value in row] for row in model.encode(texts, normalize_embeddings=True)]
+    if dims is not None and any(len(vector) != dims for vector in vectors):
+        raise RuntimeError(f"Embedding dimension mismatch while writing LanceDB rows; expected {dims}")
+    return vectors
+
+# %% ../nbs/12_knowledge.ipynb #7b49b850
+def _reference_embedding_backend(dims=None):
+    vector = _reference_vector("dimension probe")
+    if dims is not None and len(vector) != dims:
+        raise RuntimeError(f"Embedding dimension mismatch: model has {len(vector)} dims, index has {dims}; reingest references")
+    return f"sentence-transformers:{_REFERENCE_SENTENCE_MODEL}"
+
+# %% ../nbs/12_knowledge.ipynb #f55469bb
+def _reference_embedding_note():
+    try:
+        _sentence_transformer()
+        return None
+    except RuntimeError as exc:
+        return str(exc)
+
+# %% ../nbs/12_knowledge.ipynb #ab297e7b
+def reference_home(path=None):
+    "Return the global reference knowledge directory."
+    default = Path.home() / ".nbskill" / "reference_knowledge"
+    return Path(path or os.environ.get("NBSKILL_REFERENCE_HOME", default)).expanduser()
+
+# %% ../nbs/12_knowledge.ipynb #530dff8a
+def _reference_table_names():
+    return dict(repos="reference_repos",items="reference_items",
+        edges="reference_edges",problems="problem_statements")
+
+# %% ../nbs/12_knowledge.ipynb #eb789ab3
+def _lancedb_path(path=None): return reference_home(path) / "lancedb"
+
+# %% ../nbs/12_knowledge.ipynb #84bf6b2c
+def _require_sentence_transformers():
+    try:
+        import sentence_transformers
+        return sentence_transformers
+    except Exception as exc:
+        raise RuntimeError(f"sentence-transformers is required for reference knowledge: {type(exc).__name__}: {exc}") from exc
+
+# %% ../nbs/12_knowledge.ipynb #56fd6303
+def _reference_db(path=None):
+    _require_sentence_transformers()
+    home = reference_home(path)
+    home.mkdir(parents=True, exist_ok=True)
+    return lancedb.connect(str(_lancedb_path(path)))
+
+# %% ../nbs/12_knowledge.ipynb #d02d67e6
+def _reference_table(path, key):
+    db = _reference_db(path)
+    name = _reference_table_names()[key]
+    try: return db.open_table(name)
+    except Exception: return None
+
+# %% ../nbs/12_knowledge.ipynb #89bd5a96
+def _lance_rows(path, key):
+    table = _reference_table(path, key)
+    if table is None: return []
+    try: return [dict(row) for row in table.to_arrow().to_pylist()]
+    except Exception: return []
+
+# %% ../nbs/12_knowledge.ipynb #f7fcdf61
+def _row_has_vector(row):
+    vector = row.get("vector")
+    if vector is None: return False
+    try: return len(vector) > 0
+    except TypeError: return False
+
+# %% ../nbs/12_knowledge.ipynb #fd4f2d6e
+def _prepare_lance_rows(key, rows):
+    if key not in {"items", "problems"}: return list(rows)
+    rows = [dict(row) for row in rows]
+    if key == "problems":
+        for row in rows: row["observed_count"] = int(row.get("observed_count") or 0)
+        return rows
+    missing = [row for row in rows if not _row_has_vector(row)]
+    vectors = _embed_reference_texts(row.get("search_text", "") for row in missing) if missing else []
+    dims = len(vectors[0]) if vectors else next((len(row.get("vector") or []) for row in rows if _row_has_vector(row)), None)
+    backend = _reference_embedding_backend(dims)
+    for row, vector in zip(missing, vectors):
+        row["vector"] = vector
+        row["embedding_backend"] = backend
+    for row in rows:
+        row["returned_count"] = int(row.get("returned_count") or 0)
+        if _row_has_vector(row) and not row.get("embedding_backend"):
+            row["embedding_backend"] = backend
+    return rows
+
+# %% ../nbs/12_knowledge.ipynb #098d60ab
+def _write_lance_table(path, key, rows):
+    db = _reference_db(path)
+    name = _reference_table_names()[key]
+    rows = _prepare_lance_rows(key, rows)
+    if not rows:
+        table = _reference_table(path, key)
+        delete_expr = "name is not null" if key == "repos" else "caller_id is not null" if key == "edges" else "item_id is not null"
+        if table is not None: table.delete(delete_expr)
+        return None
+    table = db.create_table(name, data=rows, mode="overwrite")
+    if key in {"items", "problems"}:
+        try: table.create_fts_index("search_text", replace=True)
+        except Exception: pass
+    return table
 
 # %% ../nbs/12_knowledge.ipynb #936d7da8
 def _load_reference_registry(path=None):
@@ -146,63 +257,6 @@ def reference_add(
     pth = _write_reference_registry(data, path)
     return {"path": str(pth), "repo": data["repos"][repo_name], "count": len(data["repos"])}
 
-# %% ../nbs/12_knowledge.ipynb #d02d67e6
-def _reference_table(path, key):
-    db = _reference_db(path)
-    name = _reference_table_names()[key]
-    try: return db.open_table(name)
-    except Exception: return None
-
-
-def _lance_rows(path, key):
-    table = _reference_table(path, key)
-    if table is None: return []
-    try: return [dict(row) for row in table.to_arrow().to_pylist()]
-    except Exception: return []
-
-
-def _row_has_vector(row):
-    vector = row.get("vector")
-    if vector is None: return False
-    try: return len(vector) > 0
-    except TypeError: return False
-
-
-def _prepare_lance_rows(key, rows):
-    if key not in {"items", "problems"}: return list(rows)
-    rows = [dict(row) for row in rows]
-    if key == "problems":
-        for row in rows: row["observed_count"] = int(row.get("observed_count") or 0)
-        return rows
-    missing = [row for row in rows if not _row_has_vector(row)]
-    vectors = _embed_reference_texts(row.get("search_text", "") for row in missing) if missing else []
-    dims = len(vectors[0]) if vectors else next((len(row.get("vector") or []) for row in rows if _row_has_vector(row)), None)
-    backend = _reference_embedding_backend(dims)
-    for row, vector in zip(missing, vectors):
-        row["vector"] = vector
-        row["embedding_backend"] = backend
-    for row in rows:
-        row["returned_count"] = int(row.get("returned_count") or 0)
-        if _row_has_vector(row) and not row.get("embedding_backend"):
-            row["embedding_backend"] = backend
-    return rows
-
-
-def _write_lance_table(path, key, rows):
-    db = _reference_db(path)
-    name = _reference_table_names()[key]
-    rows = _prepare_lance_rows(key, rows)
-    if not rows:
-        table = _reference_table(path, key)
-        delete_expr = "name is not null" if key == "repos" else "caller_id is not null" if key == "edges" else "item_id is not null"
-        if table is not None: table.delete(delete_expr)
-        return None
-    table = db.create_table(name, data=rows, mode="overwrite")
-    if key in {"items", "problems"}:
-        try: table.create_fts_index("search_text", replace=True)
-        except Exception: pass
-    return table
-
 # %% ../nbs/12_knowledge.ipynb #66ccbdf5
 def _stable_item_id(*parts):
     raw = "\0".join(str(part or "") for part in parts)
@@ -213,81 +267,9 @@ def _source_excerpt(source, limit=2000):
     text = (source or "").strip()
     return text if len(text) <= limit else text[:limit].rstrip() + "\n..."
 
-# %% ../nbs/12_knowledge.ipynb #0e71809e
-def _try_lancedb():
-    try:
-        import lancedb
-        return lancedb, None
-    except Exception as exc:
-        return None, f"lancedb unavailable: {type(exc).__name__}: {exc}"
-
 # %% ../nbs/12_knowledge.ipynb #96af78f0
 def _all_reference_items(path=None):
     return sorted(_lance_rows(path, "items"), key=lambda row: (row.get("repo", ""), row.get("path", ""), row.get("symbol", "")))
-
-# %% ../nbs/12_knowledge.ipynb #111de83f
-def _reference_token_map():
-    token_map = {}
-    for group in _REFERENCE_SYNONYM_GROUPS:
-        expanded = set(group)
-        for token in group: token_map[token] = expanded
-    return token_map
-
-# %% ../nbs/12_knowledge.ipynb #e91a29bb
-_REFERENCE_SENTENCE_MODEL = os.environ.get("NBSKILL_REFERENCE_SENTENCE_MODEL", "all-MiniLM-L6-v2")
-_REFERENCE_SENTENCE_TRANSFORMER = None
-_REFERENCE_SENTENCE_NOTE = None
-
-def _sentence_transformer():
-    global _REFERENCE_SENTENCE_TRANSFORMER, _REFERENCE_SENTENCE_NOTE
-    if _REFERENCE_SENTENCE_TRANSFORMER is not None: return _REFERENCE_SENTENCE_TRANSFORMER
-    try:
-        from sentence_transformers import SentenceTransformer
-    except Exception as exc:
-        _REFERENCE_SENTENCE_NOTE = f"sentence-transformers unavailable: {type(exc).__name__}: {exc}"
-        raise RuntimeError(_REFERENCE_SENTENCE_NOTE) from exc
-    try:
-        _REFERENCE_SENTENCE_TRANSFORMER = SentenceTransformer(_REFERENCE_SENTENCE_MODEL, local_files_only=True)
-        _REFERENCE_SENTENCE_NOTE = None
-        return _REFERENCE_SENTENCE_TRANSFORMER
-    except Exception as exc:
-        _REFERENCE_SENTENCE_NOTE = f"sentence-transformers model unavailable locally: {type(exc).__name__}: {exc}"
-        raise RuntimeError(_REFERENCE_SENTENCE_NOTE) from exc
-
-def _reference_tokens(text):
-    token_map = _reference_token_map()
-    tokens = []
-    for token in re.findall(r"[A-Za-z0-9_]+", str(text).lower()):
-        tokens.extend(sorted(token_map.get(token, {token})))
-    return tokens
-
-def _reference_vector(text, dims=None):
-    model = _sentence_transformer()
-    vector = [float(value) for value in model.encode(str(text), normalize_embeddings=True)]
-    if dims is not None and len(vector) != dims:
-        raise RuntimeError(f"Embedding dimension mismatch: query vector has {len(vector)} dims, index has {dims}; reingest references")
-    return vector
-
-def _embed_reference_texts(texts, dims=None):
-    texts = list(texts)
-    model = _sentence_transformer()
-    vectors = [[float(value) for value in row] for row in model.encode(texts, normalize_embeddings=True)]
-    if dims is not None and any(len(vector) != dims for vector in vectors):
-        raise RuntimeError(f"Embedding dimension mismatch while writing LanceDB rows; expected {dims}")
-    return vectors
-
-def _reference_embedding_backend(dims=None):
-    vector = _reference_vector("dimension probe")
-    if dims is not None and len(vector) != dims:
-        raise RuntimeError(f"Embedding dimension mismatch: model has {len(vector)} dims, index has {dims}; reingest references")
-    return f"sentence-transformers:{_REFERENCE_SENTENCE_MODEL}"
-
-def _reference_embedding_note():
-    try:
-        _sentence_transformer()
-        return None
-    except RuntimeError as exc:
-        return str(exc)
 
 # %% ../nbs/12_knowledge.ipynb #12ac7137
 def _sync_lancedb(path=None):
@@ -296,7 +278,7 @@ def _sync_lancedb(path=None):
     if table is not None:
         try: table.create_fts_index("search_text", replace=True)
         except Exception: pass
-    return {"ok": True, "backend": "lancedb", "count": len(rows)}
+    return dict(ok=True, backend="lancedb", count=len(rows))
 
 # %% ../nbs/12_knowledge.ipynb #24b46696
 def _merge_lancedb_rows(*groups):
@@ -312,12 +294,14 @@ def _merge_lancedb_rows(*groups):
             current["_reference_score"] = max(float(current.get("_reference_score") or 0), _reference_rank_score(row))
     return [row for row in merged.values() if row.get("item_id")]
 
+# %% ../nbs/12_knowledge.ipynb #6e3a2f66
 def _lance_literal(value):
     return "'" + str(value).replace("'", "''") + "'"
 
+# %% ../nbs/12_knowledge.ipynb #9a0ee8f8
 def _reference_filter_expr(repos=None, kind=None, package=None, module=None, symbol=None, versions=None):
     clauses = []
-    values = {"kind": kind, "package": package, "module": module, "symbol": symbol}
+    values = dict(kind=kind, package=package, module=module, symbol=symbol)
     for field, value in values.items():
         if value: clauses.append(f"{field} = {_lance_literal(value)}")
     repo_names = _repo_filter(repos)
@@ -327,15 +311,16 @@ def _reference_filter_expr(repos=None, kind=None, package=None, module=None, sym
         clauses.append("version IN (" + ", ".join(_lance_literal(version) for version in versions) + ")")
     return " AND ".join(clauses)
 
-
+# %% ../nbs/12_knowledge.ipynb #1df09e09
 def _row_matches_reference_filter(row, repos=None, kind=None, package=None, module=None, symbol=None, versions=None):
     repo_names = set(_repo_filter(repos) or [])
     if repo_names and row.get("repo") not in repo_names: return False
     if versions and str(row.get("version")) not in {str(version) for version in versions}: return False
-    for field, value in {"kind": kind, "package": package, "module": module, "symbol": symbol}.items():
+    for field, value in dict(kind=kind, package=package, module=module, symbol=symbol).items():
         if value and row.get(field) != value: return False
     return True
 
+# %% ../nbs/12_knowledge.ipynb #1a9a5ba1
 _GENERIC_REFERENCE_SYMBOLS = {
     "get", "set", "run", "find", "search", "before", "after", "main", "test", "call", "build", "make", "do",
 }
@@ -353,6 +338,7 @@ _REFERENCE_LIBRARY_HINTS = {
 }
 _REFERENCE_CALL_WORDS = {"endpoint", "route", "page", "button", "handler", "query", "search", "parse", "render", "click"}
 
+# %% ../nbs/12_knowledge.ipynb #5e884d3b
 def _reference_list_value(value):
     if value is None: return []
     if isinstance(value, str):
@@ -365,6 +351,7 @@ def _reference_list_value(value):
     try: return [str(item) for item in list(value) if item]
     except TypeError: return [str(value)]
 
+# %% ../nbs/12_knowledge.ipynb #8ec64b59
 def _feature_terms(values):
     terms = set()
     for value in _reference_list_value(values):
@@ -376,6 +363,7 @@ def _feature_terms(values):
         terms.update(part for part in re.split(r"[._\-/]+", term) if len(part) > 1)
     return terms
 
+# %% ../nbs/12_knowledge.ipynb #2ebd6dc0
 def _row_feature_set(row, field, fallback_tags=False):
     values = row.get(field)
     terms = _feature_terms(values)
@@ -383,25 +371,29 @@ def _row_feature_set(row, field, fallback_tags=False):
         terms |= _feature_terms(row.get("tags"))
     return terms
 
+# %% ../nbs/12_knowledge.ipynb #8e689daf
 def _row_import_terms(row):
     values = [row.get("package"), row.get("repo"), *_reference_list_value(row.get("imports"))]
     return _feature_terms(values) | _row_feature_set(row, "imports", fallback_tags=True)
 
+# %% ../nbs/12_knowledge.ipynb #9503b77c
 def _row_call_terms(row):
     terms = _row_feature_set(row, "calls")
     if not terms:
         terms |= _feature_terms(re.findall(r"\b([A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)?)\s*\(", str(row.get("source", "") or "")))
     return terms
 
+# %% ../nbs/12_knowledge.ipynb #e2b94f13
 def _row_decorator_terms(row):
     return _row_feature_set(row, "decorators", fallback_tags=True)
 
+# %% ../nbs/12_knowledge.ipynb #8444b8ae
 _GENERIC_REFERENCE_QUERY_TERMS = {
     "code", "data", "dry", "file", "function", "hash", "implementation", "item", "method",
     "query", "run", "search", "test", "text", "value",
 }
 
-
+# %% ../nbs/12_knowledge.ipynb #d95f16ef
 def _query_feature_plan(query, kind=None, candidate_k=None):
     text = str(query or "")
     tokens = _query_tokens(text)
@@ -437,6 +429,7 @@ def _query_feature_plan(query, kind=None, candidate_k=None):
         "applied_search_passes": ["hybrid", "vector", "bm25_fts", "feature_rerank"],
     }
 
+# %% ../nbs/12_knowledge.ipynb #216cf8b6
 def _reference_base_score(row, query=""):
     base = row.get("_relevance_score") or row.get("_score")
     if not query: base = base or row.get("_reference_score")
@@ -447,11 +440,13 @@ def _reference_base_score(row, query=""):
         except (TypeError, ValueError): pass
     return score
 
+# %% ../nbs/12_knowledge.ipynb #902635ba
 def _is_test_reference_row(row):
     bits = " ".join(str(row.get(key, "") or "") for key in ("kind", "path", "module", "symbol"))
     bits = bits.lower()
     return bool(re.search(r"(^|[/_.-])tests?([/_.-]|$)", bits) or str(row.get("symbol", "")).startswith("test_"))
 
+# %% ../nbs/12_knowledge.ipynb #f6c72085
 def _reference_score_breakdown(row, query="", query_plan=None, current_repo=None):
     plan = query_plan or _query_feature_plan(query)
     tokens = set(plan.get("tokens") or _reference_tokens(query))
@@ -498,12 +493,14 @@ def _reference_score_breakdown(row, query="", query_plan=None, current_repo=None
         breakdown["penalty"] -= 4.0
     return {key: round(value, 3) for key, value in breakdown.items()}
 
+# %% ../nbs/12_knowledge.ipynb #60d6a3a2
 def _reference_rank_score(row, query="", query_plan=None, current_repo=None):
     breakdown = _reference_score_breakdown(row, query=query, query_plan=query_plan, current_repo=current_repo)
     score = sum(breakdown.values())
     row["_score_breakdown"] = breakdown
     return round(score, 6)
 
+# %% ../nbs/12_knowledge.ipynb #34251189
 def _prefer_reference_row(current, candidate):
     if current is None: return candidate
     cur_path, cand_path = current.get("path", ""), candidate.get("path", "")
@@ -511,6 +508,7 @@ def _prefer_reference_row(current, candidate):
     if candidate.get("_reference_score", 0) > current.get("_reference_score", 0): return candidate
     return current
 
+# %% ../nbs/12_knowledge.ipynb #2e1f30d1
 def _dedupe_reference_rows(rows):
     deduped = {}
     for row in rows:
@@ -519,6 +517,7 @@ def _dedupe_reference_rows(rows):
         deduped[key] = _prefer_reference_row(deduped.get(key), row)
     return sorted(deduped.values(), key=lambda row: row.get("_reference_score", 0), reverse=True)
 
+# %% ../nbs/12_knowledge.ipynb #41a313f0
 def _search_rows(builder, limit, filter_expr=None):
     try:
         if filter_expr: builder = builder.where(filter_expr, prefilter=True)
@@ -527,6 +526,7 @@ def _search_rows(builder, limit, filter_expr=None):
     try: return builder.limit(limit).to_list()
     except Exception: return []
 
+# %% ../nbs/12_knowledge.ipynb #241eaa2b
 def _lancedb_search(
     query, top_k=3, repos=None, path=None, kind=None, package=None, module=None, symbol=None,
     versions=None, candidate_k=None, current_repo=None, query_plan=None,
@@ -618,7 +618,7 @@ def _row_tags(repo, package, module, kind, symbol, decorators, imports):
 def _file_hash(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
-
+# %% ../nbs/12_knowledge.ipynb #5e7cc066
 def _item_row(repo, version, package, kind, module, symbol, rel_path, source, **extra):
     source_excerpt = _source_excerpt(source)
     search_text = "\n".join(str(extra.get(key, "") or "") for key in ("signature", "docstring"))
@@ -628,18 +628,16 @@ def _item_row(repo, version, package, kind, module, symbol, rel_path, source, **
     decorators = _reference_list_value(extra.get("decorators"))
     calls = _reference_list_value(extra.get("calls"))
     tags = _row_tags(repo, package, module, kind, symbol, decorators, imports)
-    return {
-        "item_id": item_id, "repo": repo, "version": version, "package": package or "",
-        "kind": kind, "module": module or "", "symbol": symbol or "", "path": str(rel_path),
-        "file_hash": extra.get("file_hash", ""),
-        "cell_id": extra.get("cell_id", ""), "start_line": extra.get("start_line", 1),
-        "end_line": extra.get("end_line", 1), "signature": extra.get("signature", ""),
-        "docstring": extra.get("docstring", ""), "source": source_excerpt,
-        "search_text": search_text, "tags": tags, "imports": imports,
-        "decorators": decorators, "calls": calls,
-        "vector": extra.get("vector"), "embedding_backend": extra.get("embedding_backend", ""),
-        "returned_count": int(extra.get("returned_count") or 0),
-    }
+    return dict(
+        item_id=item_id, repo=repo, version=version, package=package or "",
+        kind=kind, module=module or "", symbol=symbol or "", path=str(rel_path),
+        file_hash=extra.get("file_hash", ""), cell_id=extra.get("cell_id", ""),
+        start_line=extra.get("start_line", 1), end_line=extra.get("end_line", 1),
+        signature=extra.get("signature", ""), docstring=extra.get("docstring", ""), source=source_excerpt,
+        search_text=search_text, tags=tags, imports=imports, decorators=decorators, calls=calls,
+        vector=extra.get("vector"), embedding_backend=extra.get("embedding_backend", ""),
+        returned_count=int(extra.get("returned_count") or 0),
+    )
 
 # %% ../nbs/12_knowledge.ipynb #7ca2b9a2
 def _class_block_source(source, node):
@@ -648,7 +646,7 @@ def _class_block_source(source, node):
     lines = source.splitlines()
     return "\n".join(lines[node.lineno - 1:getattr(init, "end_lineno", init.lineno)])
 
-
+# %% ../nbs/12_knowledge.ipynb #94185698
 def _extract_def_rows(tree, source, repo, version, package, rel_path, module, cell_id="", file_hash=""):
     rows, imports = [], _import_names(tree)
     for node in tree.body:
@@ -722,6 +720,7 @@ def _pyproject_data(root):
     except Exception:
         return {}
 
+# %% ../nbs/12_knowledge.ipynb #ca3d61e7
 def _nbdev_config(root):
     data = _pyproject_data(root)
     tool = data.get("tool", {}) if isinstance(data, dict) else {}
@@ -731,6 +730,7 @@ def _nbdev_config(root):
     lib_path = nbdev.get("lib_path") or nbdev.get("lib-path") or nbdev.get("lib_name")
     return {"kind": "nbdev", "nbs_path": str(nbs_path), "lib_path": str(lib_path or "")}
 
+# %% ../nbs/12_knowledge.ipynb #d00edfb6
 def _supported_reference_files(root):
     root = Path(root)
     skip = {".git", ".venv", "__pycache__", ".mypy_cache", ".pytest_cache", ".ipynb_checkpoints"}
@@ -777,7 +777,7 @@ def _github_repo_slug(source):
     match = re.match(r"^(?:https://github\.com/|git@github\.com:)([\w.-]+/[\w.-]+)$", text)
     return match.group(1) if match else None
 
-
+# %% ../nbs/12_knowledge.ipynb #b27924b5
 def _clone_reference_with_gh(source, dest):
     slug = _github_repo_slug(source)
     if not slug or shutil.which("gh") is None: return False
@@ -785,7 +785,7 @@ def _clone_reference_with_gh(source, dest):
     if proc.returncode != 0: return False
     return True
 
-
+# %% ../nbs/12_knowledge.ipynb #3e2c6e23
 def _checkout_reference(repo, dest):
     source = repo["url"]
     version = repo.get("version") or "HEAD"
@@ -844,7 +844,7 @@ def _reference_reuse_key(row):
         row.get("symbol"), row.get("cell_id"), row.get("start_line"), row.get("search_text"),
     )
 
-
+# %% ../nbs/12_knowledge.ipynb #e06d2d5e
 def _reuse_reference_vectors(rows, existing_rows):
     reusable = {_reference_reuse_key(row): row for row in existing_rows if _row_has_vector(row)}
     reused = []
@@ -857,7 +857,7 @@ def _reuse_reference_vectors(rows, existing_rows):
         reused.append(row)
     return reused
 
-
+# %% ../nbs/12_knowledge.ipynb #82e2410a
 def _write_reference_rows(repo_name, version, rows, path=None):
     existing_items = _lance_rows(path, "items")
     rows = _reuse_reference_vectors(rows, existing_items)
@@ -891,12 +891,11 @@ def _reference_edge_rows(repo_name, version, rows):
                 key = (row["item_id"], callee_id, call)
                 if callee_id != row["item_id"] and key not in seen:
                     seen.add(key)
-                    edges.append({"repo": repo_name, "version": version, "caller_id": row["item_id"], "callee_id": callee_id, "call": call})
+                    edges.append(dict(repo=repo_name, version=version, caller_id=row["item_id"], callee_id=callee_id, call=call))
     return edges
 
 # %% ../nbs/12_knowledge.ipynb #1315f364
 def _reference_ingest_progress(index, total, repo_name, stage, extra=""):
-    import sys
     width = 24
     done = width if total <= 0 else int(width * min(index, total) / total)
     bar = "#" * done + "-" * (width - done)
@@ -904,6 +903,7 @@ def _reference_ingest_progress(index, total, repo_name, stage, extra=""):
     suffix = f" {extra}" if extra else ""
     print(f"reference_ingest [{bar}] {index}/{total}{label}: {stage}{suffix}", file=sys.stderr, flush=True)
 
+# %% ../nbs/12_knowledge.ipynb #134c58bc
 def reference_ingest(
     name: str | None = None,  # Registry name to ingest
     all: bool = False,  # Ingest all registered repositories
@@ -931,7 +931,7 @@ def reference_ingest(
             resolved = _checkout_reference(repo, checkout)
             repo_kind = "nbdev" if _nbdev_config(checkout) else "python"
             if not force and repo.get("resolved_version") == resolved and repo.get("item_count") and repo.get("repo_kind") == repo_kind:
-                reports.append({"name": repo_name, "resolved_version": resolved, "repo_kind": repo_kind, "skipped": True, "item_count": repo["item_count"]})
+                reports.append(dict(name=repo_name, resolved_version=resolved, repo_kind=repo_kind, skipped=True, item_count=repo["item_count"]))
                 _reference_ingest_progress(i, total, repo_name, "skip", f"{repo['item_count']} items")
                 continue
             package = _infer_package(checkout, repo)
@@ -939,14 +939,14 @@ def reference_ingest(
             rows = _extract_reference_rows(checkout, repo, resolved, package)
             _reference_ingest_progress(i, total, repo_name, "embed/write", f"{len(rows)} rows")
             count = _write_reference_rows(repo_name, resolved, rows, path=path)
-            repo.update({"package": package, "repo_kind": repo_kind, "resolved_version": resolved, "last_indexed_ts": time.time(), "item_count": count})
-            reports.append({"name": repo_name, "resolved_version": resolved, "repo_kind": repo_kind, "package": package, "item_count": count})
+            repo.update(dict(package=package, repo_kind=repo_kind, resolved_version=resolved, last_indexed_ts=time.time(), item_count=count))
+            reports.append(dict(name=repo_name, resolved_version=resolved, repo_kind=repo_kind, package=package, item_count=count))
             _reference_ingest_progress(i, total, repo_name, "done", f"{count} items")
     _write_reference_registry(data, path)
     _reference_ingest_progress(total, total, "", "sync")
     sync = _sync_lancedb(path)
     _reference_ingest_progress(total, total, "", "complete")
-    return {"path": str(_lancedb_path(path)), "ingested": reports, "index": sync}
+    return dict(path=str(_lancedb_path(path)), ingested=reports, index=sync)
 
 # %% ../nbs/12_knowledge.ipynb #9822bb44
 def reference_list(path: str | None = None):
@@ -1020,21 +1020,22 @@ def _branch_for_item(item_id, path=None, limit=8):
 def _first_docstring_line(docstring):
     return next((line.strip() for line in str(docstring or "").splitlines() if line.strip()), "")
 
+# %% ../nbs/12_knowledge.ipynb #6a33598f
 def _public_reference_hit(row):
     tags = _reference_list_value(row.get("tags"))
     docstring = row.get("docstring") or ""
-    return {
-        "repo": row.get("repo"), "version": row.get("version"), "package": row.get("package") or None,
-        "repo_kind": row.get("repo_kind") or None, "kind": row.get("kind"), "module": row.get("module"), "symbol": row.get("symbol"),
-        "path": row.get("path"), "file_hash": row.get("file_hash") or None, "cell_id": row.get("cell_id") or None,
-        "line": row.get("start_line"), "signature": row.get("signature"),
-        "docstring": docstring, "docstring_first_line": _first_docstring_line(docstring),
-        "source": row.get("source"), "tags": tags, "imports": _reference_list_value(row.get("imports")),
-        "decorators": _reference_list_value(row.get("decorators")), "calls": _reference_list_value(row.get("calls")),
-        "returned_count": int(row.get("returned_count") or 0), "score": row.get("_reference_score"),
-        "score_breakdown": row.get("_score_breakdown") or {}, "search_sources": row.get("_search_sources") or [],
-        "embedding_backend": row.get("embedding_backend"),
-    }
+    return dict(
+        repo=row.get("repo"), version=row.get("version"), package=row.get("package") or None,
+        repo_kind=row.get("repo_kind") or None, kind=row.get("kind"), module=row.get("module"), symbol=row.get("symbol"),
+        path=row.get("path"), file_hash=row.get("file_hash") or None, cell_id=row.get("cell_id") or None,
+        line=row.get("start_line"), signature=row.get("signature"),
+        docstring=docstring, docstring_first_line=_first_docstring_line(docstring),
+        source=row.get("source"), tags=tags, imports=_reference_list_value(row.get("imports")),
+        decorators=_reference_list_value(row.get("decorators")), calls=_reference_list_value(row.get("calls")),
+        returned_count=int(row.get("returned_count") or 0), score=row.get("_reference_score"),
+        score_breakdown=row.get("_score_breakdown") or {}, search_sources=row.get("_search_sources") or [],
+        embedding_backend=row.get("embedding_backend"),
+    )
 
 # %% ../nbs/12_knowledge.ipynb #9b01b99f
 def _bump_reference_return_counts(rows, path=None):
@@ -1063,6 +1064,7 @@ def _bump_reference_return_counts(rows, path=None):
             time.sleep(0.05 * (attempt + 1))
     raise last_exc
 
+# %% ../nbs/12_knowledge.ipynb #b4a889a0
 def _reference_lookup_hints(hit):
     symbol, path = hit.get("symbol"), hit.get("path")
     if hit.get("dependency_status") == "local_repo":
@@ -1079,6 +1081,7 @@ def _reference_lookup_hints(hit):
         hints.append(f"reference(action='query', repos={hit['repo']!r}, module={hit['module']!r}{version_arg})")
     return hints
 
+# %% ../nbs/12_knowledge.ipynb #0c26a592
 def _reference_quality(hit):
     try: score = float(hit.get("score") or 0)
     except (TypeError, ValueError): score = 0.0
@@ -1087,6 +1090,7 @@ def _reference_quality(hit):
     if score >= 6 and penalty > -8: return "medium"
     return "low"
 
+# %% ../nbs/12_knowledge.ipynb #c2cd66c7
 def _reference_why(hit):
     if hit.get("dependency_status") == "local_repo":
         reasons = hit.get("reasons") or []
@@ -1099,6 +1103,7 @@ def _reference_why(hit):
     if breakdown.get("penalty", 0) < 0: parts.append("penalized for likely generic/test/doc-only evidence")
     return "; ".join(parts) or "semantic/vector match"
 
+# %% ../nbs/12_knowledge.ipynb #fd1ff771
 def _finish_reference_hit(hit, explain=True):
     hit["lookup_hints"] = _reference_lookup_hints(hit)
     hit["quality"] = _reference_quality(hit)
@@ -1106,6 +1111,7 @@ def _finish_reference_hit(hit, explain=True):
     if not explain: hit["score_breakdown"] = {}
     return hit
 
+# %% ../nbs/12_knowledge.ipynb #c6967ecf
 def _local_reference_hits(query, current_repo=".", top_k=3, explain=True):
     root = Path(current_repo or ".").expanduser()
     nbs_path = root / "nbs"
@@ -1134,12 +1140,14 @@ def _local_reference_hits(query, current_repo=".", top_k=3, explain=True):
         hits.append(_finish_reference_hit(hit, explain=explain))
     return hits
 
+# %% ../nbs/12_knowledge.ipynb #8c583a18
 def _reference_group_name(hit):
     status = hit.get("dependency_status")
     if status == "local_repo": return "local repo"
     if status == "direct_import": return "direct dependency"
     return "new dependency"
 
+# %% ../nbs/12_knowledge.ipynb #909338b5
 def _reference_context_markdown(hits):
     if not hits: return "No reusable code context found for this query."
     lines = ["Best code context:"]
@@ -1160,6 +1168,7 @@ def _reference_context_markdown(hits):
         lines.append("\nNote: some candidates were penalized as generic, test-only, or documentation-only matches.")
     return "\n".join(lines)
 
+# %% ../nbs/12_knowledge.ipynb #d5cb1fe4
 def _reference_query_index(
     query: str,  # Natural-language implementation query
     top_k: int = 3,  # Number of implementation hits to return
@@ -1221,11 +1230,11 @@ def _reference_query_index(
     for hit in hits:
         item_id = hit.pop("_item_id", None)
         if item_id in counts: hit["returned_count"] = counts[item_id]
-    filters = {"repos": repo_names, "kind": kind, "package": package, "version": version, "resolved_versions": versions, "module": module, "symbol": symbol}
-    return {
-        "query": query, "backend": backend, "note": reason, "filters": filters, "count": len(hits),
-        "context": _reference_context_markdown(hits), "query_plan": plan, "hits": hits,
-    }
+    filters = dict(repos=repo_names, kind=kind, package=package, version=version, resolved_versions=versions, module=module, symbol=symbol)
+    return dict(
+        query=query, backend=backend, note=reason, filters=filters, count=len(hits),
+        context=_reference_context_markdown(hits), query_plan=plan, hits=hits,
+    )
 
 # %% ../nbs/12_knowledge.ipynb #cd1ddc70
 def _problem_tags(tags=None):
@@ -1234,13 +1243,13 @@ def _problem_tags(tags=None):
     parts = re.split(r"[,\n]+", tags) if isinstance(tags, str) else list(tags)
     return sorted({str(tag).strip().lower() for tag in parts if str(tag).strip()})
 
-
+# %% ../nbs/12_knowledge.ipynb #8d5a0e6f
 def _problem_project(project="."):
     "Return a stable project label for problem memory rows."
     try: return str(Path(project or ".").expanduser().resolve())
     except Exception: return str(project or ".")
 
-
+# %% ../nbs/12_knowledge.ipynb #bdcca3d1
 def _problem_text(problem, solution, task="", evidence="", tags=None):
     "Build searchable text for a problem-solution statement."
     tag_list = _problem_tags(tags)
@@ -1250,7 +1259,7 @@ def _problem_text(problem, solution, task="", evidence="", tags=None):
     if tag_list: chunks.append("Tags: " + ", ".join(tag_list))
     return "\n".join(chunks)
 
-
+# %% ../nbs/12_knowledge.ipynb #3ab71695
 def _problem_key(problem, solution):
     "Return the dedupe key and normalized problem text."
     problem = " ".join(str(problem or "").split())
@@ -1258,7 +1267,7 @@ def _problem_key(problem, solution):
     if not problem or not solution: raise ValueError("problem and solution are required")
     return _stable_item_id("problem_statement", problem.lower(), solution.lower()), problem, solution
 
-
+# %% ../nbs/12_knowledge.ipynb #b6332f88
 def _problem_row(problem, solution, task="", project=".", evidence="", outcome="applied", tags=None):
     "Create one problem-memory row before embedding."
     item_id, problem, solution = _problem_key(problem, solution)
@@ -1280,7 +1289,7 @@ def _problem_row(problem, solution, task="", project=".", evidence="", outcome="
         "last_seen": now,
     }
 
-
+# %% ../nbs/12_knowledge.ipynb #7e6e37ff
 def _merge_problem_row(existing, incoming):
     "Merge a repeated problem-solution observation into an existing row."
     merged = dict(existing)
@@ -1299,7 +1308,7 @@ def _merge_problem_row(existing, incoming):
         merged.pop("embedding_backend", None)
     return merged
 
-
+# %% ../nbs/12_knowledge.ipynb #b8d467a7
 def problem_statement_add(
     problem: str,  # Reusable problem statement
     solution: str,  # Reusable solution statement
@@ -1325,7 +1334,7 @@ def problem_statement_add(
     _write_lance_table(path, "problems", rows)
     return {"item_id": updated["item_id"], "created": not replaced, "row": updated}
 
-
+# %% ../nbs/12_knowledge.ipynb #f3f5b691
 def _problem_score(row, query):
     "Score a stored problem against a new query."
     query_tokens = set(_query_tokens(query))
@@ -1338,7 +1347,7 @@ def _problem_score(row, query):
     except (TypeError, ValueError): pass
     return round(vector_score + len(query_tokens & row_tokens) + 2 * len(tag_hits) + min(observed, 5) * 0.2, 6)
 
-
+# %% ../nbs/12_knowledge.ipynb #9274bdc7
 def _problem_hit(row, query):
     "Return the public problem-memory hit shape."
     return {
@@ -1355,7 +1364,7 @@ def _problem_hit(row, query):
         "search_sources": row.get("search_sources") or [],
     }
 
-
+# %% ../nbs/12_knowledge.ipynb #24f325c0
 def _problem_candidates(query, path=None, candidate_k=50):
     "Return vector/FTS candidates with lexical fallback."
     table = _reference_table(path, "problems")
@@ -1375,7 +1384,7 @@ def _problem_candidates(query, path=None, candidate_k=50):
     backend = "lancedb_bm25_vector" if vector_rows else "lancedb_lexical"
     return (merged or rows), backend, note or _reference_embedding_note()
 
-
+# %% ../nbs/12_knowledge.ipynb #403942f6
 def _problem_context_markdown(hits):
     "Render compact problem-memory context for an agent prompt."
     if not hits: return "No similar problem memories found."
@@ -1386,7 +1395,7 @@ def _problem_context_markdown(hits):
         lines.append(f"- Problem: {hit['problem']} Solution: {hit['solution']}{suffix}")
     return "\n".join(lines)
 
-
+# %% ../nbs/12_knowledge.ipynb #1b159aed
 def problem_statement_query(
     query: str,  # New problem or task to compare against stored memories
     top_k: int = 5,  # Number of memories to return
@@ -1401,273 +1410,21 @@ def problem_statement_query(
         rows = [row for row in rows if row.get("project") == project_label]
     hits = [_problem_hit(row, query) for row in rows]
     hits = sorted(hits, key=lambda hit: hit["score"], reverse=True)[:top_k]
-    return {"query": query, "backend": backend, "note": note, "count": len(hits), "context": _problem_context_markdown(hits), "hits": hits}
+    return dict(query=query, backend=backend, note=note, count=len(hits), context=_problem_context_markdown(hits), hits=hits)
 
-
+# %% ../nbs/12_knowledge.ipynb #abeb9fe7
 def problem_statement_list(path: str | None = None, limit: int = 20):
     "List recent reusable problem-solution statements."
     limit = _clamp_int(limit, 20, 1, 200, "limit")
     rows = sorted(_lance_rows(path, "problems"), key=lambda row: row.get("last_seen") or 0, reverse=True)[:limit]
     return {"count": len(rows), "hits": [_problem_hit(row, row.get("search_text", "")) for row in rows]}
 
-# %% ../nbs/12_knowledge.ipynb #fb15becf
-def _packaging_version(version):
-    from packaging.version import Version
-    return Version(str(version))
-
-
-def _packaging_specifier(spec):
-    from packaging.specifiers import SpecifierSet
-    return SpecifierSet(str(spec))
-
-
-def _package_repo_name(package):
-    return _norm_dist_name(package) or "package"
-
-
-def _row_package_key(row):
-    return _norm_dist_name(row.get("package") or row.get("repo"))
-
-
-def _normal_version_spec(spec):
-    text = str(spec or "").strip()
-    if not text or text.lower() in {"latest", "head", "main", "master"}: return None
-    if re.match(r"^(===|==|!=|<=|>=|<|>|~=)", text) or "," in text:
-        return text
-    return f"=={text}"
-
-
-def _version_matches(version, spec=None):
-    normalized = _normal_version_spec(spec)
-    if not normalized: return True
-    try:
-        return _packaging_version(version) in _packaging_specifier(normalized)
-    except Exception:
-        return str(version) == str(spec).strip().lstrip("=")
-
-
-def _version_sort_key(version):
-    text = str(version or "")
-    try:
-        return (1, _packaging_version(text))
-    except Exception:
-        return (0, text)
-
-
-def _indexed_package_versions(package=None, path=None):
-    package_key = _norm_dist_name(package) if package else None
-    versions = set()
-    for row in _lance_rows(path, "items"):
-        if package_key and _row_package_key(row) != package_key: continue
-        if row.get("version"): versions.add(str(row["version"]))
-    return sorted(versions, key=_version_sort_key, reverse=True)
-
-
-def _matching_indexed_versions(package=None, version_spec=None, path=None):
-    versions = _indexed_package_versions(package, path=path)
-    return [version for version in versions if _version_matches(version, version_spec)]
-
-
-def _pypi_json(package):
-    url = _PYPI_JSON_URL.format(package=str(package).strip())
-    request = urllib.request.Request(url, headers={"User-Agent": "nbskill-reference/1"})
-    with urllib.request.urlopen(request, timeout=20) as response:
-        return json.loads(response.read().decode("utf-8"))
-
-
-def _include_prerelease(version_spec=None):
-    return bool(re.search(r"[A-Za-z]", str(version_spec or "")))
-
-
-def _pypi_release_versions(package, version_spec=None):
-    releases = (_pypi_json(package).get("releases") or {})
-    versions = []
-    for version, files in releases.items():
-        usable = [file for file in files or [] if not file.get("yanked")]
-        if not usable or not _version_matches(version, version_spec): continue
-        try:
-            parsed = _packaging_version(version)
-        except Exception:
-            continue
-        if parsed.is_prerelease and not _include_prerelease(version_spec): continue
-        versions.append(str(version))
-    return sorted(versions, key=_version_sort_key, reverse=True)
-
-
-def _resolve_library_version(package, version_spec=None, path=None, allow_download=True):
-    if allow_download:
-        try:
-            versions = _pypi_release_versions(package, version_spec=version_spec)
-        except Exception as exc:
-            indexed = _matching_indexed_versions(package, version_spec=version_spec, path=path)
-            if indexed: return indexed[0]
-            raise RuntimeError(f"Could not resolve package {package!r} from PyPI: {type(exc).__name__}: {exc}") from exc
-        if versions: return versions[0]
-        raise ValueError(f"No PyPI release for {package!r} matches version spec {version_spec!r}")
-    indexed = _matching_indexed_versions(package, version_spec=version_spec, path=path)
-    if indexed: return indexed[0]
-    normalized = _normal_version_spec(version_spec)
-    if normalized and normalized.startswith("==") and "," not in normalized:
-        return normalized[2:].strip()
-    return None
-
-
-def _package_version_indexed(package, version, path=None):
-    if not package or not version: return False
-    package_key = _norm_dist_name(package)
-    version = str(version)
-    return any(_row_package_key(row) == package_key and str(row.get("version")) == version for row in _lance_rows(path, "items"))
-
-
-def _pypi_release_files(package, version):
-    releases = (_pypi_json(package).get("releases") or {})
-    return [file for file in releases.get(str(version), []) if not file.get("yanked")]
-
-
-def _download_pypi_release(package, version, dest):
-    files = _pypi_release_files(package, version)
-    if not files: raise ValueError(f"No downloadable PyPI files found for {package!r} {version!r}")
-    chosen = next((file for file in files if file.get("packagetype") == "sdist"), files[0])
-    with tempfile.TemporaryDirectory(prefix="nbskill-pypi-download-") as archive_root:
-        archive_dir = Path(archive_root)
-        archive = archive_dir / (chosen.get("filename") or f"{package}-{version}.tar.gz")
-        request = urllib.request.Request(chosen["url"], headers={"User-Agent": "nbskill-reference/1"})
-        with urllib.request.urlopen(request, timeout=60) as response:
-            archive.write_bytes(response.read())
-        unpacked = archive_dir / "unpacked"
-        unpacked.mkdir(parents=True, exist_ok=True)
-        shutil.unpack_archive(str(archive), str(unpacked), format="zip" if chosen["filename"].endswith(".whl") else None)
-        roots = [child for child in unpacked.iterdir()]
-        source = roots[0] if len(roots) == 1 and roots[0].is_dir() else unpacked
-        if Path(dest).exists(): shutil.rmtree(dest)
-        shutil.copytree(source, dest)
-    return str(version)
-
-
-def _ensure_library_version_indexed(package, version_spec=None, path=None, allow_download=True):
-    if not package: return None
-    resolved = _resolve_library_version(package, version_spec=version_spec, path=path, allow_download=allow_download)
-    if not resolved:
-        return {"package": package, "version": None, "downloaded": False, "indexed": False}
-    if _package_version_indexed(package, resolved, path=path):
-        return {"package": package, "version": resolved, "downloaded": False, "indexed": True}
-    if not allow_download:
-        return {"package": package, "version": resolved, "downloaded": False, "indexed": False}
-    data = _load_reference_registry(path)
-    repo_name = _package_repo_name(package)
-    now = time.time()
-    existing = data["repos"].get(repo_name, {})
-    data["repos"][repo_name] = {
-        **existing,
-        "name": repo_name,
-        "url": f"pypi:{package}",
-        "source_kind": "pypi",
-        "version": resolved,
-        "package": package,
-        "updated_ts": now,
-        "created_ts": existing.get("created_ts", now),
-    }
-    _write_reference_registry(data, path)
-    report = reference_ingest(name=repo_name, path=path, force=False)
-    return {"package": package, "version": resolved, "downloaded": True, "indexed": True, "ingest": report.get("ingested", [])}
-
-
-def _reference_versions_to_prune(package, path=None, keep=_REFERENCE_MAX_VERSIONS_PER_PACKAGE):
-    versions = _indexed_package_versions(package, path=path)
-    return versions[max(0, int(keep)):]
-
-
-def _prune_reference_versions(package, path=None, keep=_REFERENCE_MAX_VERSIONS_PER_PACKAGE):
-    drop = set(_reference_versions_to_prune(package, path=path, keep=keep))
-    if not drop: return {"removed_versions": [], "removed_items": 0}
-    package_key = _norm_dist_name(package)
-    old_items = _lance_rows(path, "items")
-    items = [row for row in old_items if not (_row_package_key(row) == package_key and str(row.get("version")) in drop)]
-    kept_ids = {row.get("item_id") for row in items if row.get("item_id")}
-    edges = [row for row in _lance_rows(path, "edges") if row.get("caller_id") in kept_ids and row.get("callee_id") in kept_ids]
-    _write_lance_table(path, "items", items)
-    _write_lance_table(path, "edges", edges)
-    return {"removed_versions": sorted(drop, key=_version_sort_key, reverse=True), "removed_items": len(old_items) - len(items)}
-
-# %% ../nbs/12_knowledge.ipynb #459fe5ee
-_REFERENCE_ROOTS_FILE = "roots.json"
-
-def _reference_roots_path(path=None):
-    return reference_home(path) / _REFERENCE_ROOTS_FILE
-
-
-def _read_reference_roots(path=None):
-    roots_path = _reference_roots_path(path)
-    if not roots_path.exists(): return []
-    try: return json.loads(roots_path.read_text(encoding="utf-8")).get("roots", [])
-    except (OSError, ValueError): return []
-
-
-def _coerce_reference_roots(roots=None, path=None):
-    values = _read_reference_roots(path) if roots is None else roots
-    if isinstance(values, str): values = values.split(",")
-    values = values or [Path.home() / "projects"]
-    return sorted({str(Path(value).expanduser().resolve()) for value in values if str(value).strip()})
-
-
-def _write_reference_roots(roots, path=None):
-    roots_path = _reference_roots_path(path)
-    roots_path.parent.mkdir(parents=True, exist_ok=True)
-    roots_path.write_text(json.dumps({"roots": roots}, indent=2) + "\n", encoding="utf-8")
-    return roots_path
-
-
-def _is_reference_git_repo(root):
-    return root.is_dir() and not root.is_symlink() and (root / ".git").exists()
-
-
-def _discovered_reference_paths(roots):
-    repos, skipped = [], []
-    for root_text in roots:
-        root = Path(root_text)
-        if _is_reference_git_repo(root): repos.append(root)
-        elif not root.is_dir():
-            skipped.append({"path": str(root), "reason": "missing"})
-            continue
-        for child in sorted(root.iterdir()):
-            if child.is_symlink() or not child.is_dir(): continue
-            if _is_reference_git_repo(child): repos.append(child)
-    return sorted(set(repos)), skipped
-
-
-def _local_reference_name(root):
-    key = hashlib.sha1(str(root).encode()).hexdigest()[:10]
-    return f"local-{root.name}-{key}"
-
-
-def reference_discover(
-    roots=None, # Comma-separated or iterable reference roots
-    path: str | None=None, # Override reference home
-    ingest: bool=True, # Index each discovered repository
-    force: bool=False, # Re-ingest unchanged repositories
-):
-    "Register direct-child Git repositories from configured roots."
-    configured = _coerce_reference_roots(roots, path=path)
-    if roots is not None: _write_reference_roots(configured, path=path)
-    repos, skipped = _discovered_reference_paths(configured)
-    registered, ingested, failures = [], [], []
-    for root in repos:
-        name = _local_reference_name(root)
-        registered.append(reference_add(str(root), name=name, path=path)["repo"])
-        if not ingest: continue
-        try: ingested.extend(reference_ingest(name=name, path=path, force=force)["ingested"])
-        except Exception as exc: failures.append({"name": name, "path": str(root), "error": f"{type(exc).__name__}: {exc}"})
-    return {
-        "path": str(reference_home(path)), "roots": configured, "repos": [str(root) for root in repos],
-        "registered": registered, "ingested": ingested, "skipped": skipped, "failures": failures,
-    }
-
 # %% ../nbs/12_knowledge.ipynb #66bbfae7
 def _dependency_name(value):
     match = re.match(r"[A-Za-z0-9_.-]+", str(value).strip())
     return _norm_dist_name(match.group(0)) if match else ""
 
-
+# %% ../nbs/12_knowledge.ipynb #f50c1a15
 def _declared_dependencies(root):
     pyproject = Path(root) / "pyproject.toml"
     if tomllib is None or not pyproject.exists(): return set()
@@ -1680,7 +1437,7 @@ def _declared_dependencies(root):
     flattened = [item for value in values for item in (value if isinstance(value, list) else [value])]
     return {name for item in flattened if (name := _dependency_name(item))}
 
-
+# %% ../nbs/12_knowledge.ipynb #71ce370b
 def _workspace_python(root):
     root = Path(root)
     for rel in (".venv/bin/python", "venv/bin/python"):
@@ -1688,7 +1445,7 @@ def _workspace_python(root):
         if candidate.exists() and os.access(candidate, os.X_OK): return str(candidate), "workspace"
     return sys.executable, "server"
 
-
+# %% ../nbs/12_knowledge.ipynb #c114fa67
 def _workspace_distributions(python):
     source = r"""
 import importlib.metadata as metadata, json
@@ -1707,7 +1464,7 @@ print(json.dumps(rows))
     try: return json.loads(proc.stdout), None
     except ValueError as exc: return {}, f"{type(exc).__name__}: {exc}"
 
-
+# %% ../nbs/12_knowledge.ipynb #c354d53f
 def _workspace_context(current_repo="."):
     root = Path(current_repo or ".").expanduser().resolve()
     python, source = _workspace_python(root)
@@ -1717,7 +1474,7 @@ def _workspace_context(current_repo="."):
         "direct_dependencies": sorted(_declared_dependencies(root)), "installed": installed, "error": error,
     }
 
-
+# %% ../nbs/12_knowledge.ipynb #3b662085
 def _workspace_package_state(package, workspace):
     name = _norm_dist_name(package)
     installed = workspace["installed"].get(name)
@@ -1728,12 +1485,12 @@ def _workspace_package_state(package, workspace):
     elif installed: status = "installed_transitive"
     elif direct: status = "declared_missing"
     else: status = "new_dependency"
-    return {
-        "package": package, "status": status, "installed_version": installed.get("version") if installed else None,
-        "direct": direct, "direct_url": installed.get("direct_url") if installed else None,
-    }
+    return dict(
+        package=package, status=status, installed_version=installed.get("version") if installed else None,
+        direct=direct, direct_url=installed.get("direct_url") if installed else None,
+    )
 
-
+# %% ../nbs/12_knowledge.ipynb #75b66846
 def _query_workspace_package(query, package, workspace):
     if package: return package
     text = str(query).lower()
@@ -1741,11 +1498,11 @@ def _query_workspace_package(query, package, workspace):
         if name in text or name.replace("-", "_") in text: return name
     return None
 
-
+# %% ../nbs/12_knowledge.ipynb #0a97bbfc
 def _public_workspace_context(workspace):
     return {key: value for key, value in workspace.items() if key != "installed"}
 
-
+# %% ../nbs/12_knowledge.ipynb #64ad39f6
 def reference_propose(
     problem: str, # Observed problem in the library
     repo: str, # Indexed reference repository name
@@ -1773,13 +1530,13 @@ def reference_propose(
         f"Symbol: {symbol or (hit or {}).get('symbol') or 'not selected'}",
         "Suggested change: add a focused regression test, then make the smallest library fix.",
     ])
-    return {
-        "repo": repo, "source": registered.get("url"), "public": str(registered.get("url") or "").startswith(("http://", "https://", "pypi:")),
-        "hit": hit, "proposal": {"title": title, "body": body, "suggested_test_path": (hit or {}).get("path")},
-        "next_step": "Review the proposal. Forking, commits, and pull-request creation require explicit approval.",
-    }
+    return dict(
+        repo=repo, source=registered.get("url"), public=str(registered.get("url") or "").startswith(("http://", "https://", "pypi:")),
+        hit=hit, proposal=dict(title=title, body=body, suggested_test_path=(hit or {}).get("path")),
+        next_step="Review the proposal. Forking, commits, and pull-request creation require explicit approval.",
+    )
 
-
+# %% ../nbs/12_knowledge.ipynb #5dc69de1
 def reference_query(
     query: str, # Natural-language implementation query
     top_k: int=3, # Number of implementation hits to return
@@ -1819,3 +1576,249 @@ def reference_query(
     result["workspace"] = _public_workspace_context(workspace)
     result["library"] = library
     return result
+
+# %% ../nbs/12_knowledge.ipynb #fb15becf
+def _packaging_version(version):
+    return Version(str(version))
+
+# %% ../nbs/12_knowledge.ipynb #a3159af4
+def _packaging_specifier(spec):
+    return SpecifierSet(str(spec))
+
+# %% ../nbs/12_knowledge.ipynb #5a49510e
+def _package_repo_name(package):
+    return _norm_dist_name(package) or "package"
+
+# %% ../nbs/12_knowledge.ipynb #223b7a53
+def _row_package_key(row):
+    return _norm_dist_name(row.get("package") or row.get("repo"))
+
+# %% ../nbs/12_knowledge.ipynb #a4c25dcb
+def _normal_version_spec(spec):
+    text = str(spec or "").strip()
+    if not text or text.lower() in {"latest", "head", "main", "master"}: return None
+    if re.match(r"^(===|==|!=|<=|>=|<|>|~=)", text) or "," in text:
+        return text
+    return f"=={text}"
+
+# %% ../nbs/12_knowledge.ipynb #e2616930
+def _version_matches(version, spec=None):
+    normalized = _normal_version_spec(spec)
+    if not normalized: return True
+    try:
+        return _packaging_version(version) in _packaging_specifier(normalized)
+    except Exception:
+        return str(version) == str(spec).strip().lstrip("=")
+
+# %% ../nbs/12_knowledge.ipynb #2d3e3bcd
+def _version_sort_key(version):
+    text = str(version or "")
+    try:
+        return (1, _packaging_version(text))
+    except Exception:
+        return (0, text)
+
+# %% ../nbs/12_knowledge.ipynb #d341b279
+def _indexed_package_versions(package=None, path=None):
+    package_key = _norm_dist_name(package) if package else None
+    versions = set()
+    for row in _lance_rows(path, "items"):
+        if package_key and _row_package_key(row) != package_key: continue
+        if row.get("version"): versions.add(str(row["version"]))
+    return sorted(versions, key=_version_sort_key, reverse=True)
+
+# %% ../nbs/12_knowledge.ipynb #52e52c61
+def _matching_indexed_versions(package=None, version_spec=None, path=None):
+    versions = _indexed_package_versions(package, path=path)
+    return [version for version in versions if _version_matches(version, version_spec)]
+
+# %% ../nbs/12_knowledge.ipynb #e61364d9
+def _pypi_json(package):
+    url = _PYPI_JSON_URL.format(package=str(package).strip())
+    request = urllib.request.Request(url, headers={"User-Agent": "nbskill-reference/1"})
+    with urllib.request.urlopen(request, timeout=20) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+# %% ../nbs/12_knowledge.ipynb #6e621f58
+def _include_prerelease(version_spec=None):
+    return bool(re.search(r"[A-Za-z]", str(version_spec or "")))
+
+# %% ../nbs/12_knowledge.ipynb #c327297e
+def _pypi_release_versions(package, version_spec=None):
+    releases = (_pypi_json(package).get("releases") or {})
+    versions = []
+    for version, files in releases.items():
+        usable = [file for file in files or [] if not file.get("yanked")]
+        if not usable or not _version_matches(version, version_spec): continue
+        try:
+            parsed = _packaging_version(version)
+        except Exception:
+            continue
+        if parsed.is_prerelease and not _include_prerelease(version_spec): continue
+        versions.append(str(version))
+    return sorted(versions, key=_version_sort_key, reverse=True)
+
+# %% ../nbs/12_knowledge.ipynb #7b7d049a
+def _resolve_library_version(package, version_spec=None, path=None, allow_download=True):
+    if allow_download:
+        try:
+            versions = _pypi_release_versions(package, version_spec=version_spec)
+        except Exception as exc:
+            indexed = _matching_indexed_versions(package, version_spec=version_spec, path=path)
+            if indexed: return indexed[0]
+            raise RuntimeError(f"Could not resolve package {package!r} from PyPI: {type(exc).__name__}: {exc}") from exc
+        if versions: return versions[0]
+        raise ValueError(f"No PyPI release for {package!r} matches version spec {version_spec!r}")
+    indexed = _matching_indexed_versions(package, version_spec=version_spec, path=path)
+    if indexed: return indexed[0]
+    normalized = _normal_version_spec(version_spec)
+    if normalized and normalized.startswith("==") and "," not in normalized:
+        return normalized[2:].strip()
+    return None
+
+# %% ../nbs/12_knowledge.ipynb #df2c1778
+def _package_version_indexed(package, version, path=None):
+    if not package or not version: return False
+    package_key = _norm_dist_name(package)
+    version = str(version)
+    return any(_row_package_key(row) == package_key and str(row.get("version")) == version for row in _lance_rows(path, "items"))
+
+# %% ../nbs/12_knowledge.ipynb #a8365e56
+def _pypi_release_files(package, version):
+    releases = (_pypi_json(package).get("releases") or {})
+    return [file for file in releases.get(str(version), []) if not file.get("yanked")]
+
+# %% ../nbs/12_knowledge.ipynb #f254c5fb
+def _download_pypi_release(package, version, dest):
+    files = _pypi_release_files(package, version)
+    if not files: raise ValueError(f"No downloadable PyPI files found for {package!r} {version!r}")
+    chosen = next((file for file in files if file.get("packagetype") == "sdist"), files[0])
+    with tempfile.TemporaryDirectory(prefix="nbskill-pypi-download-") as archive_root:
+        archive_dir = Path(archive_root)
+        archive = archive_dir / (chosen.get("filename") or f"{package}-{version}.tar.gz")
+        request = urllib.request.Request(chosen["url"], headers={"User-Agent": "nbskill-reference/1"})
+        with urllib.request.urlopen(request, timeout=60) as response:
+            archive.write_bytes(response.read())
+        unpacked = archive_dir / "unpacked"
+        unpacked.mkdir(parents=True, exist_ok=True)
+        shutil.unpack_archive(str(archive), str(unpacked), format="zip" if chosen["filename"].endswith(".whl") else None)
+        roots = [child for child in unpacked.iterdir()]
+        source = roots[0] if len(roots) == 1 and roots[0].is_dir() else unpacked
+        if Path(dest).exists(): shutil.rmtree(dest)
+        shutil.copytree(source, dest)
+    return str(version)
+
+# %% ../nbs/12_knowledge.ipynb #383448cf
+def _ensure_library_version_indexed(package, version_spec=None, path=None, allow_download=True):
+    if not package: return None
+    resolved = _resolve_library_version(package, version_spec=version_spec, path=path, allow_download=allow_download)
+    if not resolved:
+        return dict(package=package, version=None, downloaded=False, indexed=False)
+    if _package_version_indexed(package, resolved, path=path):
+        return dict(package=package, version=resolved, downloaded=False, indexed=True)
+    if not allow_download:
+        return dict(package=package, version=resolved, downloaded=False, indexed=False)
+    data = _load_reference_registry(path)
+    repo_name = _package_repo_name(package)
+    now = time.time()
+    existing = data["repos"].get(repo_name, {})
+    data["repos"][repo_name] = dict(
+        existing, name=repo_name, url=f"pypi:{package}", source_kind="pypi",
+        version=resolved, package=package, updated_ts=now,
+        created_ts=existing.get("created_ts", now),
+    )
+    _write_reference_registry(data, path)
+    report = reference_ingest(name=repo_name, path=path, force=False)
+    return dict(package=package, version=resolved, downloaded=True, indexed=True, ingest=report.get("ingested", []))
+
+# %% ../nbs/12_knowledge.ipynb #f17a428b
+def _reference_versions_to_prune(package, path=None, keep=_REFERENCE_MAX_VERSIONS_PER_PACKAGE):
+    versions = _indexed_package_versions(package, path=path)
+    return versions[max(0, int(keep)):]
+
+# %% ../nbs/12_knowledge.ipynb #4658b926
+def _prune_reference_versions(package, path=None, keep=_REFERENCE_MAX_VERSIONS_PER_PACKAGE):
+    drop = set(_reference_versions_to_prune(package, path=path, keep=keep))
+    if not drop: return {"removed_versions": [], "removed_items": 0}
+    package_key = _norm_dist_name(package)
+    old_items = _lance_rows(path, "items")
+    items = [row for row in old_items if not (_row_package_key(row) == package_key and str(row.get("version")) in drop)]
+    kept_ids = {row.get("item_id") for row in items if row.get("item_id")}
+    edges = [row for row in _lance_rows(path, "edges") if row.get("caller_id") in kept_ids and row.get("callee_id") in kept_ids]
+    _write_lance_table(path, "items", items)
+    _write_lance_table(path, "edges", edges)
+    return {"removed_versions": sorted(drop, key=_version_sort_key, reverse=True), "removed_items": len(old_items) - len(items)}
+
+# %% ../nbs/12_knowledge.ipynb #459fe5ee
+_REFERENCE_ROOTS_FILE = "roots.json"
+
+# %% ../nbs/12_knowledge.ipynb #15b19c3d
+def _reference_roots_path(path=None):
+    return reference_home(path) / _REFERENCE_ROOTS_FILE
+
+# %% ../nbs/12_knowledge.ipynb #84a1d76f
+def _read_reference_roots(path=None):
+    roots_path = _reference_roots_path(path)
+    if not roots_path.exists(): return []
+    try: return json.loads(roots_path.read_text(encoding="utf-8")).get("roots", [])
+    except (OSError, ValueError): return []
+
+# %% ../nbs/12_knowledge.ipynb #90d97e4f
+def _coerce_reference_roots(roots=None, path=None):
+    values = _read_reference_roots(path) if roots is None else roots
+    if isinstance(values, str): values = values.split(",")
+    values = values or [Path.home() / "projects"]
+    return sorted({str(Path(value).expanduser().resolve()) for value in values if str(value).strip()})
+
+# %% ../nbs/12_knowledge.ipynb #2f38bded
+def _write_reference_roots(roots, path=None):
+    roots_path = _reference_roots_path(path)
+    roots_path.parent.mkdir(parents=True, exist_ok=True)
+    roots_path.write_text(json.dumps({"roots": roots}, indent=2) + "\n", encoding="utf-8")
+    return roots_path
+
+# %% ../nbs/12_knowledge.ipynb #49d5a5cf
+def _is_reference_git_repo(root):
+    return root.is_dir() and not root.is_symlink() and (root / ".git").exists()
+
+# %% ../nbs/12_knowledge.ipynb #3155fce4
+def _discovered_reference_paths(roots):
+    repos, skipped = [], []
+    for root_text in roots:
+        root = Path(root_text)
+        if _is_reference_git_repo(root): repos.append(root)
+        elif not root.is_dir():
+            skipped.append({"path": str(root), "reason": "missing"})
+            continue
+        for child in sorted(root.iterdir()):
+            if child.is_symlink() or not child.is_dir(): continue
+            if _is_reference_git_repo(child): repos.append(child)
+    return sorted(set(repos)), skipped
+
+# %% ../nbs/12_knowledge.ipynb #9ae7d824
+def _local_reference_name(root):
+    key = hashlib.sha1(str(root).encode()).hexdigest()[:10]
+    return f"local-{root.name}-{key}"
+
+# %% ../nbs/12_knowledge.ipynb #e195ac31
+def reference_discover(
+    roots=None, # Comma-separated or iterable reference roots
+    path: str | None=None, # Override reference home
+    ingest: bool=True, # Index each discovered repository
+    force: bool=False, # Re-ingest unchanged repositories
+):
+    "Register direct-child Git repositories from configured roots."
+    configured = _coerce_reference_roots(roots, path=path)
+    if roots is not None: _write_reference_roots(configured, path=path)
+    repos, skipped = _discovered_reference_paths(configured)
+    registered, ingested, failures = [], [], []
+    for root in repos:
+        name = _local_reference_name(root)
+        registered.append(reference_add(str(root), name=name, path=path)["repo"])
+        if not ingest: continue
+        try: ingested.extend(reference_ingest(name=name, path=path, force=force)["ingested"])
+        except Exception as exc: failures.append(dict(name=name, path=str(root), error=f"{type(exc).__name__}: {exc}"))
+    return dict(
+        path=str(reference_home(path)), roots=configured, repos=[str(root) for root in repos],
+        registered=registered, ingested=ingested, skipped=skipped, failures=failures,
+    )

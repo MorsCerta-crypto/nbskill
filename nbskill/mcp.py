@@ -7,74 +7,39 @@ __all__ = ['mcp', 'as_text', 'capture_call', 'capture_notebook_call', 'mcp_log_r
            'create_mcp', 'main']
 
 # %% ../nbs/07_mcp.ipynb #mcpimports1
-import asyncio
-import json,multiprocessing,os,queue,signal
-import re
-import shutil
-import subprocess
-import sys
-import threading
-import time
-import traceback
+import asyncio,json,multiprocessing,os,queue,signal,re,shutil,subprocess,sys,threading,time,traceback
 from contextlib import redirect_stdout, redirect_stderr
 from importlib.metadata import PackageNotFoundError, version
 from io import StringIO
 from pathlib import Path
 from urllib.parse import unquote, urlparse
-
-# %% ../nbs/07_mcp.ipynb #mcpimports2
 from fastcore.nbio import read_nb as _read_raw_nb
 from fastcore.nbio import write_nb as _write_raw_nb
 from fastmcp import Context, FastMCP
 from fastmcp.server.middleware import Middleware
 from fastmcp.tools import ToolResult
 from mcp.types import TextContent
-
-# %% ../nbs/07_mcp.ipynb #429133a1
-if __package__ in (None, ""):
-    __package__ = "nbskill"
-
-# %% ../nbs/07_mcp.ipynb #mcpimports3
 from nbdev.doclinks import nbdev_export as _run_nb_export
+
 from .convert import convert
-from .edit_interactive import execute_plan
-from .edit_interactive import execute_project_plan
-from .edit_interactive import plan_result_text
+from .edit_interactive import execute_plan,execute_project_plan,plan_result_text
 from .execute import exec_nb
 from .workbench import agent_workbench_result
-from .foundation import bootstrap_nbskill_project, empty_failure_map, failure_map_path, load_failure_map
-from .foundation import cell_source, exported_py_path, generated_owner, git_root, git_status_paths
-from .foundation import notebook_paths, path_candidates, source_hash, stamp_export_metadata
-
-# %% ../nbs/07_mcp.ipynb #mcpimports4
-from .graph import notebook_knowledge_graph_data
-from .graph import notebook_order_problems
-from .graph import private_symbol_report
-from .knowledge import reference_add
-from .knowledge import reference_discover
-from .knowledge import reference_ingest
-from .knowledge import reference_list
-from .knowledge import reference_propose
-from .knowledge import reference_query
+from .foundation import (bootstrap_nbskill_project, empty_failure_map, failure_map_path, load_failure_map,cell_source, 
+    exported_py_path, generated_owner, git_root, git_status_paths,notebook_paths, path_candidates, source_hash, stamp_export_metadata)
+from .graph import notebook_knowledge_graph_data,notebook_order_problems,private_symbol_report
+from .knowledge import *
 from .parallel import notebook_locks
 from .read import context, filter_context
+from .review import *
+from .write import should_run_cell_feedback,source_lines_cells
 
-# %% ../nbs/07_mcp.ipynb #mcpimports5
-from .review import reset_global_usage_summary
-from .review import notebook_size_problems
-from .review import notebook_validation_problems
-from .review import public_function_literacy_problems
-from .review import run_style_check
-from .review import style_check
-from .review import style_report
-from .review import diff_nb
-from .review import visible_text_inventory
-from .review import notebook_autofix
-from .write import should_run_cell_feedback
-from .write import source_lines_cells
+# %% ../nbs/07_mcp.ipynb #429133a1
+if __package__ in (None, ""): __package__ = "nbskill"
 
 # %% ../nbs/07_mcp.ipynb #eea5a32c
 def as_text(value):
+    "Return an empty string for `None`, otherwise convert `value` to text."
     return "" if value is None else str(value)
 
 # %% ../nbs/07_mcp.ipynb #280b52f0
@@ -97,13 +62,13 @@ def _package_version(name="nbskill"):
 
 # %% ../nbs/07_mcp.ipynb #c9b5a958
 def capture_call(func, **kwargs):
+    "Run `func` and return its captured visible output."
     out, err = StringIO(), StringIO()
     with _CAPTURE_LOCK:
         original_stdout, original_stderr = sys.stdout, sys.stderr
         try:
             try:
-                with redirect_stdout(out), redirect_stderr(err):
-                    result = func(**kwargs)
+                with redirect_stdout(out), redirect_stderr(err): result = func(**kwargs)
             except SystemExit as exc:
                 chunks = []
                 if out.getvalue(): chunks.append(out.getvalue().rstrip())
@@ -134,6 +99,13 @@ def _mcp_find_cell(path, cell_id):
 # %% ../nbs/07_mcp.ipynb #edb5273c
 def _mcp_cell_source_hash(path, cell_id):
     return source_hash(cell_source(_mcp_find_cell(path, cell_id)))
+
+# %% ../nbs/07_mcp.ipynb #80cb7a2c
+def _warning(code, message, next_action=None, **extra):
+    item = {"code": code, "message": message}
+    if next_action: item["next_action"] = next_action
+    item.update({key: value for key, value in extra.items() if value is not None})
+    return item
 
 # %% ../nbs/07_mcp.ipynb #e13bac02
 def _mcp_expected_hash_warning(path, cell_id, expected_hash):
@@ -350,14 +322,14 @@ def _mcp_smoke_preview(text, limit=1200):
     omitted = len(text) - limit
     return f"{text[:limit].rstrip()}\n... truncated {omitted} chars ..."
 
-
+# %% ../nbs/07_mcp.ipynb #8f51269d
 def _mcp_smoke_output_lines(label, text):
     preview = _mcp_smoke_preview(text)
     if not preview: return []
     lines = preview.splitlines()
     return [f"  {label}: {lines[0]}", *[f"  {line}" for line in lines[1:]]]
 
-
+# %% ../nbs/07_mcp.ipynb #f4735113
 def _run_mcp_smoke_snippets(path, snippets, timeout=10):
     snippets = [str(snippet).strip() for snippet in (snippets or []) if str(snippet).strip()]
     if not snippets: return "", []
@@ -389,7 +361,7 @@ def _run_mcp_smoke_snippets(path, snippets, timeout=10):
             })
     return "\n".join(lines), warnings
 
-
+# %% ../nbs/07_mcp.ipynb #292cec4a
 def _append_mcp_feedback(message, path, cell_ids, auto_feedback=True, feedback_timeout=10, feedback_safe=True, detail="summary", warnings=None):
     feedback = _mcp_feedback_output(path, cell_ids, auto_feedback, feedback_timeout, feedback_safe, detail, warnings)
     return "\n\n".join(chunk for chunk in [message.rstrip(), feedback] if chunk)
@@ -403,17 +375,11 @@ def _json_preview(value, limit=1200):
 # %% ../nbs/07_mcp.ipynb #0b415b43
 def _text_preview(value, limit=12000):
     text = as_text(value)
-    if limit is None or len(text) <= limit:
-        return {"text": text, "truncated": False, "chars": len(text), "omitted_chars": 0}
+    if limit is None or len(text) <= limit: return dict(text=text, truncated=False, chars=len(text), omitted_chars=0)
     omitted = len(text) - limit
-    return {
-        "text": f"{text[:limit].rstrip()}\n... truncated {omitted} chars ...",
-        "truncated": True,
-        "chars": len(text),
-        "omitted_chars": omitted,
-    }
+    return dict(text=f"{text[:limit].rstrip()}\n... truncated {omitted} chars ...", truncated=True, chars=len(text), omitted_chars=omitted)
 
-
+# %% ../nbs/07_mcp.ipynb #b33db237
 def _bounded_structured_value(value, text_limit=12000, list_limit=200, depth=0, max_depth=8):
     if depth >= max_depth: return "<nested data omitted>"
     if isinstance(value, str): return _text_preview(value, limit=text_limit)["text"]
@@ -433,7 +399,7 @@ def _bounded_structured_value(value, text_limit=12000, list_limit=200, depth=0, 
     if isinstance(value, Path): return str(value)
     return value
 
-
+# %% ../nbs/07_mcp.ipynb #b12be5da
 def _mcp_clamp_int(value, default, minimum, maximum, name):
     if value is None: value = default
     try:
@@ -444,7 +410,7 @@ def _mcp_clamp_int(value, default, minimum, maximum, name):
         raise ValueError(f"{name} must be >= {minimum}")
     return min(value, maximum)
 
-
+# %% ../nbs/07_mcp.ipynb #256120f7
 def _mcp_clamp_float(value, default, minimum, maximum, name):
     if value is None: value = default
     try:
@@ -530,7 +496,7 @@ def _mcp_text_content_chars(content):
         if isinstance(text, str): total += len(text)
     return total
 
-
+# %% ../nbs/07_mcp.ipynb #e5f1c5c8
 def _mcp_result_log_fields(result):
     fields = {}
     structured = getattr(result, "structured_content", None)
@@ -607,26 +573,26 @@ class _NbskillMCPLogMiddleware(Middleware):
 def _mcp_bump(mapping, key, amount=1):
     mapping[key] = mapping.get(key, 0) + amount
 
-
+# %% ../nbs/07_mcp.ipynb #2f16f5d2
 def _mcp_problem_limit(limit):
     if isinstance(limit, str) and limit.strip().lower() in {"0", "all", "none"}: return None
     value = 20 if limit is None else int(limit)
     return None if value <= 0 else max(1, value)
 
-
+# %% ../nbs/07_mcp.ipynb #900efdc1
 def _mcp_top_counts(counts, limit=12):
     items = sorted(counts.items(), key=lambda item: (-item[1], str(item[0])))
     if limit is not None: items = items[:limit]
     return {str(key): value for key, value in items if key not in (None, "")}
 
-
+# %% ../nbs/07_mcp.ipynb #5fe80fdb
 def _mcp_log_report_path(path=None):
     if path is None: return _mcp_log_path()
     raw = str(path)
     if raw.strip().lower() in _MCP_LOG_DISABLED: return None
     return Path(raw).expanduser()
 
-
+# %% ../nbs/07_mcp.ipynb #62513b37
 def _mcp_log_read_rows(path):
     rows, problems, line_count = [], [], 0
     if path is None or not Path(path).exists(): return rows, problems, line_count
@@ -645,7 +611,7 @@ def _mcp_log_read_rows(path):
             rows.append(row)
     return rows, problems, line_count
 
-
+# %% ../nbs/07_mcp.ipynb #4c60ac05
 def _mcp_log_window(rows, bad_json, until_line=None, until_ts=None):
     if until_line is not None:
         until_line = int(until_line)
@@ -656,7 +622,7 @@ def _mcp_log_window(rows, bad_json, until_line=None, until_ts=None):
         rows = [row for row in rows if (row.get("ts") or "") <= until_ts]
     return rows, bad_json
 
-
+# %% ../nbs/07_mcp.ipynb #8db4f13c
 def _mcp_percentile(values, pct):
     values = sorted(value for value in values if value is not None)
     if not values: return None
@@ -666,7 +632,7 @@ def _mcp_percentile(values, pct):
     upper = min(lower + 1, len(values) - 1)
     return round(values[lower] + (values[upper] - values[lower]) * (rank - lower), 1)
 
-
+# %% ../nbs/07_mcp.ipynb #055e2861
 def _mcp_log_target(row):
     arguments = row.get("arguments")
     if not isinstance(arguments, dict): return None
@@ -674,7 +640,7 @@ def _mcp_log_target(row):
         if arguments.get(key) is not None: return arguments.get(key)
     return None
 
-
+# %% ../nbs/07_mcp.ipynb #bc12df4b
 def _mcp_normalize_error(error):
     text = " ".join(as_text(error or "").split())
     text = re.sub(r"line \d+", "line N", text)
@@ -683,7 +649,7 @@ def _mcp_normalize_error(error):
     text = re.sub(r"scope '[^']+'", "scope 'X'", text)
     return text if len(text) <= 160 else text[:157].rstrip() + "..."
 
-
+# %% ../nbs/07_mcp.ipynb #7c725ca1
 def _mcp_problem_class(problem):
     kind = problem.get("kind")
     text = as_text(problem.get("error") or "").lower()
@@ -703,7 +669,7 @@ def _mcp_problem_class(problem):
     if kind == "failed_result": return "failed_result"
     return "unknown"
 
-
+# %% ../nbs/07_mcp.ipynb #f373dbc5
 def _mcp_record_problem(problems, counts, limit, kind, **data):
     _mcp_bump(counts, kind)
     problem = {"kind": kind}
@@ -711,7 +677,7 @@ def _mcp_record_problem(problems, counts, limit, kind, **data):
     problem["classification"] = problem.get("classification") or _mcp_problem_class(problem)
     if limit is None or len(problems) < limit: problems.append(problem)
 
-
+# %% ../nbs/07_mcp.ipynb #b40e7b15
 def _mcp_row_problem(row, kind, **extra):
     problem = {
         "event": row.get("event"),
@@ -732,7 +698,7 @@ def _mcp_row_problem(row, kind, **extra):
     problem.update(extra)
     return {key: value for key, value in problem.items() if value is not None}
 
-
+# %% ../nbs/07_mcp.ipynb #969a6a0b
 def _mcp_log_call_record(start, end, event):
     status = end.get("result_status")
     if event == "tool_error" and status is None: status = "transport_error"
@@ -761,7 +727,7 @@ def _mcp_log_call_record(start, end, event):
         "error": end.get("error"),
     }
 
-
+# %% ../nbs/07_mcp.ipynb #cc08ca94
 def _mcp_pair_tool_calls(rows, problems, counts, limit):
     calls, starts_by_id, legacy_starts = [], {}, {}
     for row in rows:
@@ -791,7 +757,7 @@ def _mcp_pair_tool_calls(rows, problems, counts, limit):
             _mcp_record_problem(problems, counts, limit, "tool_start_without_end", **_mcp_row_problem(start, "tool_start_without_end"))
     return calls
 
-
+# %% ../nbs/07_mcp.ipynb #128c2a74
 def _mcp_pair_protocol_events(rows, start_event, end_events, label, problems, counts, limit):
     starts = {}
     for row in rows:
@@ -809,7 +775,7 @@ def _mcp_pair_protocol_events(rows, start_event, end_events, label, problems, co
         for start in stack:
             _mcp_record_problem(problems, counts, limit, f"{label}_start_without_end", **_mcp_row_problem(start, f"{label}_start_without_end"))
 
-
+# %% ../nbs/07_mcp.ipynb #b8f2c8fe
 def _mcp_tool_metrics(calls):
     tools = {}
     for call in calls:
@@ -850,14 +816,14 @@ def _mcp_tool_metrics(calls):
         result[name] = data
     return result
 
-
+# %% ../nbs/07_mcp.ipynb #929b9c88
 def _mcp_edit_process_starts(rows):
     return {
         (row.get("pid"), row.get("child_pid")): row
         for row in rows if row.get("event") == "edit_process_start"
     }
 
-
+# %% ../nbs/07_mcp.ipynb #fbe59a95
 def _mcp_edit_timeout_problem(row, starts):
     start = starts.get((row.get("pid"), row.get("child_pid"))) or {}
     return _mcp_row_problem(
@@ -865,7 +831,7 @@ def _mcp_edit_timeout_problem(row, starts):
         timeout=start.get("timeout"), child_pid=row.get("child_pid"),
     )
 
-
+# %% ../nbs/07_mcp.ipynb #34e49791
 def _mcp_problem_groups(problems, limit=12):
     groups = {"by_kind": {}, "by_tool": {}, "by_classification": {}, "by_target": {}, "by_error": {}}
     for problem in problems:
@@ -876,7 +842,7 @@ def _mcp_problem_groups(problems, limit=12):
         if problem.get("error"): _mcp_bump(groups["by_error"], _mcp_normalize_error(problem.get("error")))
     return {name: _mcp_top_counts(counts, limit=limit) for name, counts in groups.items()}
 
-
+# %% ../nbs/07_mcp.ipynb #4b148c85
 def mcp_log_report(path=None, limit=20, until_line=None, until_ts=None):
     """Summarize nbskill MCP JSONL logs with metrics and actionable problems."""
     problem_limit = _mcp_problem_limit(limit)
@@ -969,7 +935,7 @@ def mcp_log_report(path=None, limit=20, until_line=None, until_ts=None):
 def _mcp_format_metric(value):
     return "n/a" if value is None else str(value)
 
-
+# %% ../nbs/07_mcp.ipynb #891b8c73
 def _mcp_problem_line(problem):
     parts = [problem.get("kind", "problem")]
     for key in (
@@ -986,7 +952,7 @@ def _mcp_problem_line(problem):
     if error: parts.append(f"error={error}")
     return "- " + " ".join(str(part) for part in parts)
 
-
+# %% ../nbs/07_mcp.ipynb #0711c95a
 def _mcp_tool_metric_line(name, data):
     return (
         f"- {name} calls={data.get('calls', 0)} errors={data.get('transport_errors', 0)} "
@@ -995,13 +961,13 @@ def _mcp_tool_metric_line(name, data):
         f"max_output_chars={_mcp_format_metric(data.get('max_output_chars'))}"
     )
 
-
+# %% ../nbs/07_mcp.ipynb #52f4d4b0
 def _mcp_group_line(name, values, limit):
     if not values: return f"{name} none"
     items = list(values.items()) if limit is None else list(values.items())[:limit]
     return f"{name} " + " | ".join(f"{key}={value}" for key, value in items)
 
-
+# %% ../nbs/07_mcp.ipynb #1c39fb04
 def format_mcp_log_report(report, limit=20, problems_only=False):
     """Render `mcp_log_report` as a concise terminal-friendly summary."""
     group_limit = 12
@@ -1049,13 +1015,6 @@ def format_mcp_log_report(report, limit=20, problems_only=False):
     lines.extend(_mcp_problem_line(problem) for problem in shown) if shown else lines.append("- none")
     return "\n".join(lines)
 
-# %% ../nbs/07_mcp.ipynb #59c01424
-def _warning(code, message, next_action=None, **extra):
-    item = {"code": code, "message": message}
-    if next_action: item["next_action"] = next_action
-    item.update({key: value for key, value in extra.items() if value is not None})
-    return item
-
 # %% ../nbs/07_mcp.ipynb #268cfbcf
 def _path_without_cwd_prefix(path):
     return path_candidates(path)[-1]
@@ -1088,7 +1047,7 @@ def _file_uri_path(uri):
     netloc = f"//{parsed.netloc}" if parsed.netloc else ""
     return Path(unquote(f"{netloc}{parsed.path}"))
 
-
+# %% ../nbs/07_mcp.ipynb #b1ebe3cf
 async def _mcp_client_roots(ctx=None):
     if ctx is None: return []
     try: roots = await ctx.list_roots()
@@ -1099,7 +1058,7 @@ async def _mcp_client_roots(ctx=None):
         if path is not None: paths.append(path)
     return paths
 
-
+# %% ../nbs/07_mcp.ipynb #a2d90521
 def _mcp_bootstrap_workspace(root):
     if root is None: return None
     try: key = str(Path(root).resolve())
@@ -1113,7 +1072,7 @@ def _mcp_bootstrap_workspace(root):
         _mcp_log_exception("project_bootstrap_error", exc, root=key)
         return None
 
-
+# %% ../nbs/07_mcp.ipynb #d3687edb
 async def _mcp_workspace_root(ctx=None):
     for path in await _mcp_client_roots(ctx):
         try:
@@ -1125,19 +1084,19 @@ async def _mcp_workspace_root(ctx=None):
             continue
     return None
 
-
+# %% ../nbs/07_mcp.ipynb #4b92336b
 def _mcp_workspace_path(path, root):
     if path in (None, ""): return path
     raw = Path(str(path)).expanduser()
     if raw.is_absolute() or root is None: return str(raw)
     return str((Path(root) / raw).resolve())
 
-
+# %% ../nbs/07_mcp.ipynb #159bd429
 def _mcp_workspace_paths(paths, root):
     if paths in (None, ""): return paths
     return ",".join(_mcp_workspace_path(item.strip(), root) for item in str(paths).split(",") if item.strip())
 
-
+# %% ../nbs/07_mcp.ipynb #a9630721
 def _mcp_workspace_edit_paths(edits, root):
     resolved = []
     for edit in edits:
@@ -1146,7 +1105,7 @@ def _mcp_workspace_edit_paths(edits, root):
         resolved.append(item)
     return resolved
 
-
+# %% ../nbs/07_mcp.ipynb #181376db
 def _mcp_workspace_call_args(arguments, root, *keys):
     data = dict(arguments)
     for key in keys:
@@ -1527,12 +1486,12 @@ def _first_nonblank(text):
         if line.strip(): return line.strip()
     return ""
 
-
+# %% ../nbs/07_mcp.ipynb #b43ff5cf
 def _short_item(text, limit=120):
     text = " ".join(_first_nonblank(text).split())
     return text if len(text) <= limit else text[:limit - 3].rstrip() + "..."
 
-
+# %% ../nbs/07_mcp.ipynb #b868ef2f
 def _definition_items(text, limit=120):
     items = []
     for line in as_text(text).splitlines():
@@ -1541,7 +1500,7 @@ def _definition_items(text, limit=120):
         items.append(stripped if len(stripped) <= limit else stripped[:limit - 3].rstrip() + "...")
     return items
 
-
+# %% ../nbs/07_mcp.ipynb #3624d1f3
 def _warning_summary_lines(warnings, limit=5):
     lines = []
     for item in (warnings or [])[:limit]:
@@ -1551,7 +1510,7 @@ def _warning_summary_lines(warnings, limit=5):
         lines.append(f"- {message}{suffix}")
     return lines
 
-
+# %% ../nbs/07_mcp.ipynb #d2e86f8e
 def _diagnostic_line(item):
     path = item.get("path") or ""
     cell = f" id={item.get('cell_id')}" if item.get("cell_id") else ""
@@ -1560,12 +1519,12 @@ def _diagnostic_line(item):
     where = f"{path}{cell}".strip()
     return f"- {code}: {where} {detail}".rstrip()
 
-
+# %% ../nbs/07_mcp.ipynb #797d5198
 def _top_code_counts(chart, limit=5):
     by_code = (chart or {}).get("by_code", {})
     return ", ".join(f"{code}={count}" for code, count in list(by_code.items())[:limit])
 
-
+# %% ../nbs/07_mcp.ipynb #7804aa44
 def _context_result_line(item):
     target = item.get("target") or item.get("symbol") or item.get("path") or ""
     if item.get("ok") is False:
@@ -1578,7 +1537,7 @@ def _context_result_line(item):
     symbol_text = f" symbol={symbol}" if symbol else ""
     return f"- {target}: {resolved} {path}{symbol_text}".rstrip()
 
-
+# %% ../nbs/07_mcp.ipynb #e32da048
 def _context_summary_lines(data):
     data = data or {}
     if data.get("kind") == "context_batch":
@@ -1611,7 +1570,7 @@ def _context_summary_lines(data):
         lines.append(f"- {label}: {_short_item(cell_item.get('source', ''))}")
     return lines
 
-
+# %% ../nbs/07_mcp.ipynb #575669f1
 def _compact_context_payload(data):
     if not isinstance(data, dict): return data
     data = dict(data)
@@ -1625,14 +1584,14 @@ def _compact_context_payload(data):
         data["results"] = [_compact_context_payload(item) for item in data["results"]]
     return data
 
-
+# %% ../nbs/07_mcp.ipynb #fc94253d
 def _filter_context_match_summary(item):
     label = f"{item.get('path')} id={item.get('cell_id')} idx={item.get('cell_idx')}"
     definitions = _definition_items(item.get("source", ""))
     if not definitions: return [f"- {label}: {_short_item(item.get('source', ''))}"]
     return [f"- {label}:", *[f"  {line}" for line in definitions]]
 
-
+# %% ../nbs/07_mcp.ipynb #4eb6e246
 def _filter_context_summary_lines(data):
     data = data or {}
     matches = data.get("matches", [])
@@ -1640,7 +1599,7 @@ def _filter_context_summary_lines(data):
     for item in matches[:5]: lines.extend(_filter_context_match_summary(item))
     return lines
 
-
+# %% ../nbs/07_mcp.ipynb #68b427a5
 def _doctor_summary_lines(report):
     report = report or {}
     errors, warnings = report.get("errors", []), report.get("warnings", [])
@@ -1649,7 +1608,7 @@ def _doctor_summary_lines(report):
     lines.extend(_diagnostic_line(item) for item in issues[:5])
     return lines
 
-
+# %% ../nbs/07_mcp.ipynb #f6136874
 def _style_summary_lines(report):
     report = report or {}
     summary = report.get("summary", {})
@@ -1669,7 +1628,7 @@ def _style_summary_lines(report):
     lines.extend(_diagnostic_line(item) for item in diagnostics[:5])
     return lines
 
-
+# %% ../nbs/07_mcp.ipynb #aa9315b9
 def _diff_summary_lines(text):
     text = as_text(text)
     cells = re.findall(r"--- (?:code|public-ui) cell ([^\s-]+) ---", text)
@@ -1681,7 +1640,7 @@ def _diff_summary_lines(text):
     if not cells and first: lines.append(_short_item(first))
     return lines
 
-
+# %% ../nbs/07_mcp.ipynb #8adce5b0
 def _visible_text_summary_lines(records):
     records = records or []
     lines = [f"records={len(records)}"]
@@ -1693,7 +1652,7 @@ def _visible_text_summary_lines(records):
         lines.append(f"- {cell}:{line} {call}: {text}".rstrip())
     return lines
 
-
+# %% ../nbs/07_mcp.ipynb #33c7c320
 def _reference_summary_lines(data):
     data = data or {}
     hits = data.get("hits", [])
@@ -1706,7 +1665,7 @@ def _reference_summary_lines(data):
         lines.append(f"- {label or hit.get('path')}: {dep}{score_text}")
     return lines
 
-
+# %% ../nbs/07_mcp.ipynb #f6c3558f
 def _edit_summary_lines(data):
     data = data or {}
     diffs = [item for item in data.get("diffs", []) if item.get("changed")]
@@ -1731,7 +1690,7 @@ def _edit_summary_lines(data):
     if data.get("export_confirmation"): lines.append(data["export_confirmation"])
     return lines
 
-
+# %% ../nbs/07_mcp.ipynb #abeae854
 def _exec_summary_lines(text):
     text = as_text(text)
     outputs = re.findall(r"--- output id=([^\s]+) ---", text)
@@ -1741,7 +1700,7 @@ def _exec_summary_lines(text):
     if first: lines.append(_short_item(first))
     return lines
 
-
+# %% ../nbs/07_mcp.ipynb #e6296678
 def _workbench_summary_lines(data):
     data = data or {}
     contract = data.get("contract") or {}
@@ -1752,7 +1711,7 @@ def _workbench_summary_lines(data):
     if data.get("expected_gates"): lines.append("gates=" + ", ".join(data["expected_gates"].get("hard", [])[:5]))
     return [line for line in lines if line and not line.endswith("=")]
 
-
+# %% ../nbs/07_mcp.ipynb #77151bd5
 def _tool_summary_lines(tool, arguments, full_text, preview, status, structured, warnings):
     lines = _brief_call(tool, arguments or {}, preview, status=status)
     if tool == "context": lines.extend(_context_summary_lines(structured.get("context")))
@@ -1773,7 +1732,7 @@ def _tool_summary_lines(tool, arguments, full_text, preview, status, structured,
         lines.extend(_warning_summary_lines(warnings))
     return lines
 
-
+# %% ../nbs/07_mcp.ipynb #67affd82
 def mcp_tool_result(tool, arguments, full_output, max_output_chars=12000, detail="summary", warnings=None, hints=None, status="completed", **structured):
     "Return concise visible MCP text plus structured data for clients that inspect it."
     detail = detail or "summary"
@@ -1812,7 +1771,7 @@ def mcp_tool_result(tool, arguments, full_output, max_output_chars=12000, detail
         data["result_summary" if key == "summary" else key] = _bounded_structured_value(value, text_limit=structured_text_limit)
     return ToolResult(content=[TextContent(type="text", text=summary)], structured_content=data)
 
-
+# %% ../nbs/07_mcp.ipynb #d60673ed
 def _mcp_tool_error_result(tool, arguments, exc, max_output_chars=12000, detail="summary", **structured):
     "Return an MCP result for a tool failure without raising through the transport."
     message = f"{tool} failed: {type(exc).__name__}: {exc}"

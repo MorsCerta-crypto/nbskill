@@ -38,14 +38,14 @@ def _ensure_safepyrun_fastcore_param():
     def Param(desc="", typ=str, **kwargs): return Annotated[typ, desc, kwargs]
     fastcore_script.Param = Param
 
-
+# %% ../nbs/03_execute.ipynb #415e6fad
 def _safepyrun_imports():
     _ensure_safepyrun_fastcore_param()
     from safepyrun import RunPython
     from safepyrun.core import allow
     return RunPython, allow
 
-
+# %% ../nbs/03_execute.ipynb #5064da26
 def _safepyrun_allow(*args, **kwargs):
     _, allow = _safepyrun_imports()
     return allow(*args, **kwargs)
@@ -94,7 +94,7 @@ _EXECUTION_POLICY_VERSION = 1
 def _execution_policy_path(path):
     return _project_root_for_notebook(path) / _EXECUTION_POLICY_FILE
 
-
+# %% ../nbs/03_execute.ipynb #217a896b
 def _empty_execution_policy():
     return {"version": _EXECUTION_POLICY_VERSION, "functions": {}}
 
@@ -115,7 +115,7 @@ def _read_execution_policy(path):
     policy["_path"] = str(policy_path)
     return policy
 
-
+# %% ../nbs/03_execute.ipynb #3172e5ae
 def _write_execution_policy(policy):
     policy_path = policy.get("_path")
     if not policy_path: raise ValueError("execution policy is missing _path")
@@ -156,7 +156,7 @@ def _execution_import_aliases_from_tree(tree):
                 aliases[item.asname or item.name] = f"{node.module}.{item.name}"
     return aliases
 
-
+# %% ../nbs/03_execute.ipynb #ecdbbc9f
 def _execution_policy_import_aliases(nb):
     aliases = {}
     for cell in nb.cells:
@@ -175,7 +175,7 @@ def _call_name(node, aliases=None):
         return f"{base}.{node.attr}" if base else node.attr
     return ""
 
-
+# %% ../nbs/03_execute.ipynb #46861d2b
 def _open_write_mode(call):
     mode = "r"
     if len(call.args) > 1 and isinstance(call.args[1], ast.Constant) and isinstance(call.args[1].value, str):
@@ -198,7 +198,7 @@ def _external_effect_reasons(call, aliases=None):
         reasons.append(f"call:{name or attr}")
     return reasons
 
-
+# %% ../nbs/03_execute.ipynb #861b54f2
 def _node_external_effect_reasons(node, aliases=None):
     reasons = []
     for child in ast.walk(node):
@@ -215,7 +215,7 @@ def _function_runtime_nodes(node):
     nodes += [arg.annotation for arg in args if arg.annotation]
     return nodes
 
-
+# %% ../nbs/03_execute.ipynb #70332954
 def _function_runtime_external_effect_reasons(node, aliases=None):
     reasons = []
     for part in _function_runtime_nodes(node):
@@ -234,7 +234,7 @@ def _execution_policy_function_defs(nb):
                 functions[node.name] = {"node": node, "cell_id": getattr(cell, "id", ""), "line": node.lineno, "source_hash": source_hash(cell_source(cell))}
     return functions
 
-
+# %% ../nbs/03_execute.ipynb #99ba385d
 def _raw_call_names(node):
     return {child.func.id for child in ast.walk(node) if isinstance(child, ast.Call) and isinstance(child.func, ast.Name)}
 
@@ -262,7 +262,7 @@ def _execution_policy_notebook(path):
     try: return str(full.relative_to(root))
     except ValueError: return str(full)
 
-
+# %% ../nbs/03_execute.ipynb #511239ab
 def _coerce_execution_policy_entry(entry, default_allowed, source_hash=None):
     if isinstance(entry, dict):
         entry = dict(entry)
@@ -319,7 +319,7 @@ def _cell_policy_tree(cell):
     try: return ast.parse(cell_source(cell))
     except SyntaxError: return None
 
-
+# %% ../nbs/03_execute.ipynb #9c17c2e1
 def _cell_policy_function_names(cell):
     tree = _cell_policy_tree(cell)
     if tree is None: return []
@@ -337,7 +337,7 @@ def _top_level_external_effect_reasons(tree, aliases=None):
             reasons.extend(_node_external_effect_reasons(node, aliases=aliases))
     return sorted(set(reasons))
 
-
+# %% ../nbs/03_execute.ipynb #9138093b
 def _top_level_policy_call_names(tree, aliases=None):
     names = set()
     for node in tree.body:
@@ -355,7 +355,7 @@ def _policy_entry_allowed(policy, name):
     if isinstance(entry, dict): return entry.get("allowed") is True
     return entry is True
 
-
+# %% ../nbs/03_execute.ipynb #b4fda980
 def _policy_allowed_function_names(policy):
     if not isinstance(policy, dict): return []
     return [name for name in policy.get("functions", {}) if _policy_entry_allowed(policy, name)]
@@ -389,7 +389,7 @@ def _policy_blocked_function_names(cell, policy=None):
     names += [name for name in _top_level_policy_call_names(tree, aliases=aliases) if name in policy_functions]
     return sorted({name for name in names if not _policy_entry_allowed(policy, name)})
 
-
+# %% ../nbs/03_execute.ipynb #be22df27
 def _register_project_allowed(policy, namespace):
     for name in _policy_allowed_function_names(policy):
         if name in namespace: _safepyrun_allow(namespace[name])
@@ -674,16 +674,16 @@ def _sync_safe_callable_globals(value, namespace):
         for item in vars(value).values():
             if hasattr(item, "__globals__"): item.__globals__.update(namespace)
 
-
+# %% ../nbs/03_execute.ipynb #0e2b245e
 def _sync_safe_globals(namespace):
     for value in list(namespace.values()):
         _sync_safe_callable_globals(value, namespace)
 
-
+# %% ../nbs/03_execute.ipynb #d7f899cb
 def _module_source(node):
     return ast.unparse(ast.Module(body=[node], type_ignores=[]))
 
-
+# %% ../nbs/03_execute.ipynb #d303323b
 async def _run_safe_source(runner, namespace, source):
     tree = ast.parse(source)
     result = None
@@ -841,7 +841,7 @@ def _cell_eval_false(cell):
         if text in {"#|eval:false", "#|eval=false"}: return True
     return False
 
-
+# %% ../nbs/03_execute.ipynb #64ca85f6
 def _skip_timed_out_cell(cell):
     if cell.cell_type != "code": return False
     meta = nbskill_cell_metadata(cell)

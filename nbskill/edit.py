@@ -101,6 +101,7 @@ def _edit_notebook_craft_warnings(path, nb, affected_cell_ids):
                 path,cell_id=cell_id,function_count=function_count))
     return warnings
 
+# %% ../nbs/02_edit.ipynb #a0cf2e32
 def _format_edit_warnings(warnings):
     if not warnings: return ""
     return "\n".join(f"- {warning['code']}: {warning['message']}" for warning in warnings)
@@ -444,12 +445,12 @@ def _append_cell_diff(diffs, cell, before, after, op, replacements=None):
     if replacements is not None: record["replacements"] = replacements
     diffs.append(record)
 
-
+# %% ../nbs/02_edit.ipynb #271e1e98
 def _short_replacement_value(value, limit=40):
     text = str(value).replace("\n", "\\n")
     return text if len(text) <= limit else text[:limit - 3] + "..."
 
-
+# %% ../nbs/02_edit.ipynb #7d658406
 def _aggregate_replacement_summary(diffs):
     rows = {}
     for diff in diffs:
@@ -464,7 +465,7 @@ def _aggregate_replacement_summary(diffs):
             row["not_found"] += int(bool(item.get("not_found")))
     return list(rows.values())
 
-
+# %% ../nbs/02_edit.ipynb #3542ceb5
 def _format_replacement_summary(summary):
     if not summary: return ""
     lines = ["Replacement summary:", "old | new | matched | changed | not_found"]
@@ -475,7 +476,7 @@ def _format_replacement_summary(summary):
         )
     return "\n".join(lines)
 
-
+# %% ../nbs/02_edit.ipynb #d6308428
 def _format_export_confirmation(path, commit):
     if not commit.get("exported"): return ""
     py_path = commit.get("exported_py_path") or ""

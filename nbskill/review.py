@@ -59,7 +59,7 @@ def _style_root_is_skipped(path, skip_paths):
     parts = Path("." if path is None else path).expanduser().parts
     return any(part in skip_paths for part in parts)
 
-
+# %% ../nbs/04_review.ipynb #49797e01
 def _explicit_notebook_path(path):
     return Path("." if path is None else path).expanduser().suffix == ".ipynb"
 
@@ -255,7 +255,7 @@ def _problem(code, path, cell=None, detail="", severity="warning", source="nbski
 def _single_top_level_function_cell(tree):
     return len(tree.body) == 1 and isinstance(tree.body[0], (ast.FunctionDef, ast.AsyncFunctionDef))
 
-
+# %% ../nbs/04_review.ipynb #d4b67109
 def _large_cell_problems(nb_path, cell, function_limit=_LARGE_CELL_FUNCTION_LIMIT):
     problems = []
     line_count = _cell_content_line_count(cell)
@@ -313,11 +313,11 @@ _CRAFT_PROBLEM_CODES = {
 }
 _STORY_PROBLEM_CODES = {"public-function-markdown", "public-function-example", "public-function-test"}
 
-
+# %% ../nbs/04_review.ipynb #6552af5b
 def _craft_diagnostics(diagnostics):
     return [item for item in diagnostics if item.get("code") in _CRAFT_PROBLEM_CODES]
 
-
+# %% ../nbs/04_review.ipynb #3769ff24
 def _craft_summary(diagnostics):
     craft = _craft_diagnostics(diagnostics)
     return dict(
@@ -328,7 +328,7 @@ def _craft_summary(diagnostics):
         public_function_docstring_problem_count=sum(1 for item in craft if item.get("code") == "public-function-docstring"),
     )
 
-
+# %% ../nbs/04_review.ipynb #fa2c0a42
 def _format_notebook_craft_report(diagnostics):
     craft = _craft_diagnostics(diagnostics)
     if not craft: return "Notebook craft: no large-cell or story diagnostics found."
@@ -579,7 +579,7 @@ def _merge_line_to_previous(lines, idx, sep=""):
     del lines[idx]
     return True
 
-
+# %% ../nbs/04_review.ipynb #7c5e9a0f
 def _add_fix_count(counts, code, value=1):
     if value: counts[code] = counts.get(code, 0) + value
 
@@ -590,18 +590,18 @@ def _split_directive_lines(source):
     while idx < len(lines) and lines[idx].lstrip().startswith("#|"): idx += 1
     return lines[:idx], lines[idx:]
 
-
+# %% ../nbs/04_review.ipynb #c2d8ec45
 def _source_ast_dump(source):
     try: tree = ast.parse(source_without_directives(source))
     except SyntaxError: return None
     return ast.dump(tree, include_attributes=False)
 
-
+# %% ../nbs/04_review.ipynb #5345e523
 def _same_ast(before, after):
     before_dump, after_dump = _source_ast_dump(before), _source_ast_dump(after)
     return before_dump is not None and before_dump == after_dump
 
-
+# %% ../nbs/04_review.ipynb #f8aae1d0
 def _safe_python_source(source):
     _, lines = _split_directive_lines(source)
     if not "\n".join(lines).strip(): return False
@@ -610,12 +610,12 @@ def _safe_python_source(source):
         if stripped and (stripped.startswith(("%", "!", "?")) or stripped.endswith("?")): return False
     return True
 
-
+# %% ../nbs/04_review.ipynb #fe03b6b4
 def _source_transform_result(source, fixes):
     fixes = {key: value for key, value in fixes.items() if value}
     return {"source": source, "fixes": fixes, "changed": bool(fixes)}
 
-
+# %% ../nbs/04_review.ipynb #8c34c72e
 def _apply_source_transform(source, code, fn, ast_equal=True):
     try: result = fn(source)
     except Exception: return source, {}
@@ -635,7 +635,7 @@ def _string_literal_lines(tree):
         lines.update(range(start, end + 1))
     return lines
 
-
+# %% ../nbs/04_review.ipynb #0d3384a5
 def _function_body_lines(tree):
     lines = set()
     for node in ast.walk(tree):
@@ -734,7 +734,7 @@ def _fix_code_cell_source(source):
 def _cst_split_definition(stmt):
     return isinstance(stmt, (cst.FunctionDef, cst.ClassDef)) and not stmt.decorators
 
-
+# %% ../nbs/04_review.ipynb #f63bd79e
 def _cst_definition_split_sources(source):
     if not _safe_python_source(source): return []
     try: mod = cst.parse_module(source)
@@ -952,7 +952,7 @@ def code_source(cell):
     "Return source for code cells; ignore markdown and raw cells."
     return cell.source if cell.cell_type == "code" else None
 
-
+# %% ../nbs/04_review.ipynb #e69d0ca1
 def _working_tree_code_sources(path):
     nb = read_nb(path)
     return {
@@ -1090,19 +1090,19 @@ _NON_VISIBLE_TEXT_CALLS = {
     "StringIO", "SystemExit", "TypeError", "ValueError", "Warning",
 }
 
-
+# %% ../nbs/04_review.ipynb #27c01112
 def _literal_visible_text(node):
     if isinstance(node, ast.Constant) and isinstance(node.value, str): return node.value
     return None
 
-
+# %% ../nbs/04_review.ipynb #28fdd921
 def _looks_like_visible_text(text):
     text = str(text or "").strip()
     if not text: return False
     if text.startswith(("#|", "http://", "https://")): return False
     return re.search(r"[A-Za-z0-9]", text) is not None
 
-
+# %% ../nbs/04_review.ipynb #8e7270fe
 def _source_top_level_symbols(source):
     try: tree = ast.parse(source)
     except SyntaxError: return []
@@ -1113,7 +1113,7 @@ def _source_top_level_symbols(source):
             names.extend(target.id for target in node.targets if isinstance(target, ast.Name))
     return names
 
-
+# %% ../nbs/04_review.ipynb #5b550df3
 def _visible_text_records_from_source(path, cell_id, source):
     try: tree = ast.parse(source)
     except SyntaxError: return []
@@ -1141,7 +1141,7 @@ def _visible_text_records_from_source(path, cell_id, source):
                 })
     return records
 
-
+# %% ../nbs/04_review.ipynb #b7e599b0
 def _format_visible_text_records(records):
     if not records: return "No likely public UI text found"
     lines = ["cell_id | line | symbol | call | text"]
@@ -1153,7 +1153,7 @@ def _format_visible_text_records(records):
         )
     return "\n".join(lines)
 
-
+# %% ../nbs/04_review.ipynb #4b67e789
 def visible_text_inventory(path='.', include_re=None, max_records=200):
     "Print likely user-visible text from FastHTML/HTML-producing notebook code cells."
     pattern = re.compile(include_re) if include_re else None
@@ -1174,12 +1174,12 @@ def visible_text_inventory(path='.', include_re=None, max_records=200):
     cli_return(records)
     return records
 
-
+# %% ../nbs/04_review.ipynb #976ef273
 def _public_ui_diff_lines(path, cell_id, source):
     records = _visible_text_records_from_source(path, cell_id, source or "")
     return [f"{item['call']}: {item['text']}" for item in records]
 
-
+# %% ../nbs/04_review.ipynb #58cd6825
 def _format_public_ui_diff(path, old, new, adds=True, changes=True, dels=False, selected=None):
     blocks = []
     cell_ids = list(dict.fromkeys([*old.keys(), *new.keys()]))

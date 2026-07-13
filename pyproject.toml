@@ -17,6 +17,7 @@ classifiers = [
 ]
 dependencies = [
     "botocore>=1.43.42",
+    "clikernel>=0.1.6",
     "execnb>=0.2.2",
     "fastaistyle>=0.0.15",
     "fastcore==2.0.*",

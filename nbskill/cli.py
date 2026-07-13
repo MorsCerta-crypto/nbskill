@@ -202,10 +202,10 @@ def _format_status(data):
 def context(
     target: str = "project",  # project, notebook path/name, chapter title, cell id, Python symbol, or literal search text
     scope: str = ".",  # Project, folder, glob, or notebook used to narrow target lookup
-    overview: bool = False,  # True keeps compact overview; False shows fuller notebook markdown or related symbol context
+    mode: str = "auto",  # auto, overview, edit, or review
 ):
-    "Show the best notebook-aware context for one target."
-    nbskill.read.context(target=target, scope=scope, overview=overview)
+    "Show project, notebook, chapter, cell, or symbol context in source order."
+    nbskill.read.context(target=target, scope=scope, mode=mode)
 
 # %% ../nbs/13_cli.ipynb #c06c77de
 @call_parse
@@ -215,14 +215,14 @@ def filter_context(
     query: str | None = None,  # id/type/chapter/contains/regex/errors/export/headers selectors
     include_re: str | None = None,  # Optional regex that matched cell source must include
     exclude_re: str | None = None,  # Optional regex that matched cell source must not include
-    max_matches: int = 50,  # Maximum matching cells to return
+    max_matches: int = 50,  # Maximum matching cells to return in source order
     max_chars_per_cell: int = 1200,  # Maximum source characters shown per cell
     view: str = "source",  # source, summary, or cell
     line_numbers: bool = False,  # Include 1-based line numbers in source views
     before: int = 0,  # Number of preceding neighbor cells to summarize
     after: int = 0,  # Number of following neighbor cells to summarize
 ):
-    "Search and view notebook cells compactly."
+    "Search notebook cells in source order and view their local Docs/example/test neighborhood."
     nbskill.read.filter_context(
         scope=scope, query=query, include_re=include_re, exclude_re=exclude_re,
         max_matches=max_matches, max_chars_per_cell=max_chars_per_cell,
@@ -266,7 +266,7 @@ def replace_str_nb(
     show_cells: bool = False,  # Include touched cell ids and compact diffs
 ):
     "Replace literal text across notebook cell sources."
-    return nbskill.write._write_literal_replacements(
+    return nbskill.write.write_literal_replacements(
         path, old_str=old_str, new_str=new_str, run_test=run_test, validate_code=validate_code,
         dry_run=dry_run, show_cells=show_cells,
     )

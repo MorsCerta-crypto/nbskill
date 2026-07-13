@@ -1069,8 +1069,8 @@ def _reference_lookup_hints(hit):
     symbol, path = hit.get("symbol"), hit.get("path")
     if hit.get("dependency_status") == "local_repo":
         hints = []
-        if symbol: hints.append(f"context(target={symbol!r}, scope='nbs', overview=False)")
-        if path: hints.append(f"context(target={path!r}, scope='nbs', overview=False)")
+        if symbol: hints.append(f"context(target={symbol!r}, scope='nbs', mode='auto')")
+        if path: hints.append(f"context(target={path!r}, scope='nbs', mode='auto')")
         return hints
     hints = []
     version = hit.get("version")

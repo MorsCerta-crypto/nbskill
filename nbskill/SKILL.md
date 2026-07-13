@@ -97,16 +97,17 @@ Concrete duplication patterns to avoid:
 
 ## Notebook Craft
 
-A good notebook has a story. Move one step at a time: describe the
-problem in Markdown, export the implementation, demonstrate it with a
-small example and visible output when useful, then protect it with a
-small test.
+A good notebook has a story. Each chapter moves in this order: export the
+implementation, explain it in trailing Markdown, demonstrate it with a
+small example and visible output when useful, then protect it with a small
+test. Repeat that group for the next implementation.
 Larger features should grow from earlier cells rather than appear as one
 big code block.
 
-Keep cells small and semantic. A cell should usually be one of these
-things: Markdown rationale, imports, exported code, private
-implementation, a visible example, or a focused test. Avoid cells that
+Keep cells small and semantic. A story should usually be a group of
+exported code, trailing Markdown rationale, a visible example, and a
+focused test. Imports and private implementation cells support that group.
+Avoid cells that
 mix several jobs, duplicate imports, hide unused code, or bundle many
 assertions together.
 

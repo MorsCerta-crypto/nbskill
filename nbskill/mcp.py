@@ -309,8 +309,6 @@ def _mcp_feedback_output(path, cell_ids, auto_feedback=True, feedback_timeout=10
                 "path": str(path),
                 "cell_id": target_id,
             })
-        if detail == "debug" and raw:
-            return f"{message}\n\nAuto feedback debug output:\n{raw}".rstrip()
         return message
     return f"Auto feedback (up to id={target_id}):\n{output}".rstrip()
 
@@ -506,8 +504,6 @@ def _mcp_result_log_fields(result):
         if structured.get("ok") is not None: fields["ok"] = structured.get("ok")
         for key in ("output_chars", "output_truncated", "omitted_chars"):
             if key in structured: fields[key] = structured[key]
-        summary = structured.get("summary")
-        if isinstance(summary, str): fields["summary_chars"] = len(summary)
         warnings = structured.get("warnings")
         if isinstance(warnings, list):
             fields["warning_count"] = len(warnings)
@@ -521,7 +517,9 @@ def _mcp_result_log_fields(result):
         if isinstance(edit_data, dict) and edit_data.get("affected_cell_ids"):
             fields["affected_cell_ids"] = edit_data.get("affected_cell_ids")
     visible_chars = _mcp_text_content_chars(getattr(result, "content", None))
-    if visible_chars is not None: fields["visible_chars"] = visible_chars
+    if visible_chars is not None:
+        fields["visible_chars"] = visible_chars
+        fields["summary_chars"] = visible_chars
     return fields
 
 # %% ../nbs/07_mcp.ipynb #1a34a1c7
@@ -1734,47 +1732,32 @@ def _tool_summary_lines(tool, arguments, full_text, preview, status, structured,
 
 # %% ../nbs/07_mcp.ipynb #67affd82
 def mcp_tool_result(tool, arguments, full_output, max_output_chars=12000, detail="summary", warnings=None, hints=None, status="completed", **structured):
-    "Return concise visible MCP text plus structured data for clients that inspect it."
+    "Return one visible MCP summary and compact structured data."
     detail = detail or "summary"
-    if max_output_chars is None:
-        max_output_chars = 50000 if detail == "debug" else 12000
-    if detail in {"debug", "full"} and max_output_chars is not None:
-        max_output_chars = max(max_output_chars, 50000) if detail == "debug" else max_output_chars
+    if max_output_chars is None: max_output_chars = 50000 if detail == "debug" else 12000
+    if detail == "debug": max_output_chars = max(max_output_chars, 50000)
     full_text = as_text(full_output or "")
     preview = _text_preview(full_text, limit=max_output_chars)
-    structured_text_limit = 50000 if detail == "debug" else 12000
-    auto_warnings = [] if status != "completed" else _response_warnings(tool, arguments or {}, preview)
-    warnings = _dedupe_warnings([*(warnings or []), *auto_warnings])
-    hints = list(hints or [])
+    warnings = _dedupe_warnings([*(warnings or []), *([] if status != "completed" else _response_warnings(tool, arguments or {}, preview))])
     lines = _tool_summary_lines(tool, arguments or {}, full_text, preview, status, structured, warnings)
-    if detail in {"debug", "full"} and preview["text"]: lines += ["", "Result:", preview["text"]]
-    if detail == "debug" and hints:
-        lines += ["", "Hints:"]
-        lines.extend(f"- {hint}" for hint in hints)
-    summary = chr(10).join(lines)
-    context_summary = tool == "context" and detail == "summary"
+    if detail == "debug" and preview["text"]: lines += ["", "Result:", preview["text"]]
+    text = chr(10).join(lines)
     data = {
-        "summary": summary,
         "status": status,
-        "call": {"tool": tool, "arguments": _redact_arguments(arguments or {})},
-        "full_output": summary if context_summary else preview["text"],
         "output_truncated": preview["truncated"],
         "output_chars": preview["chars"],
         "omitted_chars": preview["omitted_chars"],
         "warnings": warnings,
-        "hints": hints if detail == "debug" else [],
     }
-    if tool != "context": data["preview_output"] = preview["text"]
-    if detail == "debug": data["debug"] = {"arguments": arguments or {}, "raw_output": _text_preview(full_text, limit=structured_text_limit)["text"]}
-    for key, value in structured.items():
-        if context_summary and key == "context": value = _compact_context_payload(value)
-        data["result_summary" if key == "summary" else key] = _bounded_structured_value(value, text_limit=structured_text_limit)
-    return ToolResult(content=[TextContent(type="text", text=summary)], structured_content=data)
+    for key, value in structured.items(): data["result_summary" if key == "summary" else key] = _bounded_structured_value(value, text_limit=12000)
+    if detail == "debug": data["debug"] = {"arguments": arguments or {}, "raw_output": _text_preview(full_text, limit=50000)["text"], "hints": list(hints or [])}
+    return ToolResult(content=[TextContent(type="text", text=text)], structured_content=data)
 
 # %% ../nbs/07_mcp.ipynb #d60673ed
 def _mcp_tool_error_result(tool, arguments, exc, max_output_chars=12000, detail="summary", **structured):
-    "Return an MCP result for a tool failure without raising through the transport."
-    message = f"{tool} failed: {type(exc).__name__}: {exc}"
+    "Return an actionable MCP failure without exposing a traceback."
+    error_message = " ".join(as_text(exc).split("Traceback", 1)[0].split())
+    message = f"{tool} failed: {type(exc).__name__}: {error_message}"
     warning = _warning(
         "tool_failed", message,
         "Treat this call as failed, but the MCP transport remains usable; fix the input or run a narrower diagnostic.",
@@ -1782,7 +1765,7 @@ def _mcp_tool_error_result(tool, arguments, exc, max_output_chars=12000, detail=
     return mcp_tool_result(
         tool, arguments, message, max_output_chars=max_output_chars, detail=detail,
         warnings=[warning], status="failed", ok=False,
-        error={"type": type(exc).__name__, "message": str(exc)}, **structured,
+        error={"type": type(exc).__name__, "message": error_message}, **structured,
     )
 
 # %% ../nbs/07_mcp.ipynb #d696afd1
@@ -2271,14 +2254,14 @@ mcp = FastMCP(
         "Work notebook-first in nbdev projects. Feature areas are diagnostics, focused context, "
         "notebook edits, verification/review, symbol impact, agentic planning, reference search, "
         "and conversion. For reading, use context with a project, notebook, chapter title, cell id, "
-        "or public symbol target; overview controls compact notebook summaries or implementation focus. "
+        "or public symbol target; mode is auto, overview, edit, or review, and resolution controls source depth. "
         "For edits, use edit_notebook as the single production mutation tool. It supports whole-cell, "
         "line-range, insert/delete/move, and notebook-wide replace_text/replace_texts operations with "
-        "expected_hash guards and structured diffs. Edit tools default to auto_feedback=True, which runs "
-        "only exploratory or test cells in check-only mode and returns their output/errors. Use exec_nb, "
+        "expected_hash guards and structured diffs. Set feedback='off' when a dry run or edit needs no automatic execution. "
+        "Use exec_nb, "
         "diff_nb, and style_check for verification and review; use doctor with scopes='error', 'warning', "
         "'style', or 'all' for diagnostics. Chkstyle output only appears when doctor includes the style "
-        "scope. Use reference for indexed reference implementations. Normal tool output is concise; use "
+        "scope. Use reference for indexed reference implementations. Normal tool output has one human summary and structured facts; use "
         "detail='debug' only when troubleshooting. Notebook operations are concurrency-safe: calls touching "
         "the same notebook are serialized, calls touching different notebooks can run in parallel, and "
         "execution uses a global semaphore. Prefer an iterative notebook loop: write small exploratory "
@@ -2369,16 +2352,15 @@ def _mcp_context_targets(targets, root):
     return [_mcp_context_target_path(item, root) for item in targets]
 
 # %% ../nbs/07_mcp.ipynb #15b9ce0c
-def _mcp_context_tool_args(root, target, targets, scope, overview, mode, around, include_graph, detail, path, resolution="auto"):
-    if path is not None and targets is None and target == "project": target = path
+def _mcp_context_tool_args(root, target, targets, scope, mode, around, include_graph, detail, resolution="auto"):
     scope = _mcp_workspace_path(scope, root)
     target = _mcp_context_target_path(target, root)
     targets = _mcp_context_targets(targets, root)
     around = _mcp_clamp_int(around, 0, 0, 20, "around")
     target_is_project = targets is None and str(target or "") in {"project", ".", ""}
-    arguments = dict(target=target, targets=targets, scope=scope, overview=overview, mode=mode, around=around, resolution=resolution)
-    arguments.update(include_graph=include_graph, detail=detail, path=path, workspace_root=str(root) if root else None)
-    context_args = dict(target=target, targets=targets, scope=scope, overview=overview, mode=mode, around=around)
+    arguments = dict(target=target, targets=targets, scope=scope, mode=mode, around=around, resolution=resolution)
+    arguments.update(include_graph=include_graph, detail=detail, workspace_root=str(root) if root else None)
+    context_args = dict(target=target, targets=targets, scope=scope, mode=mode, around=around)
     return arguments, context_args, target_is_project
 
 # %% ../nbs/07_mcp.ipynb #1da8bef2
@@ -2460,12 +2442,11 @@ def _mcp_context_result_payload(data, graph, resolution="auto"):
 # %% ../nbs/07_mcp.ipynb #5450e1be
 _C = Context
 @mcp.tool(**_mcp_tool_meta("context"))
-async def _context_tool(target="project",targets=None,scope=".",overview=False,mode="auto",around=0,include_graph=False,detail="summary",path=None,resolution="auto",ctx:_C=None):
-    """Resolve context in layers; resolution is auto, summary, implementation, or full."""
+async def _context_tool(target="project",targets=None,scope=".",mode="auto",around=0,include_graph=False,detail="summary",resolution="auto",ctx:_C=None):
+    """Resolve context in layers; mode is auto, overview, edit, or review."""
     root = await _mcp_workspace_root(ctx)
-    if overview and resolution == "auto": resolution = "summary"
     arguments, context_args, target_is_project = _mcp_context_tool_args(
-        root, target, targets, scope, overview, mode, around, include_graph, detail, path, resolution,
+        root, target, targets, scope, mode, around, include_graph, detail, resolution,
     )
     scope = arguments["scope"]
     try: data = _mcp_run_context_call(scope, context_args)
@@ -2525,30 +2506,32 @@ async def _filter_context_tool(
 @mcp.tool(**_mcp_tool_meta("edit_notebook"))
 async def edit_notebook_tool(
     path: str, edits: list[dict], validate_code: bool = True,
-    default_cell_type: str = "code", auto_feedback: bool = True,
-    feedback_timeout: int = 10, feedback_safe: bool = True, dry_run: bool = False,
+    default_cell_type: str = "code", feedback: str = "auto",
+    feedback_timeout: int = 10, dry_run: bool = False,
     smoke_snippets: list[str] | None = None, smoke_timeout: int = 10,
-    tool_timeout: float = 110.0, detail: str = "summary", ctx: Context = None,
+    detail: str = "summary", ctx: Context = None,
 ) -> ToolResult:
     "Apply deterministic notebook edit operations atomically."
     if not edits: raise ValueError("Pass at least one edit")
+    if feedback not in {"auto", "off"}: raise ValueError("feedback must be 'auto' or 'off'")
     root = await _mcp_workspace_root(ctx)
     path = _mcp_workspace_path(path, root)
     edits = _mcp_workspace_edit_paths(edits, root)
-    tool_timeout = _mcp_clamp_float(tool_timeout, 110.0, 0.001, 110.0, "tool_timeout")
     feedback_timeout = _mcp_clamp_int(feedback_timeout, 10, 1, 60, "feedback_timeout")
     smoke_timeout = _mcp_clamp_int(smoke_timeout, 10, 1, 60, "smoke_timeout")
+    auto_feedback = feedback == "auto"
     arguments = dict(
         path=path, edits=edits, validate_code=validate_code, default_cell_type=default_cell_type,
-        auto_feedback=auto_feedback, feedback_timeout=feedback_timeout, feedback_safe=feedback_safe,
-        dry_run=dry_run, smoke_snippets=smoke_snippets, smoke_timeout=smoke_timeout,
-        tool_timeout=tool_timeout, detail=detail, workspace_root=str(root) if root else None,
+        feedback=feedback, feedback_timeout=feedback_timeout, dry_run=dry_run,
+        smoke_snippets=smoke_snippets, smoke_timeout=smoke_timeout, detail=detail,
+        workspace_root=str(root) if root else None,
     )
-    process_arguments = dict(arguments, auto_feedback=False)
-    process_arguments.pop("smoke_snippets", None)
-    process_arguments.pop("smoke_timeout", None)
+    process_arguments = dict(
+        path=path, edits=edits, validate_code=validate_code, default_cell_type=default_cell_type,
+        auto_feedback=False, feedback_timeout=feedback_timeout, feedback_safe=True, dry_run=dry_run,
+    )
     try:
-        result = await asyncio.to_thread(_capture_edit_notebook_process_call, process_arguments, tool_timeout)
+        result = await asyncio.to_thread(_capture_edit_notebook_process_call, process_arguments, 110.0)
     except TimeoutError as exc:
         return _mcp_tool_error_result("edit_notebook", arguments, exc, detail=detail)
     except (Exception, SystemExit) as exc:
@@ -2559,7 +2542,7 @@ async def edit_notebook_tool(
         full_output = _append_mcp_feedback(
             full_output, path, result.get("affected_cell_ids", []),
             auto_feedback=auto_feedback, feedback_timeout=feedback_timeout,
-            feedback_safe=feedback_safe, detail=detail, warnings=warnings,
+            feedback_safe=True, detail=detail, warnings=warnings,
         )
         smoke_text, smoke_warnings = _run_mcp_smoke_snippets(path, smoke_snippets, timeout=smoke_timeout)
         warnings.extend(smoke_warnings)

@@ -1670,17 +1670,19 @@ def _context_edit_result(path, cell_idx, symbol=None, source=None, verbose=True)
     source = cell_source(cell) if source is None else source
     cell_record = {**_context_cell_record(cell_idx, cell), "path": str(path)}
     symbols = [symbol] if symbol else _context_cell_symbols(path, cell_idx)
-    title = "\n".join([
-        f"Edit context: {symbol or cell_record['cell_id']}",
-        f"Path: {path}",
-        f"Cell: {cell_prefix(cell_idx, cell, True)}",
-    ])
-    text = _format_context_blocks(title, [("Source", source)])
-    return _context_result(
-        "edit_context", text, verbose=verbose, path=str(path), symbol=symbol,
-        cell=cell_record, cell_id=cell_record["cell_id"], cell_idx=cell_idx,
-        source=source, expected_hash=source_hash(cell_source(cell)), symbols=symbols,
-    )
+    related = _symbol_focus_context(path, symbol, verbose=False) if symbol else {}
+    docs, examples = related.get("markdown", []), related.get("examples", [])
+    callers, callees = related.get("callers", []), related.get("callees", [])
+    title = f"Edit context: {symbol or cell_record['cell_id']}\nPath: {path}\nCell: {cell_prefix(cell_idx, cell, True)}"
+    nl = chr(10)
+    example_text = [f"{item['kind']}{nl}{item['source']}" + (f"{nl}Output:{nl}{item['output']}" if item.get("output") else "") for item in examples]
+    caller_text = [f"- {item.get('path')} id={item.get('cell_id')} line {item.get('lineno')}: {item.get('line')}" for item in callers]
+    blocks = [("Source", source), ("Docs", [item["source"] for item in docs]), ("Examples/tests", example_text), ("Callers", caller_text), ("Callees", _format_callee_items(callees))]
+    text = _format_context_blocks(title, blocks)
+    result = dict(verbose=verbose, path=str(path), symbol=symbol, cell=cell_record)
+    result.update(cell_id=cell_record["cell_id"], cell_idx=cell_idx, source=source, expected_hash=source_hash(cell_source(cell)))
+    result.update(symbols=symbols, docs=docs, examples=examples, callers=callers, callees=callees)
+    return _context_result("edit_context", text, **result)
 
 # %% ../nbs/01_read.ipynb #f08896aa
 def _context_cell_payload(path, cell_idx, mode, around):
@@ -1842,7 +1844,7 @@ def context(
     mode: str = "auto",
     around: int = 0,
 ):
-    "Return notebook-aware context; mode is auto, overview, edit, or review."
+    "Return notebook-aware context; edit includes bounded docs, usages, and direct impact."
     mode = _context_mode(mode)
     around = _context_around(around)
     if targets is not None: return _context_batch(targets, scope=scope, mode=mode, around=around)

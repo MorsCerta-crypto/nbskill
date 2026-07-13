@@ -371,9 +371,10 @@ def _markdown_mentions(nb, symbol):
     return items
 
 # %% ../nbs/01_read.ipynb #472048bb
-def _example_test_records(nb, symbol):
+def _example_test_records(nb, symbol, definition_idx=None):
+    items = _following_examples(nb.cells, definition_idx, len(nb.cells)) if definition_idx is not None else list(enumerate(nb.cells))
     records = []
-    for idx, cell in enumerate(nb.cells):
+    for idx, cell in items:
         if not _cell_calls_symbol(cell, symbol): continue
         kind = "test" if cell_matches_type(cell, "test") else "example" if cell_matches_type(cell, "example") else "usage"
         records.append({
@@ -603,7 +604,7 @@ def chapter_context(
     include_re: str | None = None,  # Optional regex that matched cell source must include
     exclude_re: str | None = None,  # Optional regex that matched cell source must not include
 ):
-    "Show one chapter as an overview or filtered deep dive."
+    "Show one chapter in source order, with optional overview and cell filters."
     nb = read_nb(path)
     span = _selected_chapter_span(nb, query=query, name=name, any_cell_id=any_cell_id)
     items = _chapter_intro_items(nb, span) if overview else _chapter_items(nb, span)
@@ -809,7 +810,7 @@ def file_context(
     exclude_re: str | None = None,  # Optional regex for markdown and definition items to exclude
     verbose: bool = True,  # Print rendered context; pass False to only return structured data
 ):
-    "Show compact context for one notebook or Python file."
+    "Show compact context for one notebook or Python file; notebook cells stay in source order."
     if str(path).endswith(".py"):
         return python_file_context(path, verbose=verbose)
     nb = read_nb(path)
@@ -950,7 +951,7 @@ def filter_context(
     after: int = 0,  # Number of following neighbor cells to summarize for each match
     verbose: bool = True,  # Print rendered context; pass False to only return structured data
 ):
-    "Show notebook cells across a scope after applying query and regex filters."
+    "Show notebook cells in source order after applying query and regex filters."
     view = _filter_context_view(view)
     if query is None and include_re is None and exclude_re is None and view != "summary":
         raise ValueError("Pass query, include_re, exclude_re, or view='summary' to filter project context")
@@ -1061,15 +1062,15 @@ def _find_symbol_node(cell, symbol):
     return None
 
 # %% ../nbs/01_read.ipynb #442aa659
-def _previous_markdown(cells, idx, limit):
+def _following_markdown(cells, idx, limit):
     docs = []
-    pos = idx - 1
-    while pos >= 0 and len(docs) < limit:
+    pos = idx + 1
+    while pos < len(cells) and len(docs) < limit:
         cell = cells[pos]
-        if getattr(cell, "cell_type", None) != "markdown": break
-        docs.append((pos, cell))
-        pos -= 1
-    return list(reversed(docs))
+        if is_exported_code_cell(cell): break
+        if getattr(cell, "cell_type", None) == "markdown": docs.append((pos, cell))
+        pos += 1
+    return docs
 
 # %% ../nbs/01_read.ipynb #120bd75e
 def _following_examples(cells, idx, limit):
@@ -1078,7 +1079,7 @@ def _following_examples(cells, idx, limit):
     while pos < len(cells) and len(examples) < limit:
         cell = cells[pos]
         if is_exported_code_cell(cell): break
-        if getattr(cell, "cell_type", None) in {"markdown", "code"}: examples.append((pos, cell))
+        if getattr(cell, "cell_type", None) == "code": examples.append((pos, cell))
         pos += 1
     return examples
 
@@ -1149,13 +1150,6 @@ def _format_symbol_doc(path, nb, symbol, context=2, source=False, show_ids=False
     idx = _find_symbol_cell(nb, symbol)
     cell = nb.cells[idx]
     lines = [f"Symbol {symbol}", f"Location: {path} {cell_prefix(idx, cell, show_ids)}"]
-    docs = _previous_markdown(nb.cells, idx, context)
-    if docs:
-        lines.append("")
-        lines.append("Docs")
-        for doc_idx, doc_cell in docs:
-            if show_ids: lines.append(cell_prefix(doc_idx, doc_cell, show_ids))
-            lines.append(doc_cell.source.strip())
     signature = _symbol_signature_text(cell, symbol)
     if signature:
         lines.append("")
@@ -1165,6 +1159,13 @@ def _format_symbol_doc(path, nb, symbol, context=2, source=False, show_ids=False
         lines.append("")
         lines.append("Source cell")
         lines.append(cell.source.strip())
+    docs = _following_markdown(nb.cells, idx, context)
+    if docs:
+        lines.append("")
+        lines.append("Docs")
+        for doc_idx, doc_cell in docs:
+            if show_ids: lines.append(cell_prefix(doc_idx, doc_cell, show_ids))
+            lines.append(doc_cell.source.strip())
     examples = _following_examples(nb.cells, idx, context)
     if examples:
         lines.append("")
@@ -1186,18 +1187,21 @@ def symbol_context(
     depth: int = 1,  # Callee summary depth; 0 keeps only direct implementation context
     verbose: bool = True,  # Print rendered context; pass False to only return structured data
 ):
-    "Show implementation, local docs/examples/tests, callers, and callees for a notebook symbol."
+    "Show a notebook symbol as implementation, trailing Docs, examples/tests, callers, and callees."
     nb = read_nb(path)
     idx, cell, node = _symbol_location(path, nb, symbol)
     source = _source_for_node(cell, node) if node is not None else cell_source(cell).strip()
-    markdown = [{"cell_id": getattr(item, "id", ""), "cell_idx": pos, "source": cell_source(item).strip()} for pos, item in _markdown_mentions(nb, symbol)]
+    markdown = [
+        {"cell_id": getattr(item, "id", ""), "cell_idx": pos, "source": cell_source(item).strip()}
+        for pos, item in _following_markdown(nb.cells, idx, len(nb.cells))
+    ]
     examples = [
         {
             **item,
             "source": _trim_context_source(item.get("source", ""), _CONTEXT_CELL_SOURCE_CHARS),
             "output": _trim_context_source(item.get("output", ""), _CONTEXT_CELL_OUTPUT_CHARS),
         }
-        for item in _example_test_records(nb, symbol)
+        for item in _example_test_records(nb, symbol, definition_idx=idx)
     ]
     callers, callees = [], []
     if depth > 0:
@@ -1212,6 +1216,7 @@ def symbol_context(
     nl = chr(10)
     blocks = [
         ("Implementation", source),
+        ("Docs", [f"Cell id={item['cell_id']}{nl}{item['source']}" for item in markdown]),
         ("Examples/tests", [
             f"Cell id={item['cell_id']} {item['kind']}{nl}{item['source']}" + (f"{nl}Output:{nl}{item['output']}" if item.get("output") else "")
             for item in examples
@@ -1221,7 +1226,6 @@ def symbol_context(
             for item in callers
         ]),
         (f"Callees depth {depth}", _format_callee_items(callees)),
-        ("Markdown mentions", [f"Cell id={item['cell_id']}{nl}{item['source']}" for item in markdown]),
     ]
     text = _format_context_blocks(f"Symbol context: {symbol}{nl}Location: {path} {cell_prefix(idx, cell, True)}", blocks)
     return _context_result(
@@ -1392,7 +1396,7 @@ def _notebook_context(
     verbose: bool = True,
     readme_sections: int = 2,
 ):
-    "Show one notebook; overview stays compact, while default output includes every cell."
+    "Show one notebook; overview gives headings and counts, while default output includes every cell."
     nb = read_nb(path)
     root = _context_root(scope if scope not in (None, "") else path)
     definitions = _definition_records(path, nb)
@@ -1405,13 +1409,14 @@ def _notebook_context(
         overview_markdown = _notebook_overview_markdown_records(nb.cells)
         blocks = [
             ("Markdown overview", [_render_markdown_record(item) for item in overview_markdown]),
-            ("Function signatures", [_render_definition_record(item) for item in exported_definitions]),
+            ("Contents", [f"cells={len(cells)}", f"definitions={len(definitions)}", f"exported_definitions={len(exported_definitions)}"]),
         ]
         text = _format_context_blocks(title, blocks)
         return _context_result(
             "notebook_context", text, verbose=verbose, path=str(path), scope=str(scope), root=str(root),
-            overview=overview, definitions=exported_definitions, cells=[], readme_sections=[], imports=[],
-            markdown=overview_markdown, all_definitions=definitions,
+            overview=True, cell_count=len(cells), definition_count=len(definitions),
+            exported_definition_count=len(exported_definitions), cells=[], readme_sections=[], imports=[],
+            markdown=overview_markdown, next_action="Pass an explicit symbol target or resolution='full' for definitions.",
         )
     blocks = [
         ("Full cells", [_render_context_cell(item) for item in cells]),
@@ -1420,7 +1425,7 @@ def _notebook_context(
     text = _format_context_blocks(title, blocks)
     return _context_result(
         "notebook_context", text, verbose=verbose, path=str(path), scope=str(scope), root=str(root),
-        overview=overview, definitions=definitions, cells=cells, readme_sections=[], imports=[], markdown=markdown,
+        overview=False, definitions=definitions, cells=cells, readme_sections=[], imports=[], markdown=markdown,
     )
 
 # %% ../nbs/01_read.ipynb #7c0cb5ca
@@ -1573,8 +1578,7 @@ def _literal_search_context(target, scope, notebooks, max_matches=50, max_chars_
 _CONTEXT_MODES = {"auto", "edit", "review", "overview"}
 
 # %% ../nbs/01_read.ipynb #89896fe6
-def _context_mode(mode, overview=False):
-    if overview: return "overview"
+def _context_mode(mode):
     mode = "auto" if mode in (None, "") else str(mode).lower()
     if mode not in _CONTEXT_MODES:
         raise ValueError(f"mode must be one of {sorted(_CONTEXT_MODES)}, not {mode!r}")
@@ -1675,7 +1679,7 @@ def _context_edit_result(path, cell_idx, symbol=None, source=None, verbose=True)
     return _context_result(
         "edit_context", text, verbose=verbose, path=str(path), symbol=symbol,
         cell=cell_record, cell_id=cell_record["cell_id"], cell_idx=cell_idx,
-        source=source, source_hash=source_hash(source), symbols=symbols,
+        source=source, expected_hash=source_hash(cell_source(cell)), symbols=symbols,
     )
 
 # %% ../nbs/01_read.ipynb #f08896aa
@@ -1834,13 +1838,12 @@ def _context_batch(targets, scope=".", mode="auto", around=0):
 def context(
     target: str = "project",
     scope: str = ".",
-    overview: bool = False,
     targets: list[str] | None = None,
     mode: str = "auto",
     around: int = 0,
 ):
-    "Return the best notebook-aware context for one target or an ordered batch of targets."
-    mode = _context_mode(mode, overview=overview)
+    "Return notebook-aware context; mode is auto, overview, edit, or review."
+    mode = _context_mode(mode)
     around = _context_around(around)
     if targets is not None: return _context_batch(targets, scope=scope, mode=mode, around=around)
     return _context_single(target=target, scope=scope, mode=mode, around=around)

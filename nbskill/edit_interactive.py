@@ -108,7 +108,7 @@ For new behavior, use this loop:
    an experiment as correct.
 3. Function: turn the working scratch into a focused function. If the current
    code is worse than the replacement, delete or rewrite the scoped cell instead
-   of layering patches on top. Add a Markdown cell directly above exported code
+   of layering patches on top. Add a Markdown cell directly after exported code
    explaining why the function is needed.
 4. Example: add an example cell directly below the function showing how it
    works. If the example is slow or produces artifacts, add `#| eval: false`.

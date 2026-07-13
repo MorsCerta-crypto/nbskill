@@ -875,11 +875,11 @@ def _render_notebook_craft_lines():
     "Render notebook craft guidance for the workbench executor."
     body = """
 Notebook craft:
-- Small notebook loop: inspect existing cells, run or sketch a tiny proof, write Markdown rationale, write the smallest code, add a visible example, add a focused hidden test, execute the narrowest check.
+- Small notebook loop: inspect existing cells, run or sketch a tiny proof, write the smallest exported code, add trailing Markdown rationale, add a visible example, add a focused hidden test, execute the narrowest check.
 - Prefer replace_lines or one small insert_cells call when the existing shape is sound.
 - If the existing cell is confusing, brittle, duplicated, or fighting the problem, delete or rewrite the scoped code instead of layering patches on top.
 - Keep notebooks coherent: small markdown and code cells, one idea at a time.
-- Add descriptions before code, examples with visible outputs, and small tests near the behavior they protect.
+- Keep each story in source order: exported code, trailing description, visible examples, and small tests near the behavior they protect.
 - Explain rationale: why the shape solves the problem, what tradeoffs it rejects, and why nearby alternatives do not fit.
 - End with diff_nb plus style_check(changed_only=True) or doctor(scopes='error,warning,style'), and resolve new notebook smells before stopping.
 """

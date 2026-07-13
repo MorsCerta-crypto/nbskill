@@ -196,7 +196,7 @@ def _public_function_literacy_problems_for_nb(nb_path, nb):
             problems.append(_public_function_contract_problem(nb_path, cell, node, "public-function-docstring", "one-line docstring", detail, docstring_lines=line_count))
         if node.name in call_parse_names: continue
         if node.name not in references["markdown"]:
-            detail = f"public function {node.name!r}: add a short Markdown rationale cell mentioning the function before the exported code"
+            detail = f"public function {node.name!r}: add a short Markdown rationale cell mentioning the function after the exported code"
             problems.append(_public_function_contract_problem(nb_path, cell, node, "public-function-markdown", "short Markdown rationale cell", detail))
         if node.name not in references["example"]:
             detail = f"public function {node.name!r}: add a small example cell that calls the function"

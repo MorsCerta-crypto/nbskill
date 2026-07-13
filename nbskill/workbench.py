@@ -133,34 +133,36 @@ def make_task_contract(
     **overrides,  # Optional contract and budget overrides
 ) -> dict:
     "Create a concrete task contract with conservative small-diff defaults."
-    contract = {
-        "goal": goal,
-        "non_goals": [],
-        "budgets": deepcopy(DEFAULT_BUDGETS),
-        "compatibility": "not_required",
-        "public_api": "forbidden",
-        "edit_policy": {
-            "prefer_existing_code": True,
-            "prefer_rewrite_when_existing_code_fights_problem": True,
-            "forbid_generated_only_edits": True,
-            "stop_when_smallest_valid_diff_passes": True,
-        },
-        "empirical": {
-            "enabled": True,
-            "enforce": True,
-            "require_scratch_before_write": True,
-            "require_inspect_before_write": True,
-            "require_execute_after_write": True,
-            "require_story_for_new_export": True,
-        },
-        "sandbox": {
-            "read": ["project"], "write": ["target_notebooks"],
-            "network": "ask", "subprocess": "ask",
-            "approval": "per_request",
-        },
-        "verification": list(DEFAULT_VERIFICATION),
-        "taste": {},
-    }
+    contract = dict(
+        goal=goal,
+        non_goals=[],
+        budgets=deepcopy(DEFAULT_BUDGETS),
+        compatibility="not_required",
+        public_api="forbidden",
+        edit_policy=dict(
+            prefer_existing_code=True,
+            prefer_rewrite_when_existing_code_fights_problem=True,
+            forbid_generated_only_edits=True,
+            stop_when_smallest_valid_diff_passes=True,
+        ),
+        empirical=dict(
+            enabled=True,
+            enforce=True,
+            require_scratch_before_write=True,
+            require_inspect_before_write=True,
+            require_execute_after_write=True,
+            require_story_for_new_export=True,
+        ),
+        sandbox=dict(
+            read=["project"],
+            write=["target_notebooks"],
+            network="ask",
+            subprocess="ask",
+            approval="per_request",
+        ),
+        verification=list(DEFAULT_VERIFICATION),
+        taste={},
+    )
     return _deep_merge(contract, _contract_overrides(overrides))
 
 # %% ../nbs/11_agent_workbench.ipynb #62cb8654

@@ -1,6 +1,6 @@
 # nbskill MCP Tools
 
-The MCP server is started with `nbskill_mcp`. It is intended to be the normal interface for agents because it accepts structured parameters and returns notebook-aware text instead of raw `.ipynb` JSON.
+The MCP server is started with `nbskill_mcp`. It is intended to be the normal interface for agents because it accepts structured parameters and returns notebook-aware text instead of raw `.ipynb` JSON. It provides both code references and reusable problem-solving memory.
 
 Each MCP tool is registered with semantic metadata:
 
@@ -23,16 +23,43 @@ See `references/mcp-tool-report.md` for the current usefulness review and reduct
 | Symbol analysis | included in `context(...)` | Inspect definitions, callers, and callees for a cell or symbol target. |
 | Agentic planning | `agent_workbench` | Run bounded notebook/project edit loops only when direct structured tools are not enough. |
 | Reference implementations | `reference` | Discover local repositories, add/list/ingest indexed references, query implementations, and propose reuse work. |
+| Problem-solving memory | `problem_memory` | Query similar problem-solution pairs before implementation and record verified lessons afterward. |
 | Conversion | `convert` | Migrate Python files/folders or bootstrap nbdev projects. |
+
+## Problem-solving memory
+
+`problem_memory` manages reusable problem-solution pairs beside the code-reference index. Query it before solving a nontrivial task, then record a pair after verification. Every pair needs at least four normalized tags. Prefer tags that identify the topic, sub-topic, library, problem category, solution category, runtime, and deployment surface. Query tags are exact all-of filters, so a query with `tags="notebook,fastcore,testing,solution-category"` returns only pairs carrying every requested tag.
+
+Signature:
+
+```python
+problem_memory(
+    action="query",
+    query=None,
+    top_k=5,
+    problem=None,
+    solution=None,
+    task="",
+    project=None,
+    evidence="",
+    outcome="applied",
+    tags=None,
+    path=None,
+    limit=20,
+)
+```
+
+Use `action="query"` before implementation, `action="add"` after a verified solution, and `action="list"` to inspect recent memories. For `add`, `tags` must contain at least four comma-separated values.
 
 ## Tool Loop
 
 1. `healthcheck` confirms the server is alive and reports concurrency behavior.
 2. `context` gives the smallest useful project, notebook, chapter, cell, or symbol view. Cell and symbol targets include symbol graph payloads.
-3. `edit_notebook` applies deterministic edit operations atomically. Use `replace_text`/`replace_texts` with `target="all"` for notebook-level renames, line ops for focused cell edits, and structural ops for insert/delete/move/replace cell changes.
-4. `style_check` reports chkstyle output, notebook hygiene, private symbol warnings, duplicate imports, and global tool usage/problems.
-5. `exec_nb` runs a notebook, a chapter, or cells up to an id. It is safe by default: fresh or changed cells are denied until they have either been run by the user or stamped by a prior nbskill execution.
-6. `diff_nb` reviews notebook changes in a text form.
+3. `reference` and `problem_memory` provide reusable evidence before implementation. Use exact problem tags when a broad memory search is not sufficient.
+4. `edit_notebook` applies deterministic edit operations atomically. Use `replace_text`/`replace_texts` with `target="all"` for notebook-level renames, line ops for focused cell edits, and structural ops for insert/delete/move/replace cell changes.
+5. `style_check` reports chkstyle output, notebook hygiene, private symbol warnings, duplicate imports, and global tool usage/problems.
+6. `exec_nb` runs a notebook, a chapter, or cells up to an id. It is safe by default: fresh or changed cells are denied until they have either been run by the user or stamped by a prior nbskill execution.
+7. `diff_nb` reviews notebook changes in a text form.
 
 Use `doctor(scopes="error,warning")` for fatal notebook problems and warnings. Add `style` only when chkstyle output is useful; `doctor` does not run or show chkstyle for error/warning-only scopes. Private symbol reporting is part of the warning scope.
 

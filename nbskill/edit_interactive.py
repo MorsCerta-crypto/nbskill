@@ -99,7 +99,7 @@ cell, helper, or approach is confusing, brittle, duplicated, or fighting the
 problem, prefer deleting it and rewriting the small scoped behavior clearly over
 preserving bad structure. A rewrite still needs a narrow target, a short
 rationale, and focused verification. After the task, call record_problem_solution
-for each reusable problem-solution pair you learned, with short evidence.
+for each reusable problem-solution pair you learned, with short evidence and at least four useful tags such as topic, sub-topic, library, problem-category, and solution-category.
 
 For new behavior, use this loop:
 1. Scratch: run the smallest experiment with run_code in the live notebook
@@ -1197,12 +1197,12 @@ def make_edit_tools(
         session.record_tool("query_knowledge", f"top_k={top_k}")
         return _knowledge_context(query, top_k=top_k)
 
-    def query_problem_memory(query: str, top_k: int = 5) -> str:
+    def query_problem_memory(query: str, top_k: int = 5, tags: str = "") -> str:
         "Search stored problem-solution memories before choosing an approach."
         top_k = _bounded_int(top_k, 5, 1, 10, "top_k")
         session.record_tool("query_problem_memory", f"top_k={top_k}")
         try:
-            result = problem_statement_query(query, top_k=top_k)
+            result = problem_statement_query(query, top_k=top_k, tags=tags)
         except BaseException as exc:
             detail = f"{type(exc).__name__}: {exc}"
             session.record_event("problem_memory_query", status="error", error=detail)

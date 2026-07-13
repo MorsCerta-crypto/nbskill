@@ -562,7 +562,7 @@ def problem_memory(
         result = nbskill.knowledge.problem_statement_list(path=path, limit=limit)
     elif action == "query":
         if not query: raise ValueError("problem_memory action='query' needs query")
-        result = nbskill.knowledge.problem_statement_query(query, top_k=top_k, project=project, path=path)
+        result = nbskill.knowledge.problem_statement_query(query, top_k=top_k, project=project, tags=tags, path=path)
     else:
         raise ValueError("action must be add, list, or query")
     return _print_json(result)

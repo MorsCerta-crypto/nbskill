@@ -34,8 +34,7 @@ from .knowledge import problem_statement_add, problem_statement_query, reference
 from .parallel import notebook_locks
 from .review import diff_nb
 
-_CAPTURE_LOCK = Lock()
-
+# %% ../nbs/08_edit_interactive.ipynb #2f72bec1
 _AGENT_MAX_STEPS = 20
 _AGENT_MAX_CONTEXT_STEPS = 5
 _AGENT_MAX_CONTEXT_COMMANDS = 20
@@ -49,7 +48,7 @@ _AGENT_MAX_LOG_ITEMS = 200
 _AGENT_MAX_DIFF_CHARS = 50000
 _AGENT_SESSIONS = {}
 
-
+# %% ../nbs/08_edit_interactive.ipynb #0741adec
 def _bounded_int(value, default, minimum, maximum, name):
     "Coerce and clamp an integer option."
     if value is None: value = default
@@ -61,12 +60,12 @@ def _bounded_int(value, default, minimum, maximum, name):
         raise ValueError(f"{name} must be >= {minimum}")
     return min(value, maximum)
 
-
+# %% ../nbs/08_edit_interactive.ipynb #b7598d41
 def _bounded_text(text, limit=_AGENT_MAX_MESSAGE_CHARS):
     "Coerce text and cap it to a safe message length."
     return cap_text(str(text or ""), limit)
 
-
+# %% ../nbs/08_edit_interactive.ipynb #9a2ccd71
 def _bounded_items(items, limit=_AGENT_MAX_LOG_ITEMS):
     "Return only the most recent bounded log items."
     return list(items)[-limit:]
@@ -170,14 +169,14 @@ def notebook_view(
             lines.append("")
         return cap_text("\n".join(lines).rstrip() + "\n", _AGENT_MAX_NOTEBOOK_VIEW_CHARS)
 
-
+# %% ../nbs/08_edit_interactive.ipynb #540534b8
 def _split_notebooks(notebooks):
     "Normalize notebook selectors into non-empty path strings."
     if notebooks is None: return []
     if isinstance(notebooks, (str, Path)): return [item.strip() for item in str(notebooks).split(",") if item.strip()]
     return [str(item) for item in notebooks if str(item).strip()]
 
-
+# %% ../nbs/08_edit_interactive.ipynb #0d5d1ccc
 def _target_paths(notebooks):
     "Resolve notebook selectors into unique target paths."
     paths = [Path(item) for item in _split_notebooks(notebooks)]
@@ -190,20 +189,20 @@ def _target_paths(notebooks):
     if duplicates: raise ValueError(f"Duplicate notebook target(s): {', '.join(sorted(duplicates))}")
     return paths
 
-
+# %% ../nbs/08_edit_interactive.ipynb #2dda6980
 def _target_slug(path):
     "Return a stable slug for a target notebook path."
     rel = Path(path).with_suffix("").as_posix()
     return re.sub(r"[^A-Za-z0-9_.-]+", "-", rel).strip("-.") or "notebook"
 
-
+# %% ../nbs/08_edit_interactive.ipynb #2c91709e
 def _target_label(paths):
     "Return a readable label for one or more target paths."
     paths = [Path(path) for path in paths]
     if len(paths) == 1: return str(paths[0])
     return ", ".join(str(path) for path in paths)
 
-
+# %% ../nbs/08_edit_interactive.ipynb #21bccb1f
 def _resolve_target_path(paths, notebook=None):
     "Resolve a user notebook selector against session targets."
     paths = [Path(path) for path in paths]
@@ -219,7 +218,7 @@ def _resolve_target_path(paths, notebook=None):
     if not matches: raise ValueError(f"Unknown target notebook {name!r}; choose one of: {_target_label(paths)}")
     raise ValueError(f"Ambiguous target notebook {name!r}")
 
-
+# %% ../nbs/08_edit_interactive.ipynb #95c00239
 def notebooks_view(
     paths,  # Notebook paths to render
     revision=0,  # Revision number to include in each rendered view
@@ -239,24 +238,24 @@ class ManagedContextMessage:
         self.removed = bool(removed)
         self.summary = str(summary or "")
 
-
+# %% ../nbs/08_edit_interactive.ipynb #987dcbbe
 def _context_msg_get(msg, key):
     "Read one field from a dict or object context message."
     return msg.get(key) if isinstance(msg, dict) else getattr(msg, key)
 
-
+# %% ../nbs/08_edit_interactive.ipynb #f4242bc4
 def _context_msg_set(msg, key, value):
     "Write one field on a dict or object context message."
     if isinstance(msg, dict): msg[key] = value
     else: setattr(msg, key, value)
 
-
+# %% ../nbs/08_edit_interactive.ipynb #3994549e
 def _chapter_tag(cell, path=None):
     "Return the stable managed-context tag for a chapter cell."
     base = f"chapter:{getattr(cell, 'id', '')}"
     return base if path is None else f"notebook:{_target_slug(path)}:{base}"
 
-
+# %% ../nbs/08_edit_interactive.ipynb #aa5770bd
 def _public_symbols_in_source(source):
     "Return public definitions found in a source string."
     try: tree = ast.parse(source)
@@ -267,7 +266,7 @@ def _public_symbols_in_source(source):
             symbols.append(node.name)
     return symbols
 
-
+# %% ../nbs/08_edit_interactive.ipynb #dce93f18
 def _chapter_public_symbols(cells):
     "Return public definitions found across chapter cells."
     symbols = []
@@ -275,7 +274,7 @@ def _chapter_public_symbols(cells):
         if getattr(cell, "cell_type", None) == "code": symbols.extend(_public_symbols_in_source(cell_source(cell)))
     return symbols
 
-
+# %% ../nbs/08_edit_interactive.ipynb #410c8e44
 def _first_markdown_paragraph(cells):
     "Return the first prose paragraph from markdown cells."
     for cell in cells:
@@ -292,7 +291,7 @@ def _first_markdown_paragraph(cells):
         if chunks: return cap_text(chunks[0], 360)
     return "No prose summary found."
 
-
+# %% ../nbs/08_edit_interactive.ipynb #a9c7531d
 def _chapter_summary(title, cells):
     "Build a concise fold summary for one chapter."
     symbols = _chapter_public_symbols(cells)
@@ -300,7 +299,7 @@ def _chapter_summary(title, cells):
     if symbols: parts.append("symbols=" + ", ".join(symbols[:8]))
     return " | ".join(parts)
 
-
+# %% ../nbs/08_edit_interactive.ipynb #9fcb517d
 def _chapter_source_view(path, span, cells):
     "Render the full source view for one chapter span."
     lines = [f"Full chapter context: {path}", f"Title: {span['title']}", f"Cells: {span['start']}:{span['end']}", ""]
@@ -313,7 +312,7 @@ def _chapter_source_view(path, span, cells):
         lines.append("")
     return cap_text("\n".join(lines).rstrip() + "\n", _AGENT_MAX_NOTEBOOK_VIEW_CHARS)
 
-
+# %% ../nbs/08_edit_interactive.ipynb #87f03670
 def managed_notebook_context(
     path,  # Notebook path or paths to render into managed messages
     revision=0,  # Revision number included in the context index
@@ -366,7 +365,7 @@ def managed_notebook_context(
             if prior_summary: msg.summary = prior_summary
     return rebuilt
 
-
+# %% ../nbs/08_edit_interactive.ipynb #b317d581
 def render_managed_context(
     messages,  # Managed context messages to project into prompt text
 ):
@@ -554,7 +553,7 @@ class EditSession:
 _CTX_SIMPLE_RE = re.compile(r"\[\[ctx:(open|delete)\s+([^\]]+)\]\]")
 _CTX_BLOCK_RE = re.compile(r"\[\[ctx:(fold|edit)\s+([^\]]+)\]\](.*?)\[\[/ctx:\1\]\]", re.S)
 
-
+# %% ../nbs/08_edit_interactive.ipynb #9eae8c68
 def find_context_command(
     text,  # Text stream to search for a managed-context command
 ):
@@ -577,7 +576,7 @@ def find_context_command(
         "raw": match.group(0),
     }
 
-
+# %% ../nbs/08_edit_interactive.ipynb #5c714e54
 def _managed_message_by_tag(messages, tag):
     "Return the unique managed context message for a tag."
     matches = [msg for msg in messages if msg.tag == tag]
@@ -585,7 +584,7 @@ def _managed_message_by_tag(messages, tag):
     if not matches: raise ValueError(f"No managed context message has tag {tag!r}")
     raise ValueError(f"Multiple managed context messages have tag {tag!r}")
 
-
+# %% ../nbs/08_edit_interactive.ipynb #e89e020a
 def _context_feedback_note(action, tag):
     "Build the standard feedback note for a context command."
     return (
@@ -594,7 +593,7 @@ def _context_feedback_note(action, tag):
         "looks correct; otherwise fix it."
     )
 
-
+# %% ../nbs/08_edit_interactive.ipynb #3bdbee5c
 def apply_context_command(
     session,  # Edit session whose managed context should change
     command,  # Parsed managed-context command to apply
@@ -627,7 +626,7 @@ def apply_context_command(
     session.session_note(note)
     return StopResponse(note)
 
-
+# %% ../nbs/08_edit_interactive.ipynb #a4922502
 def _stream_chunk_text(chunk):
     "Extract text from a streamed chat chunk."
     if isinstance(chunk, str): return chunk
@@ -643,13 +642,13 @@ def _stream_chunk_text(chunk):
     except (AttributeError, IndexError, TypeError):
         return ""
 
-
+# %% ../nbs/08_edit_interactive.ipynb #2d17c5b1
 def _close_stream(stream):
     "Close a stream object when it supports close()."
     close = getattr(stream, "close", None)
     if callable(close): close()
 
-
+# %% ../nbs/08_edit_interactive.ipynb #4d8f047d
 def _chat_response_text(response):
     "Return assistant text from a Lisette response-like object."
     if isinstance(response, str): return response
@@ -657,13 +656,13 @@ def _chat_response_text(response):
     if text: return text
     return str(response or "")
 
-
+# %% ../nbs/08_edit_interactive.ipynb #42928b56
 def _chat_allows_nonstream(chat):
     "Return whether this model can recover with a non-streaming call."
     model = str(getattr(chat, "model", ""))
     return not model.startswith("chatgpt/")
 
-
+# %% ../nbs/08_edit_interactive.ipynb #c8ab54ac
 def _chat_nonstream(session, prompt, max_steps):
     "Run one non-streaming continuation when provider streaming fails."
     if not _chat_allows_nonstream(session.chat):
@@ -671,7 +670,7 @@ def _chat_nonstream(session, prompt, max_steps):
     response = session.chat(prompt, max_steps=max_steps, stream=False)
     return _chat_response_text(response)
 
-
+# %% ../nbs/08_edit_interactive.ipynb #ce11f8fb
 def run_chat_with_context_commands(
     session,  # Edit session with an attached chat and managed context
     prompt,  # Prompt to send to the chat model
@@ -746,7 +745,7 @@ def _result_cell_ids(result):
         if item.get("cell_id"): affected.append(item.get("cell_id"))
     return sorted({str(item) for item in affected if item})
 
-
+# %% ../nbs/08_edit_interactive.ipynb #1af84fda
 def _finish_write(session, path, message, result, tool_name=None):
     "Finalize a notebook mutation and return feedback to the agent."
     session.revision += 1
@@ -809,7 +808,7 @@ def _knowledge_context(query, top_k=3):
         hits.append(f"- {label or hit.get('path')}: {source}")
     return "\n".join(hits) if hits else "No relevant knowledge hits."
 
-
+# %% ../nbs/08_edit_interactive.ipynb #65f1c0a0
 def _problem_memory_context(query, top_k=5):
     "Return compact reusable problem-solution memories for a query."
     try: result = problem_statement_query(query, top_k=top_k)
@@ -842,7 +841,7 @@ def _inserted_cell_ids(result):
         inserted.extend(diff.get("inserted_cell_ids", []))
     return inserted
 
-
+# %% ../nbs/08_edit_interactive.ipynb #3cb5234c
 def _similar_source_lines(source, needle, limit=6):
     "Return source lines that partially match a stale edit string."
     words = {word for word in re.findall(r"\w+", str(needle or "")) if len(word) > 2}
@@ -854,7 +853,7 @@ def _similar_source_lines(source, needle, limit=6):
     scored.sort(key=lambda item: (-item[0], item[1]))
     return [f"L{number}: {cap_text(line, 240)}" for _, number, line in scored[:limit]]
 
-
+# %% ../nbs/08_edit_interactive.ipynb #cc9a77a9
 def _edit_mismatch_feedback(path, id, before, old_str, matches):
     "Return a no-change report for an edit_cell match failure."
     machine = {
@@ -875,7 +874,7 @@ def _edit_mismatch_feedback(path, id, before, old_str, matches):
     chunks.extend(["", "current_source:", cap_text(before, _AGENT_MAX_CELL_SOURCE_CHARS)])
     return "\n".join(chunks)
 
-
+# %% ../nbs/08_edit_interactive.ipynb #e09f67b5
 def make_edit_tools(
     session,  # Edit session the returned tools should mutate or inspect
 ):
@@ -1559,7 +1558,7 @@ def make_context_tools(session):
 
     return [open_context, fold_context, delete_context, edit_context, context_view, manage_context]
 
-
+# %% ../nbs/08_edit_interactive.ipynb #b5db299b
 def make_chat(model, tools, hist, system_prompt=EDIT_INTERACTIVE_SYSTEM):
     "Create the Lisette chat object for edit-interactive."
     from lisette import Chat
@@ -1568,7 +1567,7 @@ def make_chat(model, tools, hist, system_prompt=EDIT_INTERACTIVE_SYSTEM):
         model, sp=system_prompt, tools=tools, hist=hist, stream=str(model).startswith("chatgpt/")
     )
 
-
+# %% ../nbs/08_edit_interactive.ipynb #88d6d88e
 def run_context_session(session, model, prompt, max_steps=4, max_context_commands=8):
     "Run one separate context-management step using batched tool calls."
     if not session.managed_context: return ""
@@ -1590,7 +1589,6 @@ def run_context_session(session, model, prompt, max_steps=4, max_context_command
     session.record_message("context", summary)
     return summary
 
-
 # %% ../nbs/08_edit_interactive.ipynb #7b3292af
 def response_text(response):
     "Extract readable text from a Lisette response or response list."
@@ -1604,7 +1602,7 @@ def response_text(response):
         return "".join(str(item.get("text", item)) if isinstance(item, dict) else str(item) for item in content)
     return "" if content is None else str(content)
 
-
+# %% ../nbs/08_edit_interactive.ipynb #c89d71f2
 def plan_result_text(result):
     "Return the human-readable text for an execute_plan result."
     if not isinstance(result, dict): return "" if result is None else str(result)
@@ -1635,7 +1633,7 @@ def final_diff(path):
             )
         return f"Code-cell diff unavailable: {type(exc).__name__}: {exc}"
 
-
+# %% ../nbs/08_edit_interactive.ipynb #c5066d04
 def final_diffs(paths):
     "Return code-cell diffs for one or more notebooks."
     chunks = []
@@ -1648,7 +1646,7 @@ def _new_agent_session_id():
     "Return a short unique in-memory agent session id."
     return f"session-{uuid.uuid4().hex[:8]}"
 
-
+# %% ../nbs/08_edit_interactive.ipynb #e6acb480
 def _get_agent_session(paths, timeout, session_id=None, reset_session=False):
     "Create or reuse the persistent edit session for target notebooks."
     sid = str(session_id or "").strip() or _new_agent_session_id()
@@ -1676,7 +1674,7 @@ def _get_agent_session(paths, timeout, session_id=None, reset_session=False):
     )
     return session
 
-
+# %% ../nbs/08_edit_interactive.ipynb #ec2e1e0e
 def _feedback_final_prompt():
     "Return the stop prompt used after mutation feedback."
     return (
@@ -1684,7 +1682,7 @@ def _feedback_final_prompt():
         "briefly summarize the update. The next feedback round will continue."
     )
 
-
+# %% ../nbs/08_edit_interactive.ipynb #89b20984
 def _call_feedback_chat(chat, prompt, max_steps):
     "Call a chat with feedback-stop support and compatibility fallback."
     try:
@@ -1698,14 +1696,14 @@ def _call_feedback_chat(chat, prompt, max_steps):
         if "final_prompt" not in str(exc): raise
         return chat(prompt, max_steps=max_steps, return_all=True)
 
-
+# %% ../nbs/08_edit_interactive.ipynb #f1da2790
 def _normalize_chat_result(result):
     "Materialize streamed chat results into ordinary response values."
     if not isinstance(result, (list, str, bytes, dict)) and hasattr(result, "__next__"):
         return list(result)
     return result
 
-
+# %% ../nbs/08_edit_interactive.ipynb #0f5a8983
 def execute_plan(
     notebook: str | list,  # Target notebook path, comma-separated paths, or path list
     plan: str,  # Concrete notebook-editing task for the inner agent

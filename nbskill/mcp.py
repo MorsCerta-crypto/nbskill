@@ -2212,6 +2212,14 @@ _MCP_KNOWLEDGE_TOOL_CATALOG = {
         'when_to_use': 'Use query before implementing similar code; use add/list/ingest to maintain the local reference index.',
         'combine_with': 'Combines add, list, ingest, and query as actions on one tool.',
     },
+    'problem_memory': {
+        'feature': 'problem_solving_knowledge',
+        'usefulness': 'core',
+        'tags': ('knowledge', 'problem-solving', 'memory', 'search', 'tags'),
+        'description': 'Store, list, and search reusable problem-solution pairs with at least four tags per pair and exact tag filtering.',
+        'when_to_use': 'Query before solving a task; add each reusable lesson after verification with topic, sub-topic, library, problem-category, solution-category, and other useful tags.',
+        'combine_with': 'Pair with reference before implementation and with exec_nb, diff_nb, or doctor before recording a solution.',
+    },
 }
 
 # %% ../nbs/07_mcp.ipynb #mcpcat09
@@ -2964,6 +2972,67 @@ async def _reference_tool(
         return _mcp_tool_error_result("reference", arguments, TimeoutError(message), detail=detail)
     except (Exception, SystemExit) as exc:
         return _mcp_tool_error_result("reference", arguments, exc, detail=detail)
+
+# %% ../nbs/07_mcp.ipynb #1f7b568e
+@mcp.tool(**_mcp_tool_meta("problem_memory"))
+async def _problem_memory_tool(
+    action: str = "query",
+    query: str | None = None,
+    top_k: int = 5,
+    problem: str | None = None,
+    solution: str | None = None,
+    task: str = "",
+    project: str | None = None,
+    evidence: str = "",
+    outcome: str = "applied",
+    tags: str | None = None,
+    path: str | None = None,
+    limit: int = 20,
+    tool_timeout: float = 120.0,
+    detail: str = "summary",
+    ctx: Context = None,
+) -> ToolResult:
+    "Manage reusable problem-solution memories with exact tag filters."
+    root = await _mcp_workspace_root(ctx)
+    path = _mcp_workspace_path(path, root) if path else path
+    action = str(action or "query").lower()
+    top_k = _mcp_clamp_int(top_k, 5, 1, 20, "top_k")
+    limit = _mcp_clamp_int(limit, 20, 1, 100, "limit")
+    tool_timeout = _mcp_clamp_float(tool_timeout, 120.0, 0.001, 120.0, "tool_timeout")
+    arguments = dict(
+        action=action, query=query, top_k=top_k, problem=problem, solution=solution, task=task,
+        project=project, evidence=evidence, outcome=outcome, tags=tags, path=path, limit=limit,
+        tool_timeout=tool_timeout, detail=detail, workspace_root=str(root) if root else None,
+    )
+    try:
+        if action == "add":
+            if not problem or not solution: raise ValueError("problem_memory action='add' needs problem and solution")
+            result_data = await asyncio.wait_for(
+                asyncio.to_thread(
+                    problem_statement_add, problem, solution, task=task, project=project or str(root or "."),
+                    evidence=evidence, outcome=outcome, tags=tags, path=path,
+                ),
+                timeout=tool_timeout,
+            )
+        elif action == "list":
+            result_data = await asyncio.wait_for(
+                asyncio.to_thread(problem_statement_list, path=path, limit=limit), timeout=tool_timeout,
+            )
+        elif action == "query":
+            if not query: raise ValueError("problem_memory action='query' needs query")
+            result_data = await asyncio.wait_for(
+                asyncio.to_thread(problem_statement_query, query, top_k=top_k, project=project, tags=tags, path=path),
+                timeout=tool_timeout,
+            )
+        else:
+            raise ValueError("action must be add, list, or query")
+        full_output = json.dumps(result_data, indent=2, sort_keys=True)
+        return mcp_tool_result("problem_memory", arguments, full_output, detail=detail, problem_memory=result_data)
+    except TimeoutError as exc:
+        message = f"problem_memory exceeded its MCP timeout of {tool_timeout:g}s before Codex's client timeout."
+        return _mcp_tool_error_result("problem_memory", arguments, TimeoutError(message), detail=detail)
+    except (Exception, SystemExit) as exc:
+        return _mcp_tool_error_result("problem_memory", arguments, exc, detail=detail)
 
 # %% ../nbs/07_mcp.ipynb #mcptool19
 @mcp.tool(**_mcp_tool_meta("convert"))

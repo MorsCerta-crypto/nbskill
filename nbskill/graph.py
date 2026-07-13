@@ -2,9 +2,9 @@
 
 # %% auto #0
 __all__ = ['notebook_order_problems', 'notebook_order_problem_lines', 'symbol_graph_data', 'symbol_graph_public_data',
-           'symbol_usage_summary', 'symbol_graph', 'private_symbol_report', 'symbol_connection',
-           'notebook_knowledge_graph_data', 'notebook_knowledge_graph', 'symbol_catalog', 'reuse_advice',
-           'placement_advice', 'notebook_advice_problems']
+           'symbol_usage_summary', 'symbol_graph', 'private_symbol_report', 'symbol_connection', 'symbol_catalog',
+           'notebook_knowledge_graph_data', 'notebook_knowledge_graph', 'reuse_advice', 'placement_advice',
+           'notebook_advice_problems']
 
 # %% ../nbs/10_graph.ipynb #09416808
 import ast, builtins, copy, json, re
@@ -236,50 +236,84 @@ class _CallRootVisitor(ast.NodeVisitor):
         self.records = []
         self.local_scopes = []
 
-    def _is_local(self, name):
-        return any(name in scope for scope in self.local_scopes)
+# %% ../nbs/10_graph.ipynb #d8153dd0
+@patch
+def _is_local(self: _CallRootVisitor, name):
+    return any(name in scope for scope in self.local_scopes)
 
-    def _with_scope(self, names, visit):
-        self.local_scopes.append(names)
-        visit()
-        self.local_scopes.pop()
+# %% ../nbs/10_graph.ipynb #1f48fd07
+@patch
+def _with_scope(self: _CallRootVisitor, names, visit):
+    self.local_scopes.append(names)
+    visit()
+    self.local_scopes.pop()
 
-    def _visit_deferred_body(self, node, body):
-        self._with_scope(_argument_names(node.args) | _body_binding_names(body), lambda: [self.visit(child) for child in body])
+# %% ../nbs/10_graph.ipynb #9d618b73
+@patch
+def _visit_deferred_body(self: _CallRootVisitor, node, body):
+    self._with_scope(_argument_names(node.args) | _body_binding_names(body), lambda: [self.visit(child) for child in body])
 
-    def visit_FunctionDef(self, node):
-        for item in [*node.decorator_list, *node.args.defaults, *node.args.kw_defaults]:
-            if item is not None: self.visit(item)
-        if node.returns is not None: self.visit(node.returns)
-        self._visit_deferred_body(node, node.body)
+# %% ../nbs/10_graph.ipynb #a7e58149
+@patch
+def visit_FunctionDef(self: _CallRootVisitor, node):
+    for item in [*node.decorator_list, *node.args.defaults, *node.args.kw_defaults]:
+        if item is not None: self.visit(item)
+    if node.returns is not None: self.visit(node.returns)
+    self._visit_deferred_body(node, node.body)
 
-    def visit_AsyncFunctionDef(self, node): self.visit_FunctionDef(node)
+# %% ../nbs/10_graph.ipynb #f90355e3
+@patch
+def visit_AsyncFunctionDef(self: _CallRootVisitor, node):
+    self.visit_FunctionDef(node)
 
-    def visit_Lambda(self, node):
-        self._with_scope(_argument_names(node.args), lambda: self.visit(node.body))
+# %% ../nbs/10_graph.ipynb #b3f48913
+@patch
+def visit_Lambda(self: _CallRootVisitor, node):
+    self._with_scope(_argument_names(node.args), lambda: self.visit(node.body))
 
-    def _visit_comprehension(self, node):
-        names = set()
-        for generator in node.generators: names.update(_target_names(generator.target))
-        def visit_body():
-            for generator in node.generators:
-                self.visit(generator.iter)
-                for item in generator.ifs: self.visit(item)
-            if hasattr(node, "elt"): self.visit(node.elt)
-            if hasattr(node, "key"): self.visit(node.key)
-            if hasattr(node, "value"): self.visit(node.value)
-        self._with_scope(names, visit_body)
+# %% ../nbs/10_graph.ipynb #6a7956ee
+@patch
+def _visit_comprehension(self: _CallRootVisitor, node):
+    names = set()
+    for generator in node.generators:
+        names.update(_target_names(generator.target))
+    def visit_body():
+        for generator in node.generators:
+            self.visit(generator.iter)
+            for item in generator.ifs:
+                self.visit(item)
+        if hasattr(node, "elt"): self.visit(node.elt)
+        if hasattr(node, "key"): self.visit(node.key)
+        if hasattr(node, "value"): self.visit(node.value)
+    self._with_scope(names, visit_body)
 
-    def visit_ListComp(self, node): self._visit_comprehension(node)
-    def visit_SetComp(self, node): self._visit_comprehension(node)
-    def visit_DictComp(self, node): self._visit_comprehension(node)
-    def visit_GeneratorExp(self, node): self._visit_comprehension(node)
+# %% ../nbs/10_graph.ipynb #84471cf8
+@patch
+def visit_ListComp(self: _CallRootVisitor, node):
+    self._visit_comprehension(node)
 
-    def visit_Call(self, node):
-        name = _call_root_name(node.func)
-        if name and not self._is_local(name):
-            self.records.append(dict(symbol=name, line=getattr(node, "lineno", None), deferred=bool(self.local_scopes)))
-        self.generic_visit(node)
+# %% ../nbs/10_graph.ipynb #5b6e786c
+@patch
+def visit_SetComp(self: _CallRootVisitor, node):
+    self._visit_comprehension(node)
+
+# %% ../nbs/10_graph.ipynb #ace83956
+@patch
+def visit_DictComp(self: _CallRootVisitor, node):
+    self._visit_comprehension(node)
+
+# %% ../nbs/10_graph.ipynb #d90ba535
+@patch
+def visit_GeneratorExp(self: _CallRootVisitor, node):
+    self._visit_comprehension(node)
+
+# %% ../nbs/10_graph.ipynb #c6b0fef5
+@patch
+def visit_Call(self: _CallRootVisitor, node):
+    name = _call_root_name(node.func)
+    if name and not self._is_local(name):
+        self.records.append(dict(symbol=name, line=getattr(node, "lineno", None), deferred=bool(self.local_scopes)))
+    self.generic_visit(node)
 
 # %% ../nbs/10_graph.ipynb #f5ac828d
 def _cell_call_root_records(cell):
@@ -711,6 +745,151 @@ def symbol_connection(
     print(text)
     return cli_return(text)
 
+# %% ../nbs/10_graph.ipynb #2ceeb556
+class _ShapeNormalizer(ast.NodeTransformer):
+    def visit_FunctionDef(self, node):
+        node.name = "_"
+        return self.generic_visit(node)
+
+    def visit_AsyncFunctionDef(self, node):
+        node.name = "_"
+        return self.generic_visit(node)
+
+    def visit_ClassDef(self, node):
+        node.name = "_"
+        return self.generic_visit(node)
+
+    def visit_arg(self, node):
+        node.arg = "_"
+        return self.generic_visit(node)
+
+    def visit_Name(self, node):
+        node.id = "_"
+        return node
+
+    def visit_Constant(self, node):
+        node.value = "_"
+        return node
+
+# %% ../nbs/10_graph.ipynb #80a4852b
+def _tokens_from_text(text):
+    return sorted(set(re.findall(r"[a-z0-9]+", str(text).lower())))
+
+# %% ../nbs/10_graph.ipynb #9a1d3733
+def _normalized_ast_shape(node):
+    normalized = copy.deepcopy(node)
+    normalized = _ShapeNormalizer().visit(normalized)
+    ast.fix_missing_locations(normalized)
+    return ast.dump(normalized, annotate_fields=False, include_attributes=False)
+
+# %% ../nbs/10_graph.ipynb #643b4a71
+def _decorator_names(node):
+    return sorted(filter(None, (call_name(item) for item in getattr(node, "decorator_list", []))))
+
+# %% ../nbs/10_graph.ipynb #f95ad994
+def _cell_import_names(tree):
+    names = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            names.extend(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            for alias in node.names:
+                names.append(f"{module}.{alias.name}" if module else alias.name)
+    return sorted(set(names))
+
+# %% ../nbs/10_graph.ipynb #77466f65
+def _markdown_heading(cell):
+    if getattr(cell, "cell_type", "") != "markdown": return ""
+    lines = str(cell_source(cell)).splitlines()
+    headings = [line.strip("# ").strip() for line in lines if line.lstrip().startswith("#")]
+    return " ".join(headings)
+
+# %% ../nbs/10_graph.ipynb #72f0aa78
+def _heading_before(cells, idx):
+    for cell in reversed(cells[:idx]):
+        heading = _markdown_heading(cell)
+        if heading: return heading
+    return ""
+
+# %% ../nbs/10_graph.ipynb #672d16f1
+def _notebook_text_profile(path, nb, module):
+    headings = [_markdown_heading(cell) for cell in nb.cells]
+    headings = [heading for heading in headings if heading]
+    imports = []
+    symbols = []
+    for idx, cell in enumerate(nb.cells):
+        tree = parse_code_cell(cell)
+        if tree is None: continue
+        imports.extend(_cell_import_names(tree))
+        for node in tree.body:
+            symbols.extend(symbol for symbol, _, _ in _node_definitions(node))
+    text = " ".join([module, Path(path).stem, *headings, *symbols, *imports])
+    return dict(
+        path=str(path), module=module, headings=headings,
+        symbols=sorted(set(symbols)), imports=sorted(set(imports)),
+        tokens=_tokens_from_text(text)
+    )
+
+# %% ../nbs/10_graph.ipynb #e84c198a
+def _catalog_record(path, module, idx, cell, node, symbol, kind, heading, imports):
+    docstring = ast.get_docstring(node) or ""
+    text = " ".join([symbol, kind, module, heading, docstring, " ".join(imports)])
+    exported = str(cell_source(cell)).lstrip().startswith("#| export")
+    return dict(
+        symbol=symbol, kind=kind, module=module, path=str(path),
+        cell_id=getattr(cell, "id", ""), cell_idx=idx, exported=exported,
+        private=symbol_short_name(symbol).startswith("_"), docstring=docstring,
+        heading=heading, tokens=_tokens_from_text(text),
+        calls=sorted(set(_call_names(node))), imports=imports,
+        decorators=_decorator_names(node), ast_shape=_normalized_ast_shape(node)
+    )
+
+# %% ../nbs/10_graph.ipynb #bb581791
+def symbol_catalog(path='nbs'):
+    """Return notebook symbols with placement and reuse evidence."""
+    symbols = []
+    notebooks = []
+    nb_paths = _graph_limited_notebook_paths(path)
+    cell_count = 0
+    for nb_path in nb_paths:
+        nb = read_nb(nb_path)
+        module = _notebook_module_name(nb_path, nb)
+        notebooks.append(_notebook_text_profile(nb_path, nb, module))
+        for idx, cell in enumerate(nb.cells):
+            cell_count += 1
+            _graph_check_size(notebooks=len(nb_paths), cells=cell_count, records=len(symbols))
+            tree = parse_code_cell(cell)
+            if tree is None:
+                continue
+            heading = _heading_before(nb.cells, idx)
+            imports = _cell_import_names(tree)
+            for node in tree.body:
+                for symbol, symbol_node, kind in _node_definitions(node):
+                    symbols.append(
+                        _catalog_record(
+                            nb_path,
+                            module,
+                            idx,
+                            cell,
+                            symbol_node,
+                            symbol,
+                            kind,
+                            heading,
+                            imports,
+                        )
+                    )
+                    _graph_check_size(
+                        notebooks=len(nb_paths),
+                        cells=cell_count,
+                        records=len(symbols),
+                    )
+    return dict(
+        symbols=symbols,
+        notebooks=notebooks,
+        graph=_collect_graph(path),
+    )
+
 # %% ../nbs/10_graph.ipynb #fd7d73c2
 _KG_NODE_TYPES = {"notebook", "cell", "symbol", "import", "heading"}
 _KG_EDGE_TYPES = {"contains", "defines", "calls", "imports", "documents", "precedes", "similar_to"}
@@ -1035,132 +1214,6 @@ def notebook_knowledge_graph(path="nbs", json_output=False):
     text = _format_notebook_knowledge_graph(data)
     print(text)
     return cli_return(text)
-
-# %% ../nbs/10_graph.ipynb #2ceeb556
-class _ShapeNormalizer(ast.NodeTransformer):
-    def visit_FunctionDef(self, node):
-        node.name = "_"
-        return self.generic_visit(node)
-
-    def visit_AsyncFunctionDef(self, node):
-        node.name = "_"
-        return self.generic_visit(node)
-
-    def visit_ClassDef(self, node):
-        node.name = "_"
-        return self.generic_visit(node)
-
-    def visit_arg(self, node):
-        node.arg = "_"
-        return self.generic_visit(node)
-
-    def visit_Name(self, node):
-        node.id = "_"
-        return node
-
-    def visit_Constant(self, node):
-        node.value = "_"
-        return node
-
-# %% ../nbs/10_graph.ipynb #80a4852b
-def _tokens_from_text(text):
-    return sorted(set(re.findall(r"[a-z0-9]+", str(text).lower())))
-
-# %% ../nbs/10_graph.ipynb #9a1d3733
-def _normalized_ast_shape(node):
-    normalized = copy.deepcopy(node)
-    normalized = _ShapeNormalizer().visit(normalized)
-    ast.fix_missing_locations(normalized)
-    return ast.dump(normalized, annotate_fields=False, include_attributes=False)
-
-# %% ../nbs/10_graph.ipynb #643b4a71
-def _decorator_names(node):
-    return sorted(filter(None, (call_name(item) for item in getattr(node, "decorator_list", []))))
-
-# %% ../nbs/10_graph.ipynb #f95ad994
-def _cell_import_names(tree):
-    names = []
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            names.extend(alias.name for alias in node.names)
-        elif isinstance(node, ast.ImportFrom):
-            module = node.module or ""
-            for alias in node.names:
-                names.append(f"{module}.{alias.name}" if module else alias.name)
-    return sorted(set(names))
-
-# %% ../nbs/10_graph.ipynb #77466f65
-def _markdown_heading(cell):
-    if getattr(cell, "cell_type", "") != "markdown": return ""
-    lines = str(cell_source(cell)).splitlines()
-    headings = [line.strip("# ").strip() for line in lines if line.lstrip().startswith("#")]
-    return " ".join(headings)
-
-# %% ../nbs/10_graph.ipynb #72f0aa78
-def _heading_before(cells, idx):
-    for cell in reversed(cells[:idx]):
-        heading = _markdown_heading(cell)
-        if heading: return heading
-    return ""
-
-# %% ../nbs/10_graph.ipynb #672d16f1
-def _notebook_text_profile(path, nb, module):
-    headings = [_markdown_heading(cell) for cell in nb.cells]
-    headings = [heading for heading in headings if heading]
-    imports = []
-    symbols = []
-    for idx, cell in enumerate(nb.cells):
-        tree = parse_code_cell(cell)
-        if tree is None: continue
-        imports.extend(_cell_import_names(tree))
-        for node in tree.body:
-            symbols.extend(symbol for symbol, _, _ in _node_definitions(node))
-    text = " ".join([module, Path(path).stem, *headings, *symbols, *imports])
-    return dict(
-        path=str(path), module=module, headings=headings,
-        symbols=sorted(set(symbols)), imports=sorted(set(imports)),
-        tokens=_tokens_from_text(text)
-    )
-
-# %% ../nbs/10_graph.ipynb #e84c198a
-def _catalog_record(path, module, idx, cell, node, symbol, kind, heading, imports):
-    docstring = ast.get_docstring(node) or ""
-    text = " ".join([symbol, kind, module, heading, docstring, " ".join(imports)])
-    exported = str(cell_source(cell)).lstrip().startswith("#| export")
-    return dict(
-        symbol=symbol, kind=kind, module=module, path=str(path),
-        cell_id=getattr(cell, "id", ""), cell_idx=idx, exported=exported,
-        private=symbol_short_name(symbol).startswith("_"), docstring=docstring,
-        heading=heading, tokens=_tokens_from_text(text),
-        calls=sorted(set(_call_names(node))), imports=imports,
-        decorators=_decorator_names(node), ast_shape=_normalized_ast_shape(node)
-    )
-
-# %% ../nbs/10_graph.ipynb #e02e7d4c
-def symbol_catalog(path="nbs"):
-    "Return notebook symbols with placement and reuse evidence."
-    symbols = []
-    notebooks = []
-    nb_paths = _graph_limited_notebook_paths(path)
-    cell_count = 0
-    for nb_path in nb_paths:
-        nb = read_nb(nb_path)
-        module = _notebook_module_name(nb_path, nb)
-        notebooks.append(_notebook_text_profile(nb_path, nb, module))
-        for idx, cell in enumerate(nb.cells):
-            cell_count += 1
-            _graph_check_size(notebooks=len(nb_paths), cells=cell_count, records=len(symbols))
-            tree = parse_code_cell(cell)
-            if tree is None: continue
-            heading = _heading_before(nb.cells, idx)
-            imports = _cell_import_names(tree)
-            for node in tree.body:
-                for symbol, symbol_node, kind in _node_definitions(node):
-                    symbols.append(
-                        _catalog_record(nb_path, module, idx, cell, symbol_node, symbol, kind, heading, imports)
-                    )
-                    _graph_check_size(notebooks=len(nb_paths), cells=cell_count, records=len(symbols))
-    return {"symbols": symbols, "notebooks": notebooks, "graph": _collect_graph(path)}
 
 # %% ../nbs/10_graph.ipynb #6440e184
 def _source_record_from_node(source, imports, symbol, symbol_node, kind):

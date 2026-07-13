@@ -139,6 +139,9 @@ from the active context while preserving the audit log, and leave the index
 visible. Stop once the context is prepared or cleaned.
 """
 
+# %% ../nbs/08_edit_interactive.ipynb #440a8950
+_CAPTURE_LOCK = Lock()
+
 # %% ../nbs/08_edit_interactive.ipynb #155505b9
 def capture_call_text(func, **kwargs):
     "Run `func` and return captured stdout/stderr, or the return value."

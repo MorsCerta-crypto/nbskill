@@ -102,11 +102,19 @@ mcp__nbskill__.reference(
 
 The local graph records notebooks, cells, headings, symbols, and imports. Its edges record containment, definitions, calls, imports, documentation order, and related symbols. Call and import edges carry evidence separately from heuristic similarity edges.
 
+This gives `nbskill` a fast, project-wide map of the notebook source: agents can assess the impact of a change, follow a symbol to its callers, and spot cross-notebook private-helper use without reading every notebook. It is a navigation and maintenance aid, not a runtime dependency analyzer.
+
 Ask for project context with the graph attached when you need to trace a symbol through the notebook structure:
 
 ``` python
 mcp__nbskill__.context(target="project", scope="nbs", include_graph=True)
 ```
+
+## Problem-solution memory
+
+Before choosing an approach, query [`problem_memory`](https://MorsCerta-crypto.github.io/nbskill/cli.html#problem_memory) for similar verified lessons from this and other projects. After verification, add a reusable problem-solution pair with short evidence and at least four normalized tags, such as topic, sub-topic, library, problem category, and solution category.
+
+Tags make lessons precise enough to reuse: a query with tags applies an exact all-of filter, while the natural-language problem ranks the remaining matches. This keeps a broadly similar memory from being mistaken for a directly applicable solution.
 
 ``` python
 graph = notebook_knowledge_graph_data("nbs")

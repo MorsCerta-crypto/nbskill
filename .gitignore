@@ -41,6 +41,8 @@ var/
 wheels/
 *.egg-info/
 .installed.cfg
+.codex/
+lancedb/
 *.egg
 log/
 # PyInstaller

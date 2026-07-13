@@ -475,13 +475,13 @@ _NBSKILL_NBDEV_CONFIG = {
     "allowed_cell_metadata_keys": '["nbskill"]',
 }
 
-
+# %% ../nbs/00_foundation.ipynb #e98afa55
 def _project_root_path(path):
     root = Path(path).expanduser()
     if root.is_file(): root = root.parent
     return root.resolve()
 
-
+# %% ../nbs/00_foundation.ipynb #2c52875e
 def _read_nbskill_agents_template():
     try:
         return files("nbskill").joinpath(_NBSKILL_AGENTS_TEMPLATE).read_text(encoding="utf-8")
@@ -496,7 +496,7 @@ def _read_nbskill_agents_template():
             continue
     return None
 
-
+# %% ../nbs/00_foundation.ipynb #93cf30c0
 def _install_agents_md(root, overwrite=False):
     path = root / "AGENTS.md"
     if path.exists() and not overwrite:
@@ -521,7 +521,7 @@ def _set_cli_option(args, name, value):
         return pattern.sub(lambda match: f"{match.group(1)}{name} {value}", args, count=1)
     return f"{args} {name} {value}"
 
-
+# %% ../nbs/00_foundation.ipynb #0acbbc0e
 def _nbdev_test_serial_command(text, pause=_NBSKILL_CI_PAUSE):
     pattern = re.compile(r"(?P<cmd>\b(?:uv\s+run\s+)?nbdev-test\b)(?P<args>[^\n#]*)")
 
@@ -535,7 +535,7 @@ def _nbdev_test_serial_command(text, pause=_NBSKILL_CI_PAUSE):
 
     return pattern.sub(repl, text)
 
-
+# %% ../nbs/00_foundation.ipynb #1032ec1c
 def _patch_github_actions(root, pause=_NBSKILL_CI_PAUSE):
     workflow_dir = root / ".github" / "workflows"
     paths = sorted([*workflow_dir.glob("*.yml"), *workflow_dir.glob("*.yaml")]) if workflow_dir.exists() else []
@@ -562,7 +562,7 @@ def _toml_section_bounds(lines, section):
             break
     return start, end
 
-
+# %% ../nbs/00_foundation.ipynb #1fae8d2a
 def _set_toml_section_keys(text, section, values):
     lines = text.splitlines()
     start, end = _toml_section_bounds(lines, section)
@@ -581,7 +581,7 @@ def _set_toml_section_keys(text, section, values):
             lines[found] = line
     return "\n".join(lines) + "\n"
 
-
+# %% ../nbs/00_foundation.ipynb #59d7087d
 def _patch_pyproject_nbdev(root):
     path = root / "pyproject.toml"
     if not path.exists():
@@ -1092,19 +1092,19 @@ def cell(self: NotebookDocument, cell_id):
     idx, cell = find_cell_by_id(getattr(self.nb, "cells", []), cell_id)
     return NotebookCell(cell, idx=idx, path=self.path)
 
-
+# %% ../nbs/00_foundation.ipynb #ee6211c7
 @patch
 def chapter(self: NotebookDocument, title, create=False):
     "Return one chapter model by title or regex."
     return NotebookChapter.from_span(one_chapter(getattr(self.nb, "cells", []), title, create=create), self.nb.cells)
 
-
+# %% ../nbs/00_foundation.ipynb #36ec5244
 @patch
 def notebook_source_hash(self: NotebookDocument):
     "Return the notebook's ordered source hash."
     return notebook_hash(self.nb)
 
-
+# %% ../nbs/00_foundation.ipynb #60a12fd8
 @patch
 def commit(self: NotebookDocument, **kwargs):
     "Commit this notebook model through the shared atomic writer."
@@ -1369,19 +1369,19 @@ def ensure_cell_ids(nb):
         if "id" not in cell: cell["id"] = rtoken_hex(4)
     return nb
 
-
+# %% ../nbs/00_foundation.ipynb #661ab402
 def notebook_hash(nb):
     "Return a stable source hash for a notebook's ordered cell contents."
     payload = chr(30).join(f"{getattr(cell, 'id', '')}:{cell_source(cell)}" for cell in getattr(nb, "cells", []))
     return source_hash(payload)
 
-
+# %% ../nbs/00_foundation.ipynb #86f33aaa
 def _path_inside_cwd(path):
     try: Path(path).expanduser().resolve(strict=False).relative_to(Path.cwd().resolve())
     except (OSError, ValueError): return False
     return True
 
-
+# %% ../nbs/00_foundation.ipynb #30a45ea3
 def _restore_file_bytes(path, data):
     path = Path(path)
     if data is None:
@@ -1390,7 +1390,7 @@ def _restore_file_bytes(path, data):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
 
-
+# %% ../nbs/00_foundation.ipynb #acb3c6a3
 def _readback_cell_hashes(nb, cell_ids):
     wanted = {cell_id for cell_id in (cell_ids or []) if cell_id}
     return {
@@ -1399,14 +1399,14 @@ def _readback_cell_hashes(nb, cell_ids):
         if not wanted or getattr(cell, "id", "") in wanted
     }
 
-
+# %% ../nbs/00_foundation.ipynb #62b66237
 def _clear_changed_outputs(nb, cell_ids=None):
     wanted = {cell_id for cell_id in (cell_ids or []) if cell_id}
     for cell in getattr(nb, "cells", []):
         if wanted and getattr(cell, "id", "") not in wanted: continue
         clear_outputs(cell)
 
-
+# %% ../nbs/00_foundation.ipynb #973004d0
 def commit_notebook(
     path,
     trial,
@@ -1638,7 +1638,7 @@ def output_value_text(value):
     if value is None: return ''
     return str(value)
 
-
+# %% ../nbs/00_foundation.ipynb #88915817
 def output_text(output):
     """Return a notebook output object as plain text."""
     output_type = output.get('output_type', '')
@@ -1652,10 +1652,10 @@ def output_text(output):
         if key in data: return output_value_text(data.get(key))
     return ''
 
-
+# %% ../nbs/00_foundation.ipynb #590abf03
 _output_text_function = output_text
 
-
+# %% ../nbs/00_foundation.ipynb #d5940981
 def cell_output_text(cell):
     """Return all visible outputs for `cell` as compact plain text."""
     return ''.join(_output_text_function(output) for output in _cell_outputs(cell)).strip()
@@ -1838,7 +1838,7 @@ def output_text(self: Cell):
     "Return all visible outputs for this cell as compact plain text."
     return cell_output_text(self.cell)
 
-
+# %% ../nbs/00_foundation.ipynb #903924f0
 @patch
 def semantic_type(self: Cell):
     "Return the reader-facing `SemanticType` for this cell."
@@ -1851,7 +1851,7 @@ def semantic_type(self: Cell):
     if re.search(r'^\s*#\|\s*hide\b', self.source, re.MULTILINE): return SemanticType.HIDDEN
     return SemanticType.EXAMPLE
 
-
+# %% ../nbs/00_foundation.ipynb #7ad036b6
 @patch
 def context_record(self: Cell):
     "Return the context record shape used by read helpers, with directives stripped."
@@ -1864,7 +1864,7 @@ def context_record(self: Cell):
         'output': self.output_text(),
     }
 
-
+# %% ../nbs/00_foundation.ipynb #a2ac2f9b
 output_text = _output_text_function
 
 # %% ../nbs/00_foundation.ipynb #ca412834

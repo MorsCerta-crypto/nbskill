@@ -647,6 +647,8 @@ def nbskill_mcp(
 
 # %% ../nbs/13_cli.ipynb #35576b91
 _MCP_CONTROL_COMMANDS = {"nbskill_mcp_start", "nbskill_mcp_stop", "nbskill_mcp_restart"}
+
+# %% ../nbs/13_cli.ipynb #22cc1a7a
 def _mcp_process_rows():
     proc = subprocess.run(["ps", "-axo", "pid=,ppid=,command="], text=True, capture_output=True)
     if proc.returncode:
@@ -659,6 +661,8 @@ def _mcp_process_rows():
         except ValueError: continue
         rows.append({"pid": pid, "ppid": ppid, "command": parts[2]})
     return rows
+
+# %% ../nbs/13_cli.ipynb #17d2c239
 def _process_cwd(pid):
     proc_cwd = Path("/proc") / str(pid) / "cwd"
     try:
@@ -671,9 +675,13 @@ def _process_cwd(pid):
     for line in proc.stdout.splitlines():
         if line.startswith("n") and line[1:]: return line[1:]
     return None
+
+# %% ../nbs/13_cli.ipynb #74621d85
 def _command_tokens(command):
     try: return shlex.split(command)
     except ValueError: return command.split()
+
+# %% ../nbs/13_cli.ipynb #3750016a
 def _mcp_command_is_nbskill_server(command):
     tokens = _command_tokens(command)
     names = {Path(token).name for token in tokens}
@@ -681,14 +689,20 @@ def _mcp_command_is_nbskill_server(command):
     if "nbskill_mcp" in names: return True
     if "-m" in tokens and "nbskill.mcp" in tokens: return True
     return "fastmcp" in names and "nbskill.mcp" in command
+
+# %% ../nbs/13_cli.ipynb #f7caca69
 def _mcp_project_root(project=None):
     return Path(project or Path.cwd()).expanduser().resolve()
+
+# %% ../nbs/13_cli.ipynb #3cdd9008
 def _mcp_project_match_texts(project=None):
     raw = Path(project or Path.cwd()).expanduser()
     texts = {str(raw)}
     try: texts.add(str(raw.resolve()))
     except OSError: pass
     return texts
+
+# %% ../nbs/13_cli.ipynb #3544ce44
 def _path_is_or_below(path, root):
     try:
         path = Path(path).expanduser().resolve()
@@ -696,10 +710,14 @@ def _path_is_or_below(path, root):
     except OSError:
         return False
     return path == root or root in path.parents
+
+# %% ../nbs/13_cli.ipynb #dfbda066
 def _mcp_process_with_cwd(row):
     if row.get("cwd") or not row.get("pid"): return row
     cwd = _process_cwd(row["pid"])
     return {**row, "cwd": cwd} if cwd else row
+
+# %% ../nbs/13_cli.ipynb #6b89f1e6
 def _mcp_process_matches(row, project=None, all_projects=False):
     command = row.get("command", "")
     if row.get("pid") == os.getpid(): return False
@@ -708,6 +726,8 @@ def _mcp_process_matches(row, project=None, all_projects=False):
     root = _mcp_project_root(project)
     if row.get("cwd") and _path_is_or_below(row["cwd"], root): return True
     return any(text in command for text in _mcp_project_match_texts(project))
+
+# %% ../nbs/13_cli.ipynb #a495ab95
 def find_nbskill_mcp_processes(project=None, all_projects=False):
     "Return running nbskill MCP server processes that match a project scope."
     rows = []
@@ -716,9 +736,13 @@ def find_nbskill_mcp_processes(project=None, all_projects=False):
         row = _mcp_process_with_cwd(row)
         if _mcp_process_matches(row, project=project, all_projects=all_projects): rows.append(row)
     return rows
+
+# %% ../nbs/13_cli.ipynb #d34add24
 def _alive_pids(pids):
     current = {row["pid"] for row in _mcp_process_rows()}
     return [pid for pid in pids if pid in current]
+
+# %% ../nbs/13_cli.ipynb #14c29279
 def _descendant_rows(rows, parent_pids):
     children_by_parent = {}
     for row in rows: children_by_parent.setdefault(row.get("ppid"), []).append(row)
@@ -732,6 +756,8 @@ def _descendant_rows(rows, parent_pids):
             descendants.append(child)
             frontier.append(pid)
     return descendants
+
+# %% ../nbs/13_cli.ipynb #f5981eda
 def _mcp_stop_target_rows(matches, all_rows=None):
     all_rows = _mcp_process_rows() if all_rows is None else all_rows
     descendants = _descendant_rows(all_rows, {row["pid"] for row in matches})
@@ -742,6 +768,8 @@ def _mcp_stop_target_rows(matches, all_rows=None):
         seen.add(pid)
         targets.append(row)
     return targets
+
+# %% ../nbs/13_cli.ipynb #9af2c302
 def stop_nbskill_mcp_processes(project=None, all_projects=False, timeout=5.0, force=True, dry_run=False):
     "Stop running nbskill MCP server processes and return structured results."
     matches = find_nbskill_mcp_processes(project=project, all_projects=all_projects)
@@ -778,6 +806,8 @@ def stop_nbskill_mcp_processes(project=None, all_projects=False, timeout=5.0, fo
         pending = _alive_pids(pending)
     result["alive"] = pending
     return result
+
+# %% ../nbs/13_cli.ipynb #aa37287f
 def _print_mcp_control_result(result, json_output=False):
     if json_output:
         print(json.dumps(result, indent=2, sort_keys=True))
@@ -812,6 +842,7 @@ def nbskill_mcp_start(
     "Run the nbskill MCP server in the foreground."
     return nbskill.mcp.main(transport=transport, show_banner=show_banner, reload=reload, reload_dir=reload_dir)
 
+# %% ../nbs/13_cli.ipynb #0678c300
 @call_parse
 def nbskill_mcp_stop(
     project: str | None = None,  # Project root to target; defaults to the current working directory
@@ -825,6 +856,7 @@ def nbskill_mcp_stop(
     result = stop_nbskill_mcp_processes(project=project, all_projects=all_projects, timeout=timeout, force=force, dry_run=dry_run)
     return _print_mcp_control_result(result, json_output=json_output)
 
+# %% ../nbs/13_cli.ipynb #1b7660c2
 @call_parse
 def nbskill_mcp_restart(
     project: str | None = None,  # Optional project root to target when all_projects is false

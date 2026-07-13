@@ -1273,6 +1273,8 @@ def _problem_row(problem, solution, task="", project=".", evidence="", outcome="
     item_id, problem, solution = _problem_key(problem, solution)
     now = time.time()
     tag_list = _problem_tags(tags)
+    if len(tag_list) < 4:
+        raise ValueError(f"problem-solution pairs need at least 4 tags; got {len(tag_list)}")
     return {
         "item_id": item_id,
         "kind": "problem_statement",
@@ -1365,10 +1367,14 @@ def _problem_hit(row, query):
     }
 
 # %% ../nbs/12_knowledge.ipynb #24f325c0
-def _problem_candidates(query, path=None, candidate_k=50):
-    "Return vector/FTS candidates with lexical fallback."
+def _problem_candidates(query, path=None, candidate_k=50, tags=None):
+    "Return vector/FTS candidates with lexical fallback or exact tag filtering."
     table = _reference_table(path, "problems")
     rows = _lance_rows(path, "problems")
+    wanted_tags = set(_problem_tags(tags))
+    if wanted_tags:
+        rows = [row for row in rows if wanted_tags <= set(_problem_tags(row.get("tags")))]
+        return rows, "tag_filter", None
     if table is None or not rows: return rows, "lancedb", None
     dims = next((len(row.get("vector") or []) for row in rows if row.get("vector")), None)
     text_query = " ".join(_query_tokens(query)) or query
@@ -1400,17 +1406,23 @@ def problem_statement_query(
     query: str,  # New problem or task to compare against stored memories
     top_k: int = 5,  # Number of memories to return
     project: str | None = None,  # Optional project filter
+    tags=None,  # Optional tags; every requested tag must be present
     path: str | None = None,  # Override reference home
 ):
     "Find reusable problem-solution statements for a new task."
     top_k = _clamp_int(top_k, 5, 1, _REFERENCE_MAX_TOP_K, "top_k")
-    rows, backend, note = _problem_candidates(query, path=path, candidate_k=top_k * 20)
+    tag_list = _problem_tags(tags)
+    rows, backend, note = _problem_candidates(query, path=path, candidate_k=top_k * 20, tags=tag_list)
     if project is not None:
         project_label = _problem_project(project)
         rows = [row for row in rows if row.get("project") == project_label]
     hits = [_problem_hit(row, query) for row in rows]
     hits = sorted(hits, key=lambda hit: hit["score"], reverse=True)[:top_k]
-    return dict(query=query, backend=backend, note=note, count=len(hits), context=_problem_context_markdown(hits), hits=hits)
+    return dict(
+        query=query, backend=backend, note=note, count=len(hits),
+        filters={"project": project, "tags": tag_list},
+        context=_problem_context_markdown(hits), hits=hits,
+    )
 
 # %% ../nbs/12_knowledge.ipynb #abeb9fe7
 def problem_statement_list(path: str | None = None, limit: int = 20):

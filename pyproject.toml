@@ -77,8 +77,12 @@ allowed_metadata_keys = ["nbskill"]
 jupyter_hooks = true
 allowed_cell_metadata_keys = ["nbskill"]
 
+[tool.fastship]
+branch = "main"
+
 [dependency-groups]
 dev = [
+    "fastship>=0.1.0",
     "ipykernel>=7.2.0",
     "jupyter>=1.1.1",
     "pytest>=9.0.3",

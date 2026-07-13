@@ -1299,8 +1299,8 @@ class AgentRuntime:
 
     def _shell(self):
         if self.shell is None:
-            from nbskill.execute import _SafeShell
-            self.shell = _SafeShell(self.path)
+            from nbskill.execute import NBSafeShell
+            self.shell = NBSafeShell(self.path)
         return self.shell
 
     def run(self, source, timeout, allowed=()):

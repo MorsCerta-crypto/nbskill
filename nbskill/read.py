@@ -31,16 +31,6 @@ def _format_overview(items, show_ids=False):
         lines.append(f"{cell_prefix(idx, cell, show_ids)} | {summary}")
     return "\n".join(lines)
 
-# %% ../nbs/01_read.ipynb #b4caabe8
-def _markdown_overview(cell, include_docs=False):
-    source = cell_source(cell).strip()
-    headings = []
-    for line in source.splitlines():
-        text = line.strip()
-        if re.match(r"^#{1,6}\s+", text): headings.append(text)
-    if headings: return headings
-    return source.splitlines() if include_docs and source else []
-
 # %% ../nbs/01_read.ipynb #2bf5140a
 def _definition_lines(node, indent=""):
     tmp = copy.deepcopy(node)
@@ -216,19 +206,6 @@ def _select_query_items(nb, spec):
     if spec.get("regex") is not None: items = [(i, c) for i, c in items if matches_filter(cell_source(c), spec["regex"])]
     return items
 
-# %% ../nbs/01_read.ipynb #5a2f23bf
-def _cell_defined_symbols(cell):
-    if getattr(cell, "cell_type", None) != "code": return []
-    try: tree = ast.parse(source_without_directives(cell_source(cell)))
-    except SyntaxError: return []
-    symbols = []
-    for node in tree.body:
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)): symbols.append(node.name)
-        if isinstance(node, ast.ClassDef):
-            for child in node.body:
-                if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)): symbols.append(f"{node.name}.{child.name}")
-    return symbols
-
 # %% ../nbs/01_read.ipynb #contextbase
 def _context_result(kind, text, verbose=True, **data):
     result = {"kind": kind, "text": text, **data}
@@ -360,16 +337,6 @@ def _cell_calls_symbol(cell, symbol):
         if isinstance(node, ast.Call) and _call_matches_context_symbol(call_name(node.func), symbol): return True
     return False
 
-# %% ../nbs/01_read.ipynb #contextsymbol
-def _markdown_mentions(nb, symbol):
-    short = symbol_short_name(symbol)
-    items = []
-    for idx, cell in enumerate(nb.cells):
-        if getattr(cell, "cell_type", None) != "markdown": continue
-        source = cell_source(cell)
-        if symbol in source or re.search(rf"\b{re.escape(short)}\b", source): items.append((idx, cell))
-    return items
-
 # %% ../nbs/01_read.ipynb #472048bb
 def _example_test_records(nb, symbol, definition_idx=None):
     items = _following_examples(nb.cells, definition_idx, len(nb.cells)) if definition_idx is not None else list(enumerate(nb.cells))
@@ -437,10 +404,6 @@ def _format_callee_items(items, indent=""):
             lines.extend(f"{indent}  {line}" for line in item["summary"].splitlines())
         lines.extend(_format_callee_items(item.get("callees", []), indent=indent + "  "))
     return lines
-
-# %% ../nbs/01_read.ipynb #76e0d320
-def _chapter_title_from_cell(cell):
-    return heading_title(cell, levels=range(1, 7))
 
 # %% ../nbs/01_read.ipynb #37ae8575
 def _normalize_chapter_title(value):
@@ -551,16 +514,6 @@ def _filter_chapter_items(items, cell_type=None, include_re=None, exclude_re=Non
         if not _context_match(source, include_re, exclude_re): continue
         filtered.append((idx, cell))
     return filtered
-
-# %% ../nbs/01_read.ipynb #675786ce
-def _selected_cell_item(nb, query=None, id=None):
-    if (query is None) == (id is None): raise ValueError("Pass exactly one of query or id")
-    if id is not None: return find_cell_by_id(nb.cells, id)
-    items = _query_items(nb, query)
-    if len(items) == 1: return items[0]
-    if not items: raise ValueError(f"No cells match query {query!r}")
-    preview = _format_overview(items[:12], show_ids=True)
-    raise ValueError(f"Query {query!r} matched {len(items)} cells; narrow it or pass id.\n{preview}")
 
 # %% ../nbs/01_read.ipynb #b4784010
 def project_context(
@@ -1144,41 +1097,6 @@ def _format_symbol_usage(path, symbol):
     callee_items = [item.strip() for item in callees.split(";") if item.strip() and item.strip() != "none"]
     lines.append(f"Callees: {', '.join(callee_items)}" if callee_items else "Callees: none")
     return lines
-
-# %% ../nbs/01_read.ipynb #2cb657b6
-def _format_symbol_doc(path, nb, symbol, context=2, source=False, show_ids=False):
-    idx = _find_symbol_cell(nb, symbol)
-    cell = nb.cells[idx]
-    lines = [f"Symbol {symbol}", f"Location: {path} {cell_prefix(idx, cell, show_ids)}"]
-    signature = _symbol_signature_text(cell, symbol)
-    if signature:
-        lines.append("")
-        lines.append("Definition")
-        lines.extend(signature)
-    if source:
-        lines.append("")
-        lines.append("Source cell")
-        lines.append(cell.source.strip())
-    docs = _following_markdown(nb.cells, idx, context)
-    if docs:
-        lines.append("")
-        lines.append("Docs")
-        for doc_idx, doc_cell in docs:
-            if show_ids: lines.append(cell_prefix(doc_idx, doc_cell, show_ids))
-            lines.append(doc_cell.source.strip())
-    examples = _following_examples(nb.cells, idx, context)
-    if examples:
-        lines.append("")
-        lines.append("Examples/tests")
-        for ex_idx, ex_cell in examples:
-            lines.append(cell_prefix(ex_idx, ex_cell, show_ids))
-            lines.append(ex_cell.source.strip())
-    usage = _format_symbol_usage(path, symbol)
-    if usage:
-        lines.append("")
-        lines.append("Usage")
-        lines.extend(usage)
-    return "\n".join(lines)
 
 # %% ../nbs/01_read.ipynb #1584953f
 def symbol_context(

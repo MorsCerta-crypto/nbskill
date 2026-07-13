@@ -634,45 +634,6 @@ def parse_literal(value):
 def none_if_string(value):
     return None if isinstance(value, str) and value.strip().lower() in {"", "none", "null"} else value
 
-# %% ../nbs/00_foundation.ipynb #e7ec24de
-def _parse_slice(value):
-    if not isinstance(value, str) or ":" not in value: return None
-    parts = value.split(":")
-    if len(parts) not in (2, 3): return None
-    vals = [int(p) if p else None for p in parts]
-    return slice(*vals)
-
-# %% ../nbs/00_foundation.ipynb #42c7ceef
-def _as_index(value, length):
-    idx = int(value)
-    if idx < 0: idx += length
-    if idx < 0 or idx >= length: raise IndexError(value)
-    return idx
-
-# %% ../nbs/00_foundation.ipynb #66cc37d8
-def _parse_read_selector(value):
-    value = parse_literal(value)
-    if value is None: return None
-    if isinstance(value, str):
-        slc = _parse_slice(value)
-        if slc is not None: return slc
-        return int(value)
-    if isinstance(value, (list, tuple)): return [int(o) for o in value]
-    return int(value)
-
-# %% ../nbs/00_foundation.ipynb #79078e1b
-def _parse_write_target(value):
-    value = parse_literal(value)
-    if value is None: return None
-    if isinstance(value, str):
-        slc = _parse_slice(value)
-        if slc is not None: return slc
-        return int(value)
-    if isinstance(value, (list, tuple)):
-        if len(value) != 2: raise ValueError("write ranges must have start and stop")
-        return slice(value[0], value[1])
-    return int(value)
-
 # %% ../nbs/00_foundation.ipynb #da118f0d
 def _split_blocks(text):
     text = "" if text is None else str(text)
@@ -1425,14 +1386,6 @@ def _nbdev_project_root(path):
         if _looks_like_nbdev_project(candidate): return candidate
     return None
 
-# %% ../nbs/00_foundation.ipynb #617bfc4e
-@contextmanager
-def _temporary_cwd(path):
-    previous = Path.cwd()
-    os.chdir(path)
-    try: yield
-    finally: os.chdir(previous)
-
 # %% ../nbs/00_foundation.ipynb #b075ca01
 def _nbdev_export_lock_path(path):
     root = Path(path).expanduser().resolve(strict=False)
@@ -1912,25 +1865,9 @@ def heading_title(cell, levels=(2,)):
     "Return the first markdown heading title whose level is allowed."
     return NotebookCell(cell).heading_title(levels=levels)
 
-
-def _chapter_title(cell):
-    return heading_title(cell, levels=(2,))
-
 # %% ../nbs/00_foundation.ipynb #60b63eec
 def chapter_index_set(cells, chapter):
     idxs = set()
     for span in _matching_chapters(cells, chapter):
         idxs.update(range(span["start"], span["end"]))
     return idxs
-
-# %% ../nbs/00_foundation.ipynb #abc2fa85
-def _chapter_body_len(span):
-    return max(span["end"] - span["start"] - 1, 0)
-
-# %% ../nbs/00_foundation.ipynb #83080c58
-def _chapter_body_slice(span, target):
-    body_start = span["start"] + 1
-    body_len = _chapter_body_len(span)
-    start, stop, step = target.indices(body_len)
-    if step != 1: raise ValueError("chapter ranges do not support steps")
-    return slice(body_start + start, body_start + stop)

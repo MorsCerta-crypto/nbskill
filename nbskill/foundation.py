@@ -10,13 +10,13 @@ __all__ = ['NotebookCell', 'NotebookChapter', 'NotebookDocument', 'output_text',
            'parse_literal', 'none_if_string', 'symbol_short_name', 'call_name', 'short_call_name', 'is_definition_node',
            'node_start_line', 'is_export_directive', 'cell_source', 'parse_code_cell', 'CellType', 'SemanticType',
            'Directive', 'directive_lines', 'apply_directives', 'Cell', 'Chapter', 'Notebook', 'NotebookSymbol',
-           'xml_escape', 'xml_attrs', 'cell_metadata', 'notebook_metadata', 'nbskill_cell_metadata', 'file_hash',
-           'exported_py_path', 'stamp_export_metadata', 'run_nbdev_export_from_project', 'export_notebook',
-           'ensure_cell_ids', 'notebook_hash', 'commit_notebook', 'parse_one_cell', 'find_cell_by_id',
-           'find_cell_by_text', 'replace_cell', 'clear_outputs', 'load_cells_text', 'validate_code_cells',
-           'parse_cells', 'first_line', 'cell_prefix', 'matches_filter', 'is_exported_code_cell', 'output_value_text',
-           'cell_output_text', 'stamp_notebook_metadata', 'cell_class_names', 'cell_matches_type', 'with_context',
-           'heading_title', 'chapter_spans', 'chapter_index_set', 'one_chapter']
+           'xml_escape', 'xml_attrs', 'find_cell_by_id', 'notebook_hash', 'matches_filter', 'chapter_spans',
+           'one_chapter', 'ensure_cell_ids', 'validate_code_cells', 'exported_py_path', 'commit_notebook',
+           'cell_metadata', 'notebook_metadata', 'nbskill_cell_metadata', 'file_hash', 'stamp_export_metadata',
+           'run_nbdev_export_from_project', 'export_notebook', 'parse_one_cell', 'find_cell_by_text', 'replace_cell',
+           'clear_outputs', 'load_cells_text', 'parse_cells', 'first_line', 'cell_prefix', 'is_exported_code_cell',
+           'output_value_text', 'cell_output_text', 'stamp_notebook_metadata', 'cell_class_names', 'cell_matches_type',
+           'with_context', 'heading_title', 'chapter_index_set']
 
 # %% ../nbs/00_foundation.ipynb #2500639f
 import ast,hashlib,json,multiprocessing,os,queue,re,tempfile,tomllib,traceback
@@ -1085,12 +1085,54 @@ def cells(self: NotebookDocument):
     "Return notebook cells as cell models."
     return [NotebookCell(cell, idx=idx, path=self.path) for idx, cell in enumerate(getattr(self.nb, "cells", []))]
 
+# %% ../nbs/00_foundation.ipynb #3836550d
+def find_cell_by_id(cells, cell_id):
+    matches = [(idx, cell) for idx, cell in enumerate(cells) if getattr(cell, "id", None) == cell_id]
+    if len(matches) == 1: return matches[0]
+    if not matches: cli_error(f"No cell has id {cell_id!r}")
+    cli_error(f"Multiple cells have id {cell_id!r}")
+
 # %% ../nbs/00_foundation.ipynb #82d7e1e1
 @patch
 def cell(self: NotebookDocument, cell_id):
     "Return one cell model by stable id."
     idx, cell = find_cell_by_id(getattr(self.nb, "cells", []), cell_id)
     return NotebookCell(cell, idx=idx, path=self.path)
+
+# %% ../nbs/00_foundation.ipynb #5b2baf98
+def notebook_hash(nb):
+    "Return a stable source hash for a notebook's ordered cell contents."
+    payload = chr(30).join(f"{getattr(cell, 'id', '')}:{cell_source(cell)}" for cell in getattr(nb, "cells", []))
+    return source_hash(payload)
+
+# %% ../nbs/00_foundation.ipynb #ec2f7679
+def matches_filter(source, pattern):
+    pattern = str(pattern)
+    if pattern in source: return True
+    try: return re.search(pattern, source, flags=re.MULTILINE) is not None
+    except re.error: return False
+
+# %% ../nbs/00_foundation.ipynb #544e29cb
+def chapter_spans(cells, levels=(2,), fallback=None):
+    "Return contiguous notebook cell spans opened by markdown headings."
+    return [chapter.to_span() for chapter in NotebookChapter.all(cells, levels=levels, fallback=fallback)]
+
+# %% ../nbs/00_foundation.ipynb #19aa5f58
+def _matching_chapters(cells, chapter=None):
+    spans = chapter_spans(cells)
+    if chapter is None: return spans
+    return [span for span in spans if matches_filter(span["title"], chapter)]
+
+# %% ../nbs/00_foundation.ipynb #20d41cee
+def one_chapter(cells, chapter, create=False):
+    matches = _matching_chapters(cells, chapter)
+    if len(matches) == 1: return matches[0]
+    if not matches and create:
+        cells.append(mk_cell(f"## {chapter}", cell_type="markdown"))
+        return dict(title=str(chapter), start=len(cells) - 1, end=len(cells))
+    if not matches: raise ValueError(f"No chapter matches {chapter!r}")
+    titles = ", ".join(f"{span['title']} ({span['start']}:{span['end']})" for span in matches)
+    raise ValueError(f"Chapter {chapter!r} matches multiple chapters: {titles}")
 
 # %% ../nbs/00_foundation.ipynb #ee6211c7
 @patch
@@ -1103,6 +1145,145 @@ def chapter(self: NotebookDocument, title, create=False):
 def notebook_source_hash(self: NotebookDocument):
     "Return the notebook's ordered source hash."
     return notebook_hash(self.nb)
+
+# %% ../nbs/00_foundation.ipynb #6ddbb6bd
+def ensure_cell_ids(nb):
+    "Add nbdev-style ids to notebook cells missing `id`, mutating and returning `nb`."
+    for cell in getattr(nb, "cells", nb):
+        if "id" not in cell: cell["id"] = rtoken_hex(4)
+    return nb
+
+# %% ../nbs/00_foundation.ipynb #1457086d
+def _should_validate_python(source):
+    for line in source.splitlines():
+        stripped = line.lstrip()
+        if stripped.startswith(("%", "!")): return False
+    return bool(source.strip())
+
+# %% ../nbs/00_foundation.ipynb #c8d4e245
+def _format_syntax_error(source, err, cell_idx):
+    lines = source.splitlines()
+    line = lines[err.lineno - 1] if err.lineno and 0 < err.lineno <= len(lines) else ""
+    pointer = " " * max((err.offset or 1) - 1, 0) + "^" if line else ""
+    msg = [f"Invalid Python in new code cell {cell_idx}: {err.msg} at line {err.lineno}, column {err.offset}"]
+    if line: msg += [line, pointer]
+    msg.append("Tip: shell quoting can turn backslash-n escapes into real newlines inside Python strings. Use --cells_file PATH or cells=- for complex code.")
+    return chr(10).join(msg)
+
+# %% ../nbs/00_foundation.ipynb #bf00a9f5
+def validate_code_cells(cells):
+    for idx, cell in enumerate(cells):
+        cell_type = cell.get("cell_type") if isinstance(cell, dict) else getattr(cell, "cell_type", None)
+        if cell_type != "code": continue
+        source = cell_source(cell)
+        if not _should_validate_python(source): continue
+        try: ast.parse(source)
+        except SyntaxError as err:
+            msg = _format_syntax_error(source, err, idx)
+            if is_cli(): raise SystemExit(msg)
+            raise ValueError(msg) from err
+
+# %% ../nbs/00_foundation.ipynb #a0e18941
+def _default_exp_from_notebook(nb):
+    for cell in getattr(nb, "cells", []):
+        for line in cell_source(cell).splitlines():
+            match = re.match(r"^\s*#\|\s*default_exp\s+(.+?)\s*$", line)
+            if match: return match.group(1).strip()
+    return None
+
+# %% ../nbs/00_foundation.ipynb #e5d2126d
+def exported_py_path(nb_path, nb=None):
+    "Return the generated Python file path for an nbdev notebook, if it has one."
+    nb_path = Path(nb_path)
+    if nb is None:
+        from fastcore.nbio import read_nb
+        nb = read_nb(nb_path)
+    default_exp = _default_exp_from_notebook(nb)
+    if not default_exp: return None
+    try:
+        from nbdev.config import get_config
+        lib_path = Path(get_config(nb_path.parent).lib_path)
+    except Exception:
+        lib_path = nb_path.parent.parent / default_exp.split(".", 1)[0]
+    return lib_path / (default_exp.replace(".", "/") + ".py")
+
+# %% ../nbs/00_foundation.ipynb #e67de695
+def _readback_cell_hashes(nb, cell_ids):
+    wanted = {cell_id for cell_id in (cell_ids or []) if cell_id}
+    return {
+        getattr(cell, "id", ""): source_hash(cell_source(cell))
+        for cell in getattr(nb, "cells", [])
+        if not wanted or getattr(cell, "id", "") in wanted
+    }
+
+# %% ../nbs/00_foundation.ipynb #ca7976da
+def commit_notebook(
+    path,
+    trial,
+    before=None,
+    affected_cell_ids=None,
+    validate_code=True,
+    dry_run=False,
+    export=True,
+    writer=write_nb,
+):
+    "Validate, stamp, write, export, and rollback one notebook as one commit."
+    from fastcore.nbio import read_nb
+
+    path = Path(path)
+    before = before if before is not None else (read_nb(path) if path.exists() else new_nb([]))
+    missing_cell_ids = any("id" not in cell for cell in getattr(trial, "cells", []))
+    ensure_cell_ids(before)
+    ensure_cell_ids(trial)
+    before_hash = notebook_hash(before)
+    planned_hash = notebook_hash(trial)
+    changed = before_hash != planned_hash or missing_cell_ids
+    affected = [cell_id for cell_id in dict.fromkeys(affected_cell_ids or []) if cell_id]
+    if validate_code and changed: validate_code_cells(trial.cells)
+
+    exported = False
+    export_no_drift = False
+    py_path = exported_py_path(path, trial)
+    if changed and not dry_run:
+        _clear_changed_outputs(trial, affected or None)
+        stamp_notebook_metadata(trial)
+        before_path_bytes = path.read_bytes() if path.exists() else None
+        before_py_bytes = py_path.read_bytes() if py_path is not None and py_path.exists() else None
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            writer(trial, path)
+            if export and py_path is not None and _path_inside_cwd(path):
+                run_nbdev_export_from_project(path)
+                if py_path.exists():
+                    stamp_export_metadata(trial, py_path)
+                    writer(trial, path)
+                    exported = True
+        except Exception:
+            _restore_file_bytes(path, before_path_bytes)
+            if py_path is not None: _restore_file_bytes(py_path, before_py_bytes)
+            raise
+        readback = read_nb(path)
+        if exported and py_path is not None and py_path.exists():
+            info = _nbskill_notebook_metadata(readback, create=False) or {}
+            export_no_drift = info.get("exported_py_hash") == file_hash(py_path)
+        after_hash = notebook_hash(readback)
+        readback_hashes = _readback_cell_hashes(readback, affected)
+    else:
+        after_hash = before_hash if dry_run else planned_hash
+        readback_hashes = _readback_cell_hashes(before if dry_run else trial, affected)
+
+    return {
+        "changed": changed,
+        "dry_run": dry_run,
+        "affected_cell_ids": affected,
+        "before_hash": before_hash,
+        "planned_hash": planned_hash,
+        "after_hash": after_hash,
+        "readback_hashes": readback_hashes,
+        "exported": exported,
+        "exported_py_path": str(py_path) if py_path is not None else "",
+        "export_no_drift": export_no_drift,
+    }
 
 # %% ../nbs/00_foundation.ipynb #60a12fd8
 @patch
@@ -1227,32 +1408,6 @@ def _metadata_path(path):
     except (OSError, ValueError): return path.as_posix()
 
 
-# %% ../nbs/00_foundation.ipynb #273cd7f5
-def _default_exp_from_notebook(nb):
-    for cell in getattr(nb, "cells", []):
-        for line in cell_source(cell).splitlines():
-            match = re.match(r"^\s*#\|\s*default_exp\s+(.+?)\s*$", line)
-            if match: return match.group(1).strip()
-    return None
-
-
-# %% ../nbs/00_foundation.ipynb #a07dc611
-def exported_py_path(nb_path, nb=None):
-    "Return the generated Python file path for an nbdev notebook, if it has one."
-    nb_path = Path(nb_path)
-    if nb is None:
-        from fastcore.nbio import read_nb
-        nb = read_nb(nb_path)
-    default_exp = _default_exp_from_notebook(nb)
-    if not default_exp: return None
-    try:
-        from nbdev.config import get_config
-        lib_path = Path(get_config(nb_path.parent).lib_path)
-    except Exception:
-        lib_path = nb_path.parent.parent / default_exp.split(".", 1)[0]
-    return lib_path / (default_exp.replace(".", "/") + ".py")
-
-
 # %% ../nbs/00_foundation.ipynb #2cdea176
 def stamp_export_metadata(nb, py_path):
     info = _nbskill_notebook_metadata(nb)
@@ -1362,19 +1517,6 @@ def export_notebook(nb, nb_path, writer=write_nb):
         writer(nb, nb_path)
     return py_path
 
-# %% ../nbs/00_foundation.ipynb #0d020917
-def ensure_cell_ids(nb):
-    "Add nbdev-style ids to notebook cells missing `id`, mutating and returning `nb`."
-    for cell in getattr(nb, "cells", nb):
-        if "id" not in cell: cell["id"] = rtoken_hex(4)
-    return nb
-
-# %% ../nbs/00_foundation.ipynb #661ab402
-def notebook_hash(nb):
-    "Return a stable source hash for a notebook's ordered cell contents."
-    payload = chr(30).join(f"{getattr(cell, 'id', '')}:{cell_source(cell)}" for cell in getattr(nb, "cells", []))
-    return source_hash(payload)
-
 # %% ../nbs/00_foundation.ipynb #86f33aaa
 def _path_inside_cwd(path):
     try: Path(path).expanduser().resolve(strict=False).relative_to(Path.cwd().resolve())
@@ -1390,90 +1532,12 @@ def _restore_file_bytes(path, data):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
 
-# %% ../nbs/00_foundation.ipynb #acb3c6a3
-def _readback_cell_hashes(nb, cell_ids):
-    wanted = {cell_id for cell_id in (cell_ids or []) if cell_id}
-    return {
-        getattr(cell, "id", ""): source_hash(cell_source(cell))
-        for cell in getattr(nb, "cells", [])
-        if not wanted or getattr(cell, "id", "") in wanted
-    }
-
 # %% ../nbs/00_foundation.ipynb #62b66237
 def _clear_changed_outputs(nb, cell_ids=None):
     wanted = {cell_id for cell_id in (cell_ids or []) if cell_id}
     for cell in getattr(nb, "cells", []):
         if wanted and getattr(cell, "id", "") not in wanted: continue
         clear_outputs(cell)
-
-# %% ../nbs/00_foundation.ipynb #973004d0
-def commit_notebook(
-    path,
-    trial,
-    before=None,
-    affected_cell_ids=None,
-    validate_code=True,
-    dry_run=False,
-    export=True,
-    writer=write_nb,
-):
-    "Validate, stamp, write, export, and rollback one notebook as one commit."
-    from fastcore.nbio import read_nb
-
-    path = Path(path)
-    before = before if before is not None else (read_nb(path) if path.exists() else new_nb([]))
-    missing_cell_ids = any("id" not in cell for cell in getattr(trial, "cells", []))
-    ensure_cell_ids(before)
-    ensure_cell_ids(trial)
-    before_hash = notebook_hash(before)
-    planned_hash = notebook_hash(trial)
-    changed = before_hash != planned_hash or missing_cell_ids
-    affected = [cell_id for cell_id in dict.fromkeys(affected_cell_ids or []) if cell_id]
-    if validate_code and changed: validate_code_cells(trial.cells)
-
-    exported = False
-    export_no_drift = False
-    py_path = exported_py_path(path, trial)
-    if changed and not dry_run:
-        _clear_changed_outputs(trial, affected or None)
-        stamp_notebook_metadata(trial)
-        before_path_bytes = path.read_bytes() if path.exists() else None
-        before_py_bytes = py_path.read_bytes() if py_path is not None and py_path.exists() else None
-        try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            writer(trial, path)
-            if export and py_path is not None and _path_inside_cwd(path):
-                run_nbdev_export_from_project(path)
-                if py_path.exists():
-                    stamp_export_metadata(trial, py_path)
-                    writer(trial, path)
-                    exported = True
-        except Exception:
-            _restore_file_bytes(path, before_path_bytes)
-            if py_path is not None: _restore_file_bytes(py_path, before_py_bytes)
-            raise
-        readback = read_nb(path)
-        if exported and py_path is not None and py_path.exists():
-            info = _nbskill_notebook_metadata(readback, create=False) or {}
-            export_no_drift = info.get("exported_py_hash") == file_hash(py_path)
-        after_hash = notebook_hash(readback)
-        readback_hashes = _readback_cell_hashes(readback, affected)
-    else:
-        after_hash = before_hash if dry_run else planned_hash
-        readback_hashes = _readback_cell_hashes(before if dry_run else trial, affected)
-
-    return {
-        "changed": changed,
-        "dry_run": dry_run,
-        "affected_cell_ids": affected,
-        "before_hash": before_hash,
-        "planned_hash": planned_hash,
-        "after_hash": after_hash,
-        "readback_hashes": readback_hashes,
-        "exported": exported,
-        "exported_py_path": str(py_path) if py_path is not None else "",
-        "export_no_drift": export_no_drift,
-    }
 
 # %% ../nbs/00_foundation.ipynb #79b42816
 def _fresh_semantic_metadata(cell):
@@ -1499,13 +1563,6 @@ def parse_one_cell(text, default_type="code"):
     if len(blocks) != 1:
         cli_error("update_cell expects exactly one replacement cell; remove standalone '---' separators or use write_nb/batch_edit_nb for multi-cell edits")
     return _cell_from_block(blocks[0], default_type)
-
-# %% ../nbs/00_foundation.ipynb #e1fe2727
-def find_cell_by_id(cells, cell_id):
-    matches = [(idx, cell) for idx, cell in enumerate(cells) if getattr(cell, "id", None) == cell_id]
-    if len(matches) == 1: return matches[0]
-    if not matches: cli_error(f"No cell has id {cell_id!r}")
-    cli_error(f"Multiple cells have id {cell_id!r}")
 
 # %% ../nbs/00_foundation.ipynb #6d6b5350
 def find_cell_by_text(cells, old_str):
@@ -1551,36 +1608,6 @@ def load_cells_text(cells="", cells_file=None, decode_newlines=True):
     return _decode_cli_newlines(cells) if decode_newlines else cells
 
 
-# %% ../nbs/00_foundation.ipynb #079cbcac
-def _should_validate_python(source):
-    for line in source.splitlines():
-        stripped = line.lstrip()
-        if stripped.startswith(("%", "!")): return False
-    return bool(source.strip())
-
-# %% ../nbs/00_foundation.ipynb #135ce617
-def _format_syntax_error(source, err, cell_idx):
-    lines = source.splitlines()
-    line = lines[err.lineno - 1] if err.lineno and 0 < err.lineno <= len(lines) else ""
-    pointer = " " * max((err.offset or 1) - 1, 0) + "^" if line else ""
-    msg = [f"Invalid Python in new code cell {cell_idx}: {err.msg} at line {err.lineno}, column {err.offset}"]
-    if line: msg += [line, pointer]
-    msg.append("Tip: shell quoting can turn backslash-n escapes into real newlines inside Python strings. Use --cells_file PATH or cells=- for complex code.")
-    return chr(10).join(msg)
-
-# %% ../nbs/00_foundation.ipynb #576fa9e6
-def validate_code_cells(cells):
-    for idx, cell in enumerate(cells):
-        cell_type = cell.get("cell_type") if isinstance(cell, dict) else getattr(cell, "cell_type", None)
-        if cell_type != "code": continue
-        source = cell_source(cell)
-        if not _should_validate_python(source): continue
-        try: ast.parse(source)
-        except SyntaxError as err:
-            msg = _format_syntax_error(source, err, idx)
-            if is_cli(): raise SystemExit(msg)
-            raise ValueError(msg) from err
-
 # %% ../nbs/00_foundation.ipynb #0eae6c06
 def _cell_from_block(block, default_type="code"):
     lines = block.splitlines()
@@ -1609,13 +1636,6 @@ def first_line(source):
 
 # %% ../nbs/00_foundation.ipynb #f4e29752
 def cell_prefix(idx, cell, show_ids=False): return NotebookCell(cell, idx=idx).prefix(show_ids=show_ids)
-
-# %% ../nbs/00_foundation.ipynb #a8d23e87
-def matches_filter(source, pattern):
-    pattern = str(pattern)
-    if pattern in source: return True
-    try: return re.search(pattern, source, flags=re.MULTILINE) is not None
-    except re.error: return False
 
 # %% ../nbs/00_foundation.ipynb #ca503024
 def is_exported_code_cell(cell):
@@ -1896,34 +1916,12 @@ def heading_title(cell, levels=(2,)):
 def _chapter_title(cell):
     return heading_title(cell, levels=(2,))
 
-# %% ../nbs/00_foundation.ipynb #af4ae045
-def chapter_spans(cells, levels=(2,), fallback=None):
-    "Return contiguous notebook cell spans opened by markdown headings."
-    return [chapter.to_span() for chapter in NotebookChapter.all(cells, levels=levels, fallback=fallback)]
-
-# %% ../nbs/00_foundation.ipynb #3ea4e21f
-def _matching_chapters(cells, chapter=None):
-    spans = chapter_spans(cells)
-    if chapter is None: return spans
-    return [span for span in spans if matches_filter(span["title"], chapter)]
-
 # %% ../nbs/00_foundation.ipynb #60b63eec
 def chapter_index_set(cells, chapter):
     idxs = set()
     for span in _matching_chapters(cells, chapter):
         idxs.update(range(span["start"], span["end"]))
     return idxs
-
-# %% ../nbs/00_foundation.ipynb #d6532c15
-def one_chapter(cells, chapter, create=False):
-    matches = _matching_chapters(cells, chapter)
-    if len(matches) == 1: return matches[0]
-    if not matches and create:
-        cells.append(mk_cell(f"## {chapter}", cell_type="markdown"))
-        return dict(title=str(chapter), start=len(cells) - 1, end=len(cells))
-    if not matches: raise ValueError(f"No chapter matches {chapter!r}")
-    titles = ", ".join(f"{span['title']} ({span['start']}:{span['end']})" for span in matches)
-    raise ValueError(f"Chapter {chapter!r} matches multiple chapters: {titles}")
 
 # %% ../nbs/00_foundation.ipynb #abc2fa85
 def _chapter_body_len(span):

@@ -99,6 +99,13 @@ def _edit_notebook_craft_warnings(path, nb, affected_cell_ids):
             warnings.append(_craft_warning("multi-function-cell",
                 f"This code cell defines {function_count} top-level functions; try op=\"explode_cells\" on cell_id={cell_id!r}.",
                 path,cell_id=cell_id,function_count=function_count))
+    from nbskill.graph import notebook_order_problems
+    for problem in notebook_order_problems(path, nb=nb):
+        if problem["code"] != "cell-order" or problem["cell_id"] not in affected: continue
+        warnings.append(_craft_warning(
+            "cell-order", f"{problem['symbol']!r} {problem['detail']}; move it above this cell.", path,
+            cell_id=problem["cell_id"], symbol=problem["symbol"], line=problem["line"]
+        ))
     return warnings
 
 # %% ../nbs/02_edit.ipynb #a0cf2e32

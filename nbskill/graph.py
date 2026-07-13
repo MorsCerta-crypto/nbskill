@@ -324,13 +324,14 @@ def _cell_call_root_records(cell):
     return visitor.records
 
 # %% ../nbs/10_graph.ipynb #9346da10
-def _cell_order_data(path):
+def _cell_order_data(path, nb=None):
     data = []
-    for nb_path in notebook_paths(path):
-        try:
-            nb = read_nb(nb_path)
-        except FileNotFoundError:
-            continue
+    notebooks = [(Path(path), nb)] if nb is not None else []
+    if nb is None:
+        for nb_path in notebook_paths(path):
+            try: notebooks.append((nb_path, read_nb(nb_path)))
+            except FileNotFoundError: continue
+    for nb_path, nb in notebooks:
         cells = []
         for idx, cell in enumerate(nb.cells):
             tree = parse_code_cell(cell)
@@ -366,10 +367,10 @@ def _format_order_problem(problem):
     return f"- {problem['code']}: {problem['path']} id={problem.get('cell_id', '')}{line} symbol={problem['symbol']!r} {problem['detail']}"
 
 # %% ../nbs/10_graph.ipynb #ca7c04e6
-def notebook_order_problems(path="nbs"):
+def notebook_order_problems(path="nbs", nb=None):
     "Return structured calls-before-definitions and missing callable import warnings."
     problems = []
-    for nb_data in _cell_order_data(path):
+    for nb_data in _cell_order_data(path, nb=nb):
         nb_path, cells = nb_data["path"], nb_data["cells"]
         locations = _binding_locations(cells)
         available = set(_BUILTIN_CALL_NAMES)

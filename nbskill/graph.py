@@ -474,6 +474,30 @@ def _symbol_connection_data(path, start, end, max_depth=6):
             queue.append((callee, next_chain))
     return _symbol_connection_result(start, end, False, max_depth, starts, [], graph, reason="no connection found")
 
+# %% ../nbs/10_graph.ipynb #4296c733
+def _caller_usage_records(records, symbol):
+    items, seen = [], set()
+    for record in records:
+        for site in record.get("call_sites", ()):
+            if not _call_matches_symbol(site.get("name"), symbol): continue
+            key = (record["path"], record["cell_id"], site.get("lineno"), site.get("line"))
+            if key in seen: continue
+            seen.add(key)
+            items.append(dict(
+                path=record["path"], cell_id=record["cell_id"],
+                lineno=site.get("lineno"), name=site.get("name"), line=site.get("line")
+            ))
+    return items
+
+# %% ../nbs/10_graph.ipynb #610687e3
+def _caller_usage_lines(records, symbol, limit=8):
+    lines = []
+    for site in _caller_usage_records(records, symbol)[:limit]:
+        lineno = f" line {site['lineno']}" if site.get("lineno") else ""
+        source = f": {site['line']}" if site.get("line") else ""
+        lines.append(f"- {site['path']} id={site['cell_id']}{lineno}{source}")
+    return lines
+
 # %% ../nbs/10_graph.ipynb #59cfbbe7
 def symbol_graph_data(path, symbol):
     "Return structured definitions, callers, and callees for a symbol."
@@ -545,30 +569,6 @@ def relationships_to_xml(self: NotebookSymbol):
     blocks.extend(f"<symbol>{xml_escape(symbol)}</symbol>" for symbol in self.callees())
     blocks.append("</callees>")
     return f"<symbol_graph {attrs}>\n" + "\n".join(blocks) + "\n</symbol_graph>"
-
-# %% ../nbs/10_graph.ipynb #4296c733
-def _caller_usage_records(records, symbol):
-    items, seen = [], set()
-    for record in records:
-        for site in record.get("call_sites", ()):
-            if not _call_matches_symbol(site.get("name"), symbol): continue
-            key = (record["path"], record["cell_id"], site.get("lineno"), site.get("line"))
-            if key in seen: continue
-            seen.add(key)
-            items.append(dict(
-                path=record["path"], cell_id=record["cell_id"],
-                lineno=site.get("lineno"), name=site.get("name"), line=site.get("line")
-            ))
-    return items
-
-# %% ../nbs/10_graph.ipynb #610687e3
-def _caller_usage_lines(records, symbol, limit=8):
-    lines = []
-    for site in _caller_usage_records(records, symbol)[:limit]:
-        lineno = f" line {site['lineno']}" if site.get("lineno") else ""
-        source = f": {site['line']}" if site.get("line") else ""
-        lines.append(f"- {site['path']} id={site['cell_id']}{lineno}{source}")
-    return lines
 
 # %% ../nbs/10_graph.ipynb #6271f92e
 def symbol_graph_public_data(data):

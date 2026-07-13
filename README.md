@@ -87,7 +87,7 @@ mcp__nbskill__.context(target="nbs/02_write.ipynb#write_nb", overview=True)
 
 ## References
 
-References are a local implementation knowledgebase, not code to copy. Register and ingest repositories with [`reference_add`](https://MorsCerta-crypto.github.io/nbskill/knowledge.html#reference_add) and [`reference_ingest`](https://MorsCerta-crypto.github.io/nbskill/knowledge.html#reference_ingest), then query them with [`reference_query`](https://MorsCerta-crypto.github.io/nbskill/knowledge.html#reference_query) before adding a nontrivial helper. Results combine structured filters, hybrid BM25/vector search, dependency status, and optional branch context.
+References are a local implementation knowledgebase, not code to copy. Discover or register repositories with [`reference_discover`](https://MorsCerta-crypto.github.io/nbskill/knowledge.html#reference_discover) or [`reference_add`](https://MorsCerta-crypto.github.io/nbskill/knowledge.html#reference_add), ingest them with [`reference_ingest`](https://MorsCerta-crypto.github.io/nbskill/knowledge.html#reference_ingest), then query them with [`reference_query`](https://MorsCerta-crypto.github.io/nbskill/knowledge.html#reference_query) before adding a nontrivial helper. Use [`reference_propose`](https://MorsCerta-crypto.github.io/nbskill/knowledge.html#reference_propose) when a match is worth turning into review material. Results combine structured filters, hybrid BM25/vector search, dependency status, and optional branch context.
 
 ``` python
 mcp__nbskill__.reference(

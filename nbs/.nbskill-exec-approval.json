@@ -98,7 +98,8 @@
       "notebook": "12_knowledge.ipynb",
       "reasons": [
         "_lance_rows->_reference_table->_reference_db->call:home.mkdir"
-      ]
+      ],
+      "source_hash": "4520da35c3d0"
     },
     "_annotation_name": {
       "allowed": true,
@@ -263,7 +264,8 @@
       "reasons": [
         "_item_by_id->_lance_rows->_reference_table->_reference_db->call:home.mkdir",
         "_lance_rows->_reference_table->_reference_db->call:home.mkdir"
-      ]
+      ],
+      "source_hash": "118565a753e6"
     },
     "_brief_call": {
       "allowed": true,
@@ -291,7 +293,8 @@
         "_lance_rows->_reference_table->_reference_db->call:home.mkdir",
         "_write_lance_table->_reference_db->call:home.mkdir",
         "_write_lance_table->_reference_table->_reference_db->call:home.mkdir"
-      ]
+      ],
+      "source_hash": "0b3782c29c85"
     },
     "_cache_path_for_notebook": {
       "allowed": true,
@@ -385,7 +388,8 @@
       "external_effects": false,
       "line": 2,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "cacc0cf3d0ca"
     },
     "_call_parse_name": {
       "allowed": true,
@@ -895,7 +899,8 @@
         "_run_git->call:subprocess.run",
         "call:shutil.copytree",
         "call:subprocess.run"
-      ]
+      ],
+      "source_hash": "cb1b8624345e"
     },
     "_checkpoint_agent_session": {
       "allowed": false,
@@ -922,7 +927,8 @@
       "external_effects": false,
       "line": 26,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "4268f4301877"
     },
     "_class_block_source": {
       "allowed": true,
@@ -930,7 +936,8 @@
       "external_effects": false,
       "line": 2,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "7f36f5b4a9d2"
     },
     "_class_overview": {
       "allowed": true,
@@ -939,16 +946,6 @@
       "line": 2,
       "notebook": "01_read.ipynb",
       "reasons": []
-    },
-    "_cleanup_readme_workspace": {
-      "allowed": false,
-      "cell_id": "4f777996",
-      "external_effects": true,
-      "line": 22,
-      "notebook": "index.ipynb",
-      "reasons": [
-        "call:shutil.rmtree"
-      ]
     },
     "_clear_changed_outputs": {
       "allowed": true,
@@ -974,7 +971,8 @@
       "notebook": "12_knowledge.ipynb",
       "reasons": [
         "call:subprocess.run"
-      ]
+      ],
+      "source_hash": "cb1b8624345e"
     },
     "_close_stream": {
       "allowed": true,
@@ -1039,6 +1037,15 @@
       "line": 2,
       "notebook": "02_edit.ipynb",
       "reasons": []
+    },
+    "_coerce_reference_roots": {
+      "allowed": true,
+      "cell_id": "459fe5ee",
+      "external_effects": false,
+      "line": 15,
+      "notebook": "12_knowledge.ipynb",
+      "reasons": [],
+      "source_hash": "8763ca6fb074"
     },
     "_command_tokens": {
       "allowed": true,
@@ -1574,7 +1581,17 @@
       "external_effects": false,
       "line": 2,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "e72f87f4c670"
+    },
+    "_declared_dependencies": {
+      "allowed": true,
+      "cell_id": "66bbfae7",
+      "external_effects": false,
+      "line": 7,
+      "notebook": "12_knowledge.ipynb",
+      "reasons": [],
+      "source_hash": "eeca306ebc8a"
     },
     "_decode_cli_newlines": {
       "allowed": false,
@@ -1592,7 +1609,8 @@
       "external_effects": false,
       "line": 2,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "4fb339b536cc"
     },
     "_dedupe_reference_rows": {
       "allowed": true,
@@ -1600,7 +1618,8 @@
       "external_effects": false,
       "line": 214,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "7c08694f846f"
     },
     "_dedupe_warnings": {
       "allowed": true,
@@ -1676,6 +1695,15 @@
         "call:root.mkdir"
       ]
     },
+    "_dependency_name": {
+      "allowed": true,
+      "cell_id": "66bbfae7",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "12_knowledge.ipynb",
+      "reasons": [],
+      "source_hash": "eeca306ebc8a"
+    },
     "_dependency_status": {
       "allowed": false,
       "cell_id": "b540f0e9",
@@ -1684,7 +1712,8 @@
       "notebook": "12_knowledge.ipynb",
       "reasons": [
         "call:package.replace"
-      ]
+      ],
+      "source_hash": "5be28513af04"
     },
     "_descendant_rows": {
       "allowed": true,
@@ -1734,6 +1763,15 @@
       "line": 150,
       "notebook": "07_mcp.ipynb",
       "reasons": []
+    },
+    "_discovered_reference_paths": {
+      "allowed": true,
+      "cell_id": "459fe5ee",
+      "external_effects": false,
+      "line": 33,
+      "notebook": "12_knowledge.ipynb",
+      "reasons": [],
+      "source_hash": "8763ca6fb074"
     },
     "_doc_script_warnings": {
       "allowed": true,
@@ -1867,7 +1905,8 @@
         "call:shutil.copytree",
         "call:shutil.rmtree",
         "call:unpacked.mkdir"
-      ]
+      ],
+      "source_hash": "1d0b0fbc1ddb"
     },
     "_edit_cell_source": {
       "allowed": false,
@@ -1976,7 +2015,8 @@
       "external_effects": false,
       "line": 36,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "f248016769be"
     },
     "_emit_code_chunk": {
       "allowed": true,
@@ -2072,7 +2112,8 @@
         "reference_ingest->_write_reference_rows->_prune_reference_versions->_write_lance_table->_reference_table->_reference_db->call:home.mkdir",
         "reference_ingest->_write_reference_rows->_write_lance_table->_reference_db->call:home.mkdir",
         "reference_ingest->_write_reference_rows->_write_lance_table->_reference_table->_reference_db->call:home.mkdir"
-      ]
+      ],
+      "source_hash": "1d0b0fbc1ddb"
     },
     "_ensure_nbdev_pre_commit_hooks": {
       "allowed": true,
@@ -2277,7 +2318,8 @@
       "external_effects": false,
       "line": 1,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "d8b951500330"
     },
     "_experiment_search": {
       "allowed": true,
@@ -2285,7 +2327,8 @@
       "external_effects": false,
       "line": 1,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "8b6b87c7f457"
     },
     "_experiment_table": {
       "allowed": false,
@@ -2295,7 +2338,8 @@
       "notebook": "12_knowledge.ipynb",
       "reasons": [
         "_reference_db->call:home.mkdir"
-      ]
+      ],
+      "source_hash": "16581f428780"
     },
     "_experiment_text": {
       "allowed": true,
@@ -2303,7 +2347,8 @@
       "external_effects": false,
       "line": 1,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "b818de44b7c3"
     },
     "_explicit_notebook_path": {
       "allowed": true,
@@ -2369,7 +2414,8 @@
       "notebook": "12_knowledge.ipynb",
       "reasons": [
         "_item_row->_row_tags->call:replace"
-      ]
+      ],
+      "source_hash": "7f36f5b4a9d2"
     },
     "_extract_notebook_rows": {
       "allowed": false,
@@ -2380,7 +2426,8 @@
       "reasons": [
         "_extract_def_rows->_item_row->_row_tags->call:replace",
         "_item_row->_row_tags->call:replace"
-      ]
+      ],
+      "source_hash": "c702966e17e3"
     },
     "_extract_python_rows": {
       "allowed": false,
@@ -2391,7 +2438,8 @@
       "reasons": [
         "_extract_def_rows->_item_row->_row_tags->call:replace",
         "_item_row->_row_tags->call:replace"
-      ]
+      ],
+      "source_hash": "8ddb100b6478"
     },
     "_extract_reference_rows": {
       "allowed": false,
@@ -2405,7 +2453,8 @@
         "_extract_python_rows->_extract_def_rows->_item_row->_row_tags->call:replace",
         "_extract_python_rows->_item_row->_row_tags->call:replace",
         "_readme_rows->_item_row->_row_tags->call:replace"
-      ]
+      ],
+      "source_hash": "907ba2110eca"
     },
     "_failure_data": {
       "allowed": true,
@@ -2455,7 +2504,8 @@
       "notebook": "12_knowledge.ipynb",
       "reasons": [
         "call:term.replace"
-      ]
+      ],
+      "source_hash": "7c08694f846f"
     },
     "_feedback_final_prompt": {
       "allowed": true,
@@ -2471,7 +2521,8 @@
       "external_effects": false,
       "line": 2,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "db0e759ea577"
     },
     "_file_uri_path": {
       "allowed": true,
@@ -2591,7 +2642,8 @@
       "external_effects": false,
       "line": 64,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "0b3782c29c85"
     },
     "_finish_write": {
       "allowed": true,
@@ -2615,7 +2667,8 @@
       "external_effects": false,
       "line": 2,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "2fb1846bd474"
     },
     "_first_markdown_paragraph": {
       "allowed": true,
@@ -2983,7 +3036,8 @@
       "external_effects": false,
       "line": 2,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "cb1b8624345e"
     },
     "_glob_notebook_paths": {
       "allowed": false,
@@ -3111,7 +3165,8 @@
       "external_effects": false,
       "line": 2,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "111c65ef6a29"
     },
     "_include_prerelease": {
       "allowed": true,
@@ -3119,7 +3174,8 @@
       "external_effects": false,
       "line": 66,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "1d0b0fbc1ddb"
     },
     "_indexed_package_versions": {
       "allowed": false,
@@ -3129,7 +3185,8 @@
       "notebook": "12_knowledge.ipynb",
       "reasons": [
         "_lance_rows->_reference_table->_reference_db->call:home.mkdir"
-      ]
+      ],
+      "source_hash": "1d0b0fbc1ddb"
     },
     "_infer_package": {
       "allowed": false,
@@ -3139,7 +3196,8 @@
       "notebook": "12_knowledge.ipynb",
       "reasons": [
         "call:replace"
-      ]
+      ],
+      "source_hash": "269a6e849cb3"
     },
     "_insert_at": {
       "allowed": true,
@@ -3215,6 +3273,15 @@
       "notebook": "07_mcp.ipynb",
       "reasons": []
     },
+    "_is_reference_git_repo": {
+      "allowed": true,
+      "cell_id": "459fe5ee",
+      "external_effects": false,
+      "line": 29,
+      "notebook": "12_knowledge.ipynb",
+      "reasons": [],
+      "source_hash": "8763ca6fb074"
+    },
     "_is_rich_traceback_stream": {
       "allowed": true,
       "cell_id": "03e0f4fd",
@@ -3245,7 +3312,8 @@
       "external_effects": false,
       "line": 150,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "7c08694f846f"
     },
     "_is_valid_notebook_cell": {
       "allowed": true,
@@ -3263,7 +3331,8 @@
       "notebook": "12_knowledge.ipynb",
       "reasons": [
         "_lance_rows->_reference_table->_reference_db->call:home.mkdir"
-      ]
+      ],
+      "source_hash": "925235dd8cff"
     },
     "_item_row": {
       "allowed": false,
@@ -3273,7 +3342,8 @@
       "notebook": "12_knowledge.ipynb",
       "reasons": [
         "_row_tags->call:replace"
-      ]
+      ],
+      "source_hash": "db0e759ea577"
     },
     "_join_lines": {
       "allowed": true,
@@ -3307,7 +3377,8 @@
       "notebook": "12_knowledge.ipynb",
       "reasons": [
         "call:replace"
-      ]
+      ],
+      "source_hash": "7c08694f846f"
     },
     "_lance_rows": {
       "allowed": false,
@@ -3317,7 +3388,8 @@
       "notebook": "12_knowledge.ipynb",
       "reasons": [
         "_reference_table->_reference_db->call:home.mkdir"
-      ]
+      ],
+      "source_hash": "f517425659d0"
     },
     "_lancedb_path": {
       "allowed": true,
@@ -3325,7 +3397,8 @@
       "external_effects": false,
       "line": 2,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "e22117519371"
     },
     "_lancedb_search": {
       "allowed": false,
@@ -3351,7 +3424,8 @@
         "_reference_rank_score->_reference_score_breakdown->_row_import_terms->_row_feature_set->_feature_terms->call:term.replace",
         "_reference_rank_score->_reference_score_breakdown->call:symbol.replace",
         "_reference_table->_reference_db->call:home.mkdir"
-      ]
+      ],
+      "source_hash": "7c08694f846f"
     },
     "_large_cell_problems": {
       "allowed": true,
@@ -3409,7 +3483,8 @@
       "notebook": "12_knowledge.ipynb",
       "reasons": [
         "_lance_rows->_reference_table->_reference_db->call:home.mkdir"
-      ]
+      ],
+      "source_hash": "7138373d3499"
     },
     "_local_import_paths": {
       "allowed": true,
@@ -3425,7 +3500,17 @@
       "external_effects": false,
       "line": 71,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "0b3782c29c85"
+    },
+    "_local_reference_name": {
+      "allowed": true,
+      "cell_id": "459fe5ee",
+      "external_effects": false,
+      "line": 47,
+      "notebook": "12_knowledge.ipynb",
+      "reasons": [],
+      "source_hash": "8763ca6fb074"
     },
     "_looks_like_multiline_cli_text": {
       "allowed": true,
@@ -3536,7 +3621,8 @@
       "notebook": "12_knowledge.ipynb",
       "reasons": [
         "_indexed_package_versions->_lance_rows->_reference_table->_reference_db->call:home.mkdir"
-      ]
+      ],
+      "source_hash": "1d0b0fbc1ddb"
     },
     "_mcp_bootstrap_workspace": {
       "allowed": false,
@@ -4116,7 +4202,8 @@
         "_reference_rank_score->_reference_score_breakdown->_row_import_terms->_feature_terms->call:term.replace",
         "_reference_rank_score->_reference_score_breakdown->_row_import_terms->_row_feature_set->_feature_terms->call:term.replace",
         "_reference_rank_score->_reference_score_breakdown->call:symbol.replace"
-      ]
+      ],
+      "source_hash": "7c08694f846f"
     },
     "_merge_line_to_previous": {
       "allowed": true,
@@ -4140,7 +4227,8 @@
       "external_effects": false,
       "line": 55,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "ed76b520ce3a"
     },
     "_merge_single_line_ifs": {
       "allowed": true,
@@ -4172,7 +4260,8 @@
       "external_effects": false,
       "line": 2,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "1ca372655908"
     },
     "_module_source": {
       "allowed": true,
@@ -4204,7 +4293,8 @@
       "external_effects": false,
       "line": 10,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "71bb820ee29a"
     },
     "_nbdev_export_lock": {
       "allowed": false,
@@ -4382,7 +4472,8 @@
       "external_effects": false,
       "line": 2,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "0a39a5efc3dd"
     },
     "_node_start_line": {
       "allowed": true,
@@ -4406,7 +4497,8 @@
       "external_effects": false,
       "line": 2,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "b06f38578365"
     },
     "_norm_lines": {
       "allowed": true,
@@ -4422,7 +4514,8 @@
       "external_effects": false,
       "line": 20,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "1d0b0fbc1ddb"
     },
     "_normalize_cell_type_filter": {
       "allowed": true,
@@ -4662,7 +4755,8 @@
       "external_effects": false,
       "line": 12,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "1d0b0fbc1ddb"
     },
     "_package_version": {
       "allowed": true,
@@ -4680,7 +4774,8 @@
       "notebook": "12_knowledge.ipynb",
       "reasons": [
         "_lance_rows->_reference_table->_reference_db->call:home.mkdir"
-      ]
+      ],
+      "source_hash": "1d0b0fbc1ddb"
     },
     "_packaging_specifier": {
       "allowed": true,
@@ -4688,7 +4783,8 @@
       "external_effects": false,
       "line": 7,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "1d0b0fbc1ddb"
     },
     "_packaging_version": {
       "allowed": true,
@@ -4696,7 +4792,8 @@
       "external_effects": false,
       "line": 2,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "1d0b0fbc1ddb"
     },
     "_parse_executed_code_cell": {
       "allowed": true,
@@ -4844,7 +4941,8 @@
       "external_effects": false,
       "line": 207,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "7c08694f846f"
     },
     "_prepare_lance_rows": {
       "allowed": true,
@@ -4852,7 +4950,8 @@
       "external_effects": false,
       "line": 23,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "f517425659d0"
     },
     "_prepend_sys_path": {
       "allowed": true,
@@ -4990,7 +5089,8 @@
         "_merge_lancedb_rows->_reference_rank_score->_reference_score_breakdown->_row_import_terms->_row_feature_set->_feature_terms->call:term.replace",
         "_merge_lancedb_rows->_reference_rank_score->_reference_score_breakdown->call:symbol.replace",
         "_reference_table->_reference_db->call:home.mkdir"
-      ]
+      ],
+      "source_hash": "ed76b520ce3a"
     },
     "_problem_chart": {
       "allowed": true,
@@ -5006,7 +5106,8 @@
       "external_effects": false,
       "line": 150,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "ed76b520ce3a"
     },
     "_problem_hit": {
       "allowed": true,
@@ -5014,7 +5115,8 @@
       "external_effects": false,
       "line": 113,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "ed76b520ce3a"
     },
     "_problem_key": {
       "allowed": true,
@@ -5022,7 +5124,8 @@
       "external_effects": false,
       "line": 25,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "ed76b520ce3a"
     },
     "_problem_memory_context": {
       "allowed": true,
@@ -5046,7 +5149,8 @@
       "external_effects": false,
       "line": 9,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "ed76b520ce3a"
     },
     "_problem_row": {
       "allowed": true,
@@ -5054,7 +5158,8 @@
       "external_effects": false,
       "line": 33,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "ed76b520ce3a"
     },
     "_problem_score": {
       "allowed": true,
@@ -5062,7 +5167,8 @@
       "external_effects": false,
       "line": 100,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "ed76b520ce3a"
     },
     "_problem_tags": {
       "allowed": true,
@@ -5070,7 +5176,8 @@
       "external_effects": false,
       "line": 2,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "ed76b520ce3a"
     },
     "_problem_text": {
       "allowed": true,
@@ -5078,7 +5185,8 @@
       "external_effects": false,
       "line": 15,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "ed76b520ce3a"
     },
     "_process_cwd": {
       "allowed": false,
@@ -5157,7 +5265,8 @@
         "_reference_versions_to_prune->_indexed_package_versions->_lance_rows->_reference_table->_reference_db->call:home.mkdir",
         "_write_lance_table->_reference_db->call:home.mkdir",
         "_write_lance_table->_reference_table->_reference_db->call:home.mkdir"
-      ]
+      ],
+      "source_hash": "1d0b0fbc1ddb"
     },
     "_public_defs_in_source": {
       "allowed": true,
@@ -5221,7 +5330,8 @@
       "external_effects": false,
       "line": 5,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "2fb1846bd474"
     },
     "_public_symbols_in_cell": {
       "allowed": true,
@@ -5247,6 +5357,15 @@
       "notebook": "04_review.ipynb",
       "reasons": []
     },
+    "_public_workspace_context": {
+      "allowed": true,
+      "cell_id": "66bbfae7",
+      "external_effects": false,
+      "line": 81,
+      "notebook": "12_knowledge.ipynb",
+      "reasons": [],
+      "source_hash": "eeca306ebc8a"
+    },
     "_pure_function_split_sources": {
       "allowed": true,
       "cell_id": "17a4ad54",
@@ -5261,7 +5380,8 @@
       "external_effects": false,
       "line": 59,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "1d0b0fbc1ddb"
     },
     "_pypi_release_files": {
       "allowed": true,
@@ -5269,7 +5389,8 @@
       "external_effects": false,
       "line": 110,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "1d0b0fbc1ddb"
     },
     "_pypi_release_versions": {
       "allowed": true,
@@ -5277,7 +5398,8 @@
       "external_effects": false,
       "line": 70,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "1d0b0fbc1ddb"
     },
     "_pyproject_data": {
       "allowed": true,
@@ -5285,7 +5407,8 @@
       "external_effects": false,
       "line": 2,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "71bb820ee29a"
     },
     "_python_assign_names": {
       "allowed": true,
@@ -5405,7 +5528,8 @@
       "external_effects": false,
       "line": 105,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "7c08694f846f"
     },
     "_query_items": {
       "allowed": true,
@@ -5421,7 +5545,19 @@
       "external_effects": false,
       "line": 2,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "9368c1f6926d"
+    },
+    "_query_workspace_package": {
+      "allowed": false,
+      "cell_id": "66bbfae7",
+      "external_effects": true,
+      "line": 73,
+      "notebook": "12_knowledge.ipynb",
+      "reasons": [
+        "call:name.replace"
+      ],
+      "source_hash": "eeca306ebc8a"
     },
     "_raw_call_names": {
       "allowed": true,
@@ -5463,6 +5599,15 @@
       "notebook": "00_foundation.ipynb",
       "reasons": []
     },
+    "_read_reference_roots": {
+      "allowed": true,
+      "cell_id": "459fe5ee",
+      "external_effects": false,
+      "line": 8,
+      "notebook": "12_knowledge.ipynb",
+      "reasons": [],
+      "source_hash": "8763ca6fb074"
+    },
     "_read_workbench_json": {
       "allowed": true,
       "cell_id": "919b6c69",
@@ -5495,18 +5640,8 @@
       "notebook": "12_knowledge.ipynb",
       "reasons": [
         "_item_row->_row_tags->call:replace"
-      ]
-    },
-    "_readme_workspace": {
-      "allowed": false,
-      "cell_id": "4f777996",
-      "external_effects": true,
-      "line": 26,
-      "notebook": "index.ipynb",
-      "reasons": [
-        "_cleanup_readme_workspace->call:shutil.rmtree",
-        "call:workspace.mkdir"
-      ]
+      ],
+      "source_hash": "b11ce41451f0"
     },
     "_record_story_warnings": {
       "allowed": true,
@@ -5560,7 +5695,8 @@
       "external_effects": false,
       "line": 140,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "7c08694f846f"
     },
     "_reference_context_markdown": {
       "allowed": true,
@@ -5568,7 +5704,8 @@
       "external_effects": false,
       "line": 105,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "0b3782c29c85"
     },
     "_reference_db": {
       "allowed": false,
@@ -5578,7 +5715,8 @@
       "notebook": "12_knowledge.ipynb",
       "reasons": [
         "call:home.mkdir"
-      ]
+      ],
+      "source_hash": "c282c06214f9"
     },
     "_reference_edge_rows": {
       "allowed": true,
@@ -5586,7 +5724,8 @@
       "external_effects": false,
       "line": 2,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "2299d6cf53da"
     },
     "_reference_embedding_backend": {
       "allowed": true,
@@ -5594,7 +5733,8 @@
       "external_effects": false,
       "line": 44,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "f248016769be"
     },
     "_reference_embedding_note": {
       "allowed": true,
@@ -5602,7 +5742,8 @@
       "external_effects": false,
       "line": 50,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "f248016769be"
     },
     "_reference_file_within_budget": {
       "allowed": true,
@@ -5610,7 +5751,8 @@
       "external_effects": false,
       "line": 37,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "4268f4301877"
     },
     "_reference_filter_expr": {
       "allowed": false,
@@ -5620,7 +5762,8 @@
       "notebook": "12_knowledge.ipynb",
       "reasons": [
         "_lance_literal->call:replace"
-      ]
+      ],
+      "source_hash": "7c08694f846f"
     },
     "_reference_group_name": {
       "allowed": true,
@@ -5628,7 +5771,8 @@
       "external_effects": false,
       "line": 99,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "0b3782c29c85"
     },
     "_reference_ingest_progress": {
       "allowed": true,
@@ -5636,7 +5780,8 @@
       "external_effects": false,
       "line": 2,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "12489490e5ac"
     },
     "_reference_list_value": {
       "allowed": true,
@@ -5644,7 +5789,8 @@
       "external_effects": false,
       "line": 56,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "7c08694f846f"
     },
     "_reference_lookup_hints": {
       "allowed": true,
@@ -5652,7 +5798,8 @@
       "external_effects": false,
       "line": 28,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "0b3782c29c85"
     },
     "_reference_quality": {
       "allowed": true,
@@ -5660,7 +5807,80 @@
       "external_effects": false,
       "line": 44,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "0b3782c29c85"
+    },
+    "_reference_query_index": {
+      "allowed": false,
+      "cell_id": "9b01b99f",
+      "external_effects": true,
+      "line": 125,
+      "notebook": "12_knowledge.ipynb",
+      "reasons": [
+        "_branch_for_item->_item_by_id->_lance_rows->_reference_table->_reference_db->call:home.mkdir",
+        "_branch_for_item->_lance_rows->_reference_table->_reference_db->call:home.mkdir",
+        "_bump_reference_return_counts->_lance_rows->_reference_table->_reference_db->call:home.mkdir",
+        "_bump_reference_return_counts->_write_lance_table->_reference_db->call:home.mkdir",
+        "_bump_reference_return_counts->_write_lance_table->_reference_table->_reference_db->call:home.mkdir",
+        "_dependency_status->call:package.replace",
+        "_ensure_library_version_indexed->_load_reference_registry->_lance_rows->_reference_table->_reference_db->call:home.mkdir",
+        "_ensure_library_version_indexed->_package_version_indexed->_lance_rows->_reference_table->_reference_db->call:home.mkdir",
+        "_ensure_library_version_indexed->_resolve_library_version->_matching_indexed_versions->_indexed_package_versions->_lance_rows->_reference_table->_reference_db->call:home.mkdir",
+        "_ensure_library_version_indexed->_write_reference_registry->_write_lance_table->_reference_db->call:home.mkdir",
+        "_ensure_library_version_indexed->_write_reference_registry->_write_lance_table->_reference_table->_reference_db->call:home.mkdir",
+        "_ensure_library_version_indexed->reference_ingest->_checkout_reference->_clone_reference_with_gh->call:subprocess.run",
+        "_ensure_library_version_indexed->reference_ingest->_checkout_reference->_download_pypi_release->call:archive.write_bytes",
+        "_ensure_library_version_indexed->reference_ingest->_checkout_reference->_download_pypi_release->call:shutil.copytree",
+        "_ensure_library_version_indexed->reference_ingest->_checkout_reference->_download_pypi_release->call:shutil.rmtree",
+        "_ensure_library_version_indexed->reference_ingest->_checkout_reference->_download_pypi_release->call:unpacked.mkdir",
+        "_ensure_library_version_indexed->reference_ingest->_checkout_reference->_run_git->call:subprocess.run",
+        "_ensure_library_version_indexed->reference_ingest->_checkout_reference->call:shutil.copytree",
+        "_ensure_library_version_indexed->reference_ingest->_checkout_reference->call:subprocess.run",
+        "_ensure_library_version_indexed->reference_ingest->_extract_reference_rows->_extract_notebook_rows->_extract_def_rows->_item_row->_row_tags->call:replace",
+        "_ensure_library_version_indexed->reference_ingest->_extract_reference_rows->_extract_notebook_rows->_item_row->_row_tags->call:replace",
+        "_ensure_library_version_indexed->reference_ingest->_extract_reference_rows->_extract_python_rows->_extract_def_rows->_item_row->_row_tags->call:replace",
+        "_ensure_library_version_indexed->reference_ingest->_extract_reference_rows->_extract_python_rows->_item_row->_row_tags->call:replace",
+        "_ensure_library_version_indexed->reference_ingest->_extract_reference_rows->_readme_rows->_item_row->_row_tags->call:replace",
+        "_ensure_library_version_indexed->reference_ingest->_infer_package->call:replace",
+        "_ensure_library_version_indexed->reference_ingest->_load_reference_registry->_lance_rows->_reference_table->_reference_db->call:home.mkdir",
+        "_ensure_library_version_indexed->reference_ingest->_sync_lancedb->_all_reference_items->_lance_rows->_reference_table->_reference_db->call:home.mkdir",
+        "_ensure_library_version_indexed->reference_ingest->_sync_lancedb->_reference_table->_reference_db->call:home.mkdir",
+        "_ensure_library_version_indexed->reference_ingest->_write_reference_registry->_write_lance_table->_reference_db->call:home.mkdir",
+        "_ensure_library_version_indexed->reference_ingest->_write_reference_registry->_write_lance_table->_reference_table->_reference_db->call:home.mkdir",
+        "_ensure_library_version_indexed->reference_ingest->_write_reference_rows->_lance_rows->_reference_table->_reference_db->call:home.mkdir",
+        "_ensure_library_version_indexed->reference_ingest->_write_reference_rows->_prune_reference_versions->_lance_rows->_reference_table->_reference_db->call:home.mkdir",
+        "_ensure_library_version_indexed->reference_ingest->_write_reference_rows->_prune_reference_versions->_reference_versions_to_prune->_indexed_package_versions->_lance_rows->_reference_table->_reference_db->call:home.mkdir",
+        "_ensure_library_version_indexed->reference_ingest->_write_reference_rows->_prune_reference_versions->_write_lance_table->_reference_db->call:home.mkdir",
+        "_ensure_library_version_indexed->reference_ingest->_write_reference_rows->_prune_reference_versions->_write_lance_table->_reference_table->_reference_db->call:home.mkdir",
+        "_ensure_library_version_indexed->reference_ingest->_write_reference_rows->_write_lance_table->_reference_db->call:home.mkdir",
+        "_ensure_library_version_indexed->reference_ingest->_write_reference_rows->_write_lance_table->_reference_table->_reference_db->call:home.mkdir",
+        "_lancedb_search->_lance_rows->_reference_table->_reference_db->call:home.mkdir",
+        "_lancedb_search->_merge_lancedb_rows->_reference_rank_score->_reference_score_breakdown->_dependency_status->call:package.replace",
+        "_lancedb_search->_merge_lancedb_rows->_reference_rank_score->_reference_score_breakdown->_row_call_terms->_feature_terms->call:term.replace",
+        "_lancedb_search->_merge_lancedb_rows->_reference_rank_score->_reference_score_breakdown->_row_call_terms->_row_feature_set->_feature_terms->call:term.replace",
+        "_lancedb_search->_merge_lancedb_rows->_reference_rank_score->_reference_score_breakdown->_row_decorator_terms->_row_feature_set->_feature_terms->call:term.replace",
+        "_lancedb_search->_merge_lancedb_rows->_reference_rank_score->_reference_score_breakdown->_row_import_terms->_feature_terms->call:term.replace",
+        "_lancedb_search->_merge_lancedb_rows->_reference_rank_score->_reference_score_breakdown->_row_import_terms->_row_feature_set->_feature_terms->call:term.replace",
+        "_lancedb_search->_merge_lancedb_rows->_reference_rank_score->_reference_score_breakdown->call:symbol.replace",
+        "_lancedb_search->_reference_filter_expr->_lance_literal->call:replace",
+        "_lancedb_search->_reference_rank_score->_reference_score_breakdown->_dependency_status->call:package.replace",
+        "_lancedb_search->_reference_rank_score->_reference_score_breakdown->_row_call_terms->_feature_terms->call:term.replace",
+        "_lancedb_search->_reference_rank_score->_reference_score_breakdown->_row_call_terms->_row_feature_set->_feature_terms->call:term.replace",
+        "_lancedb_search->_reference_rank_score->_reference_score_breakdown->_row_decorator_terms->_row_feature_set->_feature_terms->call:term.replace",
+        "_lancedb_search->_reference_rank_score->_reference_score_breakdown->_row_import_terms->_feature_terms->call:term.replace",
+        "_lancedb_search->_reference_rank_score->_reference_score_breakdown->_row_import_terms->_row_feature_set->_feature_terms->call:term.replace",
+        "_lancedb_search->_reference_rank_score->_reference_score_breakdown->call:symbol.replace",
+        "_lancedb_search->_reference_table->_reference_db->call:home.mkdir",
+        "_matching_indexed_versions->_indexed_package_versions->_lance_rows->_reference_table->_reference_db->call:home.mkdir",
+        "_reference_score_breakdown->_dependency_status->call:package.replace",
+        "_reference_score_breakdown->_row_call_terms->_feature_terms->call:term.replace",
+        "_reference_score_breakdown->_row_call_terms->_row_feature_set->_feature_terms->call:term.replace",
+        "_reference_score_breakdown->_row_decorator_terms->_row_feature_set->_feature_terms->call:term.replace",
+        "_reference_score_breakdown->_row_import_terms->_feature_terms->call:term.replace",
+        "_reference_score_breakdown->_row_import_terms->_row_feature_set->_feature_terms->call:term.replace",
+        "_reference_score_breakdown->call:symbol.replace"
+      ],
+      "source_hash": "0b3782c29c85"
     },
     "_reference_rank_score": {
       "allowed": false,
@@ -5676,7 +5896,8 @@
         "_reference_score_breakdown->_row_import_terms->_feature_terms->call:term.replace",
         "_reference_score_breakdown->_row_import_terms->_row_feature_set->_feature_terms->call:term.replace",
         "_reference_score_breakdown->call:symbol.replace"
-      ]
+      ],
+      "source_hash": "7c08694f846f"
     },
     "_reference_reuse_key": {
       "allowed": true,
@@ -5684,7 +5905,17 @@
       "external_effects": false,
       "line": 2,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "c4e60dcc2911"
+    },
+    "_reference_roots_path": {
+      "allowed": true,
+      "cell_id": "459fe5ee",
+      "external_effects": false,
+      "line": 4,
+      "notebook": "12_knowledge.ipynb",
+      "reasons": [],
+      "source_hash": "8763ca6fb074"
     },
     "_reference_score_breakdown": {
       "allowed": false,
@@ -5700,7 +5931,8 @@
         "_row_import_terms->_feature_terms->call:term.replace",
         "_row_import_terms->_row_feature_set->_feature_terms->call:term.replace",
         "call:symbol.replace"
-      ]
+      ],
+      "source_hash": "7c08694f846f"
     },
     "_reference_summary_lines": {
       "allowed": true,
@@ -5718,7 +5950,8 @@
       "notebook": "12_knowledge.ipynb",
       "reasons": [
         "_reference_db->call:home.mkdir"
-      ]
+      ],
+      "source_hash": "f517425659d0"
     },
     "_reference_table_names": {
       "allowed": true,
@@ -5726,7 +5959,8 @@
       "external_effects": false,
       "line": 2,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "55cabc4076b7"
     },
     "_reference_token_map": {
       "allowed": true,
@@ -5734,7 +5968,8 @@
       "external_effects": false,
       "line": 2,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "6bb883c92c5e"
     },
     "_reference_tokens": {
       "allowed": true,
@@ -5742,7 +5977,8 @@
       "external_effects": false,
       "line": 22,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "f248016769be"
     },
     "_reference_tool": {
       "allowed": false,
@@ -5763,7 +5999,8 @@
       "external_effects": false,
       "line": 29,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "f248016769be"
     },
     "_reference_versions_to_prune": {
       "allowed": false,
@@ -5773,7 +6010,8 @@
       "notebook": "12_knowledge.ipynb",
       "reasons": [
         "_indexed_package_versions->_lance_rows->_reference_table->_reference_db->call:home.mkdir"
-      ]
+      ],
+      "source_hash": "1d0b0fbc1ddb"
     },
     "_reference_why": {
       "allowed": true,
@@ -5781,7 +6019,8 @@
       "external_effects": false,
       "line": 52,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "0b3782c29c85"
     },
     "_refresh_cell_metadata": {
       "allowed": true,
@@ -5984,7 +6223,8 @@
       "external_effects": false,
       "line": 2,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "568a74600212"
     },
     "_repo_name_from_source": {
       "allowed": true,
@@ -5992,7 +6232,8 @@
       "external_effects": false,
       "line": 2,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "51ce39d495de"
     },
     "_require_op": {
       "allowed": true,
@@ -6008,7 +6249,8 @@
       "external_effects": false,
       "line": 2,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "c282c06214f9"
     },
     "_resolve_allowed_name": {
       "allowed": true,
@@ -6034,7 +6276,8 @@
       "notebook": "12_knowledge.ipynb",
       "reasons": [
         "_matching_indexed_versions->_indexed_package_versions->_lance_rows->_reference_table->_reference_db->call:home.mkdir"
-      ]
+      ],
+      "source_hash": "1d0b0fbc1ddb"
     },
     "_resolve_target_path": {
       "allowed": true,
@@ -6112,7 +6355,8 @@
       "external_effects": false,
       "line": 9,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "c4e60dcc2911"
     },
     "_rooted_path": {
       "allowed": true,
@@ -6121,15 +6365,6 @@
       "line": 2,
       "notebook": "07_mcp.ipynb",
       "reasons": []
-    },
-    "_route": {
-      "allowed": true,
-      "cell_id": "457115b1",
-      "external_effects": false,
-      "line": 1,
-      "notebook": "nbs/data/03_execute_decorated_warning/nbs/decorated.ipynb",
-      "reasons": [],
-      "source_hash": "8fe6c2e75204"
     },
     "_row_call_terms": {
       "allowed": false,
@@ -6140,7 +6375,8 @@
       "reasons": [
         "_feature_terms->call:term.replace",
         "_row_feature_set->_feature_terms->call:term.replace"
-      ]
+      ],
+      "source_hash": "7c08694f846f"
     },
     "_row_decorator_terms": {
       "allowed": false,
@@ -6150,7 +6386,8 @@
       "notebook": "12_knowledge.ipynb",
       "reasons": [
         "_row_feature_set->_feature_terms->call:term.replace"
-      ]
+      ],
+      "source_hash": "7c08694f846f"
     },
     "_row_feature_set": {
       "allowed": false,
@@ -6160,7 +6397,8 @@
       "notebook": "12_knowledge.ipynb",
       "reasons": [
         "_feature_terms->call:term.replace"
-      ]
+      ],
+      "source_hash": "7c08694f846f"
     },
     "_row_has_vector": {
       "allowed": true,
@@ -6168,7 +6406,8 @@
       "external_effects": false,
       "line": 16,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "f517425659d0"
     },
     "_row_import_terms": {
       "allowed": false,
@@ -6179,7 +6418,8 @@
       "reasons": [
         "_feature_terms->call:term.replace",
         "_row_feature_set->_feature_terms->call:term.replace"
-      ]
+      ],
+      "source_hash": "7c08694f846f"
     },
     "_row_matches_reference_filter": {
       "allowed": true,
@@ -6187,7 +6427,8 @@
       "external_effects": false,
       "line": 31,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "7c08694f846f"
     },
     "_row_package_key": {
       "allowed": true,
@@ -6195,7 +6436,8 @@
       "external_effects": false,
       "line": 16,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "1d0b0fbc1ddb"
     },
     "_row_tags": {
       "allowed": false,
@@ -6205,7 +6447,8 @@
       "notebook": "12_knowledge.ipynb",
       "reasons": [
         "call:replace"
-      ]
+      ],
+      "source_hash": "2a3db1b042f6"
     },
     "_run_async": {
       "allowed": true,
@@ -6231,7 +6474,8 @@
       "notebook": "12_knowledge.ipynb",
       "reasons": [
         "call:subprocess.run"
-      ]
+      ],
+      "source_hash": "b5154cc4035b"
     },
     "_run_mcp_smoke_snippets": {
       "allowed": false,
@@ -6321,7 +6565,8 @@
       "external_effects": false,
       "line": 222,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "7c08694f846f"
     },
     "_select_query_items": {
       "allowed": true,
@@ -6361,7 +6606,8 @@
       "external_effects": false,
       "line": 6,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "f248016769be"
     },
     "_session_allowed_capabilities": {
       "allowed": true,
@@ -6443,7 +6689,8 @@
       "external_effects": false,
       "line": 2,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "868261ca55b4"
     },
     "_similar_source_lines": {
       "allowed": true,
@@ -6507,7 +6754,8 @@
       "external_effects": false,
       "line": 2,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "ea920bee3eac"
     },
     "_source_exports": {
       "allowed": true,
@@ -6603,7 +6851,8 @@
       "external_effects": false,
       "line": 2,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "1f3a2ca2525f"
     },
     "_status_data": {
       "allowed": true,
@@ -6730,7 +6979,8 @@
       "external_effects": false,
       "line": 19,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "71bb820ee29a"
     },
     "_symbol_candidates": {
       "allowed": true,
@@ -6762,7 +7012,8 @@
       "external_effects": false,
       "line": 2,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "7ddc3753dd17"
     },
     "_symbol_location": {
       "allowed": true,
@@ -6823,7 +7074,8 @@
       "reasons": [
         "_all_reference_items->_lance_rows->_reference_table->_reference_db->call:home.mkdir",
         "_reference_table->_reference_db->call:home.mkdir"
-      ]
+      ],
+      "source_hash": "27676d003abb"
     },
     "_sync_safe_callable_globals": {
       "allowed": true,
@@ -7052,7 +7304,8 @@
       "external_effects": false,
       "line": 2,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "82697c92be7e"
     },
     "_uncalled_function_warnings": {
       "allowed": true,
@@ -7124,7 +7377,8 @@
       "external_effects": false,
       "line": 28,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "1d0b0fbc1ddb"
     },
     "_version_sort_key": {
       "allowed": true,
@@ -7132,7 +7386,8 @@
       "external_effects": false,
       "line": 37,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "1d0b0fbc1ddb"
     },
     "_visible_text_inventory_tool": {
       "allowed": false,
@@ -7235,6 +7490,46 @@
       "notebook": "04_review.ipynb",
       "reasons": []
     },
+    "_workspace_context": {
+      "allowed": false,
+      "cell_id": "66bbfae7",
+      "external_effects": true,
+      "line": 47,
+      "notebook": "12_knowledge.ipynb",
+      "reasons": [
+        "_workspace_distributions->call:subprocess.run"
+      ],
+      "source_hash": "eeca306ebc8a"
+    },
+    "_workspace_distributions": {
+      "allowed": false,
+      "cell_id": "66bbfae7",
+      "external_effects": true,
+      "line": 28,
+      "notebook": "12_knowledge.ipynb",
+      "reasons": [
+        "call:subprocess.run"
+      ],
+      "source_hash": "eeca306ebc8a"
+    },
+    "_workspace_package_state": {
+      "allowed": true,
+      "cell_id": "66bbfae7",
+      "external_effects": false,
+      "line": 57,
+      "notebook": "12_knowledge.ipynb",
+      "reasons": [],
+      "source_hash": "eeca306ebc8a"
+    },
+    "_workspace_python": {
+      "allowed": true,
+      "cell_id": "66bbfae7",
+      "external_effects": false,
+      "line": 20,
+      "notebook": "12_knowledge.ipynb",
+      "reasons": [],
+      "source_hash": "eeca306ebc8a"
+    },
     "_write_execution_policy": {
       "allowed": false,
       "cell_id": "4d46a8aa",
@@ -7265,7 +7560,8 @@
       "reasons": [
         "_reference_db->call:home.mkdir",
         "_reference_table->_reference_db->call:home.mkdir"
-      ]
+      ],
+      "source_hash": "f517425659d0"
     },
     "_write_literacy_problem_notebook": {
       "allowed": true,
@@ -7292,7 +7588,20 @@
       "reasons": [
         "_write_lance_table->_reference_db->call:home.mkdir",
         "_write_lance_table->_reference_table->_reference_db->call:home.mkdir"
-      ]
+      ],
+      "source_hash": "7174f77262d9"
+    },
+    "_write_reference_roots": {
+      "allowed": false,
+      "cell_id": "459fe5ee",
+      "external_effects": true,
+      "line": 22,
+      "notebook": "12_knowledge.ipynb",
+      "reasons": [
+        "call:roots_path.parent.mkdir",
+        "call:roots_path.write_text"
+      ],
+      "source_hash": "8763ca6fb074"
     },
     "_write_reference_rows": {
       "allowed": false,
@@ -7308,7 +7617,8 @@
         "_prune_reference_versions->_write_lance_table->_reference_table->_reference_db->call:home.mkdir",
         "_write_lance_table->_reference_db->call:home.mkdir",
         "_write_lance_table->_reference_table->_reference_db->call:home.mkdir"
-      ]
+      ],
+      "source_hash": "c4e60dcc2911"
     },
     "_write_review_notebook": {
       "allowed": true,
@@ -7373,15 +7683,6 @@
       "line": 9,
       "notebook": "00_foundation.ipynb",
       "reasons": []
-    },
-    "api_handler": {
-      "allowed": true,
-      "cell_id": "440a6c43",
-      "external_effects": false,
-      "line": 2,
-      "notebook": "nbs/data/03_execute_decorated_warning/nbs/decorated.ipynb",
-      "reasons": [],
-      "source_hash": "3d91f57085de"
     },
     "apply_context_command": {
       "allowed": true,
@@ -8654,7 +8955,8 @@
         "_lance_rows->_reference_table->_reference_db->call:home.mkdir",
         "_write_lance_table->_reference_db->call:home.mkdir",
         "_write_lance_table->_reference_table->_reference_db->call:home.mkdir"
-      ]
+      ],
+      "source_hash": "ed76b520ce3a"
     },
     "problem_statement_list": {
       "allowed": false,
@@ -8664,7 +8966,8 @@
       "notebook": "12_knowledge.ipynb",
       "reasons": [
         "_lance_rows->_reference_table->_reference_db->call:home.mkdir"
-      ]
+      ],
+      "source_hash": "ed76b520ce3a"
     },
     "problem_statement_query": {
       "allowed": false,
@@ -8682,7 +8985,8 @@
         "_problem_candidates->_merge_lancedb_rows->_reference_rank_score->_reference_score_breakdown->_row_import_terms->_row_feature_set->_feature_terms->call:term.replace",
         "_problem_candidates->_merge_lancedb_rows->_reference_rank_score->_reference_score_breakdown->call:symbol.replace",
         "_problem_candidates->_reference_table->_reference_db->call:home.mkdir"
-      ]
+      ],
+      "source_hash": "ed76b520ce3a"
     },
     "project_context": {
       "allowed": true,
@@ -8734,7 +9038,49 @@
         "_load_reference_registry->_lance_rows->_reference_table->_reference_db->call:home.mkdir",
         "_write_reference_registry->_write_lance_table->_reference_db->call:home.mkdir",
         "_write_reference_registry->_write_lance_table->_reference_table->_reference_db->call:home.mkdir"
-      ]
+      ],
+      "source_hash": "0b8051afe6a2"
+    },
+    "reference_discover": {
+      "allowed": false,
+      "cell_id": "459fe5ee",
+      "external_effects": true,
+      "line": 52,
+      "notebook": "12_knowledge.ipynb",
+      "reasons": [
+        "_write_reference_roots->call:roots_path.parent.mkdir",
+        "_write_reference_roots->call:roots_path.write_text",
+        "reference_add->_load_reference_registry->_lance_rows->_reference_table->_reference_db->call:home.mkdir",
+        "reference_add->_write_reference_registry->_write_lance_table->_reference_db->call:home.mkdir",
+        "reference_add->_write_reference_registry->_write_lance_table->_reference_table->_reference_db->call:home.mkdir",
+        "reference_ingest->_checkout_reference->_clone_reference_with_gh->call:subprocess.run",
+        "reference_ingest->_checkout_reference->_download_pypi_release->call:archive.write_bytes",
+        "reference_ingest->_checkout_reference->_download_pypi_release->call:shutil.copytree",
+        "reference_ingest->_checkout_reference->_download_pypi_release->call:shutil.rmtree",
+        "reference_ingest->_checkout_reference->_download_pypi_release->call:unpacked.mkdir",
+        "reference_ingest->_checkout_reference->_run_git->call:subprocess.run",
+        "reference_ingest->_checkout_reference->call:shutil.copytree",
+        "reference_ingest->_checkout_reference->call:subprocess.run",
+        "reference_ingest->_extract_reference_rows->_extract_notebook_rows->_extract_def_rows->_item_row->_row_tags->call:replace",
+        "reference_ingest->_extract_reference_rows->_extract_notebook_rows->_item_row->_row_tags->call:replace",
+        "reference_ingest->_extract_reference_rows->_extract_python_rows->_extract_def_rows->_item_row->_row_tags->call:replace",
+        "reference_ingest->_extract_reference_rows->_extract_python_rows->_item_row->_row_tags->call:replace",
+        "reference_ingest->_extract_reference_rows->_readme_rows->_item_row->_row_tags->call:replace",
+        "reference_ingest->_infer_package->call:replace",
+        "reference_ingest->_load_reference_registry->_lance_rows->_reference_table->_reference_db->call:home.mkdir",
+        "reference_ingest->_sync_lancedb->_all_reference_items->_lance_rows->_reference_table->_reference_db->call:home.mkdir",
+        "reference_ingest->_sync_lancedb->_reference_table->_reference_db->call:home.mkdir",
+        "reference_ingest->_write_reference_registry->_write_lance_table->_reference_db->call:home.mkdir",
+        "reference_ingest->_write_reference_registry->_write_lance_table->_reference_table->_reference_db->call:home.mkdir",
+        "reference_ingest->_write_reference_rows->_lance_rows->_reference_table->_reference_db->call:home.mkdir",
+        "reference_ingest->_write_reference_rows->_prune_reference_versions->_lance_rows->_reference_table->_reference_db->call:home.mkdir",
+        "reference_ingest->_write_reference_rows->_prune_reference_versions->_reference_versions_to_prune->_indexed_package_versions->_lance_rows->_reference_table->_reference_db->call:home.mkdir",
+        "reference_ingest->_write_reference_rows->_prune_reference_versions->_write_lance_table->_reference_db->call:home.mkdir",
+        "reference_ingest->_write_reference_rows->_prune_reference_versions->_write_lance_table->_reference_table->_reference_db->call:home.mkdir",
+        "reference_ingest->_write_reference_rows->_write_lance_table->_reference_db->call:home.mkdir",
+        "reference_ingest->_write_reference_rows->_write_lance_table->_reference_table->_reference_db->call:home.mkdir"
+      ],
+      "source_hash": "8763ca6fb074"
     },
     "reference_home": {
       "allowed": true,
@@ -8742,7 +9088,8 @@
       "external_effects": false,
       "line": 2,
       "notebook": "12_knowledge.ipynb",
-      "reasons": []
+      "reasons": [],
+      "source_hash": "cae7e9ada8b0"
     },
     "reference_ingest": {
       "allowed": false,
@@ -8777,7 +9124,8 @@
         "_write_reference_rows->_prune_reference_versions->_write_lance_table->_reference_table->_reference_db->call:home.mkdir",
         "_write_reference_rows->_write_lance_table->_reference_db->call:home.mkdir",
         "_write_reference_rows->_write_lance_table->_reference_table->_reference_db->call:home.mkdir"
-      ]
+      ],
+      "source_hash": "12489490e5ac"
     },
     "reference_list": {
       "allowed": false,
@@ -8788,78 +9136,94 @@
       "reasons": [
         "_lance_rows->_reference_table->_reference_db->call:home.mkdir",
         "_load_reference_registry->_lance_rows->_reference_table->_reference_db->call:home.mkdir"
-      ]
+      ],
+      "source_hash": "8f4cefce8037"
+    },
+    "reference_propose": {
+      "allowed": false,
+      "cell_id": "66bbfae7",
+      "external_effects": true,
+      "line": 85,
+      "notebook": "12_knowledge.ipynb",
+      "reasons": [
+        "_lance_rows->_reference_table->_reference_db->call:home.mkdir",
+        "_load_reference_registry->_lance_rows->_reference_table->_reference_db->call:home.mkdir"
+      ],
+      "source_hash": "eeca306ebc8a"
     },
     "reference_query": {
       "allowed": false,
-      "cell_id": "9b01b99f",
+      "cell_id": "66bbfae7",
       "external_effects": true,
-      "line": 125,
+      "line": 116,
       "notebook": "12_knowledge.ipynb",
       "reasons": [
-        "_branch_for_item->_item_by_id->_lance_rows->_reference_table->_reference_db->call:home.mkdir",
-        "_branch_for_item->_lance_rows->_reference_table->_reference_db->call:home.mkdir",
-        "_bump_reference_return_counts->_lance_rows->_reference_table->_reference_db->call:home.mkdir",
-        "_bump_reference_return_counts->_write_lance_table->_reference_db->call:home.mkdir",
-        "_bump_reference_return_counts->_write_lance_table->_reference_table->_reference_db->call:home.mkdir",
-        "_dependency_status->call:package.replace",
-        "_ensure_library_version_indexed->_load_reference_registry->_lance_rows->_reference_table->_reference_db->call:home.mkdir",
-        "_ensure_library_version_indexed->_package_version_indexed->_lance_rows->_reference_table->_reference_db->call:home.mkdir",
-        "_ensure_library_version_indexed->_resolve_library_version->_matching_indexed_versions->_indexed_package_versions->_lance_rows->_reference_table->_reference_db->call:home.mkdir",
-        "_ensure_library_version_indexed->_write_reference_registry->_write_lance_table->_reference_db->call:home.mkdir",
-        "_ensure_library_version_indexed->_write_reference_registry->_write_lance_table->_reference_table->_reference_db->call:home.mkdir",
-        "_ensure_library_version_indexed->reference_ingest->_checkout_reference->_clone_reference_with_gh->call:subprocess.run",
-        "_ensure_library_version_indexed->reference_ingest->_checkout_reference->_download_pypi_release->call:archive.write_bytes",
-        "_ensure_library_version_indexed->reference_ingest->_checkout_reference->_download_pypi_release->call:shutil.copytree",
-        "_ensure_library_version_indexed->reference_ingest->_checkout_reference->_download_pypi_release->call:shutil.rmtree",
-        "_ensure_library_version_indexed->reference_ingest->_checkout_reference->_download_pypi_release->call:unpacked.mkdir",
-        "_ensure_library_version_indexed->reference_ingest->_checkout_reference->_run_git->call:subprocess.run",
-        "_ensure_library_version_indexed->reference_ingest->_checkout_reference->call:shutil.copytree",
-        "_ensure_library_version_indexed->reference_ingest->_checkout_reference->call:subprocess.run",
-        "_ensure_library_version_indexed->reference_ingest->_extract_reference_rows->_extract_notebook_rows->_extract_def_rows->_item_row->_row_tags->call:replace",
-        "_ensure_library_version_indexed->reference_ingest->_extract_reference_rows->_extract_notebook_rows->_item_row->_row_tags->call:replace",
-        "_ensure_library_version_indexed->reference_ingest->_extract_reference_rows->_extract_python_rows->_extract_def_rows->_item_row->_row_tags->call:replace",
-        "_ensure_library_version_indexed->reference_ingest->_extract_reference_rows->_extract_python_rows->_item_row->_row_tags->call:replace",
-        "_ensure_library_version_indexed->reference_ingest->_extract_reference_rows->_readme_rows->_item_row->_row_tags->call:replace",
-        "_ensure_library_version_indexed->reference_ingest->_infer_package->call:replace",
-        "_ensure_library_version_indexed->reference_ingest->_load_reference_registry->_lance_rows->_reference_table->_reference_db->call:home.mkdir",
-        "_ensure_library_version_indexed->reference_ingest->_sync_lancedb->_all_reference_items->_lance_rows->_reference_table->_reference_db->call:home.mkdir",
-        "_ensure_library_version_indexed->reference_ingest->_sync_lancedb->_reference_table->_reference_db->call:home.mkdir",
-        "_ensure_library_version_indexed->reference_ingest->_write_reference_registry->_write_lance_table->_reference_db->call:home.mkdir",
-        "_ensure_library_version_indexed->reference_ingest->_write_reference_registry->_write_lance_table->_reference_table->_reference_db->call:home.mkdir",
-        "_ensure_library_version_indexed->reference_ingest->_write_reference_rows->_lance_rows->_reference_table->_reference_db->call:home.mkdir",
-        "_ensure_library_version_indexed->reference_ingest->_write_reference_rows->_prune_reference_versions->_lance_rows->_reference_table->_reference_db->call:home.mkdir",
-        "_ensure_library_version_indexed->reference_ingest->_write_reference_rows->_prune_reference_versions->_reference_versions_to_prune->_indexed_package_versions->_lance_rows->_reference_table->_reference_db->call:home.mkdir",
-        "_ensure_library_version_indexed->reference_ingest->_write_reference_rows->_prune_reference_versions->_write_lance_table->_reference_db->call:home.mkdir",
-        "_ensure_library_version_indexed->reference_ingest->_write_reference_rows->_prune_reference_versions->_write_lance_table->_reference_table->_reference_db->call:home.mkdir",
-        "_ensure_library_version_indexed->reference_ingest->_write_reference_rows->_write_lance_table->_reference_db->call:home.mkdir",
-        "_ensure_library_version_indexed->reference_ingest->_write_reference_rows->_write_lance_table->_reference_table->_reference_db->call:home.mkdir",
-        "_lancedb_search->_lance_rows->_reference_table->_reference_db->call:home.mkdir",
-        "_lancedb_search->_merge_lancedb_rows->_reference_rank_score->_reference_score_breakdown->_dependency_status->call:package.replace",
-        "_lancedb_search->_merge_lancedb_rows->_reference_rank_score->_reference_score_breakdown->_row_call_terms->_feature_terms->call:term.replace",
-        "_lancedb_search->_merge_lancedb_rows->_reference_rank_score->_reference_score_breakdown->_row_call_terms->_row_feature_set->_feature_terms->call:term.replace",
-        "_lancedb_search->_merge_lancedb_rows->_reference_rank_score->_reference_score_breakdown->_row_decorator_terms->_row_feature_set->_feature_terms->call:term.replace",
-        "_lancedb_search->_merge_lancedb_rows->_reference_rank_score->_reference_score_breakdown->_row_import_terms->_feature_terms->call:term.replace",
-        "_lancedb_search->_merge_lancedb_rows->_reference_rank_score->_reference_score_breakdown->_row_import_terms->_row_feature_set->_feature_terms->call:term.replace",
-        "_lancedb_search->_merge_lancedb_rows->_reference_rank_score->_reference_score_breakdown->call:symbol.replace",
-        "_lancedb_search->_reference_filter_expr->_lance_literal->call:replace",
-        "_lancedb_search->_reference_rank_score->_reference_score_breakdown->_dependency_status->call:package.replace",
-        "_lancedb_search->_reference_rank_score->_reference_score_breakdown->_row_call_terms->_feature_terms->call:term.replace",
-        "_lancedb_search->_reference_rank_score->_reference_score_breakdown->_row_call_terms->_row_feature_set->_feature_terms->call:term.replace",
-        "_lancedb_search->_reference_rank_score->_reference_score_breakdown->_row_decorator_terms->_row_feature_set->_feature_terms->call:term.replace",
-        "_lancedb_search->_reference_rank_score->_reference_score_breakdown->_row_import_terms->_feature_terms->call:term.replace",
-        "_lancedb_search->_reference_rank_score->_reference_score_breakdown->_row_import_terms->_row_feature_set->_feature_terms->call:term.replace",
-        "_lancedb_search->_reference_rank_score->_reference_score_breakdown->call:symbol.replace",
-        "_lancedb_search->_reference_table->_reference_db->call:home.mkdir",
-        "_matching_indexed_versions->_indexed_package_versions->_lance_rows->_reference_table->_reference_db->call:home.mkdir",
-        "_reference_score_breakdown->_dependency_status->call:package.replace",
-        "_reference_score_breakdown->_row_call_terms->_feature_terms->call:term.replace",
-        "_reference_score_breakdown->_row_call_terms->_row_feature_set->_feature_terms->call:term.replace",
-        "_reference_score_breakdown->_row_decorator_terms->_row_feature_set->_feature_terms->call:term.replace",
-        "_reference_score_breakdown->_row_import_terms->_feature_terms->call:term.replace",
-        "_reference_score_breakdown->_row_import_terms->_row_feature_set->_feature_terms->call:term.replace",
-        "_reference_score_breakdown->call:symbol.replace"
-      ]
+        "_query_workspace_package->call:name.replace",
+        "_reference_query_index->_branch_for_item->_item_by_id->_lance_rows->_reference_table->_reference_db->call:home.mkdir",
+        "_reference_query_index->_branch_for_item->_lance_rows->_reference_table->_reference_db->call:home.mkdir",
+        "_reference_query_index->_bump_reference_return_counts->_lance_rows->_reference_table->_reference_db->call:home.mkdir",
+        "_reference_query_index->_bump_reference_return_counts->_write_lance_table->_reference_db->call:home.mkdir",
+        "_reference_query_index->_bump_reference_return_counts->_write_lance_table->_reference_table->_reference_db->call:home.mkdir",
+        "_reference_query_index->_dependency_status->call:package.replace",
+        "_reference_query_index->_ensure_library_version_indexed->_load_reference_registry->_lance_rows->_reference_table->_reference_db->call:home.mkdir",
+        "_reference_query_index->_ensure_library_version_indexed->_package_version_indexed->_lance_rows->_reference_table->_reference_db->call:home.mkdir",
+        "_reference_query_index->_ensure_library_version_indexed->_resolve_library_version->_matching_indexed_versions->_indexed_package_versions->_lance_rows->_reference_table->_reference_db->call:home.mkdir",
+        "_reference_query_index->_ensure_library_version_indexed->_write_reference_registry->_write_lance_table->_reference_db->call:home.mkdir",
+        "_reference_query_index->_ensure_library_version_indexed->_write_reference_registry->_write_lance_table->_reference_table->_reference_db->call:home.mkdir",
+        "_reference_query_index->_ensure_library_version_indexed->reference_ingest->_checkout_reference->_clone_reference_with_gh->call:subprocess.run",
+        "_reference_query_index->_ensure_library_version_indexed->reference_ingest->_checkout_reference->_download_pypi_release->call:archive.write_bytes",
+        "_reference_query_index->_ensure_library_version_indexed->reference_ingest->_checkout_reference->_download_pypi_release->call:shutil.copytree",
+        "_reference_query_index->_ensure_library_version_indexed->reference_ingest->_checkout_reference->_download_pypi_release->call:shutil.rmtree",
+        "_reference_query_index->_ensure_library_version_indexed->reference_ingest->_checkout_reference->_download_pypi_release->call:unpacked.mkdir",
+        "_reference_query_index->_ensure_library_version_indexed->reference_ingest->_checkout_reference->_run_git->call:subprocess.run",
+        "_reference_query_index->_ensure_library_version_indexed->reference_ingest->_checkout_reference->call:shutil.copytree",
+        "_reference_query_index->_ensure_library_version_indexed->reference_ingest->_checkout_reference->call:subprocess.run",
+        "_reference_query_index->_ensure_library_version_indexed->reference_ingest->_extract_reference_rows->_extract_notebook_rows->_extract_def_rows->_item_row->_row_tags->call:replace",
+        "_reference_query_index->_ensure_library_version_indexed->reference_ingest->_extract_reference_rows->_extract_notebook_rows->_item_row->_row_tags->call:replace",
+        "_reference_query_index->_ensure_library_version_indexed->reference_ingest->_extract_reference_rows->_extract_python_rows->_extract_def_rows->_item_row->_row_tags->call:replace",
+        "_reference_query_index->_ensure_library_version_indexed->reference_ingest->_extract_reference_rows->_extract_python_rows->_item_row->_row_tags->call:replace",
+        "_reference_query_index->_ensure_library_version_indexed->reference_ingest->_extract_reference_rows->_readme_rows->_item_row->_row_tags->call:replace",
+        "_reference_query_index->_ensure_library_version_indexed->reference_ingest->_infer_package->call:replace",
+        "_reference_query_index->_ensure_library_version_indexed->reference_ingest->_load_reference_registry->_lance_rows->_reference_table->_reference_db->call:home.mkdir",
+        "_reference_query_index->_ensure_library_version_indexed->reference_ingest->_sync_lancedb->_all_reference_items->_lance_rows->_reference_table->_reference_db->call:home.mkdir",
+        "_reference_query_index->_ensure_library_version_indexed->reference_ingest->_sync_lancedb->_reference_table->_reference_db->call:home.mkdir",
+        "_reference_query_index->_ensure_library_version_indexed->reference_ingest->_write_reference_registry->_write_lance_table->_reference_db->call:home.mkdir",
+        "_reference_query_index->_ensure_library_version_indexed->reference_ingest->_write_reference_registry->_write_lance_table->_reference_table->_reference_db->call:home.mkdir",
+        "_reference_query_index->_ensure_library_version_indexed->reference_ingest->_write_reference_rows->_lance_rows->_reference_table->_reference_db->call:home.mkdir",
+        "_reference_query_index->_ensure_library_version_indexed->reference_ingest->_write_reference_rows->_prune_reference_versions->_lance_rows->_reference_table->_reference_db->call:home.mkdir",
+        "_reference_query_index->_ensure_library_version_indexed->reference_ingest->_write_reference_rows->_prune_reference_versions->_reference_versions_to_prune->_indexed_package_versions->_lance_rows->_reference_table->_reference_db->call:home.mkdir",
+        "_reference_query_index->_ensure_library_version_indexed->reference_ingest->_write_reference_rows->_prune_reference_versions->_write_lance_table->_reference_db->call:home.mkdir",
+        "_reference_query_index->_ensure_library_version_indexed->reference_ingest->_write_reference_rows->_prune_reference_versions->_write_lance_table->_reference_table->_reference_db->call:home.mkdir",
+        "_reference_query_index->_ensure_library_version_indexed->reference_ingest->_write_reference_rows->_write_lance_table->_reference_db->call:home.mkdir",
+        "_reference_query_index->_ensure_library_version_indexed->reference_ingest->_write_reference_rows->_write_lance_table->_reference_table->_reference_db->call:home.mkdir",
+        "_reference_query_index->_lancedb_search->_lance_rows->_reference_table->_reference_db->call:home.mkdir",
+        "_reference_query_index->_lancedb_search->_merge_lancedb_rows->_reference_rank_score->_reference_score_breakdown->_dependency_status->call:package.replace",
+        "_reference_query_index->_lancedb_search->_merge_lancedb_rows->_reference_rank_score->_reference_score_breakdown->_row_call_terms->_feature_terms->call:term.replace",
+        "_reference_query_index->_lancedb_search->_merge_lancedb_rows->_reference_rank_score->_reference_score_breakdown->_row_call_terms->_row_feature_set->_feature_terms->call:term.replace",
+        "_reference_query_index->_lancedb_search->_merge_lancedb_rows->_reference_rank_score->_reference_score_breakdown->_row_decorator_terms->_row_feature_set->_feature_terms->call:term.replace",
+        "_reference_query_index->_lancedb_search->_merge_lancedb_rows->_reference_rank_score->_reference_score_breakdown->_row_import_terms->_feature_terms->call:term.replace",
+        "_reference_query_index->_lancedb_search->_merge_lancedb_rows->_reference_rank_score->_reference_score_breakdown->_row_import_terms->_row_feature_set->_feature_terms->call:term.replace",
+        "_reference_query_index->_lancedb_search->_merge_lancedb_rows->_reference_rank_score->_reference_score_breakdown->call:symbol.replace",
+        "_reference_query_index->_lancedb_search->_reference_filter_expr->_lance_literal->call:replace",
+        "_reference_query_index->_lancedb_search->_reference_rank_score->_reference_score_breakdown->_dependency_status->call:package.replace",
+        "_reference_query_index->_lancedb_search->_reference_rank_score->_reference_score_breakdown->_row_call_terms->_feature_terms->call:term.replace",
+        "_reference_query_index->_lancedb_search->_reference_rank_score->_reference_score_breakdown->_row_call_terms->_row_feature_set->_feature_terms->call:term.replace",
+        "_reference_query_index->_lancedb_search->_reference_rank_score->_reference_score_breakdown->_row_decorator_terms->_row_feature_set->_feature_terms->call:term.replace",
+        "_reference_query_index->_lancedb_search->_reference_rank_score->_reference_score_breakdown->_row_import_terms->_feature_terms->call:term.replace",
+        "_reference_query_index->_lancedb_search->_reference_rank_score->_reference_score_breakdown->_row_import_terms->_row_feature_set->_feature_terms->call:term.replace",
+        "_reference_query_index->_lancedb_search->_reference_rank_score->_reference_score_breakdown->call:symbol.replace",
+        "_reference_query_index->_lancedb_search->_reference_table->_reference_db->call:home.mkdir",
+        "_reference_query_index->_matching_indexed_versions->_indexed_package_versions->_lance_rows->_reference_table->_reference_db->call:home.mkdir",
+        "_reference_query_index->_reference_score_breakdown->_dependency_status->call:package.replace",
+        "_reference_query_index->_reference_score_breakdown->_row_call_terms->_feature_terms->call:term.replace",
+        "_reference_query_index->_reference_score_breakdown->_row_call_terms->_row_feature_set->_feature_terms->call:term.replace",
+        "_reference_query_index->_reference_score_breakdown->_row_decorator_terms->_row_feature_set->_feature_terms->call:term.replace",
+        "_reference_query_index->_reference_score_breakdown->_row_import_terms->_feature_terms->call:term.replace",
+        "_reference_query_index->_reference_score_breakdown->_row_import_terms->_row_feature_set->_feature_terms->call:term.replace",
+        "_reference_query_index->_reference_score_breakdown->call:symbol.replace",
+        "_workspace_context->_workspace_distributions->call:subprocess.run"
+      ],
+      "source_hash": "eeca306ebc8a"
     },
     "remove_demo_path": {
       "allowed": false,

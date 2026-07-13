@@ -22,7 +22,7 @@ See `references/mcp-tool-report.md` for the current usefulness review and reduct
 | Verification and review | `exec_nb`, `diff_nb`, `style_check` | Run notebooks safely, review code-cell diffs, and catch structural hygiene/private-symbol issues. |
 | Symbol analysis | included in `context(...)` | Inspect definitions, callers, and callees for a cell or symbol target. |
 | Agentic planning | `agent_workbench` | Run bounded notebook/project edit loops only when direct structured tools are not enough. |
-| Reference implementations | `reference` | Add, list, ingest, and query indexed reference implementations. |
+| Reference implementations | `reference` | Discover local repositories, add/list/ingest indexed references, query implementations, and propose reuse work. |
 | Conversion | `convert` | Migrate Python files/folders or bootstrap nbdev projects. |
 
 ## Tool Loop

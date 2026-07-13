@@ -51,8 +51,10 @@ from .graph import notebook_knowledge_graph_data
 from .graph import notebook_order_problems
 from .graph import private_symbol_report
 from .knowledge import reference_add
+from .knowledge import reference_discover
 from .knowledge import reference_ingest
 from .knowledge import reference_list
+from .knowledge import reference_propose
 from .knowledge import reference_query
 from .parallel import notebook_locks
 from .read import context, filter_context
@@ -2923,11 +2925,15 @@ async def _reference_tool(
     include_branch: bool = False,
     current_repo: str = ".",
     repos: str | None = None,
+    repo: str | None = None,
     url: str | None = None,
     name: str | None = None,
     version: str | None = None,
     package: str | None = None,
     path: str | None = None,
+    roots: str | None = None,
+    ingest: bool = True,
+    problem: str | None = None,
     kind: str | None = None,
     module: str | None = None,
     symbol: str | None = None,
@@ -2941,7 +2947,7 @@ async def _reference_tool(
     detail: str = "summary",
     ctx: Context = None,
 ) -> ToolResult:
-    "Add, list, ingest, or query reference implementations."
+    "Add, discover, ingest, query, or propose reference implementations."
     root = await _mcp_workspace_root(ctx)
     current_repo = _mcp_workspace_path(current_repo, root)
     path = _mcp_workspace_path(path, root) if path else path
@@ -2950,9 +2956,9 @@ async def _reference_tool(
     candidate_k = None if candidate_k is None else _mcp_clamp_int(candidate_k, top_k * 25, top_k, 500, "candidate_k")
     tool_timeout = _mcp_clamp_float(tool_timeout, 120.0, 0.001, 120.0, "tool_timeout")
     arguments = dict(
-        action=action, query=query, top_k=top_k, include_branch=include_branch, current_repo=current_repo, repos=repos,
-        url=url, name=name, version=version, package=package, path=path, kind=kind, module=module, symbol=symbol,
-        include_local=include_local, candidate_k=candidate_k, explain=explain,
+        action=action, query=query, top_k=top_k, include_branch=include_branch, current_repo=current_repo, repos=repos, repo=repo,
+        url=url, name=name, version=version, package=package, path=path, roots=roots, ingest=ingest, problem=problem,
+        kind=kind, module=module, symbol=symbol, include_local=include_local, candidate_k=candidate_k, explain=explain,
         all=all, force=force, allow_download=allow_download,
         tool_timeout=tool_timeout, detail=detail, workspace_root=str(root) if root else None,
     )
@@ -2963,11 +2969,20 @@ async def _reference_tool(
                 asyncio.to_thread(reference_add, url, name=name, version=version or "HEAD", package=package, path=path),
                 timeout=tool_timeout,
             )
+        elif action == "discover":
+            result_data = await asyncio.wait_for(
+                asyncio.to_thread(reference_discover, roots=roots, path=path, ingest=ingest, force=force), timeout=tool_timeout,
+            )
         elif action == "list":
             result_data = await asyncio.wait_for(asyncio.to_thread(reference_list, path=path), timeout=tool_timeout)
         elif action == "ingest":
             result_data = await asyncio.wait_for(
-                asyncio.to_thread(reference_ingest, name=name, all=all, path=path, force=force),
+                asyncio.to_thread(reference_ingest, name=name, all=all, path=path, force=force), timeout=tool_timeout,
+            )
+        elif action == "propose":
+            if not problem or not repo: raise ValueError("reference action='propose' needs problem and repo")
+            result_data = await asyncio.wait_for(
+                asyncio.to_thread(reference_propose, problem, repo=repo, version=version, symbol=symbol, current_repo=current_repo, path=path),
                 timeout=tool_timeout,
             )
         elif action == "query":
@@ -2976,14 +2991,13 @@ async def _reference_tool(
                 asyncio.to_thread(
                     reference_query,
                     query, top_k=top_k, include_branch=include_branch, current_repo=current_repo, repos=repos, path=path,
-                    kind=kind, package=package, module=module, symbol=symbol,
-                    version=version, include_local=include_local, candidate_k=candidate_k,
-                    explain=explain, allow_download=allow_download,
+                    kind=kind, package=package, module=module, symbol=symbol, version=version,
+                    include_local=include_local, candidate_k=candidate_k, explain=explain, allow_download=allow_download,
                 ),
                 timeout=tool_timeout,
             )
         else:
-            raise ValueError("action must be add, list, ingest, or query")
+            raise ValueError("action must be add, discover, list, ingest, propose, or query")
         full_output = json.dumps(result_data, indent=2, sort_keys=True)
         return mcp_tool_result("reference", arguments, full_output, detail=detail, reference=result_data)
     except TimeoutError as exc:

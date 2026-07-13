@@ -151,8 +151,10 @@ def install_nbskill(
     install_hooks: bool = False,  # Install nbdev-clean/nbdev-test pre-commit hooks in the current repo
     restart_mcp: bool = True,  # Restart running nbskill MCP servers after updating install/config
     cursor_workspace: str | None = None,  # Cursor workspace for .cursor/mcp.json; omit for global ~/.cursor/mcp.json
+    reference_roots: str = "~/projects",  # Local Git repositories to add to the reference index
+    index_references: bool = True,  # Index configured reference roots during installation
 ):
-    "Install nbskill agent instructions or Cursor MCP configuration."
+    "Install nbskill agent instructions and configure reusable references."
     target = target.lower()
     cursor_mcp = {"installed": False, "reason": "target-not-cursor"}
     if target == "cursor": roots = []
@@ -175,11 +177,12 @@ def install_nbskill(
             ref_dir = dst_dir / "references"
             ref_dir.mkdir(exist_ok=True)
             for ref in references.iterdir():
-                if ref.is_file():
-                    (ref_dir / ref.name).write_text(ref.read_text(encoding="utf-8"), encoding="utf-8")
+                if ref.is_file(): (ref_dir / ref.name).write_text(ref.read_text(encoding="utf-8"), encoding="utf-8")
         installed.append(dst)
     if target == "cursor": cursor_mcp = _install_cursor_mcp(workspace=cursor_workspace, overwrite=overwrite)
     hooks = install_nbdev_pre_commit_hooks(Path.cwd()) if install_hooks else {"installed": False, "reason": "disabled"}
+    from nbskill.knowledge import reference_discover
+    reference_index = reference_discover(roots=reference_roots, ingest=index_references)
     mcp_notice = {"running": False, "message": "not checked"}
     if restart_mcp and not skills_dir and target in {"codex", "both", "cursor"}:
         mcp_notice = nbskill_mcp_restart_notice()
@@ -193,4 +196,4 @@ def install_nbskill(
         for proc in mcp_notice.get("processes", []):
             cwd = f" cwd={proc['cwd']}" if proc.get("cwd") else ""
             print(f"- pid={proc['pid']}{cwd} command={proc['command']}")
-    return cli_return({"installed": installed, "cursor_mcp": cursor_mcp, "hooks": hooks, "mcp_restart": mcp_notice})
+    return cli_return({"installed": installed, "cursor_mcp": cursor_mcp, "hooks": hooks, "references": reference_index, "mcp_restart": mcp_notice})

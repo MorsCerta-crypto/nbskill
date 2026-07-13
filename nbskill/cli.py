@@ -462,11 +462,14 @@ def install_nbskill(
     install_hooks: bool = False,  # Install nbdev pre-commit hooks
     restart_mcp: bool = True,  # Include restart guidance for running MCP servers
     cursor_workspace: str | None = None,  # Cursor workspace for .cursor/mcp.json; omit for global ~/.cursor/mcp.json
+    reference_roots: str = "~/projects",  # Local Git repositories to index
+    index_references: bool = True,  # Index references during installation
 ):
-    "Install nbskill agent instructions or Cursor MCP configuration."
+    "Install nbskill agent instructions and configure reusable references."
     return nbskill.skill.install_nbskill(
         target=target, skills_dir=skills_dir, skill_name=skill_name, overwrite=overwrite,
         install_hooks=install_hooks, restart_mcp=restart_mcp, cursor_workspace=cursor_workspace,
+        reference_roots=reference_roots, index_references=index_references,
     )
 
 # %% ../nbs/13_cli.ipynb #2e2fda12
@@ -480,20 +483,24 @@ def symbol_connection(path: str = "nbs", start: str = "", end: str = "", max_dep
 @call_parse
 @tracked_call
 def reference(
-    action: str = "query",  # add, list, ingest, or query
+    action: str = "query",  # add, discover, list, ingest, propose, or query
     query: str | None = None,  # Natural-language query for action=query
     top_k: int = 3,  # Number of implementation hits for action=query
     include_branch: bool = False,  # Include direct same-repo callers and callees
     current_repo: str = ".",  # Current project for dependency status
     repos: str | None = None,  # Optional repo name or comma-separated names to search
+    repo: str | None = None,  # Reference repository for action=propose
     url: str | None = None,  # Repository URL/path for action=add
     name: str | None = None,  # Reference name for add/ingest
-    version: str | None = None,  # Git ref for action=add; uv-style package version spec for action=query
+    version: str | None = None,  # Git ref for add; package version for query/propose
     package: str | None = None,  # Package filter or package name
     path: str | None = None,  # Override reference home
+    roots: str | None = None,  # Comma-separated local roots for action=discover
+    ingest: bool = True,  # Index discovered repositories
+    problem: str | None = None,  # Problem statement for action=propose
     kind: str | None = None,  # Optional query filter: readme, module, function, class, method
     module: str | None = None,  # Optional module filter for action=query
-    symbol: str | None = None,  # Optional symbol filter for action=query
+    symbol: str | None = None,  # Optional symbol filter for action=query/propose
     include_local: bool = True,  # Include current repository reuse_advice matches
     candidate_k: int | None = None,  # Candidate pool size before final reranking
     explain: bool = True,  # Include score breakdowns and why text
@@ -506,10 +513,15 @@ def reference(
     if action == "add":
         if not url: raise ValueError("reference action='add' needs url")
         result = nbskill.knowledge.reference_add(url, name=name, version=version or "HEAD", package=package, path=path)
+    elif action == "discover":
+        result = nbskill.knowledge.reference_discover(roots=roots, path=path, ingest=ingest, force=force)
     elif action == "list":
         result = nbskill.knowledge.reference_list(path=path)
     elif action == "ingest":
         result = nbskill.knowledge.reference_ingest(name=name, all=all, path=path, force=force)
+    elif action == "propose":
+        if not problem or not repo: raise ValueError("reference action='propose' needs problem and repo")
+        result = nbskill.knowledge.reference_propose(problem, repo=repo, version=version, symbol=symbol, current_repo=current_repo, path=path)
     elif action == "query":
         if not query: raise ValueError("reference action='query' needs query")
         result = nbskill.knowledge.reference_query(
@@ -518,7 +530,7 @@ def reference(
             include_local=include_local, candidate_k=candidate_k, explain=explain, allow_download=allow_download,
         )
     else:
-        raise ValueError("action must be add, list, ingest, or query")
+        raise ValueError("action must be add, discover, list, ingest, propose, or query")
     return _print_json(result)
 
 # %% ../nbs/13_cli.ipynb #c2e9f385

@@ -169,21 +169,18 @@ def _process_payload(result_queue, proc, tool):
 # %% ../nbs/07_mcp.ipynb #4f453da4
 def _capture_exec_nb_process_call(arguments, tool_timeout=None):
     call_args = {key: value for key, value in arguments.items() if key not in {"detail", "workspace_root"}}
-    lock_paths = [call_args.get("path")]
-    if call_args.get("dest"): lock_paths.append(call_args["dest"])
     cwd = git_root(call_args.get("path") or ".") or _git_base(call_args.get("path") or ".").resolve()
     ctx = multiprocessing.get_context("spawn")
     result_queue = ctx.Queue()
     from nbskill.mcp import _exec_nb_process_worker as worker
     proc = ctx.Process(target=worker, args=(call_args, str(cwd), result_queue))
-    with notebook_locks(*lock_paths):
-        proc.start()
-        proc.join(tool_timeout if tool_timeout and tool_timeout > 0 else None)
-        if proc.is_alive():
-            _terminate_multiprocessing_process(proc)
-            timeout_text = f"{tool_timeout:g}s"
-            message = f"exec_nb exceeded its MCP timeout of {timeout_text} before Codex's client timeout; terminated Python process pid={proc.pid}."
-            raise TimeoutError(message)
+    proc.start()
+    proc.join(tool_timeout if tool_timeout and tool_timeout > 0 else None)
+    if proc.is_alive():
+        _terminate_multiprocessing_process(proc)
+        timeout_text = f"{tool_timeout:g}s"
+        message = f"exec_nb exceeded its MCP timeout of {timeout_text} before Codex's client timeout; terminated Python process pid={proc.pid}."
+        raise TimeoutError(message)
     payload = _process_payload(result_queue, proc, "exec_nb")
     output = _captured_process_output(payload.get("stdout", ""), payload.get("stderr", ""))
     if proc.exitcode != 0 or not payload.get("ok", True):
@@ -216,25 +213,23 @@ def _edit_notebook_process_worker(arguments, cwd, result_queue):
 # %% ../nbs/07_mcp.ipynb #eac9e756
 def _capture_edit_notebook_process_call(arguments, tool_timeout=None):
     call_args = {key: value for key, value in arguments.items() if key not in {"tool_timeout", "workspace_root"}}
-    lock_paths = _edit_scope_paths(call_args)
     cwd = git_root(call_args.get("path") or ".") or _git_base(call_args.get("path") or ".").resolve()
     ctx = multiprocessing.get_context("spawn")
     result_queue = ctx.Queue()
     from nbskill.mcp import _edit_notebook_process_worker as worker
     proc = ctx.Process(target=worker, args=(call_args, str(cwd), result_queue))
-    with notebook_locks(*lock_paths):
-        proc.start()
-        _mcp_log_event(
-            "edit_process_start", tool="edit_notebook", child_pid=proc.pid,
-            path=call_args.get("path"), timeout=tool_timeout,
-        )
-        proc.join(tool_timeout if tool_timeout and tool_timeout > 0 else None)
-        if proc.is_alive():
-            _terminate_multiprocessing_process(proc)
-            timeout_text = f"{tool_timeout:g}s"
-            _mcp_log_event("edit_process_timeout", tool="edit_notebook", child_pid=proc.pid, path=call_args.get("path"))
-            message = f"edit_notebook exceeded its MCP timeout of {timeout_text}; terminated Python process pid={proc.pid}."
-            raise TimeoutError(message)
+    proc.start()
+    _mcp_log_event(
+        "edit_process_start", tool="edit_notebook", child_pid=proc.pid,
+        path=call_args.get("path"), timeout=tool_timeout,
+    )
+    proc.join(tool_timeout if tool_timeout and tool_timeout > 0 else None)
+    if proc.is_alive():
+        _terminate_multiprocessing_process(proc)
+        timeout_text = f"{tool_timeout:g}s"
+        _mcp_log_event("edit_process_timeout", tool="edit_notebook", child_pid=proc.pid, path=call_args.get("path"))
+        message = f"edit_notebook exceeded its MCP timeout of {timeout_text}; terminated Python process pid={proc.pid}."
+        raise TimeoutError(message)
     payload = _process_payload(result_queue, proc, "edit_notebook")
     _mcp_log_event("edit_process_end", tool="edit_notebook", child_pid=proc.pid, path=call_args.get("path"), exitcode=proc.exitcode)
     if proc.exitcode != 0 or not payload.get("ok", True):
@@ -1137,6 +1132,22 @@ def _failure_data():
     try: return load_failure_map(path) if path.exists() else empty_failure_map()
     except OSError: return empty_failure_map()
 
+# %% ../nbs/07_mcp.ipynb #feb4053c
+def _failure_belongs_to_root(event, root):
+    root = Path(root).resolve()
+    for key in "cwd", "path":
+        value = event.get(key)
+        if not value: continue
+        try:
+            if Path(value).resolve().is_relative_to(root): return True
+        except OSError: pass
+    return False
+
+
+def _recent_project_failures(root):
+    events = _failure_data().get("events", [])
+    return [event for event in events if event.get("kind") == "failure" and _failure_belongs_to_root(event, root)][-10:]
+
 # %% ../nbs/07_mcp.ipynb #acc0b7ac
 def _resolve_diagnostic_scope(path, root, scope_path=None):
     raw = path if scope_path in (None, "") else scope_path
@@ -1341,8 +1352,7 @@ def _doctor_warnings(path=".", scope_path=None, scope_cell_ids=None):
         ))
     if project_scope:
         warnings.extend(_doc_script_warnings(root))
-        failures = _failure_data().get("events", [])[-10:]
-        recent_failures = [event for event in failures if event.get("kind") == "failure"]
+        recent_failures = _recent_project_failures(root)
         if recent_failures:
             last = recent_failures[-1]
             warnings.append(_warning(
@@ -1953,25 +1963,20 @@ def _doctor_order_errors(path):
     return errors
 
 # %% ../nbs/07_mcp.ipynb #11df0ec4
-def _doctor_recent_failure_errors():
-    errors = []
-    recent = [event for event in _failure_data().get("events", [])[-10:] if event.get("kind") == "failure"]
-    if recent:
-        last = recent[-1]
-        errors.append(_warning(
-            "recent_tool_failures",
-            f"Recent nbskill failure: {last.get('tool')} {last.get('summary') or last.get('error')}",
-            "Run doctor(detail='debug', scopes='error') after resolving it.",
-            severity="error", scope="error", tool=last.get("tool"),
-        ))
-    return errors
+def _doctor_recent_failure_errors(path):
+    root = git_root(path) or _git_base(path).resolve()
+    recent = _recent_project_failures(root)
+    if not recent: return []
+    last = recent[-1]
+    error = _warning("recent_tool_failures", f"Recent nbskill failure: {last.get('tool')} {last.get('summary') or last.get('error')}", "Run doctor(detail='debug', scopes='error') after resolving it.", severity="error", scope="error", tool=last.get("tool"))
+    return [error]
 
 # %% ../nbs/07_mcp.ipynb #d7eeec10
 def _doctor_error_items(path, status):
     errors = [
         *_doctor_validation_errors(path),
         *_doctor_order_errors(path),
-        *_doctor_recent_failure_errors(),
+        *_doctor_recent_failure_errors(path),
     ]
     if not status.get("mcp_command_path"):
         errors.append(_warning(

@@ -4,13 +4,16 @@
 __all__ = ['notebook_key', 'notebook_locks', 'execution_slot']
 
 # %% ../nbs/09_parallel.ipynb #dbb7eddf
-import threading
+import fcntl, hashlib, threading, tempfile
 from contextlib import contextmanager
 from pathlib import Path
 
 # %% ../nbs/09_parallel.ipynb #9eb56702
 _LOCKS_GUARD = threading.Lock()
 _NOTEBOOK_LOCKS = {}
+_PROCESS_LOCKS_GUARD = threading.Lock()
+_PROCESS_LOCKS = {}
+_PROCESS_LOCK_ROOT = Path(tempfile.gettempdir()) / "nbskill-notebook-locks"
 _EXECUTION_SEMAPHORE = threading.RLock()
 
 # %% ../nbs/09_parallel.ipynb #be270912
@@ -28,17 +31,53 @@ def _notebook_lock(key):
             _NOTEBOOK_LOCKS[key] = lock
         return lock
 
+def _process_lock_path(key):
+    digest = hashlib.sha256(key.encode()).hexdigest()
+    return _PROCESS_LOCK_ROOT / f"{digest}.lock"
+
+def _acquire_process_lock(key):
+    with _PROCESS_LOCKS_GUARD:
+        current = _PROCESS_LOCKS.get(key)
+        if current:
+            _PROCESS_LOCKS[key] = (current[0], current[1] + 1)
+            return
+        _PROCESS_LOCK_ROOT.mkdir(parents=True, exist_ok=True)
+        handle = _process_lock_path(key).open("a+")
+        _PROCESS_LOCKS[key] = (handle, 1)
+    try: fcntl.flock(handle, fcntl.LOCK_EX)
+    except BaseException:
+        with _PROCESS_LOCKS_GUARD: del _PROCESS_LOCKS[key]
+        handle.close()
+        raise
+
+def _release_process_lock(key):
+    with _PROCESS_LOCKS_GUARD:
+        handle, depth = _PROCESS_LOCKS[key]
+        if depth > 1:
+            _PROCESS_LOCKS[key] = (handle, depth - 1)
+            return
+        del _PROCESS_LOCKS[key]
+    fcntl.flock(handle, fcntl.LOCK_UN)
+    handle.close()
+
 # %% ../nbs/09_parallel.ipynb #59d16a3a
 @contextmanager
 def notebook_locks(*paths):
     "Acquire per-notebook locks in a stable order."
     keys = sorted({notebook_key(path) for path in paths if notebook_key(path) is not None})
     locks = [_notebook_lock(key) for key in keys]
-    for lock in locks: lock.acquire()
+    acquired, acquired_locks = [], []
     try:
+        for lock in locks:
+            lock.acquire()
+            acquired_locks.append(lock)
+        for key in keys:
+            _acquire_process_lock(key)
+            acquired.append(key)
         yield
     finally:
-        for lock in reversed(locks): lock.release()
+        for key in reversed(acquired): _release_process_lock(key)
+        for lock in reversed(acquired_locks): lock.release()
 
 # %% ../nbs/09_parallel.ipynb #01f6a5cf
 @contextmanager

@@ -62,6 +62,9 @@ agent_workbench = "nbskill.cli:agent_workbench"
 [project.entry-points.nbdev]
 nbskill = "nbskill._modidx:d"
 
+[project.entry-points.pyskills]
+"nbskill.skill" = "nbskill.skill"
+
 [tool.setuptools.dynamic]
 version = {attr = "nbskill.__version__"}
 

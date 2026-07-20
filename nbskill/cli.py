@@ -25,7 +25,7 @@ import nbskill.knowledge
 import nbskill.mcp
 import nbskill.read
 import nbskill.review
-import nbskill.skill
+import nbskill.nbskill
 import nbskill.workbench
 import nbskill.write
 from .foundation import failure_map_path, install_nbdev_pre_commit_hooks, load_failure_map
@@ -449,7 +449,7 @@ def convert(
 @tracked_call
 def build_nbskill_skill(readme_path: str = "README.md", out_path: str = "nbskill/SKILL.md"):
     "Build SKILL.md from the marked section of README.md."
-    return nbskill.skill.build_skill_from_readme(readme_path=readme_path, out_path=out_path)
+    return nbskill.nbskill.build_skill_from_readme(readme_path=readme_path, out_path=out_path)
 
 # %% ../nbs/13_cli.ipynb #63c6884f
 @call_parse
@@ -466,7 +466,7 @@ def install_nbskill(
     index_references: bool = True,  # Index references during installation
 ):
     "Install nbskill agent instructions and configure reusable references."
-    return nbskill.skill.install_nbskill(
+    return nbskill.nbskill.install_nbskill(
         target=target, skills_dir=skills_dir, skill_name=skill_name, overwrite=overwrite,
         install_hooks=install_hooks, restart_mcp=restart_mcp, cursor_workspace=cursor_workspace,
         reference_roots=reference_roots, index_references=index_references,

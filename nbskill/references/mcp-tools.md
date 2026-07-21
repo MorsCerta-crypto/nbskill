@@ -21,14 +21,22 @@ See `references/mcp-tool-report.md` for the current usefulness review and reduct
 | Notebook editing | `edit_notebook` | Apply deterministic whole-cell, line, insert/delete/move, and notebook-wide text replacement edits atomically with structured diffs. |
 | Verification and review | `exec_nb`, `diff_nb`, `style_check` | Run notebooks safely, review code-cell diffs, and catch structural hygiene/private-symbol issues. |
 | Symbol analysis | included in `context(...)` | Inspect definitions, callers, and callees for a cell or symbol target. |
-| Agentic planning | `agent_workbench` | Run bounded notebook/project edit loops only when direct structured tools are not enough. |
+| Optional agent tools | `execute_plan`, `agent_workbench`, `agent_session` | Installed only with `install_nbskill(agent_tools=True)` or `install_nbskill --agent_tools`; otherwise omitted from the MCP schema. |
 | Reference implementations | `reference` | Discover local repositories, add/list/ingest indexed references, query implementations, and propose reuse work. |
-| Problem-solving memory | `problem_memory` | Query similar problem-solution pairs before implementation and record verified lessons afterward. |
-| Conversion | `convert` | Migrate Python files/folders or bootstrap nbdev projects. |
+
+## CLI-only tools
+
+`convert`, `problem_memory`, and `visible_text_inventory` are Python and CLI commands. They are not registered in the MCP schema.
+
+| Command | Use |
+| --- | --- |
+| `convert` | Migrate Python files or folders, or create a small nbdev project. |
+| `problem_memory` | Query, add, or list reusable problem-solution pairs. |
+| `visible_text_inventory` | List likely user-visible text from notebook code cells. |
 
 ## Problem-solving memory
 
-`problem_memory` manages reusable problem-solution pairs beside the code-reference index. Query it before solving a nontrivial task, then record a pair after verification. Every pair needs at least four normalized tags. Prefer tags that identify the topic, sub-topic, library, problem category, solution category, runtime, and deployment surface. Query tags are exact all-of filters, so a query with `tags="notebook,fastcore,testing,solution-category"` returns only pairs carrying every requested tag.
+`problem_memory` manages reusable problem-solution pairs beside the code-reference index. Run it from the CLI before solving a nontrivial task, then record a pair after verification. Every pair needs at least four normalized tags. Prefer tags that identify the topic, sub-topic, library, problem category, solution category, runtime, and deployment surface. Query tags are exact all-of filters, so a query with `tags="notebook,fastcore,testing,solution-category"` returns only pairs carrying every requested tag.
 
 Signature:
 
@@ -55,7 +63,7 @@ Use `action="query"` before implementation, `action="add"` after a verified solu
 
 1. `healthcheck` confirms the server is alive and reports concurrency behavior.
 2. `context` gives the smallest useful project, notebook, chapter, cell, or symbol view. Cell and symbol targets include symbol graph payloads.
-3. `reference` and `problem_memory` provide reusable evidence before implementation. Use exact problem tags when a broad memory search is not sufficient.
+3. `reference` provides reusable implementation evidence before a change.
 4. `edit_notebook` applies deterministic edit operations atomically. Use `replace_text`/`replace_texts` with `target="all"` for notebook-level renames, line ops for focused cell edits, and structural ops for insert/delete/move/replace cell changes.
 5. `style_check` reports chkstyle output, notebook hygiene, private symbol warnings, duplicate imports, and global tool usage/problems.
 6. `exec_nb` runs a notebook, a chapter, or cells up to an id. It is safe by default: fresh or changed cells are denied until they have either been run by the user or stamped by a prior nbskill execution.
@@ -63,7 +71,7 @@ Use `action="query"` before implementation, `action="add"` after a verified solu
 
 Use `doctor(scopes="error,warning")` for fatal notebook problems and warnings. Add `style` only when chkstyle output is useful; `doctor` does not run or show chkstyle for error/warning-only scopes. Private symbol reporting is part of the warning scope.
 
-Use `agent_workbench` for a bounded single-notebook or project-level plan when direct edits are not enough. Use `edit_notebook` when the operations are already known and should be applied deterministically.
+The default server omits the agent tools. Install with `agent_tools=True` to add `--agent_tools` to the MCP command configuration. Use `agent_workbench` for a bounded single-notebook or project-level plan when direct edits are not enough. Use `edit_notebook` when the operations are already known and should be applied deterministically.
 
 ## Concurrency
 
@@ -109,7 +117,7 @@ exec_nb(
 
 The MCP wrapper keeps safe defaults and exposes only the common focused-execution controls. Use `check_only=True` to report outputs and failures without writing notebook outputs or metadata. Use the Python or CLI execution API directly for trusted broader execution settings.
 
-## `agent_workbench`
+## Optional `agent_workbench`
 
 Signature:
 
@@ -124,4 +132,4 @@ agent_workbench(
 ) -> dict
 ```
 
-Use `agent_workbench` for bounded notebook or project work when direct MCP calls would be too verbose. Pass a concrete `goal`, constrain the task with `notebook` when possible, and set `execute=True` only when the loop should run verification after editing. Prefer the direct context, edit, and verification tools for small changes.
+Install with `agent_tools=True` before calling this tool through MCP. Pass a concrete `goal`, constrain the task with `notebook` when possible, and set `execute=True` only when the loop should run verification after editing. Prefer the direct context, edit, and verification tools for small changes.

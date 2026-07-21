@@ -19,7 +19,7 @@ dependencies = [
     "botocore>=1.43.42",
     "execnb>=0.2.2",
     "fastaistyle>=0.0.15",
-    "fastcore==2.0.*",
+    "fastcore==2.1.*",
     "fastmcp>=3.3.1",
     "lancedb>=0.25.0",
     "lisette>=0.1.33",
@@ -44,6 +44,8 @@ split_nb_chapter = "nbskill.cli:split_nb_chapter"
 exec_nb = "nbskill.cli:exec_nb"
 diff_nb = "nbskill.cli:diff_nb"
 convert = "nbskill.cli:convert"
+problem_memory = "nbskill.cli:problem_memory"
+visible_text_inventory = "nbskill.cli:visible_text_inventory"
 style_check = "nbskill.cli:style_check"
 nbskill_validate = "nbskill.cli:nbskill_validate"
 install_nbskill = "nbskill.cli:install_nbskill"
@@ -57,7 +59,6 @@ nbskill_mcp_restart = "nbskill.cli:nbskill_mcp_restart"
 nbskill_mcp_log = "nbskill.cli:nbskill_mcp_log"
 nbskill_mcp_log_problems = "nbskill.cli:nbskill_mcp_log_problems"
 nbskill_status = "nbskill.cli:nbskill_status"
-agent_workbench = "nbskill.cli:agent_workbench"
 
 [project.entry-points.nbdev]
 nbskill = "nbskill._modidx:d"

@@ -411,6 +411,7 @@ class EditSession:
     context_command_log: list[dict] = field(default_factory=list)
     feedback_notes: list[str] = field(default_factory=list)
     pending_feedback: str = ""
+    run: dict = field(default_factory=dict)
     live_ns: dict = field(default_factory=lambda: {"__name__": "__main__"})
     live_ns_by_path: dict = field(default_factory=dict)
     executed_until_idx: int = -1
@@ -475,11 +476,20 @@ class EditSession:
         if self.notebook_msg_idx is None or self.notebook_msg_idx >= len(self.chat.hist): return
         msg = self.chat.hist[self.notebook_msg_idx]
         _context_msg_set(msg, "content", notebooks_view(self.target_paths, self.revision))
+    def checkpoint(self):
+        "Persist the current session when durable checkpoints are available."
+        if "_checkpoint_agent_session" in globals():
+            _checkpoint_agent_session(self)
+    def set_run(self, **data):
+        "Update durable run status, plan, and model details."
+        self.run.update(data)
+        self.checkpoint()
     def record_message(self, role, content):
         "Append one agent message to memory and the run log."
         item = {"revision": self.revision, "role": role, "content": _bounded_text(content)}
         self.messages.append(item)
         _append_agent_log(self, "message", item)
+        self.checkpoint()
     def session_note(self, content):
         "Insert a feedback note into memory, active chat history, and the audit log."
         note = _bounded_text(content)
@@ -488,6 +498,7 @@ class EditSession:
         item = {"revision": self.revision, "role": "note", "content": note}
         self.messages.append(item)
         _append_agent_log(self, "feedback_note", item)
+        self.checkpoint()
         if self.chat is not None:
             self.chat.hist.append({"role": "user", "content": note})
         return note
@@ -495,6 +506,7 @@ class EditSession:
         "Return and clear the feedback note that should seed the next round."
         note = self.pending_feedback
         self.pending_feedback = ""
+        self.checkpoint()
         return note
     def feedback_packet(self, result, message, path=None):
         "Build one compact notebook/context mutation feedback packet."
@@ -527,6 +539,7 @@ class EditSession:
         "Append an operation to the session log."
         self.log.append(f"r{self.revision}: {message}")
         _append_agent_log(self, "operation", {"revision": self.revision, "message": message})
+        self.checkpoint()
     def record_tool(self, name, detail=""):
         "Append one tool use to the session history."
         detail = _bounded_text(detail, 1000) if detail else ""
@@ -536,6 +549,7 @@ class EditSession:
         if detail: item["detail"] = detail
         self.history.append(item)
         _append_agent_log(self, "tool", item)
+        self.checkpoint()
     def record_event(self, kind, **data):
         "Append one structured empirical event to the session audit log."
         item = {"revision": self.revision, "kind": kind}
@@ -544,6 +558,7 @@ class EditSession:
             item[key] = _bounded_text(value, 1000) if isinstance(value, str) else value
         self.events.append(item)
         _append_agent_log(self, "event", item)
+        self.checkpoint()
         return item
     def record_context_command(self, command, status="ok", detail=""):
         "Append one managed-context command to the session history."
@@ -551,6 +566,7 @@ class EditSession:
         if detail: item["detail"] = _bounded_text(detail, 1000)
         self.context_command_log.append(item)
         _append_agent_log(self, "context_command", item)
+        self.checkpoint()
 
 # %% ../nbs/08_edit_interactive.ipynb #1462727f
 _CTX_SIMPLE_RE = re.compile(r"\[\[ctx:(open|delete)\s+([^\]]+)\]\]")
@@ -1782,6 +1798,7 @@ def execute_plan(
     session = _get_agent_session(
         paths, timeout, session_id=session_key, reset_session=reset_session
     )
+    session.set_run(status="running", phase="prepare", plan=plan, model=model)
     prep = (
         "Prepare context for the edit step. Open only chapters likely needed for this plan.\n"
         "Plan:\n" + plan
@@ -1825,8 +1842,10 @@ def execute_plan(
         "this task. Stop when the notebook change is complete."
     )
     round_summaries = []
+    session.set_run(phase="editing")
     for round_idx in range(feedback_rounds):
         session.pending_feedback = ""
+        session.set_run(phase="editing", round=round_idx + 1)
         session.record_message("user", prompt)
         try:
             result = _call_feedback_chat(chat, prompt, max_steps=max_steps)
@@ -1879,6 +1898,10 @@ def execute_plan(
         _save_notebook(read_nb(path), path)
     session.record("Exported notebook(s) after subagent run")
     diff = final_diffs(paths).strip()
+    session.set_run(
+        status="completed", phase="complete", summary=summary,
+        diff=_bounded_text(diff, 4000), feedback_rounds=len(round_summaries),
+    )
     memory_events = [
         event for event in _bounded_items(session.events)
         if event.get("kind") == "problem_memory_recorded"
@@ -1947,6 +1970,7 @@ def execute_plan(
         "operations": _bounded_items(session.log),
         "log_path": str(session.log_path),
         "diff": diff,
+        "run": session.run,
     }
 
 # %% ../nbs/08_edit_interactive.ipynb #ae8bae2a
@@ -1959,14 +1983,23 @@ def _agent_session_file(session_id):
 def _checkpoint_agent_session(session):
     "Persist resumable agent reasoning, context, approvals, and safe replay journal."
     runtimes = getattr(session, "agent_runtimes", {})
+    context = []
+    for msg in session.managed_context:
+        item = {
+            "tag": msg.tag, "purpose": msg.purpose, "visible": msg.visible,
+            "removed": msg.removed, "summary": msg.summary,
+        }
+        if msg.tag != "notebook:index" and not msg.tag.startswith("chapter:"):
+            item["content"] = msg.content
+        context.append(item)
     data = {
         "session_id": session.session_id,
         "target_paths": [str(path) for path in session.target_paths],
         "timeout": session.timeout, "revision": session.revision,
         "log": session.log, "tool_log": session.tool_log, "history": session.history,
         "events": session.events, "messages": session.messages,
-        "feedback_notes": session.feedback_notes,
-        "managed_context": [vars(msg).copy() for msg in session.managed_context],
+        "feedback_notes": session.feedback_notes, "run": session.run,
+        "managed_context": context,
         "context_command_log": session.context_command_log,
         "approval_requests": getattr(session, "approval_requests", {}),
         "approved_capabilities": sorted(getattr(session, "approved_capabilities", set())),
@@ -1989,7 +2022,20 @@ def _restore_agent_session(paths, timeout, session_id):
     for name in ("log", "tool_log", "history", "events", "messages", "feedback_notes", "context_command_log"):
         setattr(session, name, list(data.get(name, [])))
     session.revision = int(data.get("revision", 0))
-    session.managed_context = [ManagedContextMessage(**item) for item in data.get("managed_context", [])]
+    session.run = dict(data.get("run", {}))
+    saved_context = data.get("managed_context", [])
+    notebook_context = [
+        ManagedContextMessage(**{**item, "content": item.get("content", "")})
+        for item in saved_context
+        if item.get("tag") == "notebook:index" or str(item.get("tag", "")).startswith("chapter:")
+    ]
+    session.managed_context = managed_notebook_context(
+        paths, session.revision, previous=notebook_context
+    )
+    session.managed_context.extend(
+        ManagedContextMessage(**item) for item in saved_context
+        if item.get("tag") != "notebook:index" and not str(item.get("tag", "")).startswith("chapter:")
+    )
     session.approval_requests = dict(data.get("approval_requests", {}))
     session.approved_capabilities = set(data.get("approved_capabilities", []))
     for key, journal in data.get("runtime_journal", {}).items():
@@ -2050,6 +2096,7 @@ def agent_session(session_id, action="status", approval_id=None, decision="deny"
         "approval": getattr(session, "pending_approval", None),
         "checkpoint": str(_checkpoint_agent_session(session)),
         "events": _bounded_items(session.events),
+        "run": session.run,
     }
 
 # %% ../nbs/08_edit_interactive.ipynb #256a672a

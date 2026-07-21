@@ -3,8 +3,7 @@
 # %% auto #0
 __all__ = ['mcp', 'as_text', 'capture_call', 'capture_notebook_call', 'mcp_log_report', 'format_mcp_log_report',
            'mcp_tool_result', 'nbskill_status', 'doctor_tool', 'edit_notebook_tool', 'exec_nb_tool',
-           'execute_plan_tool', 'agent_workbench_tool', 'agent_session_tool', 'style_check_tool', 'convert_tool',
-           'create_mcp', 'main']
+           'execute_plan_tool', 'agent_workbench_tool', 'agent_session_tool', 'style_check_tool', 'create_mcp', 'main']
 
 # %% ../nbs/07_mcp.ipynb #mcpimports1
 import asyncio,json,multiprocessing,os,queue,signal,re,shutil,subprocess,sys,threading,time,traceback
@@ -1648,18 +1647,6 @@ def _diff_summary_lines(text):
     if not cells and first: lines.append(_short_item(first))
     return lines
 
-# %% ../nbs/07_mcp.ipynb #8adce5b0
-def _visible_text_summary_lines(records):
-    records = records or []
-    lines = [f"records={len(records)}"]
-    for item in records[:5]:
-        cell = item.get("cell_id", "")
-        line = item.get("line") or ""
-        call = item.get("call", "")
-        text = _short_item(item.get("text", ""), limit=80)
-        lines.append(f"- {cell}:{line} {call}: {text}".rstrip())
-    return lines
-
 # %% ../nbs/07_mcp.ipynb #33c7c320
 def _reference_summary_lines(data):
     data = data or {}
@@ -1727,7 +1714,6 @@ def _tool_summary_lines(tool, arguments, full_text, preview, status, structured,
     elif tool == "doctor": lines.extend(_doctor_summary_lines(structured.get("doctor")))
     elif tool == "style_check": lines.extend(_style_summary_lines(structured.get("style_report")))
     elif tool == "diff_nb": lines.extend(_diff_summary_lines(full_text))
-    elif tool == "visible_text_inventory": lines.extend(_visible_text_summary_lines(structured.get("visible_text_inventory")))
     elif tool == "reference": lines.extend(_reference_summary_lines(structured.get("reference")))
     elif tool == "edit_notebook": lines.extend(_edit_summary_lines(structured.get("edit_notebook") or structured))
     elif tool == "exec_nb": lines.extend(_exec_summary_lines(full_text))
@@ -1782,7 +1768,7 @@ def _mcp_tool_error_result(tool, arguments, exc, max_output_chars=12000, detail=
 def _status_data(client_roots=None):
     scripts = [
         "context", "write_nb", "update_cell", "batch_edit_nb", "exec_nb", "diff_nb", "style_check",
-        "install_nbskill", "agent_workbench", "convert", "reference",
+        "install_nbskill", "convert", "problem_memory", "visible_text_inventory", "reference",
         "nbskill_mcp", "nbskill_mcp_start", "nbskill_mcp_stop", "nbskill_mcp_restart",
         "nbskill_mcp_log", "nbskill_mcp_log_problems",
     ]
@@ -1885,7 +1871,7 @@ def _doctor_report(
         "style": style,
         "private_symbol_report": private_text if "warning" in selected else "",
         "hints": hints,
-        "capabilities": [item for item in _MCP_CAPABILITIES.split(",") if item],
+        "capabilities": [item for item in _mcp_capabilities().split(",") if item],
         "changed_paths": changed if detail == "debug" else changed[:20],
         "generated_owners": generated if detail == "debug" else generated[:20],
         "recent_events": failure_map.get("events", [])[-20:] if detail == "debug" else [],
@@ -2152,14 +2138,6 @@ _MCP_REVIEW_TOOL_CATALOG = {
         'when_to_use': 'Use before final reporting or when reviewing notebook edits without expanding JSON metadata churn; choose surface="public-ui" for customer-visible copy review.',
         'combine_with': 'Could be grouped with style_check under review, but diff parameters and output are meaningfully different.',
     },
-    'visible_text_inventory': {
-        'feature': 'review',
-        'usefulness': 'core',
-        'tags': ('review', 'notebook', 'ui-copy', 'fasthtml'),
-        'description': 'List likely user-visible text literals from FastHTML or HTML-producing notebook code cells, including component children and labels such as alt/title/placeholder.',
-        'when_to_use': 'Use before UI/content edits to find public copy targets without manually grepping notebooks and generated modules.',
-        'combine_with': 'Pair with diff_nb(surface="public-ui") after edits to review only the visible copy changes.',
-    },
     'style_check': {
         'feature': 'review',
         'usefulness': 'core',
@@ -2200,26 +2178,6 @@ _MCP_KNOWLEDGE_TOOL_CATALOG = {
         'when_to_use': 'Use query before implementing similar code; use add/list/ingest to maintain the local reference index.',
         'combine_with': 'Combines add, list, ingest, and query as actions on one tool.',
     },
-    'problem_memory': {
-        'feature': 'problem_solving_knowledge',
-        'usefulness': 'core',
-        'tags': ('knowledge', 'problem-solving', 'memory', 'search', 'tags'),
-        'description': 'Store, list, and search reusable problem-solution pairs with at least four tags per pair and exact tag filtering.',
-        'when_to_use': 'Query before solving a task; add each reusable lesson after verification with topic, sub-topic, library, problem-category, solution-category, and other useful tags.',
-        'combine_with': 'Pair with reference before implementation and with exec_nb, diff_nb, or doctor before recording a solution.',
-    },
-}
-
-# %% ../nbs/07_mcp.ipynb #mcpcat09
-_MCP_CONVERT_TOOL_CATALOG = {
-    'convert': {
-        'feature': 'conversion',
-        'usefulness': 'situational',
-        'tags': ('convert', 'python', 'notebook', 'folder', 'project'),
-        'description': 'Convert one Python file, a folder of Python files, or a pure-Python package into nbdev notebooks/project structure.',
-        'when_to_use': 'Use mode="notebook" for file/folder migration and mode="project" for a whole nbdev project scaffold.',
-        'combine_with': 'Combines single-file, folder, and project conversion modes.',
-    },
 }
 
 # %% ../nbs/07_mcp.ipynb #bb0721b9
@@ -2232,7 +2190,6 @@ _MCP_TOOL_CATALOG = {
     **_MCP_REVIEW_TOOL_CATALOG,
     **_MCP_AGENT_TOOL_CATALOG,
     **_MCP_KNOWLEDGE_TOOL_CATALOG,
-    **_MCP_CONVERT_TOOL_CATALOG,
 }
 
 # %% ../nbs/07_mcp.ipynb #f7a620d9
@@ -2252,13 +2209,22 @@ def _mcp_tool_meta(name):
     }
 
 # %% ../nbs/07_mcp.ipynb #mcppublic
-_MCP_CAPABILITIES = ",".join(_MCP_TOOL_CATALOG)
+_MCP_AGENT_TOOL_NAMES = set(_MCP_AGENT_TOOL_CATALOG) | {"agent_session"}
+_AGENT_TOOLS_ENABLED = False
+
+def _mcp_capabilities():
+    names = [
+        name for name in _MCP_TOOL_CATALOG
+        if _AGENT_TOOLS_ENABLED or name not in _MCP_AGENT_TOOL_CATALOG
+    ]
+    if _AGENT_TOOLS_ENABLED: names.append("agent_session")
+    return ",".join(names)
 mcp = FastMCP(
     "nbskill",
     instructions=(
         "Work notebook-first in nbdev projects. Feature areas are diagnostics, focused context, "
-        "notebook edits, verification/review, symbol impact, agentic planning, reference search, "
-        "and conversion. For reading, use context with a project, notebook, chapter title, cell id, "
+        "notebook edits, verification/review, symbol impact, agentic planning, and reference search. "
+        "For reading, use context with a project, notebook, chapter title, cell id, "
         "or public symbol target; mode is auto, overview, edit, or review, and resolution controls source depth. "
         "For edits, use edit_notebook as the single production mutation tool. It supports whole-cell, "
         "line-range, insert/delete/move, and notebook-wide replace_text/replace_texts operations with "
@@ -2283,6 +2249,7 @@ async def _healthcheck_tool(detail: str = "summary", ctx: Context = None) -> Too
     "Return lightweight nbskill MCP status and point deeper diagnostics to doctor."
     client_roots = await _mcp_client_roots(ctx)
     data = _status_data(client_roots)
+    capabilities = _mcp_capabilities()
     full_output = "\n".join([
         "nbskill mcp ok",
         f"version={data['version']}",
@@ -2291,7 +2258,7 @@ async def _healthcheck_tool(detail: str = "summary", ctx: Context = None) -> Too
         f"python={sys.executable}",
         f"pid={os.getpid()}",
         f"log_path={data['mcp_log_path']}",
-        f"capabilities={_MCP_CAPABILITIES}",
+        f"capabilities={capabilities}",
         "parallel=same-notebook operations serialized; different notebooks may run in parallel",
         "execution=global semaphore with one active safe notebook execution",
         "diagnostics=run doctor(scopes='error,warning') for fatal problems and warnings; add style for chkstyle",
@@ -2299,7 +2266,7 @@ async def _healthcheck_tool(detail: str = "summary", ctx: Context = None) -> Too
     ])
     return mcp_tool_result(
         "healthcheck", {"detail": detail}, full_output, detail=detail,
-        status_data=data, capabilities=_MCP_CAPABILITIES.split(","),
+        status_data=data, capabilities=capabilities.split(","),
     )
 
 # %% ../nbs/07_mcp.ipynb #mcptool01
@@ -2961,122 +2928,20 @@ async def _reference_tool(
     except (Exception, SystemExit) as exc:
         return _mcp_tool_error_result("reference", arguments, exc, detail=detail)
 
-# %% ../nbs/07_mcp.ipynb #1f7b568e
-@mcp.tool(**_mcp_tool_meta("problem_memory"))
-async def _problem_memory_tool(
-    action: str = "query",
-    query: str | None = None,
-    top_k: int = 5,
-    problem: str | None = None,
-    solution: str | None = None,
-    task: str = "",
-    project: str | None = None,
-    evidence: str = "",
-    outcome: str = "applied",
-    tags: str | None = None,
-    repository: str = "",
-    commit: str = "",
-    verification: str = "",
-    verified_at: float | None = None,
-    path: str | None = None,
-    limit: int = 20,
-    tool_timeout: float = 120.0,
-    detail: str = "summary",
-    ctx: Context = None,
-) -> ToolResult:
-    "Manage reusable problem-solution memories with provenance and exact tag diagnostics."
-    root = await _mcp_workspace_root(ctx)
-    path = _mcp_workspace_path(path, root) if path else path
-    action = str(action or "query").lower()
-    top_k = _mcp_clamp_int(top_k, 5, 1, 20, "top_k")
-    limit = _mcp_clamp_int(limit, 20, 1, 100, "limit")
-    tool_timeout = _mcp_clamp_float(tool_timeout, 120.0, 0.001, 120.0, "tool_timeout")
-    arguments = dict(
-        action=action, query=query, top_k=top_k, problem=problem, solution=solution, task=task,
-        project=project, evidence=evidence, outcome=outcome, tags=tags, repository=repository,
-        commit=commit, verification=verification, verified_at=verified_at, path=path, limit=limit,
-        tool_timeout=tool_timeout, detail=detail, workspace_root=str(root) if root else None,
-    )
-    try:
-        if action == "add":
-            if not problem or not solution: raise ValueError("problem_memory action='add' needs problem and solution")
-            result_data = await asyncio.wait_for(
-                asyncio.to_thread(
-                    problem_statement_add, problem, solution, task=task, project=project or str(root or "."),
-                    evidence=evidence, outcome=outcome, tags=tags, repository=repository, commit=commit,
-                    verification=verification, verified_at=verified_at, path=path,
-                ),
-                timeout=tool_timeout,
-            )
-        elif action == "list":
-            result_data = await asyncio.wait_for(
-                asyncio.to_thread(problem_statement_list, path=path, limit=limit), timeout=tool_timeout,
-            )
-        elif action == "query":
-            if not query: raise ValueError("problem_memory action='query' needs query")
-            result_data = await asyncio.wait_for(
-                asyncio.to_thread(problem_statement_query, query, top_k=top_k, project=project, tags=tags, path=path),
-                timeout=tool_timeout,
-            )
-        else:
-            raise ValueError("action must be add, list, or query")
-        full_output = json.dumps(result_data, indent=2, sort_keys=True)
-        return mcp_tool_result("problem_memory", arguments, full_output, detail=detail, problem_memory=result_data)
-    except TimeoutError as exc:
-        message = f"problem_memory exceeded its MCP timeout of {tool_timeout:g}s before Codex's client timeout."
-        return _mcp_tool_error_result("problem_memory", arguments, TimeoutError(message), detail=detail)
-    except (Exception, SystemExit) as exc:
-        return _mcp_tool_error_result("problem_memory", arguments, exc, detail=detail)
-
-# %% ../nbs/07_mcp.ipynb #mcptool19
-@mcp.tool(**_mcp_tool_meta("convert"))
-async def convert_tool(
-    path: str,
-    mode: str = "notebook",
-    dest: str | None = None,
-    nbs_path: str = "nbs",
-    recursive: bool = True,
-    maxdepth: int | None = None,
-    preserve_tree: bool = True,
-    class_lines: int = 100,
-    method_lines: int = 10,
-    package: str | None = None,
-    include: str | None = None,
-    exclude: str | None = None,
-    skip_init: bool = True,
-    include_tests: bool = False,
-    force: bool = True,
-    run_validation: bool = True,
-    dry_run: bool = True,
-    detail: str = "summary",
-    ctx: Context = None,
-) -> ToolResult:
-    "Convert Python files/folders or a Python package into nbdev notebooks/project structure."
-    root = await _mcp_workspace_root(ctx)
-    path = _mcp_workspace_path(path, root)
-    dest = _mcp_workspace_path(dest, root) if dest else dest
-    nbs_path = _mcp_workspace_path(nbs_path, root)
-    arguments = dict(
-        path=path, mode=mode, dest=dest, nbs_path=nbs_path, recursive=recursive, maxdepth=maxdepth,
-        preserve_tree=preserve_tree, class_lines=class_lines, method_lines=method_lines, package=package,
-        include=include, exclude=exclude, skip_init=skip_init, include_tests=include_tests, force=force,
-        run_validation=run_validation, dry_run=dry_run, detail=detail, workspace_root=str(root) if root else None,
-    )
-    try:
-        full_output = capture_call(
-            convert, path=path, mode=mode, dest=dest, nbs_path=nbs_path, recursive=recursive, maxdepth=maxdepth,
-            preserve_tree=preserve_tree, class_lines=class_lines, method_lines=method_lines, package=package,
-            include=include, exclude=exclude, skip_init=skip_init, include_tests=include_tests, dry_run=dry_run,
-            force=force, run_validation=run_validation,
-        )
-        return mcp_tool_result("convert", arguments, full_output, detail=detail)
-    except (Exception, SystemExit) as exc:
-        return _mcp_tool_error_result("convert", arguments, exc, detail=detail)
-
 # %% ../nbs/07_mcp.ipynb #6daab47d
-def create_mcp():
-    "Return the public nbskill FastMCP server."
+def _configure_agent_tools(agent_tools=False):
+    """Show agent tools only when the server was installed with --agent_tools."""
+    global _AGENT_TOOLS_ENABLED
+    _AGENT_TOOLS_ENABLED = bool(agent_tools)
+    operation = mcp.enable if _AGENT_TOOLS_ENABLED else mcp.disable
+    operation(names=_MCP_AGENT_TOOL_NAMES)
     return mcp
+
+def create_mcp(agent_tools=False):
+    "Return the public nbskill FastMCP server."
+    return _configure_agent_tools(agent_tools)
+
+_configure_agent_tools(os.getenv("NBSKILL_AGENT_TOOLS") == "1")
 
 # %% ../nbs/07_mcp.ipynb #bc41ce66
 def _fastmcp_reload_command(transport="stdio", show_banner=False, reload_dir=None):
@@ -3102,47 +2967,22 @@ def main(
     show_banner: bool = False,  # Show FastMCP startup banner
     reload: bool = False,  # Restart the FastMCP worker when source files change
     reload_dir: str | None = None,  # Directory to watch; defaults to FastMCP's current directory
+    agent_tools: bool = False,  # Expose optional execute_plan, agent_workbench, and agent_session tools
 ):
     "Run the nbskill MCP server, optionally with FastMCP development auto-reload."
     _mcp_log_event(
         "server_start", transport=transport, show_banner=show_banner, reload=reload,
-        reload_dir=reload_dir, cwd=str(Path.cwd()), python=sys.executable,
+        reload_dir=reload_dir, agent_tools=agent_tools, cwd=str(Path.cwd()), python=sys.executable,
     )
     try:
         if reload:
             command = _fastmcp_reload_command(transport, show_banner, reload_dir)
             _mcp_log_event("server_reload_start", command=command)
-            return subprocess.run(command, check=False).returncode
-        mcp.run(transport=transport, show_banner=show_banner)
+            environment = {**os.environ, "NBSKILL_AGENT_TOOLS": "1" if agent_tools else "0"}
+            return subprocess.run(command, check=False, env=environment).returncode
+        create_mcp(agent_tools).run(transport=transport, show_banner=show_banner)
     except BaseException as exc:
-        _mcp_log_exception("server_error", exc, transport=transport, reload=reload)
+        _mcp_log_exception("server_error", exc, transport=transport, reload=reload, agent_tools=agent_tools)
         raise
     finally:
-        _mcp_log_event("server_stop", transport=transport, reload=reload)
-
-# %% ../nbs/07_mcp.ipynb #ba8f4a5f
-@mcp.tool(**_mcp_tool_meta("visible_text_inventory"))
-async def _visible_text_inventory_tool(
-    path: str = ".", include_re: str | None = None, max_records: int = 200,
-    detail: str = "summary", ctx: Context = None,
-) -> ToolResult:
-    "List likely public UI text from FastHTML/HTML-producing notebook cells."
-    root = await _mcp_workspace_root(ctx)
-    path = _mcp_workspace_path(path, root)
-    max_records = _mcp_clamp_int(max_records, 200, 1, 1000, "max_records")
-    arguments = dict(
-        path=path, include_re=include_re, max_records=max_records,
-        detail=detail, workspace_root=str(root) if root else None,
-    )
-    try:
-        out, err = StringIO(), StringIO()
-        with _CAPTURE_LOCK:
-            with redirect_stdout(out), redirect_stderr(err):
-                records = visible_text_inventory(path=path, include_re=include_re, max_records=max_records)
-        full_output = "\n".join(chunk.rstrip() for chunk in [out.getvalue(), err.getvalue()] if chunk)
-    except Exception as exc:
-        return _mcp_tool_error_result("visible_text_inventory", arguments, exc, detail=detail)
-    return mcp_tool_result(
-        "visible_text_inventory", arguments, full_output, detail=detail,
-        visible_text_inventory=records,
-    )
+        _mcp_log_event("server_stop", transport=transport, reload=reload, agent_tools=agent_tools)

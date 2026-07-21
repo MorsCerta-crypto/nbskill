@@ -851,7 +851,9 @@ def _render_context_lines(context):
         for item in context.get("selected_notebooks", [])
     )
     lines.extend(["", "Evidence cells:"])
-    lines.extend(f"- {item['path']} id={item['id']}" for item in context.get("evidence", []))
+    for item in context.get("evidence", []):
+        lines.append(f"- {item['path']} id={item['id']}")
+        if item.get("context"): lines.append(item["context"])
     if context.get("problem_memory"):
         lines.extend(["", "Problem memory:", context["problem_memory"]])
     reuse = context.get("reuse_advice") or {}
@@ -982,9 +984,12 @@ def agent_workbench_result(
     if execute:
         if not notebook:
             raise ValueError("agent_workbench execute=True requires notebook")
-        max_steps = min(
-            int(max_steps),
-            int(budgets.get("max_agent_steps", DEFAULT_BUDGETS["max_agent_steps"])),
+        max_agent_steps = int(
+            budgets.get("max_agent_steps", DEFAULT_BUDGETS["max_agent_steps"])
+        )
+        max_steps = max(1, min(int(max_steps), max_agent_steps))
+        feedback_rounds = min(
+            int(feedback_rounds), max(1, max_agent_steps // max_steps)
         )
         timeout = min(
             int(timeout),
@@ -998,9 +1003,19 @@ def agent_workbench_result(
         context_steps = int(
             budgets.get("context_steps", DEFAULT_BUDGETS["context_steps"])
         )
+        injected_context = json.dumps(
+            {
+                "goal": contract["goal"],
+                "evidence": context.get("evidence", []),
+                "problem_memory": context.get("problem_memory", ""),
+                "reuse_advice": context.get("reuse_advice", {}),
+            },
+            default=str,
+        )
         execution = execute_plan(
             notebook=notebook,
             plan=rendered_plan,
+            injected_context=injected_context,
             max_steps=max_steps,
             timeout=timeout,
             max_context_commands=max_context_commands,

@@ -1189,13 +1189,14 @@ def commit_notebook(
     writer=write_nb,
 ):
     "Validate, stamp, write, export, and rollback one notebook as one commit."
-    from fastcore.nbio import read_nb
+    from fastcore.nbio import read_nb, validate_nb
 
     path = Path(path)
     before = before if before is not None else (read_nb(path) if path.exists() else new_nb([]))
     missing_cell_ids = any("id" not in cell for cell in getattr(trial, "cells", []))
     ensure_cell_ids(before)
     ensure_cell_ids(trial)
+    validate_nb(trial)
     before_hash = notebook_hash(before)
     planned_hash = notebook_hash(trial)
     changed = before_hash != planned_hash or missing_cell_ids

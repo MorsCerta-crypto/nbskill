@@ -4,7 +4,7 @@
 __all__ = ['tracked_call', 'context', 'filter_context', 'write_nb', 'replace_str_nb', 'update_cell', 'batch_edit_nb',
            'split_nb_chapter', 'exec_nb', 'diff_nb', 'style_check', 'nbskill_validate', 'convert',
            'build_nbskill_skill', 'install_nbskill', 'symbol_connection', 'reference', 'problem_memory',
-           'agent_workbench', 'nbskill_status', 'nbskill_mcp_log', 'nbskill_mcp_log_problems', 'nbskill_mcp',
+           'visible_text_inventory', 'nbskill_status', 'nbskill_mcp_log', 'nbskill_mcp_log_problems', 'nbskill_mcp',
            'find_nbskill_mcp_processes', 'stop_nbskill_mcp_processes', 'nbskill_mcp_start', 'nbskill_mcp_stop',
            'nbskill_mcp_restart']
 
@@ -26,7 +26,6 @@ import nbskill.mcp
 import nbskill.read
 import nbskill.review
 import nbskill.nbskill
-import nbskill.workbench
 import nbskill.write
 from .foundation import failure_map_path, install_nbdev_pre_commit_hooks, load_failure_map
 
@@ -155,27 +154,6 @@ def _print_json(value):
     print(json.dumps(value, indent=2, sort_keys=True))
     return None
 
-
-# %% ../nbs/13_cli.ipynb #3f156eb2
-def _print_workbench_result(result):
-    "Print a rendered workbench plan or compact execution score."
-    if "score" in result:
-        score = result.get("score", {})
-        payload = {
-            "summary": result.get("summary"),
-            "passed": score.get("passed"),
-            "hard_failures": score.get("hard_failures", []),
-            "empirical_warnings": score.get("empirical_warnings", []),
-        }
-        print(json.dumps(payload, indent=2, sort_keys=True))
-        return None
-    text = (
-        result.get("rendered_plan")
-        or result.get("summary")
-        or json.dumps(result, indent=2, sort_keys=True)
-    )
-    print(text)
-    return None
 
 # %% ../nbs/13_cli.ipynb #4d6ca218
 def _format_status(data):
@@ -461,6 +439,7 @@ def install_nbskill(
     overwrite: bool = True,  # Overwrite an existing installation
     install_hooks: bool = False,  # Install nbdev pre-commit hooks
     restart_mcp: bool = True,  # Include restart guidance for running MCP servers
+    agent_tools: bool = False,  # Include optional agent MCP tools in the installed server config
     cursor_workspace: str | None = None,  # Cursor workspace for .cursor/mcp.json; omit for global ~/.cursor/mcp.json
     reference_roots: str = "~/projects",  # Local Git repositories to index
     index_references: bool = True,  # Index references during installation
@@ -468,7 +447,7 @@ def install_nbskill(
     "Install nbskill agent instructions and configure reusable references."
     return nbskill.nbskill.install_nbskill(
         target=target, skills_dir=skills_dir, skill_name=skill_name, overwrite=overwrite,
-        install_hooks=install_hooks, restart_mcp=restart_mcp, cursor_workspace=cursor_workspace,
+        install_hooks=install_hooks, restart_mcp=restart_mcp, agent_tools=agent_tools, cursor_workspace=cursor_workspace,
         reference_roots=reference_roots, index_references=index_references,
     )
 
@@ -572,26 +551,16 @@ def problem_memory(
         raise ValueError("action must be add, list, or query")
     return _print_json(result)
 
-# %% ../nbs/13_cli.ipynb #ec4e829f
+# %% ../nbs/13_cli.ipynb #e650c866
 @call_parse
 @tracked_call
-def agent_workbench(
-    goal: str,  # Desired software-development outcome
-    notebook: str | None = None,  # Required when execute=True; also narrows context when provided
-    contract_file: str | None = None,  # Optional JSON contract overrides
-    execute: bool = False,  # Execute the rendered plan through execute_plan
-    max_steps: int = 8,  # Maximum inner-agent steps when executing
-    timeout: int = 30,  # Per-cell timeout for execute_plan
-    enforce_empirical: bool = False,  # Promote empirical-loop warnings to hard failures
+def visible_text_inventory(
+    path: str = ".",  # Notebook root to inspect
+    include_re: str | None = None,  # Optional regular expression for text
+    max_records: int = 200,  # Maximum records to print
 ):
-    "Prepare or execute a taste-aware, small-diff agent workbench run."
-    result = nbskill.workbench.agent_workbench(
-        goal, notebook=notebook, contract_file=contract_file, execute=execute,
-        max_steps=max_steps, timeout=timeout,
-        enforce_empirical=enforce_empirical,
-    )
-    return _print_workbench_result(result)
-
+    "List likely user-visible text from notebook code cells."
+    return nbskill.review.visible_text_inventory(path=path, include_re=include_re, max_records=max_records)
 
 # %% ../nbs/13_cli.ipynb #7dbcb797
 @call_parse
@@ -646,9 +615,10 @@ def nbskill_mcp(
     show_banner: bool = False,  # Show FastMCP startup banner
     reload: bool = False,  # Restart the FastMCP worker when source files change
     reload_dir: str | None = None,  # Directory to watch for source changes
+    agent_tools: bool = False,  # Expose optional agent MCP tools
 ):
     "Run the nbskill MCP server."
-    return nbskill.mcp.main(transport=transport, show_banner=show_banner, reload=reload, reload_dir=reload_dir)
+    return nbskill.mcp.main(transport=transport, show_banner=show_banner, reload=reload, reload_dir=reload_dir, agent_tools=agent_tools)
 
 # %% ../nbs/13_cli.ipynb #35576b91
 _MCP_CONTROL_COMMANDS = {"nbskill_mcp_start", "nbskill_mcp_stop", "nbskill_mcp_restart"}
@@ -843,9 +813,10 @@ def nbskill_mcp_start(
     show_banner: bool = False,  # Show FastMCP startup banner
     reload: bool = False,  # Restart the FastMCP worker when source files change
     reload_dir: str | None = None,  # Directory to watch for source changes
+    agent_tools: bool = False,  # Expose optional agent MCP tools
 ):
     "Run the nbskill MCP server in the foreground."
-    return nbskill.mcp.main(transport=transport, show_banner=show_banner, reload=reload, reload_dir=reload_dir)
+    return nbskill.mcp.main(transport=transport, show_banner=show_banner, reload=reload, reload_dir=reload_dir, agent_tools=agent_tools)
 
 # %% ../nbs/13_cli.ipynb #0678c300
 @call_parse

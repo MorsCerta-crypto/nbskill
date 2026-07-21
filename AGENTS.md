@@ -21,7 +21,7 @@ For those tasks:
 3. Search indexed prior art with `mcp__nbskill__.reference` before
    adding nontrivial parsing, notebook, AST, filesystem, or formatting
    behavior.
-4. Query problem-solving memory with the `problem_memory` MCP tool before
+4. Query problem-solving memory with the `problem_memory` CLI before
    choosing an approach for a nontrivial task. Use the concrete problem and
    relevant tags such as `topic`, `sub-topic`, `library`, `problem-category`,
    and `solution-category`; supplied tags are exact all-of filters.
@@ -31,8 +31,8 @@ For those tasks:
    `mcp__nbskill__.diff_nb`, `mcp__nbskill__.exec_nb(check_only=True)`,
    `mcp__nbskill__.style_check`, or `mcp__nbskill__.doctor`.
 7. For a behavior change, add or revise a focused notebook test before the implementation when a useful reproducer exists. Run the focused check before the edit, then run it again after. Assert the promised behavior, not formatting, `repr`, or incidental order.
-8. After verification, record each reusable problem-solution pair with
-   `problem_memory(action="add", ...)`, concise evidence, and at least four
+8. After verification, record each reusable problem-solution pair with the
+   `problem_memory` CLI using `action="add"`, concise evidence, and at least four
    tags. Problem-solving memory is part of the normal workflow, not optional
    cleanup.
 
@@ -172,9 +172,7 @@ Reference searches:
 
 Problem-solving searches:
 
-- Use `problem_memory(action="query", query="<concrete problem>",
-  tags="<comma-separated tags>")` before implementing a nontrivial task,
-  just as `reference` is used for code prior art.
+- Use `problem_memory --action query --query "<concrete problem>" --tags "<comma-separated tags>"` before implementing a nontrivial task, just as `reference` is used for code prior art.
 - Store reusable pairs with at least four tags. Prefer a rich set such as
   `topic`, `sub-topic`, `library`, `problem-category`, `solution-category`,
   runtime, and deployment surface so later agents can narrow the search.

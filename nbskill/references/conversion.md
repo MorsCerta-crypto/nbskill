@@ -1,11 +1,15 @@
 # Conversion Reference
 
-Use the MCP `convert` tool when Python modules should become nbdev notebook source.
+Use the `convert` CLI command or Python API when Python modules should become nbdev notebook source. `convert` is not registered as an MCP tool.
 Keep this out of the main skill path unless the task is specifically about converting `.py` files.
 
 ## `convert`
 
 `convert` accepts one Python file, a folder of Python files, or a pure-Python project/package.
+
+```sh
+convert path/to/module.py --nbs_path nbs
+```
 
 ```python
 convert(path="path/to/module.py", mode="notebook", nbs_path="nbs")

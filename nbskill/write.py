@@ -5,7 +5,7 @@ __all__ = ['write_literal_replacements', 'write_nb', 'update_cell', 'split_cell'
            'valid_split_line_numbers', 'split_source_lines', 'source_lines_cell', 'source_lines_cells',
            'should_run_cell_feedback', 'notebook_edit_feedback', 'append_notebook_edit_feedback', 'save_notebook_edit',
            'replace_notebook_cell', 'replace_notebook_range', 'insert_notebook_cells', 'delete_notebook_cell',
-           'apply_notebook_edit', 'batch_edit_nb', 'split_nb_chapter']
+           'apply_notebook_edit', 'batch_edit_nb', 'split_nb_chapter', 'create_notebook', 'move_cells']
 
 # %% ../nbs/02_write.ipynb #04dbc0fe
 import ast,builtins,copy,difflib,glob,json,re
@@ -1013,3 +1013,96 @@ def split_nb_chapter(
         plan["source_exported"] = source_commit["exported"]
         plan["dest_exported"] = dest_commit["exported"]
     return cli_return(plan)
+
+# %% ../nbs/02_write.ipynb #2287a701
+def create_notebook(path, name=None, template="nbdev", default_exp=None, dry_run=False):
+    """Create a minimal nbdev notebook without overwriting an existing path."""
+    path = Path(path)
+    if template != "nbdev": raise ValueError("template must be 'nbdev'")
+    if path.exists(): raise ValueError(f"Notebook already exists: {path}")
+    default_exp = default_exp or _default_exp_for_dest(path)
+    cells = [mk_cell(f"#| default_exp {default_exp}")]
+    if name: cells.append(mk_cell(f"# {name}", cell_type="markdown"))
+    nb = new_nb(cells)
+    if not dry_run: commit_notebook(path, nb, before=new_nb([]), affected_cell_ids=[cell.id for cell in cells])
+    return dict(path=str(path), name=name, default_exp=default_exp, changed=not dry_run, dry_run=dry_run)
+
+def _move_selection(nb, cell_ids=None, query=None, chapter=None):
+    selectors = sum(value is not None for value in (cell_ids, query, chapter))
+    if selectors != 1: raise ValueError("Pass exactly one of cell_ids, query, or chapter")
+    if chapter is not None:
+        span = one_chapter(nb.cells, chapter)
+        return list(range(span["start"], span["end"]))
+    if cell_ids is not None:
+        wanted = [str(cell_id) for cell_id in cell_ids]
+        found = {str(cell.id): idx for idx, cell in enumerate(nb.cells)}
+        missing = [cell_id for cell_id in wanted if cell_id not in found]
+        if missing: raise ValueError(f"Unknown cell ids: {', '.join(missing)}")
+        return sorted(found[cell_id] for cell_id in wanted)
+    pattern = query.removeprefix("regex=")
+    try: matcher = re.compile(pattern if query.startswith("regex=") else re.escape(pattern))
+    except re.error as exc: raise ValueError(f"Invalid query: {exc}")
+    selected = [idx for idx, cell in enumerate(nb.cells) if matcher.search(cell_source(cell))]
+    if not selected: raise ValueError("query matched no cells")
+    return selected
+
+def _move_anchor(cells, anchor, where):
+    if where not in {"before", "after"}: raise ValueError("destination_where must be 'before' or 'after'")
+    if anchor is None: return len(cells)
+    if anchor == "imports":
+        for idx, cell in enumerate(cells):
+            if re.search(r"^\\s*(from|import)\\s+", cell_source(cell), re.M): return idx + 1
+        return 0
+    for idx, cell in enumerate(cells):
+        if str(cell.id) == str(anchor): return idx + (where == "after")
+    raise ValueError(f"Unknown destination anchor: {anchor}")
+
+def move_cells(source_path, destination_path=None, cell_ids=None, query=None, chapter=None, name=None, mode="move", destination_anchor=None, destination_where="after", default_exp=None, promote_private=True, dry_run=False):
+    """Move or copy selected cells, preserving full cell payloads and inferred imports."""
+    if mode not in {"move", "copy"}: raise ValueError("mode must be 'move' or 'copy'")
+    source_path = Path(source_path)
+    destination_path = Path(destination_path) if destination_path else source_path
+    if destination_path != source_path and not name: raise ValueError("A destination notebook requires name")
+    with notebook_locks(source_path, destination_path):
+        source_before = read_nb(source_path)
+        new_destination = not destination_path.exists()
+        destination_before = None if new_destination else read_nb(destination_path)
+        source_trial = copy.deepcopy(source_before)
+        destination_trial = source_trial if destination_path == source_path else (copy.deepcopy(destination_before) if destination_before else new_nb([]))
+        indices = _move_selection(source_trial, cell_ids=cell_ids, query=query, chapter=chapter)
+        moving = [copy.deepcopy(source_trial.cells[idx]) for idx in indices]
+        if mode == "move": source_trial.cells = [cell for idx, cell in enumerate(source_trial.cells) if idx not in set(indices)]
+        if destination_path != source_path:
+            uses = _loaded_names(moving)
+            remaining_defs = _definition_names(source_trial.cells)
+            imports = _import_lines_for_names(source_before.cells, uses - set(remaining_defs))
+            source_default = _default_exp_from_cells(source_before.cells)
+            deps = sorted(uses & set(remaining_defs))
+            if deps:
+                module = _module_for_default_exp(source_default, path=source_path)
+                if not module: raise ValueError("Source needs #| default_exp for moved dependencies")
+                imports.extend(f"from {module} import {dep}" for dep in deps)
+            _insert_import_cell(destination_trial.cells, list(dict.fromkeys(imports)))
+        if new_destination:
+            dest_default = default_exp or _default_exp_for_dest(destination_path)
+            destination_trial.cells = [mk_cell(f"#| default_exp {dest_default}"), mk_cell(f"# {name}", cell_type="markdown"), *destination_trial.cells]
+        if name and not new_destination:
+            moving = [mk_cell(f"## {name}", cell_type="markdown"), *moving]
+            destination_anchor = None
+        insert_at = _move_anchor(destination_trial.cells, destination_anchor, destination_where)
+        destination_trial.cells[insert_at:insert_at] = moving
+        if destination_path == source_path:
+            commit = commit_notebook(source_path, source_trial, before=source_before, affected_cell_ids=[cell.id for cell in moving], dry_run=dry_run)
+            return dict(changed=commit["changed"], dry_run=dry_run, source_path=str(source_path), destination_path=str(destination_path), cell_ids=[cell.id for cell in moving])
+        if dry_run: return dict(changed=True, dry_run=True, source_path=str(source_path), destination_path=str(destination_path), cell_ids=[cell.id for cell in moving])
+        committed = []
+        try:
+            source_commit = commit_notebook(source_path, source_trial, before=source_before, affected_cell_ids=[cell.id for cell in moving])
+            committed.append((source_path, source_before))
+            dest_commit = commit_notebook(destination_path, destination_trial, before=destination_before or new_nb([]), affected_cell_ids=[cell.id for cell in moving])
+        except Exception:
+            for path, before in reversed(committed):
+                commit_notebook(path, before, before=read_nb(path), affected_cell_ids=[cell.id for cell in before.cells])
+            if new_destination and destination_path.exists(): destination_path.unlink()
+            raise
+    return dict(changed=source_commit["changed"] or dest_commit["changed"], dry_run=False, source_path=str(source_path), destination_path=str(destination_path), cell_ids=[cell.id for cell in moving])

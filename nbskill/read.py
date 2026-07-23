@@ -2,7 +2,7 @@
 
 # %% auto #0
 __all__ = ['project_context', 'chapter_context', 'python_file_context', 'python_symbol_context', 'file_context', 'filter_context',
-           'symbol_context', 'context']
+           'get_cells', 'symbol_context', 'context']
 
 # %% ../nbs/01_read.ipynb #727ac178
 import ast
@@ -19,7 +19,7 @@ from fastcore.basics import patch
 from nbskill.foundation import (
     Notebook, NotebookCell, call_name, cell_matches_type, cell_output_text, cell_prefix,
     cell_source, chapter_index_set, chapter_spans, find_cell_by_id, first_line,
-    heading_title, is_exported_code_cell, matches_filter, notebook_paths,
+    heading_title, is_exported_code_cell, matches_filter, notebook_paths, one_chapter,
     source_hash, source_without_directives, symbol_short_name,
 )
 
@@ -943,6 +943,39 @@ def filter_context(
         max_chars_per_cell=max_chars_per_cell, view=view, line_numbers=line_numbers,
         before=before, after=after, total_matches=total, matches=matches,
     )
+
+# %% ../nbs/01_read.ipynb #789e6722
+def get_cells(path, cell_ids=None, query=None, chapter=None, include_source=True, include_outputs=False, cursor=0, limit=None):
+    """Return complete structured cells for one explicit selection."""
+    nb = read_nb(path)
+    selectors = sum(value is not None for value in (cell_ids, query, chapter))
+    if selectors != 1: raise ValueError("Pass exactly one of cell_ids, query, or chapter")
+    if chapter is not None:
+        span = one_chapter(nb.cells, chapter)
+        selected = list(enumerate(nb.cells[span["start"]:span["end"]], start=span["start"]))
+    elif cell_ids is not None:
+        wanted = {str(cell_id) for cell_id in cell_ids}
+        selected = [(idx, cell) for idx, cell in enumerate(nb.cells) if str(cell.id) in wanted]
+        if len(selected) != len(wanted): raise ValueError("Unknown cell id")
+    else:
+        pattern = query.removeprefix("regex=")
+        matcher = re.compile(pattern if query.startswith("regex=") else re.escape(pattern))
+        selected = [(idx, cell) for idx, cell in enumerate(nb.cells) if matcher.search(cell_source(cell))]
+    start = max(0, int(cursor or 0))
+    page = selected[start:] if limit is None else selected[start:start + int(limit)]
+    cells = []
+    for idx, cell in page:
+        source = cell_source(cell)
+        try: tree = ast.parse(source_without_directives(source)) if cell.cell_type == "code" else None
+        except SyntaxError: tree = None
+        defined = [node.name for node in (tree.body if tree else []) if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))]
+        used = sorted({node.id for node in ast.walk(tree) if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load)}) if tree else []
+        item = dict(id=str(cell.id), index=idx, cell_type=cell.cell_type, metadata=copy.deepcopy(cell.metadata), directives=[line for line in source.splitlines() if line.startswith('#|')], defined_symbols=defined, used_symbols=used)
+        if include_source: item["source"] = source
+        if include_outputs: item["outputs"] = copy.deepcopy(getattr(cell, "outputs", []))
+        cells.append(item)
+    next_cursor = start + len(page)
+    return dict(path=str(path), cells=cells, total=len(selected), next_cursor=next_cursor if next_cursor < len(selected) else None)
 
 # %% ../nbs/01_read.ipynb #38ee5411
 def _annotation_name(annotation):

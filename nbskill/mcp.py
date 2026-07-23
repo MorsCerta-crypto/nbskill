@@ -2,8 +2,9 @@
 
 # %% auto #0
 __all__ = ['mcp', 'as_text', 'capture_call', 'capture_notebook_call', 'mcp_log_report', 'format_mcp_log_report',
-           'mcp_tool_result', 'nbskill_status', 'doctor_tool', 'edit_notebook_tool', 'exec_nb_tool',
-           'execute_plan_tool', 'agent_workbench_tool', 'agent_session_tool', 'style_check_tool', 'create_mcp', 'main']
+           'mcp_tool_result', 'nbskill_status', 'doctor_tool', 'edit_notebook_tool', 'create_notebook_tool',
+           'get_cells_tool', 'move_cells_tool', 'exec_nb_tool', 'execute_plan_tool', 'agent_workbench_tool',
+           'agent_session_tool', 'style_check_tool', 'create_mcp', 'main']
 
 # %% ../nbs/07_mcp.ipynb #mcpimports1
 import asyncio,json,multiprocessing,os,queue,signal,re,shutil,subprocess,sys,threading,time,traceback
@@ -24,14 +25,13 @@ from .convert import convert
 from .edit_interactive import execute_plan,execute_project_plan,plan_result_text
 from .execute import exec_nb
 from .workbench import agent_workbench_result
-from .foundation import (bootstrap_nbskill_project, empty_failure_map, failure_map_path, load_failure_map,cell_source, 
-    exported_py_path, generated_owner, git_root, git_status_paths,notebook_paths, path_candidates, source_hash, stamp_export_metadata)
+from .foundation import (bootstrap_nbskill_project, empty_failure_map, failure_map_path, load_failure_map,cell_source, exported_py_path, generated_owner, git_root, git_status_paths,notebook_paths, path_candidates, source_hash, stamp_export_metadata)
 from .graph import notebook_knowledge_graph_data,notebook_order_problems,private_symbol_report
 from .knowledge import *
 from .parallel import notebook_locks
-from .read import context, filter_context
+from .read import context, filter_context, get_cells
 from .review import *
-from .write import should_run_cell_feedback,source_lines_cells
+from .write import should_run_cell_feedback,source_lines_cells,create_notebook,move_cells
 
 # %% ../nbs/07_mcp.ipynb #429133a1
 if __package__ in (None, ""): __package__ = "nbskill"
@@ -2107,14 +2107,10 @@ _MCP_READ_DOC_TOOL_CATALOG = {}
 
 # %% ../nbs/07_mcp.ipynb #mcpcat04
 _MCP_CELL_EDIT_TOOL_CATALOG = {
-    'edit_notebook': {
-        'feature': 'notebook_edit',
-        'usefulness': 'core',
-        'tags': ('edit', 'notebook', 'cell', 'text', 'batch'),
-        'description': 'Apply deterministic notebook edit operations atomically across cells, lines, and notebook-wide text replacements; returns structured match counts, hashes, affected cell ids, diffs, warnings, and optional feedback.',
-        'when_to_use': "Use after context identifies target cells. Use replace_text/replace_texts with target='all' for notebook-level renames, line ops for focused cell edits, and structural ops for insert/delete/move/replace cell changes.",
-        'combine_with': 'Read context before editing; review with diff_nb, exec_nb(check_only=True), doctor, or style_check afterwards.',
-    },
+    'edit_notebook': {'feature':'notebook_edit','usefulness':'core','tags':('edit','notebook','cell','text','batch'),'description':'Apply deterministic notebook edits.','when_to_use':'Use after context identifies target cells.','combine_with':'Review with diff_nb, exec_nb, doctor, or style_check.'},
+    'create_notebook': {'feature':'notebook_creation','usefulness':'core','tags':('edit','notebook','create'),'description':'Create one minimal nbdev notebook.','when_to_use':'Use before moving a new cluster.','combine_with':'Use move_cells to populate it.'},
+    'move_cells': {'feature':'cell_transfer','usefulness':'core','tags':('edit','notebook','cell','move'),'description':'Move or copy cells across notebooks with inferred imports.','when_to_use':'Use for a split with ids, query, or chapter.','combine_with':'Use get_cells first.'},
+    'get_cells': {'feature':'cell_read','usefulness':'core','tags':('read','notebook','cell'),'description':'Return full structured selected cells.','when_to_use':'Use before a precise split.','combine_with':'Pass ids to move_cells.'},
 }
 
 # %% ../nbs/07_mcp.ipynb #mcpcat05
@@ -2533,6 +2529,35 @@ async def edit_notebook_tool(
         exported=result.get("exported") if isinstance(result, dict) else None,
         edit_notebook=result if isinstance(result, dict) else {},
     )
+
+# %% ../nbs/07_mcp.ipynb #82b51a42
+@mcp.tool(**_mcp_tool_meta("create_notebook"))
+async def create_notebook_tool(path: str, name: str | None = None, template: str = "nbdev", default_exp: str | None = None, dry_run: bool = False, ctx: Context = None) -> ToolResult:
+    root = await _mcp_workspace_root(ctx)
+    path = _mcp_workspace_path(path, root)
+    arguments = dict(path=path, name=name, template=template, default_exp=default_exp, dry_run=dry_run)
+    try: result = await asyncio.to_thread(create_notebook, **arguments)
+    except (Exception, SystemExit) as exc: return _mcp_tool_error_result("create_notebook", arguments, exc)
+    return mcp_tool_result("create_notebook", arguments, str(result), create_notebook=result)
+
+@mcp.tool(**_mcp_tool_meta("get_cells"))
+async def get_cells_tool(path: str, cell_ids: list[str] | None = None, query: str | None = None, chapter: str | None = None, include_source: bool = True, include_outputs: bool = False, cursor: int = 0, limit: int | None = None, ctx: Context = None) -> ToolResult:
+    root = await _mcp_workspace_root(ctx)
+    path = _mcp_workspace_path(path, root)
+    arguments = dict(path=path, cell_ids=cell_ids, query=query, chapter=chapter, include_source=include_source, include_outputs=include_outputs, cursor=cursor, limit=limit)
+    try: result = await asyncio.to_thread(get_cells, **arguments)
+    except (Exception, SystemExit) as exc: return _mcp_tool_error_result("get_cells", arguments, exc)
+    return mcp_tool_result("get_cells", arguments, f"get_cells returned {len(result['cells'])} of {result['total']} cells", get_cells=result)
+
+@mcp.tool(**_mcp_tool_meta("move_cells"))
+async def move_cells_tool(source_path: str, destination_path: str | None = None, cell_ids: list[str] | None = None, query: str | None = None, chapter: str | None = None, name: str | None = None, mode: str = "move", destination_anchor: str | None = None, destination_where: str = "after", default_exp: str | None = None, promote_private: bool = True, dry_run: bool = False, ctx: Context = None) -> ToolResult:
+    root = await _mcp_workspace_root(ctx)
+    source_path = _mcp_workspace_path(source_path, root)
+    destination_path = _mcp_workspace_path(destination_path, root) if destination_path else None
+    arguments = dict(source_path=source_path, destination_path=destination_path, cell_ids=cell_ids, query=query, chapter=chapter, name=name, mode=mode, destination_anchor=destination_anchor, destination_where=destination_where, default_exp=default_exp, promote_private=promote_private, dry_run=dry_run)
+    try: result = await asyncio.to_thread(move_cells, **arguments)
+    except (Exception, SystemExit) as exc: return _mcp_tool_error_result("move_cells", arguments, exc)
+    return mcp_tool_result("move_cells", arguments, f"move_cells changed={result['changed']}", move_cells=result)
 
 # %% ../nbs/07_mcp.ipynb #5a228570
 def _exec_approval_request(path, full_output):

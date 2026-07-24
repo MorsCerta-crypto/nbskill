@@ -10,7 +10,7 @@ from pathlib import Path
 from fastcore.basics import patch
 from fastcore.nbio import Notebook as FastcoreNotebook, mk_cell, read_nb
 from .foundation import (
-    Notebook,apply_directives,cap_text,cell_class_names,cell_semantic_warnings,cell_source,clear_outputs,commit_notebook,source_hash)
+    Notebook,apply_directives,cap_text,cell_class_names,cell_semantic_warnings,cell_source,clear_outputs,commit_notebook,is_exported_code_cell,source_hash)
 from .parallel import notebook_locks
 from .write import append_notebook_edit_feedback
 
@@ -605,6 +605,63 @@ def _apply_structural_edit(nb, edit, diffs, affected, default_cell_type):
         return
     raise ValueError(f"unsupported structural op {op!r}")
 
+# %% ../nbs/02_edit.ipynb #345ab75d
+def _global_import_parts(cell):
+    source = cell_source(cell)
+    try: tree = ast.parse(source)
+    except SyntaxError: return [], source
+    imports = [node for node in tree.body if isinstance(node, (ast.Import, ast.ImportFrom))]
+    if not imports or len(imports) == len(tree.body): return [], source
+    other_lines = {
+        line for node in tree.body if node not in imports
+        for line in range(node.lineno, node.end_lineno + 1)
+    }
+    imports = [node for node in imports if not other_lines.intersection(range(node.lineno, node.end_lineno + 1))]
+    if not imports: return [], source
+    lines, removed = source.splitlines(), set()
+    for node in imports: removed.update(range(node.lineno - 1, node.end_lineno))
+    moved = ["\n".join(lines[node.lineno - 1:node.end_lineno]).strip() for node in imports]
+    return moved, "\n".join(line for idx, line in enumerate(lines) if idx not in removed).strip()
+
+# %% ../nbs/02_edit.ipynb #7c4c7c93
+def _import_group_cell(nb, exported):
+    role = "exported_import_cell" if exported else "internal_import_cell"
+    return next((cell for cell in nb.cells if role in cell_class_names(cell)), None)
+
+# %% ../nbs/02_edit.ipynb #bbcd6e8c
+def _append_import_group(nb, target, imports, exported, diffs, affected):
+    group = _import_group_cell(nb, exported)
+    if group is None:
+        source = apply_directives("\n".join(imports), "export") if exported else "\n".join(imports)
+        anchor = next((getattr(cell, "id", "") for cell in nb.cells if getattr(cell, "cell_type", None) == "code"), None)
+        inserted = _insert_at(nb, anchor, "before", [_cell_from_source(source)])
+        group = next(cell for cell in nb.cells if getattr(cell, "id", "") == inserted[0])
+        _append_cell_diff(diffs, group, "", cell_source(group), "group_imports")
+        affected.extend(inserted)
+        return
+    before = cell_source(group)
+    after = "\n".join([before.rstrip(), *imports]).strip()
+    if before == after: return
+    replacement = _cell_from_source(after)
+    replacement.id = getattr(group, "id", replacement.id)
+    nb.cells[next(idx for idx, cell in enumerate(nb.cells) if cell is group)] = replacement
+    _append_cell_diff(diffs, replacement, before, after, "group_imports")
+    affected.append(getattr(replacement, "id", ""))
+
+# %% ../nbs/02_edit.ipynb #d18f71f3
+def _group_global_imports(nb, affected, diffs):
+    for cell_id in tuple(dict.fromkeys(affected)):
+        cell = next((cell for cell in nb.cells if getattr(cell, "id", "") == cell_id), None)
+        if cell is None: continue
+        imports, remaining = _global_import_parts(cell)
+        if not imports: continue
+        _append_import_group(nb, cell, imports, is_exported_code_cell(cell), diffs, affected)
+        before = cell_source(cell)
+        replacement = _cell_from_source(remaining, cell_type=getattr(cell, "cell_type", "code"))
+        replacement.id = getattr(cell, "id", replacement.id)
+        nb.cells[next(idx for idx, item in enumerate(nb.cells) if item is cell)] = replacement
+        _append_cell_diff(diffs, replacement, before, remaining, "group_imports")
+
 # %% ../nbs/02_edit.ipynb #72e3cfc8
 def edit_notebook(
     path,
@@ -635,6 +692,7 @@ def edit_notebook(
             op = edit["op"]
             if op in _TEXT_OPS: _apply_text_edit(trial, edit, diffs, affected)
             else: _apply_structural_edit(trial, edit, diffs, affected, default_cell_type)
+        _group_global_imports(trial, affected, diffs)
         affected = [cell_id for cell_id in dict.fromkeys(affected) if cell_id]
         if len(affected) > _EDIT_MAX_AFFECTED_CELLS:
             raise ValueError(

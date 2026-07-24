@@ -10,7 +10,7 @@ from pathlib import Path
 from fastcore.basics import patch
 from fastcore.nbio import Notebook as FastcoreNotebook, mk_cell, read_nb
 from .foundation import (
-    Notebook,apply_directives,cap_text,cell_source,clear_outputs,commit_notebook,source_hash)
+    Notebook,apply_directives,cap_text,cell_class_names,cell_semantic_warnings,cell_source,clear_outputs,commit_notebook,source_hash)
 from .parallel import notebook_locks
 from .write import append_notebook_edit_feedback
 
@@ -99,6 +99,11 @@ def _edit_notebook_craft_warnings(path, nb, affected_cell_ids):
             warnings.append(_craft_warning("multi-function-cell",
                 f"This code cell defines {function_count} top-level functions; try op=\"explode_cells\" on cell_id={cell_id!r}.",
                 path,cell_id=cell_id,function_count=function_count))
+        semantic_warnings = cell_semantic_warnings(cell)
+        for code in semantic_warnings:
+            warnings.append(_craft_warning(
+                code, f"Semantic roles {', '.join(cell_class_names(cell))} require splitting this cell.",
+                path, cell_id=cell_id, semantic_types=list(cell_class_names(cell))))
     from nbskill.graph import notebook_order_problems
     for problem in notebook_order_problems(path, nb=nb):
         if problem["code"] != "cell-order" or problem["cell_id"] not in affected: continue

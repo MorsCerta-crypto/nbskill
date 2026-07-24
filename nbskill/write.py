@@ -479,7 +479,7 @@ def should_run_cell_feedback(cell):
     if getattr(cell, "cell_type", None) != "code": return False
     if is_exported_code_cell(cell): return False
     classes = set(cell_class_names(cell))
-    if classes & {"example_cell", "test_cell"}: return True
+    if classes & {"example_code", "test_code"}: return True
     return _source_has_output_feedback(cell_source(cell))
 
 # %% ../nbs/02_write.ipynb #1e14a1e4

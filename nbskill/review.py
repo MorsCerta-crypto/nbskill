@@ -25,7 +25,7 @@ from nbdev.doclinks import nbdev_export as _run_nb_export
 from remold import cst, m, cstmap, code
 
 from nbskill.foundation import (
-    empty_failure_map, failure_map_path, load_failure_map, cell_class_names,
+    empty_failure_map, failure_map_path, load_failure_map, cell_class_names, cell_semantic_warnings,
     cell_source, clear_outputs, cli_error, cli_return, exported_py_path, file_hash, file_line_count,
     cap_text, notebook_paths, parse_code_cell, short_call_name, source_without_directives,
     stamp_notebook_metadata, is_exported_code_cell, none_if_string,
@@ -156,7 +156,7 @@ def _public_function_reference_sets(nb, public_names):
         tested = _tested_public_names(tree, public_names)
         if tested:
             references["test"].update(tested)
-        elif "test_cell" not in cell_class_names(cell):
+        elif "test_code" not in cell_class_names(cell):
             references["example"].update(_called_public_names(tree, public_names))
     return references
 
@@ -429,12 +429,11 @@ def _notebook_style_problems(path=".", skip_folder_re=None, skip_path=None):
         imports_by_scope = {"exported": {}, "internal": {}}
         for cell in nb.cells:
             classes = cell_class_names(cell)
-            if "unclean_cell" in classes:
-                visible = [name for name in classes if name != "unclean_cell"]
-                problems.append(_problem("unclean-cell", nb_path, cell, semantic_types=visible))
+            for code in cell_semantic_warnings(cell):
+                problems.append(_problem(code, nb_path, cell, semantic_types=list(classes)))
             tree = parse_code_cell(cell)
             if tree is None: continue
-            if "test_cell" in classes:
+            if "test_code" in classes:
                 problem_count = _assert_count(tree) + _test_function_count(tree)
                 if problem_count > 3:
                     problems.append(_problem("multi-problem-test", nb_path, cell, f"{problem_count} asserts/test functions; split into one-problem-at-a-time cells"))

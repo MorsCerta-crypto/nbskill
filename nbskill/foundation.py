@@ -15,8 +15,8 @@ __all__ = ['NotebookCell', 'NotebookChapter', 'NotebookDocument', 'output_text',
            'cell_metadata', 'notebook_metadata', 'nbskill_cell_metadata', 'file_hash', 'stamp_export_metadata',
            'run_nbdev_export_from_project', 'export_notebook', 'parse_one_cell', 'find_cell_by_text', 'replace_cell',
            'clear_outputs', 'load_cells_text', 'parse_cells', 'first_line', 'cell_prefix', 'is_exported_code_cell',
-           'output_value_text', 'cell_output_text', 'stamp_notebook_metadata', 'cell_class_names', 'cell_matches_type',
-           'with_context', 'heading_title', 'chapter_index_set']
+           'output_value_text', 'cell_output_text', 'cell_semantic_warnings', 'stamp_notebook_metadata',
+           'cell_class_names', 'cell_matches_type', 'with_context', 'heading_title', 'chapter_index_set']
 
 # %% ../nbs/00_foundation.ipynb #2500639f
 import ast,hashlib,json,multiprocessing,os,queue,re,tempfile,tomllib,traceback
@@ -759,9 +759,7 @@ class _StrEnum(str, Enum):
     def __str__(self): return self.value
     def __format__(self, spec): return format(self.value, spec)
     @classmethod
-    def coerce(cls, value):
-        "Return the member matching `value`, or `UNKNOWN`."
-        return next((m for m in cls if m.value == value), cls.UNKNOWN)
+    def coerce(cls, value): return next((m for m in cls if m.value == value), cls.UNKNOWN)
 
 
 class CellType(_StrEnum):
@@ -771,18 +769,17 @@ class CellType(_StrEnum):
 
 class SemanticType(_StrEnum):
     "The reader-facing role of a cell, used by context and review tools."
-    MARKDOWN = "markdown"; DOCS = "docs"; SECTION = "section"; EXPORT = "exported code"
-    IMPORT = "import"; PRIVATE = "private"; TEST = "test"; EXAMPLE = "example"
-    HIDDEN = "hidden"; CODE = "code"; RAW = "raw"; UNKNOWN = "unknown"
+    MARKDOWN = "markdown"; DOCUMENTATION = "documentation"; TITLE = "title"
+    EXPORTED_IMPORT = "exported import"; INTERNAL_IMPORT = "internal import"
+    PUBLIC = "public code"; PRIVATE = "private code"; MULTICELL = "multicell"
+    TEST = "test code"; EXAMPLE = "example code"; CODE = "code"; RAW = "raw"; UNKNOWN = "unknown"
 
 
 class Directive(_StrEnum):
     "nbdev cell directives an editor can stamp onto a cell."
     EXPORT = "export"; NO_TEST = "eval: false"; HIDE = "hide"
     @property
-    def line(self):
-        "Return the `#| ...` directive line."
-        return f"#| {self.value}"
+    def line(self): return f"#| {self.value}"
 
 
 def directive_lines(directives):
@@ -806,8 +803,7 @@ def apply_directives(source, directives):
     if not lines: return source
     existing = source.splitlines()
     missing = [line for line in lines if line not in existing]
-    if not missing: return source
-    return "\n".join([*missing, *existing])
+    return source if not missing else "\n".join([*missing, *existing])
 
 # %% ../nbs/00_foundation.ipynb #aaecccd3
 @dataclass
@@ -1496,16 +1492,11 @@ def _clear_changed_outputs(nb, cell_ids=None):
 # %% ../nbs/00_foundation.ipynb #79b42816
 def _fresh_semantic_metadata(cell):
     info = nbskill_cell_metadata(cell, create=False)
-    if not info: return None
-    if info.get("cell_type") != getattr(cell, "cell_type", None): return None
+    if not info or info.get("cell_type") != getattr(cell, "cell_type", None): return None
     types = info.get("semantic_types")
     if not isinstance(types, list): return None
-    normalized = tuple("example_cell" if str(item) == "exploration_cell" else str(item) for item in types)
-    if getattr(cell, "cell_type", None) != "code" and "unclean_cell" in normalized: return None
-    semantic = tuple(name for name in normalized if name not in {"exported_code", "unclean_cell"})
-    if "unclean_cell" in normalized and len(semantic) <= 1: return None
-    return normalized
-
+    stored = tuple(str(item) for item in types)
+    return stored if stored == _computed_cell_class_names(cell) else None
 
 # %% ../nbs/00_foundation.ipynb #8d32aa50
 def parse_one_cell(text, default_type="code"):
@@ -1648,72 +1639,57 @@ def _code_body(cell):
 
 # %% ../nbs/00_foundation.ipynb #820aaed2
 def _is_import_cell(cell):
-    if getattr(cell, "cell_type", None) != "code": return False
     body = _code_body(cell)
-    return bool(body) and all(isinstance(node, (ast.Import, ast.ImportFrom)) for node in body)
+    return getattr(cell, "cell_type", None) == "code" and bool(body) and all(isinstance(node, (ast.Import, ast.ImportFrom)) for node in body)
 
+# %% ../nbs/00_foundation.ipynb #e36cd1c6
+def _is_exported_import_cell(cell): return is_exported_code_cell(cell) and _is_import_cell(cell)
+
+# %% ../nbs/00_foundation.ipynb #b4152791
+def _is_internal_import_cell(cell): return not is_exported_code_cell(cell) and _is_import_cell(cell)
+
+# %% ../nbs/00_foundation.ipynb #b76a6de7
+def _definition_nodes(cell):
+    tree = _code_tree(cell)
+    return [] if tree is None else [node for node in tree.body if is_definition_node(node)]
 
 # %% ../nbs/00_foundation.ipynb #25f5ec85
-def _has_private_function(cell):
-    if getattr(cell, "cell_type", None) != "code": return False
-    tree = _code_tree(cell)
-    if tree is None: return False
-    return any(
-        isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("_")
-        for node in tree.body)
-
+def _function_nodes(cell):
+    return [node for node in _definition_nodes(cell) if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))]
 
 # %% ../nbs/00_foundation.ipynb #59be7578
 def _has_test_marker(cell):
-    source = cell_source(cell)
     tree = _code_tree(cell)
-    if tree is None: return re.search(r"\b(assert|test_[A-Za-z0-9_]*)\b", source) is not None
+    if tree is None: return re.search(r"\b(assert|test_[A-Za-z0-9_]*)\b", cell_source(cell)) is not None
     if any(isinstance(node, ast.Assert) for node in ast.walk(tree)): return True
     return any(
-        isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("test_")
-        for node in tree.body)
-
+        (isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("test_"))
+        or (isinstance(node, ast.Call) and isinstance(node.func, (ast.Name, ast.Attribute))
+            and (node.func.id if isinstance(node.func, ast.Name) else node.func.attr).startswith("test_"))
+        for node in ast.walk(tree))
 
 # %% ../nbs/00_foundation.ipynb #c94ee726
-def _is_test_cell(cell):
-    return getattr(cell, "cell_type", None) == "code" and not _has_cell_output(cell) and _has_test_marker(cell)
-
+def _is_test_code(cell): return getattr(cell, "cell_type", None) == "code" and not is_exported_code_cell(cell) and _has_test_marker(cell)
 
 # %% ../nbs/00_foundation.ipynb #72618bad
-def _is_example_cell(cell):
-    return getattr(cell, "cell_type", None) == "code" and _has_cell_output(cell)
-
+def _is_example_code(cell): return getattr(cell, "cell_type", None) == "code" and not is_exported_code_cell(cell) and _has_cell_output(cell)
 
 # %% ../nbs/00_foundation.ipynb #d2452926
-def _is_section_header(cell):
-    if getattr(cell, "cell_type", None) != "markdown": return False
-    return any(re.match(r"^#{1,2}\s+", line.strip()) for line in cell_source(cell).splitlines())
-
+def _is_title(cell):
+    return getattr(cell, "cell_type", None) == "markdown" and any(re.match(r"^#+\s+", line.strip()) for line in cell_source(cell).splitlines())
 
 # %% ../nbs/00_foundation.ipynb #4f7b5870
-def _is_docs_cell(cell):
-    if getattr(cell, "cell_type", None) != "markdown": return False
-    return any(line.strip() and not re.match(r"^#{1,2}\s+", line.strip()) for line in cell_source(cell).splitlines())
-
+def _is_documentation(cell): return getattr(cell, "cell_type", None) == "markdown" and not _is_title(cell)
 
 # %% ../nbs/00_foundation.ipynb #52405ac0
-def _cell_base_class_names(cell):
-    names = []
-    if _is_import_cell(cell): names.append("import_cell")
-    if _is_example_cell(cell): names.append("example_cell")
-    if _is_test_cell(cell): names.append("test_cell")
-    if _has_private_function(cell): names.append("private_code")
-    if is_exported_code_cell(cell): names.append("exported_code")
-    if _is_docs_cell(cell): names.append("docs_cell")
-    if _is_section_header(cell): names.append("section_header")
-    return tuple(names)
-
+def _is_multicell(cell):
+    functions = _function_nodes(cell)
+    return len(functions) > 1 or (is_exported_code_cell(cell) and bool(functions) and (_has_cell_output(cell) or _has_test_marker(cell)))
 
 # %% ../nbs/00_foundation.ipynb #25ecba70
-def _semantic_code_class_names(cell):
-    semantic = {"import_cell", "example_cell", "test_cell", "private_code"}
-    return tuple(name for name in _cell_base_class_names(cell) if name in semantic)
-
+def _is_public_code(cell):
+    symbols = _definition_nodes(cell)
+    return is_exported_code_cell(cell) and not _has_cell_output(cell) and not _has_test_marker(cell) and len(symbols) == 1 and not symbols[0].name.startswith("_")
 
 # %% ../nbs/00_foundation.ipynb #86869843
 def _fallback_cell_class_name(cell):
@@ -1722,22 +1698,43 @@ def _fallback_cell_class_name(cell):
 
 
 # %% ../nbs/00_foundation.ipynb #ad24a972
-def _computed_cell_class_names(cell):
-    names = _cell_base_class_names(cell)
-    if getattr(cell, "cell_type", None) == "code" and len(_semantic_code_class_names(cell)) > 1:
-        return (*names, "unclean_cell")
-    return names or (_fallback_cell_class_name(cell),)
-
+def _is_private_code(cell):
+    symbols = _definition_nodes(cell)
+    return is_exported_code_cell(cell) and not _has_cell_output(cell) and not _has_test_marker(cell) and len(symbols) == 1 and symbols[0].name.startswith("_")
 
 # %% ../nbs/00_foundation.ipynb #452e85f7
+def _cell_base_class_names(cell):
+    names = []
+    if _is_exported_import_cell(cell): names.append("exported_import_cell")
+    if _is_internal_import_cell(cell): names.append("internal_import_cell")
+    if _is_public_code(cell): names.append("public_code")
+    if _is_private_code(cell): names.append("private_code")
+    if _is_multicell(cell): names.append("multicell")
+    if _is_test_code(cell): names.append("test_code")
+    if _is_example_code(cell): names.append("example_code")
+    if _is_documentation(cell): names.append("documentation")
+    if _is_title(cell): names.append("title")
+    return tuple(names)
+
+
+def _computed_cell_class_names(cell):
+    return _cell_base_class_names(cell) or (_fallback_cell_class_name(cell),)
+
+
+def cell_semantic_warnings(cell):
+    "Return semantic warning codes for one cell."
+    roles = set(_cell_base_class_names(cell))
+    warnings = ["multicell"] if "multicell" in roles else []
+    if len(roles) > 1 and roles != {"test_code", "example_code"}: warnings.append("multiple-semantic-types")
+    return tuple(warnings)
+
+
 def _refresh_cell_metadata(cell):
     info = nbskill_cell_metadata(cell)
-    semantic_types = _computed_cell_class_names(cell)
     info["cell_type"] = getattr(cell, "cell_type", None)
-    info["semantic_types"] = list(semantic_types)
+    info["semantic_types"] = list(_computed_cell_class_names(cell))
     info.pop("source_hash", None)
     return cell
-
 
 # %% ../nbs/00_foundation.ipynb #a65ca453
 def stamp_notebook_metadata(nb, exported_py_path=None):
@@ -1753,50 +1750,25 @@ def cell_class_names(cell): return _fresh_semantic_metadata(cell) or _computed_c
 # %% ../nbs/00_foundation.ipynb #4541deaa
 def _normalize_cell_type_filter(value):
     if value is None: return None
+    import_roles = ("exported_import_cell", "internal_import_cell")
     aliases = {
-        "code": "code",
-        "py": "code",
-        "python": "code",
-        "md": "markdown",
-        "markdown": "markdown",
-        "doc": "markdown",
-        "docs": "markdown",
-        "raw": "raw",
-        "export": "exported_code",
-        "exported": "exported_code",
-        "exported_code": "exported_code",
-        "import": "import_cell",
-        "imports": "import_cell",
-        "import_cell": "import_cell",
-        "private": "private_code",
-        "private_code": "private_code",
-        "test": "test_cell",
-        "tests": "test_cell",
-        "test_cell": "test_cell",
-        "example": "example_cell",
-        "examples": "example_cell",
-        "example_cell": "example_cell",
-        "exploration": "example_cell",
-        "explorations": "example_cell",
-        "exploration_cell": "example_cell",
-        "docs_cell": "docs_cell",
-        "documentation": "docs_cell",
-        "section": "section_header",
-        "header": "section_header",
-        "section_header": "section_header",
-        "unclean": "unclean_cell",
-        "unclean_cell": "unclean_cell",
+        "code": "code", "py": "code", "python": "code", "md": "markdown", "markdown": "markdown", "raw": "raw",
+        "import": import_roles, "imports": import_roles, "import_cell": import_roles,
+        "internal_import": "internal_import_cell", "internal_import_cell": "internal_import_cell",
+        "exported_import": "exported_import_cell", "exported_import_cell": "exported_import_cell",
+        "public": "public_code", "public_code": "public_code", "private": "private_code", "private_code": "private_code",
+        "multicell": "multicell", "test": "test_code", "tests": "test_code", "test_code": "test_code",
+        "example": "example_code", "examples": "example_code", "example_code": "example_code",
+        "documentation": "documentation", "doc": "documentation", "docs": "documentation", "title": "title", "titles": "title",
     }
     normalized = set()
     for item in str(value).split(","):
         key = item.strip().lower()
         if not key: continue
-        if key not in aliases:
-            choices = ", ".join(sorted(set(aliases)))
-            raise ValueError(f"Unknown cell_type {item!r}; use one of: {choices}")
-        normalized.add(aliases[key])
+        if key not in aliases: raise ValueError(f"Unknown cell_type {item!r}; use one of: {', '.join(sorted(set(aliases)))}")
+        target = aliases[key]
+        normalized.update(target if isinstance(target, tuple) else (target,))
     return normalized or None
-
 
 # %% ../nbs/00_foundation.ipynb #414b7ba6
 def cell_matches_type(cell, cell_type):
@@ -1815,15 +1787,19 @@ def output_text(self: Cell):
 # %% ../nbs/00_foundation.ipynb #903924f0
 @patch
 def semantic_type(self: Cell):
-    "Return the reader-facing `SemanticType` for this cell."
-    if self.cell_type == CellType.MARKDOWN: return SemanticType.MARKDOWN
+    "Return the primary reader-facing semantic type for this cell."
+    if self.cell_type == CellType.MARKDOWN:
+        if cell_matches_type(self.cell, "title"): return SemanticType.TITLE
+        return SemanticType.DOCUMENTATION if cell_matches_type(self.cell, "documentation") else SemanticType.MARKDOWN
     if self.cell_type != CellType.CODE: return SemanticType.coerce(self.cell_type)
-    if cell_matches_type(self.cell, 'test'): return SemanticType.TEST
-    if cell_matches_type(self.cell, 'example'): return SemanticType.EXAMPLE
-    if is_exported_code_cell(self.cell): return SemanticType.EXPORT
-    if re.search(r'^\s*assert\b', self.source, re.MULTILINE): return SemanticType.TEST
-    if re.search(r'^\s*#\|\s*hide\b', self.source, re.MULTILINE): return SemanticType.HIDDEN
-    return SemanticType.EXAMPLE
+    if cell_matches_type(self.cell, "multicell"): return SemanticType.MULTICELL
+    if cell_matches_type(self.cell, "test"): return SemanticType.TEST
+    if cell_matches_type(self.cell, "example"): return SemanticType.EXAMPLE
+    if cell_matches_type(self.cell, "public"): return SemanticType.PUBLIC
+    if cell_matches_type(self.cell, "private"): return SemanticType.PRIVATE
+    if cell_matches_type(self.cell, "exported_import"): return SemanticType.EXPORTED_IMPORT
+    if cell_matches_type(self.cell, "import"): return SemanticType.INTERNAL_IMPORT
+    return SemanticType.CODE
 
 # %% ../nbs/00_foundation.ipynb #7ad036b6
 @patch

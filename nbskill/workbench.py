@@ -168,7 +168,7 @@ def make_task_contract(
 # %% ../nbs/11_agent_workbench.ipynb #62cb8654
 def _public_symbols_in_cell(cell):
     "Return public definitions exported by one notebook cell."
-    if "exported_code" not in cell_class_names(cell): return []
+    if "public_code" not in cell_class_names(cell): return []
     try: tree = ast.parse(source_without_directives(cell_source(cell)))
     except SyntaxError: return []
     return [
@@ -304,7 +304,7 @@ def _cell_records(nb_path, tokens, limit=4):
         source = cell_source(cell)
         score = _score_text(source, tokens)
         classes = list(cell_class_names(cell))
-        if score or "test_cell" in classes or "example_cell" in classes:
+        if score or "test_code" in classes or "example_code" in classes:
             records.append({
                 "path": str(nb_path),
                 "idx": idx,

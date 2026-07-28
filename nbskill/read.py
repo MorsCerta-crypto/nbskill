@@ -2,7 +2,7 @@
 
 # %% auto #0
 __all__ = ['project_context', 'chapter_context', 'python_file_context', 'python_symbol_context', 'file_context', 'filter_context',
-           'get_cells', 'symbol_context', 'context']
+           'symbol_context', 'context']
 
 # %% ../nbs/01_read.ipynb #727ac178
 import ast
@@ -944,39 +944,6 @@ def filter_context(
         before=before, after=after, total_matches=total, matches=matches,
     )
 
-# %% ../nbs/01_read.ipynb #789e6722
-def get_cells(path, cell_ids=None, query=None, chapter=None, include_source=True, include_outputs=False, cursor=0, limit=None):
-    """Return complete structured cells for one explicit selection."""
-    nb = read_nb(path)
-    selectors = sum(value is not None for value in (cell_ids, query, chapter))
-    if selectors != 1: raise ValueError("Pass exactly one of cell_ids, query, or chapter")
-    if chapter is not None:
-        span = one_chapter(nb.cells, chapter)
-        selected = list(enumerate(nb.cells[span["start"]:span["end"]], start=span["start"]))
-    elif cell_ids is not None:
-        wanted = {str(cell_id) for cell_id in cell_ids}
-        selected = [(idx, cell) for idx, cell in enumerate(nb.cells) if str(cell.id) in wanted]
-        if len(selected) != len(wanted): raise ValueError("Unknown cell id")
-    else:
-        pattern = query.removeprefix("regex=")
-        matcher = re.compile(pattern if query.startswith("regex=") else re.escape(pattern))
-        selected = [(idx, cell) for idx, cell in enumerate(nb.cells) if matcher.search(cell_source(cell))]
-    start = max(0, int(cursor or 0))
-    page = selected[start:] if limit is None else selected[start:start + int(limit)]
-    cells = []
-    for idx, cell in page:
-        source = cell_source(cell)
-        try: tree = ast.parse(source_without_directives(source)) if cell.cell_type == "code" else None
-        except SyntaxError: tree = None
-        defined = [node.name for node in (tree.body if tree else []) if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))]
-        used = sorted({node.id for node in ast.walk(tree) if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load)}) if tree else []
-        item = dict(id=str(cell.id), index=idx, cell_type=cell.cell_type, metadata=copy.deepcopy(cell.metadata), directives=[line for line in source.splitlines() if line.startswith('#|')], defined_symbols=defined, used_symbols=used)
-        if include_source: item["source"] = source
-        if include_outputs: item["outputs"] = copy.deepcopy(getattr(cell, "outputs", []))
-        cells.append(item)
-    next_cursor = start + len(page)
-    return dict(path=str(path), cells=cells, total=len(selected), next_cursor=next_cursor if next_cursor < len(selected) else None)
-
 # %% ../nbs/01_read.ipynb #38ee5411
 def _annotation_name(annotation):
     if annotation is None: return None
@@ -1526,7 +1493,7 @@ def _literal_search_context(target, scope, notebooks, max_matches=50, max_chars_
     return _context_result("search_context", text, verbose=verbose, target=str(target), scope=str(scope), **data)
 
 # %% ../nbs/01_read.ipynb #9a40cc35
-_CONTEXT_MODES = {"auto", "edit", "review", "overview"}
+_CONTEXT_MODES = {"auto", "edit", "exact", "review", "overview"}
 
 # %% ../nbs/01_read.ipynb #89896fe6
 def _context_mode(mode):
@@ -1635,9 +1602,29 @@ def _context_edit_result(path, cell_idx, symbol=None, source=None, verbose=True)
     result.update(symbols=symbols, docs=docs, examples=examples, callers=callers, callees=callees)
     return _context_result("edit_context", text, **result)
 
+# %% ../nbs/01_read.ipynb #faab2c79
+def _context_exact_result(path, cell_idx, verbose=True):
+    "Return one complete cell without contextual expansion."
+    nb = read_nb(path)
+    cell = nb.cells[cell_idx]
+    source = cell_source(cell)
+    try: tree = ast.parse(source_without_directives(source)) if cell.cell_type == "code" else None
+    except SyntaxError: tree = None
+    defined = [node.name for node in (tree.body if tree else []) if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))]
+    used = sorted({node.id for node in ast.walk(tree) if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load)}) if tree else []
+    item = dict(
+        id=str(cell.id), index=cell_idx, cell_type=cell.cell_type, metadata=copy.deepcopy(cell.metadata),
+        directives=[line for line in source.splitlines() if line.startswith("#|")],
+        defined_symbols=defined, used_symbols=used, source=source, expected_hash=source_hash(source),
+    )
+    text = _format_context_blocks(f"Exact cell: {path} {cell_prefix(cell_idx, cell, True)}", [("Cell", source)])
+    return _context_result("exact_context", text, verbose=verbose, path=str(path), cell=item, source=source)
+
 # %% ../nbs/01_read.ipynb #f08896aa
 def _context_cell_payload(path, cell_idx, mode, around):
-    if mode == "edit":
+    if mode == "exact":
+        result, graphs = _context_exact_result(path, cell_idx, verbose=False), []
+    elif mode == "edit":
         result, graphs = _context_edit_result(path, cell_idx, verbose=False), []
     else:
         result = _cell_context(path, cell_idx, overview=(mode == "overview"), verbose=False)
@@ -1795,7 +1782,7 @@ def context(
     mode: str = "auto",
     around: int = 0,
 ):
-    "Return notebook-aware context; edit includes bounded docs, usages, and direct impact."
+    "Return notebook-aware context; exact returns one complete selected cell."
     mode = _context_mode(mode)
     around = _context_around(around)
     if targets is not None: return _context_batch(targets, scope=scope, mode=mode, around=around)

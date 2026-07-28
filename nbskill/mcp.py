@@ -3,7 +3,8 @@
 # %% auto #0
 __all__ = ['mcp', 'as_text', 'capture_call', 'capture_notebook_call', 'mcp_log_report', 'format_mcp_log_report',
            'mcp_tool_result', 'nbskill_status', 'doctor_tool', 'edit_notebook_tool', 'create_notebook_tool',
-           'exec_nb_tool', 'execute_plan_tool', 'agent_workbench_tool', 'agent_session_tool', 'create_mcp', 'main']
+           'exec_nb_tool', 'verify_change_tool', 'execute_plan_tool', 'agent_workbench_tool', 'agent_session_tool',
+           'create_mcp', 'main']
 
 # %% ../nbs/07_mcp.ipynb #mcpimports1
 import asyncio,json,multiprocessing,os,queue,signal,re,shutil,subprocess,sys,threading,time,traceback
@@ -28,7 +29,7 @@ from .foundation import (bootstrap_nbskill_project, empty_failure_map, failure_m
 from .graph import notebook_knowledge_graph_data,notebook_order_problems,private_symbol_report
 from .knowledge import *
 from .parallel import notebook_locks
-from .read import context, filter_context, get_cells
+from .read import context, filter_context
 from .review import *
 from .write import should_run_cell_feedback,source_lines_cells,create_notebook,move_cells
 
@@ -2119,6 +2120,14 @@ _MCP_REVIEW_TOOL_CATALOG = {
         'when_to_use': 'Use before final reporting or when reviewing notebook edits without expanding JSON metadata churn; choose surface="public-ui" for customer-visible copy review.',
         'combine_with': "Use doctor(scopes='style') for hygiene and diagnostics.",
     },
+    'verify_change': {
+        'feature': 'verification',
+        'usefulness': 'core',
+        'tags': ('verify', 'review', 'execute', 'doctor', 'notebook'),
+        'description': 'Verify explicitly affected notebooks with a diff, focused safe execution, and scoped diagnostics.',
+        'when_to_use': 'Use after a bounded notebook change when the affected notebooks are known.',
+        'combine_with': 'Use context before editing and use individual review tools when one report needs deeper inspection.',
+    },
 }
 
 # %% ../nbs/07_mcp.ipynb #mcpcat07
@@ -2653,6 +2662,76 @@ async def _diff_nb_tool(path: str, ref_a: str | None = "HEAD", ref_b: str | None
     except Exception as exc:
         return _mcp_tool_error_result("diff_nb", arguments, exc, detail=detail)
     return mcp_tool_result("diff_nb", arguments, full_output, max_output_chars=max_output_chars, detail=detail)
+
+# %% ../nbs/07_mcp.ipynb #155e3cb3
+def _verify_change_target(diff, up2id=None):
+    "Return an explicit execution target or the last changed code cell."
+    if up2id is not None: return up2id
+    changed = re.findall(r"^--- code cell (.+?) ---$", diff, flags=re.M)
+    return changed[-1] if changed else None
+
+def _verify_change_result_text(result):
+    "Return visible MCP tool text without depending on a transport representation."
+    data = getattr(result, "structured_content", {})
+    return data.get("debug", {}).get("raw_output") or "\n".join(
+        getattr(item, "text", "") for item in result.content
+    ).strip()
+
+def _verify_change_paths(paths, up2ids, root):
+    paths = [_mcp_workspace_path(path, root) for path in paths]
+    if len(set(paths)) != len(paths): raise ValueError("Pass each affected notebook path once")
+    if any(Path(path).suffix != ".ipynb" for path in paths):
+        raise ValueError("verify_change accepts only notebook paths")
+    up2ids = {_mcp_workspace_path(path, root): up2id for path, up2id in (up2ids or {}).items()}
+    return paths, up2ids
+
+# %% ../nbs/07_mcp.ipynb #0aaf15a2
+async def _verify_change_report(path, up2id, ref_a, ref_b, timeout, tool_timeout, scopes, detail, ctx):
+    try:
+        diff = capture_notebook_call(diff_nb, path, ref_a=ref_a, ref_b=ref_b)
+        up2id = _verify_change_target(diff, up2id)
+        execution = await exec_nb_tool(
+            path, up2id=up2id, timeout=timeout, show_output=True, check_only=True,
+            tool_timeout=tool_timeout, detail=detail, ctx=ctx,
+        )
+        doctor = _doctor_report(path=path, scopes=scopes, detail=detail)
+        warnings = [*execution.structured_content.get("warnings", []), *doctor["issues"]]
+        return dict(
+            path=path, up2id=up2id, diff=diff,
+            execution=_verify_change_result_text(execution),
+            doctor=doctor["text"], warnings=warnings,
+        )
+    except Exception as exc:
+        return dict(path=path, error=f"{type(exc).__name__}: {exc}")
+
+# %% ../nbs/07_mcp.ipynb #e8d317f0
+@mcp.tool(**_mcp_tool_meta("verify_change"))
+async def verify_change_tool(
+    paths: list[str],  # Explicit affected notebook paths
+    up2ids: dict[str, int | str] | None = None,  # Optional execution targets keyed by path
+    ref_a: str | None = "HEAD",  # First diff ref
+    ref_b: str | None = None,  # Second diff ref
+    timeout: int = 30,  # Per-cell execution timeout
+    tool_timeout: float = 150.0,  # Per-notebook MCP execution timeout
+    scopes: str = "error,warning",  # Doctor scopes
+    detail: str = "summary",  # MCP response detail
+    ctx: Context = None,
+) -> ToolResult:
+    "Verify named notebooks with diff_nb, check-only execution, and doctor."
+    if not paths: raise ValueError("Pass at least one affected notebook path")
+    root = await _mcp_workspace_root(ctx)
+    paths, up2ids = _verify_change_paths(paths, up2ids, root)
+    tool_timeout = _mcp_clamp_float(tool_timeout, 150.0, 0.001, 150.0, "tool_timeout")
+    arguments = dict(paths=paths, up2ids=up2ids, ref_a=ref_a, ref_b=ref_b, timeout=timeout, tool_timeout=tool_timeout, scopes=scopes, detail=detail, workspace_root=str(root) if root else None)
+    reports = [await _verify_change_report(path, up2ids.get(path), ref_a, ref_b, timeout, tool_timeout, scopes, detail, ctx) for path in paths]
+    text = "\n\n".join(
+        f"## {Path(report['path']).name}\n\n{report.get('diff', report.get('error', ''))}"
+        + (f"\n\nExecution:\n{report['execution']}" if report.get("execution") else "")
+        + (f"\n\nDoctor:\n{report['doctor']}" if report.get("doctor") else "")
+        for report in reports
+    )
+    warnings = [warning for report in reports for warning in report.get("warnings", [])]
+    return mcp_tool_result("verify_change", arguments, text, detail=detail, warnings=warnings, verify_change=reports)
 
 # %% ../nbs/07_mcp.ipynb #mcptool12
 @mcp.tool(**_mcp_tool_meta("execute_plan"))

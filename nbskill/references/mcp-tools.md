@@ -26,14 +26,13 @@ See `references/mcp-tool-report.md` for the current ranked tool surface.
 
 ## Python-only operations
 
-`convert`, `problem_memory`, `visible_text_inventory`, `get_cells`, `move_cells`, and `style_check` remain Python APIs. They are not registered in the MCP schema because they are broad migrations, redundant reads, or specialized local review.
+`convert`, `problem_memory`, `visible_text_inventory`, `move_cells`, and `style_check` remain Python APIs. They are not registered in the MCP schema because they are broad migrations or specialized local review. Use `context(target="notebook.ipynb#cell-id", mode="exact")` for a complete selected cell.
 
 | Python API | Use |
 | --- | --- |
 | `convert` | Migrate Python files or folders, or create a small nbdev project. |
 | `problem_memory` | Query, add, or list reusable problem-solution pairs. |
 | `visible_text_inventory` | List likely user-visible text from notebook code cells. |
-| `get_cells` | Return raw structured cells for local integrations. |
 | `move_cells` | Perform deliberate cross-notebook migrations. |
 | `style_check` | Run specialized local hygiene review; use MCP `doctor(scopes="style")` for normal diagnostics. |
 

@@ -3,7 +3,7 @@
 # %% auto #0
 __all__ = ['NotebookCell', 'NotebookChapter', 'NotebookDocument', 'output_text', 'remove_demo_path', 'demo_path',
            'demo_path_context', 'path_candidates', 'is_valid_ipynb', 'write_demo_notebook', 'tool_notebook',
-           'write_tool_notebook', 'write_demo_file', 'cli_return', 'cli_error', 'failure_map_path', 'empty_failure_map',
+           'write_tool_notebook', 'write_demo_file', 'api_return', 'api_error', 'failure_map_path', 'empty_failure_map',
            'load_failure_map', 'git_run', 'git_root', 'git_status_paths', 'git_tracked_paths', 'git_diff_stats',
            'load_nbskill_config', 'notebook_paths', 'source_without_directives', 'source_hash', 'file_line_count',
            'cap_text', 'generated_owner', 'install_nbdev_pre_commit_hooks', 'bootstrap_nbskill_project',
@@ -29,7 +29,6 @@ from io import StringIO
 from pathlib import Path
 from fastcore.basics import in_jupyter, patch
 from fastcore.nbio import Notebook as FastcoreNotebook, cells2xml, mk_cell, new_nb, render_text, write_nb
-from fastcore.script import is_cli
 from fastcore.xtras import rtoken_hex
 
 # %% ../nbs/00_foundation.ipynb #demohelpcode
@@ -150,19 +149,13 @@ def write_demo_file(name, source, base="nbs/data"):
         remove_demo_path(path)
 
 # %% ../nbs/00_foundation.ipynb #dbc6a8c7
-def _nbskill_cli_context():
-    command = Path(sys.argv[0]).name
-    return is_cli() and not in_jupyter() and command not in {"nbdev-test", "nbdev_test"}
-
-
-def cli_return(value=None):
-    return None if _nbskill_cli_context() else value
+def api_return(value=None):
+    "Return a Python API value unchanged."
+    return value
 
 # %% ../nbs/00_foundation.ipynb #754aea72
-def cli_error(msg):
-    if _nbskill_cli_context():
-        print(msg, file=sys.stderr)
-        raise SystemExit(1)
+def api_error(msg):
+    "Raise a Python API validation error."
     raise ValueError(msg)
 
 # %% ../nbs/00_foundation.ipynb #b4c433a6
@@ -1046,8 +1039,8 @@ def cells(self: NotebookDocument):
 def find_cell_by_id(cells, cell_id):
     matches = [(idx, cell) for idx, cell in enumerate(cells) if getattr(cell, "id", None) == cell_id]
     if len(matches) == 1: return matches[0]
-    if not matches: cli_error(f"No cell has id {cell_id!r}")
-    cli_error(f"Multiple cells have id {cell_id!r}")
+    if not matches: api_error(f"No cell has id {cell_id!r}")
+    api_error(f"Multiple cells have id {cell_id!r}")
 
 # %% ../nbs/00_foundation.ipynb #82d7e1e1
 @patch
@@ -1124,7 +1117,7 @@ def _format_syntax_error(source, err, cell_idx):
     pointer = " " * max((err.offset or 1) - 1, 0) + "^" if line else ""
     msg = [f"Invalid Python in new code cell {cell_idx}: {err.msg} at line {err.lineno}, column {err.offset}"]
     if line: msg += [line, pointer]
-    msg.append("Tip: shell quoting can turn backslash-n escapes into real newlines inside Python strings. Use --cells_file PATH or cells=- for complex code.")
+    msg.append("Tip: pass exact multiline Python text or an explicit cells_file path for complex code.")
     return chr(10).join(msg)
 
 # %% ../nbs/00_foundation.ipynb #bf00a9f5
@@ -1137,7 +1130,6 @@ def validate_code_cells(cells):
         try: ast.parse(source)
         except SyntaxError as err:
             msg = _format_syntax_error(source, err, idx)
-            if is_cli(): raise SystemExit(msg)
             raise ValueError(msg) from err
 
 # %% ../nbs/00_foundation.ipynb #a0e18941
@@ -1502,20 +1494,20 @@ def _fresh_semantic_metadata(cell):
 def parse_one_cell(text, default_type="code"):
     if isinstance(text, (list, tuple)):
         if len(text) != 1:
-            cli_error("update_cell expects exactly one replacement cell; use write_nb or batch_edit_nb for multi-cell edits")
+            api_error("update_cell expects exactly one replacement cell; use write_nb or batch_edit_nb for multi-cell edits")
         return _coerce_cell(text[0], default_type)
     blocks = _split_blocks(text)
     if len(blocks) != 1:
-        cli_error("update_cell expects exactly one replacement cell; remove standalone '---' separators or use write_nb/batch_edit_nb for multi-cell edits")
+        api_error("update_cell expects exactly one replacement cell; remove standalone '---' separators or use write_nb/batch_edit_nb for multi-cell edits")
     return _cell_from_block(blocks[0], default_type)
 
 # %% ../nbs/00_foundation.ipynb #6d6b5350
 def find_cell_by_text(cells, old_str):
     matches = [(idx, cell) for idx, cell in enumerate(cells) if old_str in cell_source(cell)]
     if len(matches) == 1: return matches[0]
-    if not matches: cli_error("old_str did not match any cell")
+    if not matches: api_error("old_str did not match any cell")
     idxs = ", ".join(str(idx) for idx, _ in matches)
-    cli_error(f"old_str matched multiple cells: {idxs}. Use --cell_id or a more specific old_str.")
+    api_error(f"old_str matched multiple cells: {idxs}. Use cell_id or a more specific old_str.")
 
 # %% ../nbs/00_foundation.ipynb #b3365e7b
 def replace_cell(nb, idx, new_cell):
@@ -1530,28 +1522,13 @@ def clear_outputs(cell):
         cell.execution_count = None
     return cell
 
-# %% ../nbs/00_foundation.ipynb #742730cb
-def _looks_like_multiline_cli_text(text):
-    if not isinstance(text, str) or "\\n" not in text: return False
-    stripped = text.lstrip().lower()
-    if stripped.startswith(("%%code\\n", "%%markdown\\n", "%%md\\n", "%%raw\\n")): return True
-    if "\\n---\\n" in text: return True
-    return "\\n    " in text or "\\n\t" in text
-
-
-# %% ../nbs/00_foundation.ipynb #4c0c9e06
-def _decode_cli_newlines(text):
-    return text.replace("\\n", "\n") if _looks_like_multiline_cli_text(text) else text
-
-
 # %% ../nbs/00_foundation.ipynb #f5e716d7
-def load_cells_text(cells="", cells_file=None, decode_newlines=True):
+def load_cells_text(cells="", cells_file=None):
+    "Return direct Python text or the contents of an explicit text file."
     if cells_file:
         if cells: raise ValueError("Use either cells or cells_file, not both")
         return Path(cells_file).expanduser().read_text(encoding="utf-8")
-    if cells == "-": return sys.stdin.read()
-    return _decode_cli_newlines(cells) if decode_newlines else cells
-
+    return cells
 
 # %% ../nbs/00_foundation.ipynb #0eae6c06
 def _cell_from_block(block, default_type="code"):

@@ -10,7 +10,7 @@ Each MCP tool is registered with semantic metadata:
 - `meta.usefulness` marks the tool as `core`, `situational`, or `advanced`.
 - `meta.when_to_use` and `meta.combine_with` give agent-facing guidance and consolidation notes.
 
-See `references/mcp-tool-report.md` for the current usefulness review and reduction candidates.
+See `references/mcp-tool-report.md` for the current ranked tool surface.
 
 ## Feature Areas
 
@@ -19,24 +19,27 @@ See `references/mcp-tool-report.md` for the current usefulness review and reduct
 | Diagnostics | `healthcheck`, `doctor` | Check MCP liveness, fatal notebook errors, warnings, private symbol leaks, optional style diagnostics, reconnect hints, and setup failures. |
 | Focused context | `context` | Read project, notebook, chapter title, cell id, or public symbol targets. |
 | Notebook editing | `edit_notebook` | Apply deterministic whole-cell, line, insert/delete/move, and notebook-wide text replacement edits atomically with structured diffs. |
-| Verification and review | `exec_nb`, `diff_nb`, `style_check` | Run notebooks safely, review code-cell diffs, and catch structural hygiene/private-symbol issues. |
+| Verification and review | `exec_nb`, `diff_nb` | Run notebooks safely and review code-cell diffs. |
 | Symbol analysis | included in `context(...)` | Inspect definitions, callers, and callees for a cell or symbol target. |
-| Optional agent tools | `execute_plan`, `agent_workbench`, `agent_session` | Installed only with `install_nbskill(agent_tools=True)` or `install_nbskill --agent_tools`; otherwise omitted from the MCP schema. |
 | Reference implementations | `reference` | Discover local repositories, add/list/ingest indexed references, query implementations, and propose reuse work. |
+| Setup | `create_notebook` | Start a new minimal nbdev source notebook. |
 
-## CLI-only tools
+## Python-only operations
 
-`convert`, `problem_memory`, and `visible_text_inventory` are Python and CLI commands. They are not registered in the MCP schema.
+`convert`, `problem_memory`, `visible_text_inventory`, `get_cells`, `move_cells`, and `style_check` remain Python APIs. They are not registered in the MCP schema because they are broad migrations, redundant reads, or specialized local review.
 
-| Command | Use |
+| Python API | Use |
 | --- | --- |
 | `convert` | Migrate Python files or folders, or create a small nbdev project. |
 | `problem_memory` | Query, add, or list reusable problem-solution pairs. |
 | `visible_text_inventory` | List likely user-visible text from notebook code cells. |
+| `get_cells` | Return raw structured cells for local integrations. |
+| `move_cells` | Perform deliberate cross-notebook migrations. |
+| `style_check` | Run specialized local hygiene review; use MCP `doctor(scopes="style")` for normal diagnostics. |
 
 ## Problem-solving memory
 
-`problem_memory` manages reusable problem-solution pairs beside the code-reference index. Run it from the CLI before solving a nontrivial task, then record a pair after verification. Every pair needs at least four normalized tags. Prefer tags that identify the topic, sub-topic, library, problem category, solution category, runtime, and deployment surface. Query tags are exact all-of filters, so a query with `tags="notebook,fastcore,testing,solution-category"` returns only pairs carrying every requested tag.
+`problem_memory` manages reusable problem-solution pairs beside the code-reference index. Query it from Python before solving a nontrivial task, then record a pair after verification. Every pair needs at least four normalized tags. Prefer tags that identify the topic, sub-topic, library, problem category, solution category, runtime, and deployment surface. Query tags are exact all-of filters, so a query with `tags="notebook,fastcore,testing,solution-category"` returns only pairs carrying every requested tag.
 
 Signature:
 
@@ -65,13 +68,13 @@ Use `action="query"` before implementation, `action="add"` after a verified solu
 2. `context` gives the smallest useful project, notebook, chapter, cell, or symbol view. Cell and symbol targets include symbol graph payloads.
 3. `reference` provides reusable implementation evidence before a change.
 4. `edit_notebook` applies deterministic edit operations atomically. Use `replace_text`/`replace_texts` with `target="all"` for notebook-level renames, line ops for focused cell edits, and structural ops for insert/delete/move/replace cell changes.
-5. `style_check` reports chkstyle output, notebook hygiene, private symbol warnings, duplicate imports, and global tool usage/problems.
+5. `doctor(scopes="style")` adds chkstyle output to notebook hygiene, private symbol warnings, duplicate imports, and global tool usage/problems.
 6. `exec_nb` runs a notebook, a chapter, or cells up to an id. It is safe by default: fresh or changed cells are denied until they have either been run by the user or stamped by a prior nbskill execution.
 7. `diff_nb` reviews notebook changes in a text form.
 
 Use `doctor(scopes="error,warning")` for fatal notebook problems and warnings. Add `style` only when chkstyle output is useful; `doctor` does not run or show chkstyle for error/warning-only scopes. Private symbol reporting is part of the warning scope.
 
-The default server omits the agent tools. Install with `agent_tools=True` to add `--agent_tools` to the MCP command configuration. Use `agent_workbench` for a bounded single-notebook or project-level plan when direct edits are not enough. Use `edit_notebook` when the operations are already known and should be applied deterministically.
+Use `edit_notebook` when the operations are already known and should be applied deterministically.
 
 ## Concurrency
 
@@ -115,21 +118,4 @@ exec_nb(
 ) -> str
 ```
 
-The MCP wrapper keeps safe defaults and exposes only the common focused-execution controls. Use `check_only=True` to report outputs and failures without writing notebook outputs or metadata. Use the Python or CLI execution API directly for trusted broader execution settings.
-
-## Optional `agent_workbench`
-
-Signature:
-
-```python
-agent_workbench(
-    goal: str,
-    notebook: str | None = None,
-    contract_file: str | None = None,
-    execute: bool = False,
-    max_steps: int = 20,
-    timeout: int = 30,
-) -> dict
-```
-
-Install with `agent_tools=True` before calling this tool through MCP. Pass a concrete `goal`, constrain the task with `notebook` when possible, and set `execute=True` only when the loop should run verification after editing. Prefer the direct context, edit, and verification tools for small changes.
+The MCP wrapper keeps safe defaults and exposes only the common focused-execution controls. Use `check_only=True` to report outputs and failures without writing notebook outputs or metadata. Use the Python execution API directly for trusted broader execution settings.

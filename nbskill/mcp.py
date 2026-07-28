@@ -3,8 +3,7 @@
 # %% auto #0
 __all__ = ['mcp', 'as_text', 'capture_call', 'capture_notebook_call', 'mcp_log_report', 'format_mcp_log_report',
            'mcp_tool_result', 'nbskill_status', 'doctor_tool', 'edit_notebook_tool', 'create_notebook_tool',
-           'get_cells_tool', 'move_cells_tool', 'exec_nb_tool', 'execute_plan_tool', 'agent_workbench_tool',
-           'agent_session_tool', 'style_check_tool', 'create_mcp', 'main']
+           'exec_nb_tool', 'execute_plan_tool', 'agent_workbench_tool', 'agent_session_tool', 'create_mcp', 'main']
 
 # %% ../nbs/07_mcp.ipynb #mcpimports1
 import asyncio,json,multiprocessing,os,queue,signal,re,shutil,subprocess,sys,threading,time,traceback
@@ -1376,7 +1375,7 @@ def _doc_script_warnings(root):
         if found:
             warnings.append(_warning(
                 "removed_script_name",
-                f"{doc.relative_to(root)} references removed CLI names: {', '.join(found)}.",
+                f"{doc.relative_to(root)} references removed command names: {', '.join(found)}.",
                 "Replace hyphenated command names with underscore script names.",
                 path=str(doc), names=found,
             ))
@@ -1766,12 +1765,6 @@ def _mcp_tool_error_result(tool, arguments, exc, max_output_chars=12000, detail=
 
 # %% ../nbs/07_mcp.ipynb #d696afd1
 def _status_data(client_roots=None):
-    scripts = [
-        "context", "write_nb", "update_cell", "batch_edit_nb", "exec_nb", "diff_nb", "style_check",
-        "install_nbskill", "convert", "problem_memory", "visible_text_inventory", "reference",
-        "nbskill_mcp", "nbskill_mcp_start", "nbskill_mcp_stop", "nbskill_mcp_restart",
-        "nbskill_mcp_log", "nbskill_mcp_log_problems",
-    ]
     client_roots = [str(Path(item).resolve()) for item in (client_roots or [])]
     workspace_root = client_roots[0] if client_roots else str(Path.cwd())
     try: version_text = version("nbskill")
@@ -1788,14 +1781,8 @@ def _status_data(client_roots=None):
         "mcp_command": command,
         "mcp_command_path": shutil.which(command),
         "mcp_log_path": str(log_path) if log_path is not None else None,
-        "cli_tools": {name: shutil.which(name) for name in scripts},
         "reconnect_hint": "Restart or reconnect the MCP client after reinstalling nbskill or changing tool signatures.",
-        "install_commands": [
-            "uv tool install --editable . --force",
-            "codex mcp add nbskill -- nbskill_mcp",
-            "claude mcp add nbskill -- nbskill_mcp",
-            "install_nbskill --target cursor --cursor_workspace .",
-        ],
+        "install_commands": ["uv tool install --editable . --force", "codex mcp add nbskill -- nbskill_mcp"],
     }
 
 # %% ../nbs/07_mcp.ipynb #71601335
@@ -1883,8 +1870,8 @@ def _doctor_report(
     return report
 
 # %% ../nbs/07_mcp.ipynb #85b62f4f
-def nbskill_status(json_output: bool = False):  # Keep argument for compatibility with the CLI wrapper
-    "Report nbskill version, MCP command setup, canonical CLI tools, and reconnect hints."
+def nbskill_status():
+    "Report nbskill version, MCP command setup, and reconnect hints."
     return _status_data()
 
 # %% ../nbs/07_mcp.ipynb #0bae0134
@@ -2107,10 +2094,8 @@ _MCP_READ_DOC_TOOL_CATALOG = {}
 
 # %% ../nbs/07_mcp.ipynb #mcpcat04
 _MCP_CELL_EDIT_TOOL_CATALOG = {
-    'edit_notebook': {'feature':'notebook_edit','usefulness':'core','tags':('edit','notebook','cell','text','batch'),'description':'Apply deterministic notebook edits.','when_to_use':'Use after context identifies target cells.','combine_with':'Review with diff_nb, exec_nb, doctor, or style_check.'},
-    'create_notebook': {'feature':'notebook_creation','usefulness':'core','tags':('edit','notebook','create'),'description':'Create one minimal nbdev notebook.','when_to_use':'Use before moving a new cluster.','combine_with':'Use move_cells to populate it.'},
-    'move_cells': {'feature':'cell_transfer','usefulness':'core','tags':('edit','notebook','cell','move'),'description':'Move or copy cells across notebooks with inferred imports.','when_to_use':'Use for a split with ids, query, or chapter.','combine_with':'Use get_cells first.'},
-    'get_cells': {'feature':'cell_read','usefulness':'core','tags':('read','notebook','cell'),'description':'Return full structured selected cells.','when_to_use':'Use before a precise split.','combine_with':'Pass ids to move_cells.'},
+    'edit_notebook': {'feature':'notebook_edit','usefulness':'core','tags':('edit','notebook','cell','text','batch'),'description':'Apply deterministic notebook edits.','when_to_use':'Use after context identifies target cells.','combine_with':'Review with diff_nb, exec_nb, or doctor.'},
+    'create_notebook': {'feature':'notebook_creation','usefulness':'situational','tags':('edit','notebook','create'),'description':'Create one minimal nbdev notebook.','when_to_use':'Use when a new source notebook is needed.','combine_with':'Populate it with edit_notebook.'},
 }
 
 # %% ../nbs/07_mcp.ipynb #mcpcat05
@@ -2132,15 +2117,7 @@ _MCP_REVIEW_TOOL_CATALOG = {
         'tags': ('review', 'notebook', 'diff'),
         'description': 'Notebook-aware diff that avoids raw .ipynb noise; use surface="public-ui" to review likely user-visible FastHTML/HTML text separately from code churn.',
         'when_to_use': 'Use before final reporting or when reviewing notebook edits without expanding JSON metadata churn; choose surface="public-ui" for customer-visible copy review.',
-        'combine_with': 'Could be grouped with style_check under review, but diff parameters and output are meaningfully different.',
-    },
-    'style_check': {
-        'feature': 'review',
-        'usefulness': 'core',
-        'tags': ('review', 'style', 'hygiene', 'privacy'),
-        'description': 'Notebook hygiene and style report including chkstyle output, private symbol warnings, duplicate imports, and order issues.',
-        'when_to_use': 'Use after substantial edits or when a notebook feels structurally messy.',
-        'combine_with': "Doctor can include style diagnostics with scopes='style'; standalone style_check remains the explicit review tool.",
+        'combine_with': "Use doctor(scopes='style') for hygiene and diagnostics.",
     },
 }
 
@@ -2540,25 +2517,6 @@ async def create_notebook_tool(path: str, name: str | None = None, template: str
     except (Exception, SystemExit) as exc: return _mcp_tool_error_result("create_notebook", arguments, exc)
     return mcp_tool_result("create_notebook", arguments, str(result), create_notebook=result)
 
-@mcp.tool(**_mcp_tool_meta("get_cells"))
-async def get_cells_tool(path: str, cell_ids: list[str] | None = None, query: str | None = None, chapter: str | None = None, include_source: bool = True, include_outputs: bool = False, cursor: int = 0, limit: int | None = None, ctx: Context = None) -> ToolResult:
-    root = await _mcp_workspace_root(ctx)
-    path = _mcp_workspace_path(path, root)
-    arguments = dict(path=path, cell_ids=cell_ids, query=query, chapter=chapter, include_source=include_source, include_outputs=include_outputs, cursor=cursor, limit=limit)
-    try: result = await asyncio.to_thread(get_cells, **arguments)
-    except (Exception, SystemExit) as exc: return _mcp_tool_error_result("get_cells", arguments, exc)
-    return mcp_tool_result("get_cells", arguments, f"get_cells returned {len(result['cells'])} of {result['total']} cells", get_cells=result)
-
-@mcp.tool(**_mcp_tool_meta("move_cells"))
-async def move_cells_tool(source_path: str, destination_path: str | None = None, cell_ids: list[str] | None = None, query: str | None = None, chapter: str | None = None, name: str | None = None, mode: str = "move", destination_anchor: str | None = None, destination_where: str = "after", default_exp: str | None = None, promote_private: bool = True, dry_run: bool = False, ctx: Context = None) -> ToolResult:
-    root = await _mcp_workspace_root(ctx)
-    source_path = _mcp_workspace_path(source_path, root)
-    destination_path = _mcp_workspace_path(destination_path, root) if destination_path else None
-    arguments = dict(source_path=source_path, destination_path=destination_path, cell_ids=cell_ids, query=query, chapter=chapter, name=name, mode=mode, destination_anchor=destination_anchor, destination_where=destination_where, default_exp=default_exp, promote_private=promote_private, dry_run=dry_run)
-    try: result = await asyncio.to_thread(move_cells, **arguments)
-    except (Exception, SystemExit) as exc: return _mcp_tool_error_result("move_cells", arguments, exc)
-    return mcp_tool_result("move_cells", arguments, f"move_cells changed={result['changed']}", move_cells=result)
-
 # %% ../nbs/07_mcp.ipynb #5a228570
 def _exec_approval_request(path, full_output):
     "Return structured approval details for a safe-exec unapproved-cell block."
@@ -2824,45 +2782,6 @@ async def agent_session_tool(
     except (Exception, SystemExit) as exc:
         return _mcp_tool_error_result("agent_session", arguments, exc, detail=detail)
 
-# %% ../nbs/07_mcp.ipynb #mcptool15
-@mcp.tool(**_mcp_tool_meta("style_check"))
-async def style_check_tool(
-    path: str = ".", skip_folder_re: str | None = None, skip_path: str | None = None,
-    strict: bool = False, delete_after_output: bool = False,
-    max_output_chars: int = 12000, max_diagnostics: int = 200, fix: bool = False,
-    changed_only: bool = False, ref_a: str | None = "HEAD", ref_b: str | None = None,
-    detail: str = "summary", ctx: Context = None,
-) -> ToolResult:
-    "Print capped chkstyle output, notebook hygiene warnings, private symbol warnings, and global tool usage."
-    root = await _mcp_workspace_root(ctx)
-    path = _mcp_workspace_path(path, root)
-    skip_path = _mcp_workspace_path(skip_path, root) if skip_path else skip_path
-    arguments = dict(path=path, skip_folder_re=skip_folder_re, skip_path=skip_path, strict=strict, delete_after_output=delete_after_output, max_output_chars=max_output_chars, max_diagnostics=max_diagnostics, fix=fix, changed_only=changed_only, ref_a=ref_a, ref_b=ref_b, detail=detail, workspace_root=str(root) if root else None)
-    try:
-        chkstyle = run_style_check(path, skip_folder_re, skip_path, strict=False, max_output_chars=max_output_chars)
-        report = style_report(
-            path, chkstyle=chkstyle, max_output_chars=max_output_chars,
-            max_diagnostics=max_diagnostics, changed_only=changed_only, ref_a=ref_a, ref_b=ref_b,
-            skip_folder_re=skip_folder_re, skip_path=skip_path,
-        )
-        style_output = report["text"]
-        if fix:
-            fix_lines = ["Fix suggestions:"]
-            fixes = report.get("fixes", [])
-            if not fixes: fix_lines.append("- no deterministic fixes available")
-            for item in fixes:
-                fix_lines.append(f"- would apply: {item['description']} ({item['path']})")
-            style_output = "\n\n".join(chunk for chunk in [style_output, "\n".join(fix_lines)] if chunk)
-        if delete_after_output: reset_global_usage_summary()
-        if strict and (chkstyle["status"] or report["diagnostics"]):
-            raise RuntimeError("\n".join(chunk for chunk in [style_output.rstrip(), f"SystemExit: {chkstyle['status'] or 1}"] if chunk))
-        private_output = _private_symbol_report_text(path)
-        full_output = "\n\n".join(chunk for chunk in [private_output, style_output] if chunk)
-    except Exception as exc:
-        return _mcp_tool_error_result("style_check", arguments, exc, max_output_chars=max_output_chars, detail=detail)
-    report["private_symbol_report"] = private_output
-    return mcp_tool_result("style_check", arguments, full_output, max_output_chars=max_output_chars, detail=detail, style_report=report)
-
 # %% ../nbs/07_mcp.ipynb #b6d3f15d
 @mcp.tool(**_mcp_tool_meta("reference"))
 async def _reference_tool(
@@ -2954,60 +2873,27 @@ async def _reference_tool(
         return _mcp_tool_error_result("reference", arguments, exc, detail=detail)
 
 # %% ../nbs/07_mcp.ipynb #6daab47d
-def _configure_agent_tools(agent_tools=False):
-    """Show agent tools only when the server was installed with --agent_tools."""
+def _configure_agent_tools():
+    """Keep broad planning helpers as Python APIs, outside the public MCP surface."""
     global _AGENT_TOOLS_ENABLED
-    _AGENT_TOOLS_ENABLED = bool(agent_tools)
-    operation = mcp.enable if _AGENT_TOOLS_ENABLED else mcp.disable
-    operation(names=_MCP_AGENT_TOOL_NAMES)
+    _AGENT_TOOLS_ENABLED = False
+    mcp.disable(names=_MCP_AGENT_TOOL_NAMES)
     return mcp
 
-def create_mcp(agent_tools=False):
-    "Return the public nbskill FastMCP server."
-    return _configure_agent_tools(agent_tools)
+def create_mcp():
+    "Return the nine-tool public nbskill FastMCP server."
+    return _configure_agent_tools()
 
-_configure_agent_tools(os.getenv("NBSKILL_AGENT_TOOLS") == "1")
-
-# %% ../nbs/07_mcp.ipynb #bc41ce66
-def _fastmcp_reload_command(transport="stdio", show_banner=False, reload_dir=None):
-    "Return the FastMCP CLI command used for development auto-reload."
-    fastmcp = shutil.which("fastmcp")
-    if not fastmcp:
-        sibling = Path(sys.executable).with_name("fastmcp")
-        if sibling.exists(): fastmcp = str(sibling)
-    if not fastmcp:
-        raise RuntimeError("reload needs the FastMCP CLI executable on PATH")
-    notebook_file = Path("nbskill/mcp.py")
-    if not notebook_file.is_file(): notebook_file = Path.cwd().parent / notebook_file
-    module_file = globals().get("__file__") or notebook_file
-    server_spec = f"{Path(module_file).resolve()}:mcp"
-    command = [fastmcp, "run", server_spec, "--transport", transport, "--reload"]
-    if not show_banner: command.append("--no-banner")
-    if reload_dir: command.extend(["--reload-dir", str(Path(reload_dir).expanduser())])
-    return command
+_configure_agent_tools()
 
 # %% ../nbs/07_mcp.ipynb #bc9b02ef
-def main(
-    transport: str = "stdio",  # MCP transport; stdio is what Codex/Claude use for local servers
-    show_banner: bool = False,  # Show FastMCP startup banner
-    reload: bool = False,  # Restart the FastMCP worker when source files change
-    reload_dir: str | None = None,  # Directory to watch; defaults to FastMCP's current directory
-    agent_tools: bool = False,  # Expose optional execute_plan, agent_workbench, and agent_session tools
-):
-    "Run the nbskill MCP server, optionally with FastMCP development auto-reload."
-    _mcp_log_event(
-        "server_start", transport=transport, show_banner=show_banner, reload=reload,
-        reload_dir=reload_dir, agent_tools=agent_tools, cwd=str(Path.cwd()), python=sys.executable,
-    )
+def main():
+    "Run the public nbskill MCP server over stdio."
+    _mcp_log_event("server_start", transport="stdio", cwd=str(Path.cwd()), python=sys.executable)
     try:
-        if reload:
-            command = _fastmcp_reload_command(transport, show_banner, reload_dir)
-            _mcp_log_event("server_reload_start", command=command)
-            environment = {**os.environ, "NBSKILL_AGENT_TOOLS": "1" if agent_tools else "0"}
-            return subprocess.run(command, check=False, env=environment).returncode
-        create_mcp(agent_tools).run(transport=transport, show_banner=show_banner)
+        create_mcp().run(transport="stdio", show_banner=False)
     except BaseException as exc:
-        _mcp_log_exception("server_error", exc, transport=transport, reload=reload, agent_tools=agent_tools)
+        _mcp_log_exception("server_error", exc, transport="stdio")
         raise
     finally:
-        _mcp_log_event("server_stop", transport=transport, reload=reload, agent_tools=agent_tools)
+        _mcp_log_event("server_stop", transport="stdio")

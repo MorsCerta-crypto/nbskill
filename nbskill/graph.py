@@ -12,7 +12,7 @@ from pathlib import Path
 
 from fastcore.basics import patch
 from fastcore.nbio import read_nb
-from .foundation import NotebookSymbol, call_name, cell_source, cli_error, cli_return, notebook_paths
+from .foundation import NotebookSymbol, call_name, cell_source, api_error, api_return, notebook_paths
 from .foundation import parse_code_cell, path_candidates, source_without_directives, symbol_short_name
 from .foundation import xml_attrs, xml_escape
 
@@ -690,16 +690,16 @@ def symbol_graph(
     json_output: bool = False,  # Print complete structured JSON instead of compact text
 ):
     "Print definitions, callers, and callees for a notebook symbol."
-    if not symbol: cli_error("Pass --symbol to inspect")
+    if not symbol: api_error("Pass symbol to inspect")
     data = symbol_graph_data(path, symbol)
     if json_output:
         result = symbol_graph_public_data(data)
         text = json.dumps(result, indent=2, sort_keys=True)
         print(text)
-        return cli_return(result)
+        return api_return(result)
     text = _format_symbol_graph_data(data)
     print(text)
-    return cli_return(text)
+    return api_return(text)
 
 # %% ../nbs/10_graph.ipynb #privsympub
 def private_symbol_report(
@@ -724,7 +724,7 @@ def private_symbol_report(
     if len(lines) == 1: lines.append("No cross-notebook private symbol calls found.")
     text = "\n".join(dict.fromkeys(lines))
     print(text)
-    return cli_return(text)
+    return api_return(text)
 
 # %% ../nbs/10_graph.ipynb #7fcb0f27
 def symbol_connection(
@@ -735,16 +735,16 @@ def symbol_connection(
     json_output: bool = False,  # Print complete structured JSON instead of compact text
 ):
     "Print the shortest static callee chain connecting two notebook symbols."
-    if not start or not end: cli_error("Pass --start and --end to connect symbols")
+    if not start or not end: api_error("Pass start and end to connect symbols")
     data = _symbol_connection_data(path, start, end, max_depth=max_depth)
     if json_output:
         result = _symbol_connection_public_data(data)
         text = json.dumps(result, indent=2, sort_keys=True)
         print(text)
-        return cli_return(result)
+        return api_return(result)
     text = _format_symbol_connection_data(data)
     print(text)
-    return cli_return(text)
+    return api_return(text)
 
 # %% ../nbs/10_graph.ipynb #2ceeb556
 class _ShapeNormalizer(ast.NodeTransformer):
@@ -1211,10 +1211,10 @@ def notebook_knowledge_graph(path="nbs", json_output=False):
                 "narrow the path or use the summary output."
             )
         print(text)
-        return cli_return(data)
+        return api_return(data)
     text = _format_notebook_knowledge_graph(data)
     print(text)
-    return cli_return(text)
+    return api_return(text)
 
 # %% ../nbs/10_graph.ipynb #6440e184
 def _source_record_from_node(source, imports, symbol, symbol_node, kind):

@@ -10,12 +10,10 @@ import ast
 import json
 import re
 import subprocess
-import sys
 from collections import Counter
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
-from typing import Annotated
 
 from chkstyle.core import main as _chkstyle_main
 from fastcore.nbio import mk_cell, read_nb
@@ -26,7 +24,7 @@ from remold import cst, m, cstmap, code
 
 from nbskill.foundation import (
     empty_failure_map, failure_map_path, load_failure_map, cell_class_names, cell_semantic_warnings,
-    cell_source, clear_outputs, cli_error, cli_return, exported_py_path, file_hash, file_line_count,
+    cell_source, clear_outputs, api_error, api_return, exported_py_path, file_hash, file_line_count,
     cap_text, notebook_paths, parse_code_cell, short_call_name, source_without_directives,
     stamp_notebook_metadata, is_exported_code_cell, none_if_string,
 )
@@ -168,21 +166,13 @@ def _public_function_contract_problem(nb_path, cell, node, code, missing, detail
         symbol=node.name, line=getattr(node, "lineno", None), missing=missing, **kwargs,
     )
 
-# %% ../nbs/04_review.ipynb #2c4162bd
-def _call_parse_name(node):
-    if isinstance(node, ast.Name) and node.id == "call_parse": return True
-    if isinstance(node, ast.Attribute) and node.attr == "call_parse": return True
-    return False
-
 # %% ../nbs/04_review.ipynb #e037ee42
 def _public_function_literacy_problems_for_nb(nb_path, nb):
     public_functions = []
-    call_parse_names = set()
     for cell in nb.cells:
         tree = parse_code_cell(cell)
         if tree is None or not is_exported_code_cell(cell): continue
         public_functions.extend((cell, node) for node in _public_functions(tree))
-        call_parse_names.update(_call_parse_wrapped_public_functions(tree))
     public_names = {node.name for _, node in public_functions}
     references = _public_function_reference_sets(nb, public_names)
     problems = []
@@ -194,7 +184,6 @@ def _public_function_literacy_problems_for_nb(nb_path, nb):
         elif line_count != 1:
             detail = f"public function {node.name!r} has {line_count} docstring lines; keep it to one line for context summaries"
             problems.append(_public_function_contract_problem(nb_path, cell, node, "public-function-docstring", "one-line docstring", detail, docstring_lines=line_count))
-        if node.name in call_parse_names: continue
         if node.name not in references["markdown"]:
             detail = f"public function {node.name!r}: add a short Markdown rationale cell mentioning the function after the exported code"
             problems.append(_public_function_contract_problem(nb_path, cell, node, "public-function-markdown", "short Markdown rationale cell", detail))
@@ -205,13 +194,6 @@ def _public_function_literacy_problems_for_nb(nb_path, nb):
             detail = f"public function {node.name!r}: add a focused test cell that asserts the behavior"
             problems.append(_public_function_contract_problem(nb_path, cell, node, "public-function-test", "focused test cell that asserts the behavior", detail))
     return problems
-
-# %% ../nbs/04_review.ipynb #1ec78aa2
-def _call_parse_wrapped_public_functions(tree):
-    names = []
-    for node in _public_functions(tree):
-        if any(_call_parse_name(dec) for dec in getattr(node, "decorator_list", [])): names.append(node.name)
-    return set(names)
 
 # %% ../nbs/04_review.ipynb #e45642cc
 def public_function_literacy_problems(path="."):
@@ -883,25 +865,13 @@ def run_style_check(path=".", skip_folder_re=None, skip_path=None, strict=False,
     capped = cap_text(output, max_output_chars=max_output_chars) if max_output_chars else {"text": output, "truncated": False, "chars": len(output), "omitted_chars": 0}
     return {"status": status, "output": output, **capped}
 
-# %% ../nbs/04_review.ipynb #0737b175
-def _normalize_style_check_cli_aliases():
-    aliases = {
-        "--delete-after-output": "--delete_after_output",
-        "--delete-after-outout": "--delete_after_outout",
-    }
-    sys.argv[:] = [aliases.get(arg, arg) for arg in sys.argv]
-
-# %% ../nbs/04_review.ipynb #ca5d2e70
-_normalize_style_check_cli_aliases()
-
 # %% ../nbs/04_review.ipynb #d2f84049
 def style_check(
-    path: Annotated[str, "File or folder to check", {"opt": False, "nargs": "?"}] = ".",  # File or folder to check
+    path: str = ".",
     skip_folder_re: str | None = None,  # Regex for folders to skip
     skip_path: str | None = None,  # Folder name/path to skip
-    strict: bool = False,  # Exit non-zero when style hints or notebook hygiene problems are found
+    strict: bool = False,  # Raise when style hints or notebook hygiene problems are found
     delete_after_output: bool = False,  # Reset ~/.nbskill-errors.json after printing the global summary
-    delete_after_outout: bool = False,  # Backward-compatible typo alias for delete_after_output
     max_output_chars: int = 12000,  # Cap printed chkstyle output
     max_diagnostics: int = 200,  # Cap returned diagnostics
     fix: bool = False,  # Show conservative fix suggestions
@@ -925,15 +895,15 @@ def style_check(
         for item in fixes:
             mode = "would apply" if dry_run else "manual-review-required"
             print(f"- {mode}: {item['description']} ({item['path']})")
-    if delete_after_output or delete_after_outout: reset_global_usage_summary()
+    if delete_after_output: reset_global_usage_summary()
     has_problems = bool(report["diagnostics"])
-    if strict and (chkstyle["status"] or has_problems): raise SystemExit(chkstyle["status"] or 1)
-    return cli_return(chkstyle["status"] or int(has_problems))
+    if strict and (chkstyle["status"] or has_problems): raise RuntimeError(report["text"])
+    return api_return(chkstyle["status"] or int(has_problems))
 
 # %% ../nbs/04_review.ipynb #12c4df69
 def validate_nbs(
-    path: Annotated[str, "Notebook file, folder, or glob to validate", {"opt": False, "nargs": "?"}] = "nbs",  # Notebook file, folder, or glob to validate
-    strict: bool = True,  # Exit non-zero when invalid metadata is found
+    path: str = "nbs",
+    strict: bool = True,  # Raise when invalid metadata is found
 ):
     "Validate nbskill metadata needed for safe notebook tools."
     problems = notebook_validation_problems(path)
@@ -941,10 +911,10 @@ def validate_nbs(
         print("Notebook validation errors:")
         for problem in problems:
             print(_format_problem(problem))
-        if strict: raise SystemExit(1)
+        if strict: raise ValueError("Notebook validation failed")
     else:
         print("Notebook validation: no invalid nbskill metadata found.")
-    return cli_return(int(bool(problems)))
+    return api_return(int(bool(problems)))
 
 # %% ../nbs/04_review.ipynb #29c18378
 def code_source(cell):
@@ -1170,7 +1140,7 @@ def visible_text_inventory(path='.', include_re=None, max_records=200):
         if len(records) >= max_records: break
     text = _format_visible_text_records(records)
     print(text)
-    cli_return(records)
+    api_return(records)
     return records
 
 # %% ../nbs/04_review.ipynb #976ef273
@@ -1215,7 +1185,7 @@ def diff_nb(
         old, new = {}, _working_tree_code_sources(path)
     else:
         if msg := (_git_ref_path_error(path, ref_a) or _git_ref_path_error(path, ref_b)):
-            cli_error(msg)
+            api_error(msg)
         try: old, new = nbs_pair(path, ref_a=ref_a, ref_b=ref_b, f=code_source)
         except Exception as exc:
             detail = str(exc)
@@ -1224,7 +1194,7 @@ def diff_nb(
                 "The notebook may be new relative to that git ref, or the repository may not have a HEAD commit yet. "
                 "Commit the notebook first, or pass ref_a=None and ref_b=None to review a disposable notebook as current working-tree additions.")
             if detail: hint += f"\nUnderlying error: {detail}"
-            cli_error(hint)
+            api_error(hint)
     old = {cid: src for cid, src in old.items() if src is not None}
     new = {cid: src for cid, src in new.items() if src is not None}
     selected = _diff_filter_ids(path, ref_b=ref_b, cell_id=cell_id, after_id=after_id)
@@ -1233,7 +1203,7 @@ def diff_nb(
         metadata_summary = _metadata_summary(_nbskill_metadata_change_count(path, ref_a, ref_b))
         if metadata_summary: report = f"{report}\n\n{metadata_summary}"
         print(report)
-        cli_return(report)
+        api_return(report)
         return report
     blocks = []
     if adds:    blocks += [(cid, source_diff("", new[cid])) for cid in new if cid not in old]
@@ -1247,5 +1217,5 @@ def diff_nb(
     elif metadata_summary: report = f"No code cell changes\n{metadata_summary}"
     else: report = "No code cell changes"
     print(report)
-    cli_return(report)
+    api_return(report)
     return report

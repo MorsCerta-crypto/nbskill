@@ -9,7 +9,7 @@ from importlib.resources import files
 from pathlib import Path
 
 
-from .foundation import cli_return, install_nbdev_pre_commit_hooks
+from .foundation import api_return, install_nbdev_pre_commit_hooks
 
 # %% ../nbs/06_skill.ipynb #skillbld
 _SKILL_START = "<!-- nbskill-skill:start -->"
@@ -51,15 +51,10 @@ def build_skill_from_readme(
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(text, encoding="utf-8")
     print(f"Built {out} from {readme_path}")
-    return cli_return(out)
+    return api_return(out)
 
 # %% ../nbs/06_skill.ipynb #e2009808
 def _nbskill_mcp_pids():
-    try:
-        from nbskill.cli import find_nbskill_mcp_processes
-        return find_nbskill_mcp_processes(all_projects=True)
-    except Exception:
-        pass
     proc = subprocess.run(["ps", "-eo", "pid=,ppid=,command="], text=True, capture_output=True)
     if proc.returncode != 0: return []
     pids = []
@@ -69,36 +64,18 @@ def _nbskill_mcp_pids():
         try: pid, ppid = int(parts[0]), int(parts[1])
         except ValueError: continue
         command = parts[2]
-        if "nbskill_mcp" not in command and "nbskill.mcp" not in command: continue
-        if any(name in command for name in ("nbskill_mcp_start", "nbskill_mcp_stop", "nbskill_mcp_restart")): continue
-        pids.append({"pid": pid, "ppid": ppid, "command": command.strip()})
+        if "nbskill_mcp" in command or "nbskill.mcp" in command: pids.append({"pid": pid, "ppid": ppid, "command": command.strip()})
     return pids
 
 # %% ../nbs/06_skill.ipynb #c0d2e39e
 def nbskill_mcp_restart_notice(timeout=5.0, force=True, dry_run=False):
-    "Restart running nbskill MCP server processes and return a user-facing result."
-    try:
-        from nbskill.cli import stop_nbskill_mcp_processes
-        result = stop_nbskill_mcp_processes(all_projects=True, timeout=timeout, force=force, dry_run=dry_run)
-    except Exception as exc:
-        running = _nbskill_mcp_pids()
-        return {
-            "running": bool(running),
-            "restarted": False,
-            "processes": running,
-            "message": f"Could not restart nbskill MCP processes automatically: {exc}",
-        }
-    matched = result.get("matched", [])
-    alive = result.get("alive", [])
-    if not matched:
-        return {"running": False, "restarted": False, "processes": [], "message": "No running nbskill MCP server process detected.", "result": result}
-    if result.get("dry_run"):
-        message = f"Would restart {len(matched)} nbskill MCP server process(es)."
-    elif alive:
-        message = f"Stopped {len(result.get('terminated', []))} nbskill MCP process target(s), but {len(alive)} process(es) are still alive."
-    else:
-        message = f"Restarted {len(matched)} nbskill MCP server process(es); the MCP client will start fresh nbskill_mcp processes on reconnect."
-    return {"running": True, "restarted": not bool(alive) and not result.get("dry_run"), "processes": matched, "message": message, "result": result}
+    "Return the reconnect instruction; stdio servers are started by the MCP client."
+    return {
+        "running": bool(_nbskill_mcp_pids()),
+        "restarted": False,
+        "processes": _nbskill_mcp_pids(),
+        "message": "Reconnect the MCP client to start a fresh nbskill MCP server.",
+    }
 
 # %% ../nbs/06_skill.ipynb #4c71a41f
 def _nbskill_source_project():
@@ -118,13 +95,11 @@ def _cursor_mcp_path(workspace=None):
     return root / ".cursor" / "mcp.json"
 
 # %% ../nbs/06_skill.ipynb #cfe66977
-def _cursor_nbskill_server_config(agent_tools=False):
-    server = {"command": "nbskill_mcp"}
-    if agent_tools: server["args"] = ["--agent_tools"]
-    return server
+def _cursor_nbskill_server_config():
+    return {"command": "nbskill_mcp"}
 
 # %% ../nbs/06_skill.ipynb #feab9338
-def _install_cursor_mcp(workspace=None, overwrite=True, agent_tools=False):
+def _install_cursor_mcp(workspace=None, overwrite=True):
     """Install nbskill's MCP server into Cursor's mcp.json."""
     path = _cursor_mcp_path(workspace)
     if path.exists():
@@ -134,7 +109,7 @@ def _install_cursor_mcp(workspace=None, overwrite=True, agent_tools=False):
     servers = data.setdefault("mcpServers", {})
     if not isinstance(servers, dict): raise ValueError(f"Cursor MCP config mcpServers must be an object: {path}")
     if "nbskill" in servers and not overwrite: raise FileExistsError(path)
-    servers["nbskill"] = _cursor_nbskill_server_config(agent_tools)
+    servers["nbskill"] = _cursor_nbskill_server_config()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return {
@@ -150,14 +125,13 @@ def _codex_mcp_path(workspace=None):
     return root / ".codex" / "config.toml"
 
 # %% ../nbs/06_skill.ipynb #dc02f6fc
-def _codex_nbskill_config(workspace, agent_tools=False):
+def _codex_nbskill_config(workspace):
     root = Path(workspace).expanduser().resolve()
     lines = [
         "[mcp_servers.nbskill]", "enabled = true", "required = true",
         'command = "nbskill_mcp"', f"cwd = {json.dumps(str(root))}",
         "startup_timeout_sec = 60", "tool_timeout_sec = 180",
     ]
-    if agent_tools: lines.append('args = ["--agent_tools"]')
     lines += [
         "", "[mcp_servers.nbskill.tools.edit_notebook]", 'approval_mode = "approve"', "",
         "[mcp_servers.nbskill.tools.context]", 'approval_mode = "approve"',
@@ -165,7 +139,7 @@ def _codex_nbskill_config(workspace, agent_tools=False):
     return chr(10).join(lines)
 
 # %% ../nbs/06_skill.ipynb #972f8410
-def _install_codex_mcp(workspace=None, overwrite=True, agent_tools=False):
+def _install_codex_mcp(workspace=None, overwrite=True):
     """Install nbskill's MCP server into a project's Codex config."""
     path = _codex_mcp_path(workspace)
     text = path.read_text(encoding="utf-8") if path.exists() else ""
@@ -177,7 +151,7 @@ def _install_codex_mcp(workspace=None, overwrite=True, agent_tools=False):
         return {"installed": False, "reason": "existing-nbskill-server", "path": path}
     path.parent.mkdir(parents=True, exist_ok=True)
     prefix = text.rstrip() + chr(10) * 2 if text.strip() else ""
-    path.write_text(prefix + _codex_nbskill_config(workspace or ".", agent_tools) + chr(10), encoding="utf-8")
+    path.write_text(prefix + _codex_nbskill_config(workspace or ".") + chr(10), encoding="utf-8")
     return {"installed": True, "path": path, "server": "nbskill", "workspace": str(Path(workspace or ".").expanduser())}
 
 # %% ../nbs/06_skill.ipynb #dab79c19
@@ -188,7 +162,6 @@ def install_nbskill(
     overwrite: bool = True,  # Overwrite an existing SKILL.md or Cursor server entry
     install_hooks: bool = False,  # Install nbdev-clean/nbdev-test pre-commit hooks in the current repo
     restart_mcp: bool = True,  # Restart running nbskill MCP servers after updating install/config
-    agent_tools: bool = False,  # Include optional agent MCP tools in the installed server config
     cursor_workspace: str | None = None,  # Cursor workspace for .cursor/mcp.json; omit for global ~/.cursor/mcp.json
     codex_workspace: str | None = ".",  # Project workspace for .codex/config.toml
     reference_roots: str = "~/projects",  # Local Git repositories to add to the reference index
@@ -220,8 +193,8 @@ def install_nbskill(
             for ref in references.iterdir():
                 if ref.is_file(): (ref_dir / ref.name).write_text(ref.read_text(encoding="utf-8"), encoding="utf-8")
         installed.append(dst)
-    if target == "cursor": cursor_mcp = _install_cursor_mcp(workspace=cursor_workspace, overwrite=overwrite, agent_tools=agent_tools)
-    if not skills_dir and target in {"codex", "both"}: codex_mcp = _install_codex_mcp(workspace=codex_workspace, overwrite=overwrite, agent_tools=agent_tools)
+    if target == "cursor": cursor_mcp = _install_cursor_mcp(workspace=cursor_workspace, overwrite=overwrite)
+    if not skills_dir and target in {"codex", "both"}: codex_mcp = _install_codex_mcp(workspace=codex_workspace, overwrite=overwrite)
     hooks = install_nbdev_pre_commit_hooks(Path.cwd()) if install_hooks else {"installed": False, "reason": "disabled"}
     from nbskill.knowledge import reference_discover
     reference_index = reference_discover(roots=reference_roots, ingest=index_references)
@@ -239,7 +212,7 @@ def install_nbskill(
         for proc in mcp_notice.get("processes", []):
             cwd = f" cwd={proc['cwd']}" if proc.get("cwd") else ""
             print(f"- pid={proc['pid']}{cwd} command={proc['command']}")
-    return cli_return({
+    return api_return({
         "installed": installed, "cursor_mcp": cursor_mcp, "codex_mcp": codex_mcp, "hooks": hooks,
         "references": reference_index, "mcp_restart": mcp_notice,
     })

@@ -25,7 +25,7 @@ from fastcore.nbio import read_nb
 from fastcore.nbio import write_nb as _write_nb
 
 from nbskill.foundation import (
-    nbskill_cell_metadata, cell_source, cli_error, cli_return, one_chapter, output_text,
+    nbskill_cell_metadata, cell_source, api_error, api_return, one_chapter, output_text,
     output_value_text, parse_literal, source_hash, stamp_notebook_metadata,
 )
 from .parallel import execution_slot, notebook_locks
@@ -1048,7 +1048,7 @@ def _safe_mode_audit_blocked(nb, up2id=None):
 # %% ../nbs/03_execute.ipynb #26e1ea68
 def _safe_mode_hint(nb, up2id=None):
     if not _safe_mode_audit_blocked(nb, up2id=up2id): return ""
-    return "Safe execution hint: safepyrun blocked an audited operation. For trusted notebooks, rerun with safe=False or --no-safe."
+    return "Safe execution hint: safepyrun blocked an audited operation. For trusted notebooks, rerun with safe=False."
 
 # %% ../nbs/03_execute.ipynb #434c13b3
 def exec_nb(
@@ -1098,7 +1098,7 @@ def exec_nb(
         else: _print_nb_outputs(dest, up2id=up2id)
     if safe and (hint := _safe_mode_hint(nb, up2id=up2id)): print(hint)
     _print_uncalled_function_warnings(nb, up2id=up2id)
-    return cli_return(Path(path) if check_only else Path(dest))
+    return api_return(Path(path) if check_only else Path(dest))
 
 # %% ../nbs/03_execute.ipynb #e9c50752
 def _notebook_error_summaries(path, up2id=None):
@@ -1121,4 +1121,4 @@ def run_notebook_test(path, timeout=30):
     errors = _notebook_error_summaries(path)
     if errors:
         sys.stdout.flush()
-        cli_error("Notebook test failed after writing/execution: " + "; ".join(errors))
+        api_error("Notebook test failed after writing/execution: " + "; ".join(errors))

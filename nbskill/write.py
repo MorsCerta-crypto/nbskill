@@ -12,15 +12,14 @@ import ast,builtins,copy,difflib,glob,json,re
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
-from typing import Annotated
 
 from fastcore.nbio import mk_cell, new_nb, read_nb
 
 from .execute import exec_nb, run_notebook_test
 from .review import style_check
 from nbskill.foundation import (
-    cell_class_names, cell_source, clear_outputs, cli_error,
-    cli_return, commit_notebook, find_cell_by_id, find_cell_by_text,
+    cell_class_names, cell_source, clear_outputs, api_error,
+    api_return, commit_notebook, find_cell_by_id, find_cell_by_text,
     is_exported_code_cell, load_cells_text, one_chapter, parse_cells,
     parse_one_cell, replace_cell, short_call_name, source_hash,
     stamp_notebook_metadata, validate_code_cells,
@@ -45,7 +44,7 @@ def _resolve_notebook_paths(path):
     else:
         candidates = []
     paths = sorted({candidate for candidate in candidates if candidate.suffix == ".ipynb" and ".ipynb_checkpoints" not in candidate.parts})
-    if not paths: cli_error(f"No notebooks matched {path!r}")
+    if not paths: api_error(f"No notebooks matched {path!r}")
     return paths
 
 
@@ -106,8 +105,8 @@ def write_literal_replacements(
     show_cells: bool = False, # show the cells that were edited
 ):
     "Replace literal text across notebook cell sources."
-    if old_str in {None, ""}: cli_error("Pass a non-empty old_str for literal replacements")
-    if new_str is None: cli_error("Pass new_str for literal replacements")
+    if old_str in {None, ""}: api_error("Pass a non-empty old_str for literal replacements")
+    if new_str is None: api_error("Pass new_str for literal replacements")
     paths = _resolve_notebook_paths(path)
     changed = []
     exported = False
@@ -142,12 +141,12 @@ def write_literal_replacements(
         if exported: msg += " and exported with nbdev"
         if show_cells: msg += f"\n{_format_literal_replacement_details(changed)}"
     print(msg)
-    return cli_return([path for path, _, _, _ in changed])
+    return api_return([path for path, _, _, _ in changed])
 
 # %% ../nbs/02_write.ipynb #0f2f63da
 def write_nb(
     path: str,
-    cells: Annotated[str, "Cell block text", {"opt": False, "nargs": "?"}] = "",
+    cells: str = "",
     before_id: str | None = None,
     after_id: str | None = None,
     chapter: str | None = None,
@@ -159,9 +158,9 @@ def write_nb(
     validate_code: bool = True,
 ):
     "Write cells to a notebook."
-    if before_id and after_id: cli_error("Use either before_id or after_id, not both")
-    if (before_id or after_id) and chapter is not None: cli_error("Use id-based insertion or chapter insertion, not both")
-    if (before_id or after_id) and replace: cli_error("Use id-based insertion or replace, not both")
+    if before_id and after_id: api_error("Use either before_id or after_id, not both")
+    if (before_id or after_id) and chapter is not None: api_error("Use id-based insertion or chapter insertion, not both")
+    if (before_id or after_id) and replace: api_error("Use id-based insertion or replace, not both")
     path = Path(path)
     new_cells = parse_cells(cells, cell_type)
     if validate_code: validate_code_cells(new_cells)
@@ -198,7 +197,7 @@ def write_nb(
         if run_style:
             print(f"Running chstyle on {path}")
             style_check(path, strict=style_strict)
-    return cli_return(path)
+    return api_return(path)
 
 # %% ../nbs/02_write.ipynb #5ef9f86f
 def _save_nb(nb, path):
@@ -217,7 +216,7 @@ def _parse_line_range(line_range, n_lines):
     else:
         start = end = int(value)
     if start < 1 or end < start or end > n_lines:
-        cli_error(f"line_range must be 1-based and within 1:{n_lines}; got {line_range!r}")
+        api_error(f"line_range must be 1-based and within 1:{n_lines}; got {line_range!r}")
     return start - 1, end
 
 
@@ -233,7 +232,7 @@ def _replace_line_range(source, line_range, new):
 def _split_before_index(source, split_before):
     lines = source.splitlines()
     marker = str(split_before or "").strip()
-    if not marker: cli_error("split_before must be a non-empty string")
+    if not marker: api_error("split_before must be a non-empty string")
     for idx, line in enumerate(lines):
         if marker in line: return idx
     try:
@@ -241,7 +240,7 @@ def _split_before_index(source, split_before):
             if re.search(marker, line): return idx
     except re.error:
         pass
-    cli_error(f"split_before did not match any line: {split_before!r}")
+    api_error(f"split_before did not match any line: {split_before!r}")
 
 
 # %% ../nbs/02_write.ipynb #7f39a64b
@@ -249,7 +248,7 @@ def _split_cell_sources_before(source, split_before):
     lines = source.splitlines()
     idx = _split_before_index(source, split_before)
     if idx <= 0 or idx >= len(lines):
-        cli_error("split_before must leave non-empty source on both sides")
+        api_error("split_before must leave non-empty source on both sides")
     return "\n".join(lines[:idx]).strip("\n"), "\n".join(lines[idx:]).strip("\n")
 
 
@@ -263,9 +262,8 @@ def _replace_cell_with_cells(nb, idx, cells):
 # %% ../nbs/02_write.ipynb #ba6abded
 def update_cell(
     path: str,  # Notebook path
-    new: Annotated[str, "Replacement cell source, replacement text, or line-range replacement", {"opt": False, "nargs": "?"}] = "",
+    new: str = "",
     new_file: str | None = None,  # Read replacement text from a UTF-8 file
-    decode_newlines: bool = True,  # Decode CLI-style literal \n escapes in new text
     cell_id: str | None = None,  # Stable notebook cell id to update
     old_str: str | None = None,  # Literal text to replace in the target cell, or used to locate the cell when cell_id is absent
     line_range: str | None = None,  # 1-based inclusive lines to replace, e.g. 3 or 3:5
@@ -277,17 +275,16 @@ def update_cell(
     dry_run: bool = False,  # Show the update plan without writing
 ):
     "Update one notebook cell: replace whole cell, a text substring, or a line range."
-    if cell_id is None and old_str is None: cli_error("Pass --cell_id, --old_str, or both")
-    if line_range is not None and cell_id is None: cli_error("Pass --cell_id with --line_range")
+    if cell_id is None and old_str is None: api_error("Pass cell_id, old_str, or both")
+    if line_range is not None and cell_id is None: api_error("Pass cell_id with line_range")
     path = Path(path)
-    new = load_cells_text(new, new_file, decode_newlines=decode_newlines)
+    new = load_cells_text(new, new_file)
     if split or split_before is not None:
-        if old_str is not None or line_range is not None: cli_error("Use split options without old_str or line_range")
+        if old_str is not None or line_range is not None: api_error("Use split options without old_str or line_range")
         return split_cell(
             path,
             cell_id=cell_id,
             new=new,
-            decode_newlines=False,
             split_before=split_before,
             cell_type=cell_type,
             run_test=run_test,
@@ -299,7 +296,7 @@ def update_cell(
         nb = read_nb(path)
         before = copy.deepcopy(nb)
         idx, cell = find_cell_by_id(nb.cells, cell_id) if cell_id else find_cell_by_text(nb.cells, old_str)
-        if old_str is not None and old_str not in cell_source(cell): cli_error(f"old_str was not found in id={cell.id}")
+        if old_str is not None and old_str not in cell_source(cell): api_error(f"old_str was not found in id={cell.id}")
 
         if line_range is not None:
             replacement = _replace_line_range(cell_source(cell), line_range, new)
@@ -328,20 +325,19 @@ def update_cell(
             diff = _literal_cell_diff(cell_source(cell), replacement)
             if diff: msg += chr(10) + diff
             print(msg)
-            return cli_return(path)
+            return api_return(path)
         commit = commit_notebook(path, nb, before=before, affected_cell_ids=[getattr(cell, "id", "")], validate_code=validate_code)
         if commit["exported"]: msg += " and exported with nbdev"
         print(msg)
         if run_test: run_notebook_test(path)
-    return cli_return(path)
+    return api_return(path)
 
 # %% ../nbs/02_write.ipynb #1fa7b1d5
 def split_cell(
     path: str,  # Notebook path
     cell_id: str,  # Stable cell id to split
-    new: Annotated[str, "Multi-cell replacement text separated by ---", {"opt": False, "nargs": "?"}] = "",
+    new: str = "",
     new_file: str | None = None,  # Read replacement text from a UTF-8 file
-    decode_newlines: bool = True,  # Decode CLI-style literal \\n escapes in new text
     split_before: str | None = None,  # Split existing cell before the first line containing or matching this text
     cell_type: str = "code",  # Default type for replacement cells without %% marker
     run_test: bool = False,  # Execute the notebook with execnb after writing
@@ -349,10 +345,10 @@ def split_cell(
     dry_run: bool = False,  # Show the split plan without writing
 ):
     "Split one notebook cell into multiple cells, either at a matching line or by supplying replacement content."
-    if split_before is not None and new: cli_error("Pass split_before or new, not both")
-    if split_before is None and not new and not new_file: cli_error("Pass split_before or new")
+    if split_before is not None and new: api_error("Pass split_before or new, not both")
+    if split_before is None and not new and not new_file: api_error("Pass split_before or new")
     path = Path(path)
-    new = load_cells_text(new, new_file, decode_newlines=decode_newlines)
+    new = load_cells_text(new, new_file)
 
     with notebook_locks(path):
         nb = read_nb(path)
@@ -364,7 +360,7 @@ def split_cell(
             mode = f"split before {split_before!r}"
         else:
             new_cells = parse_cells(new, cell_type)
-            if len(new_cells) <= 1: cli_error("new must contain multiple cells separated by ---")
+            if len(new_cells) <= 1: api_error("new must contain multiple cells separated by ---")
             mode = f"split into {len(new_cells)} cells"
         if validate_code: validate_code_cells(new_cells)
         replacement = "\n---\n".join(cell_source(item) for item in new_cells)
@@ -373,14 +369,14 @@ def split_cell(
             diff = _literal_cell_diff(cell_source(cell), replacement)
             if diff: msg += chr(10) + diff
             print(msg)
-            return cli_return(path)
+            return api_return(path)
         for item in new_cells: clear_outputs(item)
         _replace_cell_with_cells(nb, idx, new_cells)
         commit = commit_notebook(path, nb, before=before, affected_cell_ids=[getattr(cell, "id", "")], validate_code=validate_code)
         if commit["exported"]: msg += " and exported with nbdev"
         print(msg)
         if run_test: run_notebook_test(path)
-    return cli_return(path)
+    return api_return(path)
 
 
 # %% ../nbs/02_write.ipynb #9e693be0
@@ -393,8 +389,8 @@ def explode_cell(
     dry_run: bool = False,  # Show the explode plan without writing
 ):
     "Split top-level function definitions in one or all code cells into separate cells."
-    if cell_id is None and not target_all: cli_error("Pass --cell_id or --target_all")
-    if cell_id is not None and target_all: cli_error("Pass --cell_id or --target_all, not both")
+    if cell_id is None and not target_all: api_error("Pass cell_id or target_all")
+    if cell_id is not None and target_all: api_error("Pass cell_id or target_all, not both")
     from nbskill.edit import edit_notebook
 
     path = Path(path)
@@ -402,7 +398,7 @@ def explode_cell(
     result = edit_notebook(path, [edit], validate_code=validate_code, auto_feedback=False, dry_run=dry_run)
     print(result["text"])
     if run_test and not dry_run: run_notebook_test(path)
-    return cli_return(path)
+    return api_return(path)
 
 # %% ../nbs/02_write.ipynb #764dbfb0
 def join_source_lines(lines, field="source_lines"):
@@ -657,18 +653,18 @@ def apply_notebook_edit(
 # %% ../nbs/02_write.ipynb #a6b661e1
 def _load_batch_plan(plan="", plan_file=None):
     text = load_cells_text(plan, plan_file)
-    if not str(text).strip(): cli_error("Pass a JSON batch edit plan or --plan_file")
+    if not str(text).strip(): api_error("Pass a JSON batch edit plan or plan_file")
     try: data = json.loads(text)
-    except json.JSONDecodeError as exc: cli_error(f"Batch edit plan must be JSON: {exc}")
+    except json.JSONDecodeError as exc: api_error(f"Batch edit plan must be JSON: {exc}")
     if isinstance(data, list): data = {"operations": data}
     if not isinstance(data, dict) or not isinstance(data.get("operations"), list):
-        cli_error("Batch edit plan must be a JSON object with an operations list")
+        api_error("Batch edit plan must be a JSON object with an operations list")
     return data
 
 # %% ../nbs/02_write.ipynb #9fb325bd
 def _op_path(op, default_path=None):
     path = op.get("path") or default_path
-    if not path: cli_error(f"Batch operation missing path: {op}")
+    if not path: api_error(f"Batch operation missing path: {op}")
     return Path(path)
 
 # %% ../nbs/02_write.ipynb #0bc1bf7f
@@ -699,7 +695,7 @@ def _format_batch_details(details):
 
 # %% ../nbs/02_write.ipynb #04a5744e
 def batch_edit_nb(
-    plan: Annotated[str, "JSON edit plan, or - to read stdin", {"opt": False, "nargs": "?"}] = "",
+    plan: str = "",
     plan_file: str | None = None,  # Read the JSON plan from a UTF-8 file
     path: str | None = None,  # Default notebook path for operations that omit path
     dry_run: bool = True,  # Show the plan and diffs without writing
@@ -745,7 +741,7 @@ def batch_edit_nb(
     if exported: msg += " and exported with nbdev"
     if details: msg += "\n" + _format_batch_details(details)
     print(msg)
-    return cli_return({"paths": [str(path) for path in paths], "details": details})
+    return api_return({"paths": [str(path) for path in paths], "details": details})
 
 # %% ../nbs/02_write.ipynb #8e5f6d2d
 def _cell_lines(cell):
@@ -922,13 +918,13 @@ def _split_chapter_plan(nb, chapter, dest, default_exp=None, promote_private=Tru
         if name.startswith("_") and promote_private:
             public = name.lstrip("_")
             if public in outside_defs or public in moved_uses:
-                cli_error(f"Cannot promote {name!r}: {public!r} already exists or is referenced")
+                api_error(f"Cannot promote {name!r}: {public!r} already exists or is referenced")
             promotions.append((name, public))
     _apply_promotions(remaining, promotions)
 
     import_lines = _import_lines_for_names(remaining, moved_uses - set(outside_defs))
     if source_deps:
-        if not source_module: cli_error("Source notebook needs #| default_exp before split dependencies can be imported")
+        if not source_module: api_error("Source notebook needs #| default_exp before split dependencies can be imported")
         for name in source_deps:
             promoted = dict(promotions).get(name, name)
             import_lines.append(f"from {source_module} import {promoted} as {name}" if promoted != name else f"from {source_module} import {name}")
@@ -938,7 +934,7 @@ def _split_chapter_plan(nb, chapter, dest, default_exp=None, promote_private=Tru
 
     source_imports = []
     if moved_deps:
-        if not dest_module: cli_error("Destination notebook needs #| default_exp before source dependencies can be imported")
+        if not dest_module: api_error("Destination notebook needs #| default_exp before source dependencies can be imported")
         for name in moved_deps:
             source_imports.append(f"from {dest_module} import {name}")
     _insert_import_cell(remaining, source_imports)
@@ -986,13 +982,13 @@ def split_nb_chapter(
 ):
     "Split one ## chapter into a new nbdev notebook."
     path, dest = Path(path), Path(dest)
-    if dest.exists() and not force: cli_error(f"Destination exists: {dest}; pass --force to overwrite")
+    if dest.exists() and not force: api_error(f"Destination exists: {dest}; pass force=True to overwrite")
     with notebook_locks(path, dest):
         before = read_nb(path)
         plan = _split_chapter_plan(before, chapter=chapter, dest=dest, default_exp=default_exp, promote_private=promote_private)
         msg = _format_split_plan(path, dest, chapter, plan, dry_run=dry_run)
         print(msg)
-        if dry_run: return cli_return(plan)
+        if dry_run: return api_return(plan)
         source_nb = new_nb(plan["source_cells"])
         dest_nb = new_nb(plan["dest_cells"])
         dest_before = read_nb(dest) if dest.exists() else new_nb([])
@@ -1012,7 +1008,7 @@ def split_nb_chapter(
         )
         plan["source_exported"] = source_commit["exported"]
         plan["dest_exported"] = dest_commit["exported"]
-    return cli_return(plan)
+    return api_return(plan)
 
 # %% ../nbs/02_write.ipynb #2287a701
 def create_notebook(path, name=None, template="nbdev", default_exp=None, dry_run=False):

@@ -16,7 +16,7 @@ from pathlib import Path
 from fastcore.nbio import mk_cell, new_nb
 from fastcore.nbio import write_nb
 
-from .foundation import cli_return
+from .foundation import api_return
 
 # %% ../nbs/05_convert.ipynb #ac1075c9
 def _node_source(lines, node):
@@ -315,7 +315,7 @@ def py2nb(
             package=package, include=include, exclude=exclude, skip_init=skip_init,
             include_tests=include_tests, dry_run=dry_run, force=force,
         )
-        return cli_return(report)
+        return api_return(report)
 
     default_exp = _module_name_for_path(pth)
     report = _py2nb_file(
@@ -323,7 +323,7 @@ def py2nb(
         method_lines=method_lines, default_exp=default_exp, dry_run=dry_run, force=force,
     )
     print(f"{'Would write' if dry_run else 'Wrote'} {report['cell_count']} cells to {report['notebook']}")
-    return cli_return(report)
+    return api_return(report)
 
 
 # %% ../nbs/05_convert.ipynb #35c804b1
@@ -457,4 +457,4 @@ def py2nbdev(
         "blockers": conversion.get("blockers", []) + validation.get("errors", []),
     }
     print(json.dumps(report, indent=2, sort_keys=True, default=str))
-    return cli_return(report)
+    return api_return(report)

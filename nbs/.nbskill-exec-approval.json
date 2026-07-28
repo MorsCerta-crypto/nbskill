@@ -2376,7 +2376,7 @@
       "reasons": [
         "_doctor_warnings->_notebook_export_relevant_change->call:subprocess.run"
       ],
-      "source_hash": "73387d852548"
+      "source_hash": "d7ed015d84a8"
     },
     "_doctor_warnings": {
       "allowed": false,
@@ -6729,6 +6729,15 @@
       "notebook": "04_review.ipynb",
       "reasons": []
     },
+    "_public_function_documentation_warnings": {
+      "allowed": true,
+      "cell_id": "074fb0db",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "07_mcp.ipynb",
+      "reasons": [],
+      "source_hash": "2a2a2054b6b6"
+    },
     "_public_function_literacy_problems_for_nb": {
       "allowed": true,
       "cell_id": "e037ee42",
@@ -9156,6 +9165,15 @@
       "reasons": [],
       "source_hash": "5485aa9ee1cc"
     },
+    "_unused_symbol_warnings": {
+      "allowed": true,
+      "cell_id": "0afbe7a9",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "07_mcp.ipynb",
+      "reasons": [],
+      "source_hash": "54a79a741549"
+    },
     "_url_allowed": {
       "allowed": true,
       "cell_id": "a8a26468",
@@ -9231,10 +9249,10 @@
       "allowed": true,
       "cell_id": "155e3cb3",
       "external_effects": false,
-      "line": 12,
+      "line": 15,
       "notebook": "07_mcp.ipynb",
       "reasons": [],
-      "source_hash": "b270e7753909"
+      "source_hash": "f0605dc3eef5"
     },
     "_verify_change_report": {
       "allowed": false,
@@ -9250,7 +9268,7 @@
         "exec_nb_tool->_mcp_workspace_root->_mcp_bootstrap_workspace->_mcp_log_exception->_mcp_log_event->call:path.parent.mkdir",
         "exec_nb_tool->mcp_tool_result->_response_warnings->_doctor_warnings->_notebook_export_relevant_change->call:subprocess.run"
       ],
-      "source_hash": "a00b8c46599c"
+      "source_hash": "ba407f423f21"
     },
     "_verify_change_result_text": {
       "allowed": true,
@@ -9259,7 +9277,7 @@
       "line": 8,
       "notebook": "07_mcp.ipynb",
       "reasons": [],
-      "source_hash": "b270e7753909"
+      "source_hash": "f0605dc3eef5"
     },
     "_verify_change_target": {
       "allowed": true,
@@ -9268,7 +9286,7 @@
       "line": 2,
       "notebook": "07_mcp.ipynb",
       "reasons": [],
-      "source_hash": "b270e7753909"
+      "source_hash": "f0605dc3eef5"
     },
     "_verify_change_test": {
       "allowed": false,
@@ -10357,7 +10375,7 @@
       "reasons": [
         "mcp_tool_result->_response_warnings->_doctor_warnings->_notebook_export_relevant_change->call:subprocess.run"
       ],
-      "source_hash": "58f41ad25acc"
+      "source_hash": "1cc4c67c206e"
     },
     "fake_execute_plan": {
       "allowed": true,

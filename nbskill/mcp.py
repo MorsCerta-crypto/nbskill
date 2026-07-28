@@ -2016,6 +2016,21 @@ def _unused_symbol_warnings(path):
         ))
     return warnings, "\n".join(lines)
 
+# %% ../nbs/07_mcp.ipynb #074fb0db
+def _public_function_documentation_warnings(path):
+    warnings = []
+    for problem in public_function_literacy_problems(path):
+        if problem.get("code") != "public-function-markdown": continue
+        symbol = problem.get("symbol", "<unknown>")
+        warnings.append(_warning(
+            "public_function_documentation",
+            f"Public function {symbol!r} has no explanatory Markdown documentation cell.",
+            "Add a nearby Markdown cell that names the function and explains its behavior.",
+            severity="warning", scope="warning",
+            path=problem.get("path"), cell_id=problem.get("cell_id"), problem=problem,
+        ))
+    return warnings
+
 # %% ../nbs/07_mcp.ipynb #44b0f45c
 def _doctor_warning_items(path):
     error_codes = {"exported_py_hash_mismatch", "recent_tool_failures"}
@@ -2026,7 +2041,8 @@ def _doctor_warning_items(path):
     ]
     private_warnings, private_text = _private_symbol_warnings(path)
     unused_warnings, unused_text = _unused_symbol_warnings(path)
-    return [*warnings, *private_warnings, *unused_warnings], "\n".join([private_text, unused_text])
+    documentation_warnings = _public_function_documentation_warnings(path)
+    return [*warnings, *private_warnings, *unused_warnings, *documentation_warnings], "\n".join([private_text, unused_text])
 
 # %% ../nbs/07_mcp.ipynb #a6dc04e5
 def _doctor_style_report(path, skip_folder_re=None, skip_path=None, max_output_chars=12000, max_diagnostics=200):
@@ -2714,7 +2730,7 @@ def _verify_change_paths(paths, up2ids, root):
 # %% ../nbs/07_mcp.ipynb #0aaf15a2
 async def _verify_change_report(path, up2id, ref_a, ref_b, timeout, tool_timeout, scopes, detail, ctx):
     try:
-        diff = capture_notebook_call(diff_nb, path, ref_a=ref_a, ref_b=ref_b)
+        diff = capture_notebook_call(diff_nb, path, path=path, ref_a=ref_a, ref_b=ref_b)
         up2id = _verify_change_target(diff, up2id)
         execution = await exec_nb_tool(
             path, up2id=up2id, timeout=timeout, show_output=True, check_only=True,

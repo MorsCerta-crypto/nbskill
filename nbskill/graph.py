@@ -12,7 +12,7 @@ from pathlib import Path
 
 from fastcore.basics import patch
 from fastcore.nbio import read_nb
-from .foundation import NotebookSymbol, call_name, cell_source, api_error, api_return, notebook_paths
+from .foundation import NotebookSymbol, call_name, cell_source, api_error, api_return, is_exported_code_cell, notebook_paths
 from .foundation import parse_code_cell, path_candidates, source_without_directives, symbol_short_name
 from .foundation import xml_attrs, xml_escape
 
@@ -90,7 +90,7 @@ def _cell_definition_records(path, module, idx, cell):
             records.append(dict(
                 symbol=symbol, kind=kind, module=module, path=str(path),
                 cell_id=getattr(cell, "id", ""), cell_idx=idx,
-                calls=_call_names(symbol_node)
+                calls=_call_names(symbol_node), exported=is_exported_code_cell(cell),
             ))
     return records
 
@@ -155,6 +155,23 @@ def _collect_graph(path="nbs"):
             if record: callers.append(record)
             _graph_check_size(notebooks=len(nb_paths), cells=cell_count, records=len(definitions) + len(callers) + len(imports))
     return dict(definitions=definitions, callers=callers, imports=imports)
+
+# %% ../nbs/10_graph.ipynb #b3b7d557
+def _unused_exported_symbol_candidates(path="nbs"):
+    "Return exported public and private symbols with no static callers."
+    graph = _collect_graph(path)
+    calls = {call for caller in graph["callers"] for call in caller.get("calls", ())}
+    rows = []
+    for record in graph["definitions"]:
+        if not record.get("exported"): continue
+        names = {record["symbol"], symbol_short_name(record["symbol"])}
+        if calls & names: continue
+        visibility = "private" if symbol_short_name(record["symbol"]).startswith("_") else "public"
+        rows.append(dict(
+            symbol=record["symbol"], visibility=visibility, kind=record["kind"],
+            module=record.get("module"), path=record["path"], cell_id=record["cell_id"],
+        ))
+    return sorted(rows, key=lambda row: (row["path"], row["symbol"]))
 
 # %% ../nbs/10_graph.ipynb #5649a185
 _BUILTIN_CALL_NAMES = set(dir(builtins)) | {"display", "get_ipython"}

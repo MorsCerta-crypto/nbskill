@@ -1,6 +1,6 @@
 # nbskill MCP Tools
 
-The MCP server is started with `nbskill_mcp`. It is intended to be the normal interface for agents because it accepts structured parameters and returns notebook-aware text instead of raw `.ipynb` JSON. It provides both code references and reusable problem-solving memory.
+The MCP interface is the normal interface for agents because it accepts structured parameters and returns notebook-aware text instead of raw `.ipynb` JSON. It provides both code references and reusable problem-solving memory.
 
 Each MCP tool is registered with semantic metadata:
 
@@ -19,7 +19,7 @@ See `references/mcp-tool-report.md` for the current ranked tool surface.
 | Diagnostics | `healthcheck`, `doctor` | Check MCP liveness, fatal notebook errors, warnings, private symbol leaks, optional style diagnostics, reconnect hints, and setup failures. |
 | Focused context | `context` | Read project, notebook, chapter title, cell id, or public symbol targets. |
 | Notebook editing | `edit_notebook` | Apply deterministic whole-cell, line, insert/delete/move, and notebook-wide text replacement edits atomically with structured diffs. |
-| Verification and review | `exec_nb`, `diff_nb` | Run notebooks safely and review code-cell diffs. |
+| Verification and review | `exec_nb`, `diff_nb`, `verify_change` | Run notebooks safely, review code-cell diffs, or bundle the diff, focused check-only execution, and diagnostics for explicitly changed notebooks. |
 | Symbol analysis | included in `context(...)` | Inspect definitions, callers, and callees for a cell or symbol target. |
 | Reference implementations | `reference` | Discover local repositories, add/list/ingest indexed references, query implementations, and propose reuse work. |
 | Setup | `create_notebook` | Start a new minimal nbdev source notebook. |
@@ -69,7 +69,7 @@ Use `action="query"` before implementation, `action="add"` after a verified solu
 4. `edit_notebook` applies deterministic edit operations atomically. Use `replace_text`/`replace_texts` with `target="all"` for notebook-level renames, line ops for focused cell edits, and structural ops for insert/delete/move/replace cell changes.
 5. `doctor(scopes="style")` adds chkstyle output to notebook hygiene, private symbol warnings, duplicate imports, and global tool usage/problems.
 6. `exec_nb` runs a notebook, a chapter, or cells up to an id. It is safe by default: fresh or changed cells are denied until they have either been run by the user or stamped by a prior nbskill execution.
-7. `diff_nb` reviews notebook changes in a text form.
+7. `diff_nb` reviews notebook changes in a text form. Use `verify_change` for explicitly affected notebooks when the same review should also include focused check-only execution and `doctor` diagnostics.
 
 Use `doctor(scopes="error,warning")` for fatal notebook problems and warnings. Add `style` only when chkstyle output is useful; `doctor` does not run or show chkstyle for error/warning-only scopes. Private symbol reporting is part of the warning scope.
 

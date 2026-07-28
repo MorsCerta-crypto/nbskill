@@ -140,20 +140,23 @@ def _tested_public_names(tree, public_names):
     return names
 
 # %% ../nbs/04_review.ipynb #942f5874
+def _markdown_explains_function(source, name):
+    words = re.findall(r"[A-Za-z][A-Za-z0-9_]*", source)
+    return bool(re.search(rf"\b{re.escape(name)}\b", source)) and len(words) >= 5
+
 def _public_function_reference_sets(nb, public_names):
     references = {"markdown": set(), "example": set(), "test": set()}
     for cell in nb.cells:
         source = cell_source(cell)
         if getattr(cell, "cell_type", None) == "markdown":
-            for name in public_names:
-                if re.search(rf"\b{re.escape(name)}\b", source):
-                    references["markdown"].add(name)
+            references["markdown"].update(
+                name for name in public_names if _markdown_explains_function(source, name)
+            )
             continue
         tree = parse_code_cell(cell)
         if tree is None or is_exported_code_cell(cell): continue
         tested = _tested_public_names(tree, public_names)
-        if tested:
-            references["test"].update(tested)
+        if tested: references["test"].update(tested)
         elif "test_code" not in cell_class_names(cell):
             references["example"].update(_called_public_names(tree, public_names))
     return references

@@ -26,7 +26,7 @@ from .edit_interactive import execute_plan,execute_project_plan,plan_result_text
 from .execute import exec_nb
 from .workbench import agent_workbench_result
 from .foundation import (bootstrap_nbskill_project, empty_failure_map, failure_map_path, load_failure_map,cell_source, exported_py_path, generated_owner, git_root, git_status_paths,notebook_paths, path_candidates, source_hash, stamp_export_metadata)
-from .graph import notebook_knowledge_graph_data,notebook_order_problems,private_symbol_report
+from .graph import _unused_exported_symbol_candidates,notebook_knowledge_graph_data,notebook_order_problems,private_symbol_report
 from .knowledge import *
 from .parallel import notebook_locks
 from .read import context, filter_context
@@ -1991,6 +1991,31 @@ def _private_symbol_warnings(path):
     ]
     return warnings, text
 
+# %% ../nbs/07_mcp.ipynb #0afbe7a9
+def _unused_symbol_warnings(path):
+    try:
+        rows = _unused_exported_symbol_candidates(path)
+    except FileNotFoundError as exc:
+        text = f"Unused symbol scan found a missing notebook: {exc.filename or exc}"
+        return [_warning(
+            "unused_symbol_missing_file", text,
+            "Remove stale notebook references or recreate the missing notebook before rerunning doctor.",
+            severity="warning", scope="warning", path=exc.filename,
+        )], text
+    if not rows: return [], "No unused exported symbols found."
+    lines = ["Unused exported symbols"]
+    warnings = []
+    for row in rows:
+        visibility = row["visibility"]
+        lines.append(f"- {visibility} {row['kind']} {row['symbol']} in {row['path']} id={row['cell_id']}")
+        warnings.append(_warning(
+            f"unused_exported_{visibility}_symbol",
+            f"Exported {visibility} {row['kind']} {row['symbol']!r} has no static callers.",
+            "Confirm there are no external or dynamic callers, then remove it or add a use.",
+            severity="warning", scope="warning", **row,
+        ))
+    return warnings, "\n".join(lines)
+
 # %% ../nbs/07_mcp.ipynb #44b0f45c
 def _doctor_warning_items(path):
     error_codes = {"exported_py_hash_mismatch", "recent_tool_failures"}
@@ -2000,7 +2025,8 @@ def _doctor_warning_items(path):
         if item.get("code") not in error_codes
     ]
     private_warnings, private_text = _private_symbol_warnings(path)
-    return [*warnings, *private_warnings], private_text
+    unused_warnings, unused_text = _unused_symbol_warnings(path)
+    return [*warnings, *private_warnings, *unused_warnings], "\n".join([private_text, unused_text])
 
 # %% ../nbs/07_mcp.ipynb #a6dc04e5
 def _doctor_style_report(path, skip_folder_re=None, skip_path=None, max_output_chars=12000, max_diagnostics=200):

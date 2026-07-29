@@ -36,6 +36,9 @@ Documentation = "https://MorsCerta-crypto.github.io/nbskill/"
 
 [project.scripts]
 nbskill_mcp = "nbskill.mcp:main"
+install_nbskill = "nbskill.cli:install_nbskill"
+nbskill_mcp_log = "nbskill.cli:nbskill_mcp_log"
+nbskill_mcp_log_problems = "nbskill.cli:nbskill_mcp_log_problems"
 
 [project.entry-points.nbdev]
 nbskill = "nbskill._modidx:d"

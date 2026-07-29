@@ -1660,8 +1660,7 @@ def _is_documentation(cell): return getattr(cell, "cell_type", None) == "markdow
 
 # %% ../nbs/00_foundation.ipynb #52405ac0
 def _is_multicell(cell):
-    functions = _function_nodes(cell)
-    return len(functions) > 1 or (is_exported_code_cell(cell) and bool(functions) and (_has_cell_output(cell) or _has_test_marker(cell)))
+    return len({node.name for node in _function_nodes(cell)}) > 1
 
 # %% ../nbs/00_foundation.ipynb #25ecba70
 def _is_public_code(cell):

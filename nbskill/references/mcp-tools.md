@@ -21,12 +21,12 @@ See `references/mcp-tool-report.md` for the current ranked tool surface.
 | Notebook editing | `edit_notebook` | Apply deterministic whole-cell, line, insert/delete/move, and notebook-wide text replacement edits atomically with structured diffs. |
 | Verification and review | `exec_nb`, `diff_nb`, `verify_change` | Run notebooks safely, review code-cell diffs, or bundle the diff, focused check-only execution, and diagnostics for explicitly changed notebooks. |
 | Symbol analysis | included in `context(...)` | Inspect definitions, callers, and callees for a cell or symbol target. |
-| Reference implementations | `reference` | Discover local repositories, add/list/ingest indexed references, query implementations, and propose reuse work. |
+| Reference implementations | `reference` | Query indexed reference implementations for prior art. |
 | Setup | `create_notebook` | Start a new minimal nbdev source notebook. |
 
 ## Python-only operations
 
-`convert`, `problem_memory`, `visible_text_inventory`, `move_cells`, and `style_check` remain Python APIs. They are not registered in the MCP schema because they are broad migrations or specialized local review. Use `context(target="notebook.ipynb#cell-id", mode="exact")` for a complete selected cell.
+`convert`, `problem_memory`, `visible_text_inventory`, `move_cells`, and `style_check` remain Python APIs. Reference indexing and maintenance also remain in the CLI or Python API. They are not registered in the MCP schema because they are broad migrations, maintenance, or specialized local review. Use `context(target="notebook.ipynb#cell-id", view="full")` for a complete selected cell.
 
 | Python API | Use |
 | --- | --- |
@@ -66,12 +66,12 @@ Use `action="query"` before implementation, `action="add"` after a verified solu
 1. `healthcheck` confirms the server is alive and reports concurrency behavior.
 2. `context` gives the smallest useful project, notebook, chapter, cell, or symbol view. Cell and symbol targets include symbol graph payloads.
 3. `reference` provides reusable implementation evidence before a change.
-4. `edit_notebook` applies deterministic edit operations atomically. Use `replace_text`/`replace_texts` with `target="all"` for notebook-level renames, line ops for focused cell edits, and structural ops for insert/delete/move/replace cell changes.
-5. `doctor(scopes="style")` adds chkstyle output to notebook hygiene, private symbol warnings, duplicate imports, and global tool usage/problems.
+4. `edit_notebook(path, edits, dry_run=False)` applies deterministic edit operations atomically. Individual edits can still use expected-hash guards.
+5. `doctor()` reports actionable errors and warnings. Use `doctor(scopes="style")` only for an explicit style check.
 6. `exec_nb` runs a notebook, a chapter, or cells up to an id. It is safe by default: fresh or changed cells are denied until they have either been run by the user or stamped by a prior nbskill execution.
 7. `diff_nb` reviews notebook changes in a text form. Use `verify_change` for explicitly affected notebooks when the same review should also include focused check-only execution and `doctor` diagnostics.
 
-Use `doctor(scopes="error,warning")` for fatal notebook problems and warnings. Add `style` only when chkstyle output is useful; `doctor` does not run or show chkstyle for error/warning-only scopes. Private symbol reporting is part of the warning scope.
+Use `doctor()` for fatal notebook problems and warnings. Add `style` only when chkstyle output is useful; private symbol reporting is part of the warning scope.
 
 Use `edit_notebook` when the operations are already known and should be applied deterministically.
 

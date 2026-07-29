@@ -1912,7 +1912,7 @@
         "_mcp_workspace_root->_mcp_bootstrap_workspace->_mcp_log_exception->_mcp_log_event->call:path.parent.mkdir",
         "mcp_tool_result->_response_warnings->_doctor_warnings->_notebook_export_relevant_change->call:subprocess.run"
       ],
-      "source_hash": "f6d0c9475625"
+      "source_hash": "c93f549ebea2"
     },
     "_context_unknown_qualified": {
       "allowed": true,
@@ -2356,7 +2356,7 @@
       "line": 2,
       "notebook": "07_mcp.ipynb",
       "reasons": [],
-      "source_hash": "3e4ee6ebb56d"
+      "source_hash": "a4225f58c026"
     },
     "_doctor_validation_errors": {
       "allowed": true,
@@ -2855,7 +2855,7 @@
       "reasons": [
         "call:edit_root.mkdir"
       ],
-      "source_hash": "06f48c4bc21e"
+      "source_hash": "d6d4e20fb39a"
     },
     "_experiment_returns": {
       "allowed": true,
@@ -3237,7 +3237,7 @@
         "_mcp_workspace_root->_mcp_bootstrap_workspace->_mcp_log_exception->_mcp_log_event->call:path.parent.mkdir",
         "mcp_tool_result->_response_warnings->_doctor_warnings->_notebook_export_relevant_change->call:subprocess.run"
       ],
-      "source_hash": "68c2c0bb5916"
+      "source_hash": "d8c5c754676f"
     },
     "_filter_context_view": {
       "allowed": true,
@@ -3625,7 +3625,7 @@
       "line": 2,
       "notebook": "00_foundation.ipynb",
       "reasons": [],
-      "source_hash": "0a15c74f45f9"
+      "source_hash": "25f1c718a05e"
     },
     "_format_usage_locations": {
       "allowed": true,
@@ -7453,7 +7453,7 @@
         "_mcp_workspace_root->_mcp_bootstrap_workspace->_mcp_log_exception->_mcp_log_event->call:path.parent.mkdir",
         "mcp_tool_result->_response_warnings->_doctor_warnings->_notebook_export_relevant_change->call:subprocess.run"
       ],
-      "source_hash": "32049346a4c1"
+      "source_hash": "b63848cbc3ce"
     },
     "_reference_vector": {
       "allowed": true,
@@ -9028,7 +9028,7 @@
       "line": 5,
       "notebook": "07_mcp.ipynb",
       "reasons": [],
-      "source_hash": "0b3f360d8f1f"
+      "source_hash": "4bf197229777"
     },
     "_timeout_stream": {
       "allowed": true,
@@ -9268,7 +9268,7 @@
         "exec_nb_tool->_mcp_workspace_root->_mcp_bootstrap_workspace->_mcp_log_exception->_mcp_log_event->call:path.parent.mkdir",
         "exec_nb_tool->mcp_tool_result->_response_warnings->_doctor_warnings->_notebook_export_relevant_change->call:subprocess.run"
       ],
-      "source_hash": "ba407f423f21"
+      "source_hash": "ad671b86571f"
     },
     "_verify_change_result_text": {
       "allowed": true,
@@ -9619,6 +9619,24 @@
       "notebook": "00_foundation.ipynb",
       "reasons": [],
       "source_hash": "2b2b3683f16c"
+    },
+    "api_error": {
+      "allowed": true,
+      "cell_id": "754aea72",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "00_foundation.ipynb",
+      "reasons": [],
+      "source_hash": "7a3609d7632a"
+    },
+    "api_return": {
+      "allowed": true,
+      "cell_id": "dbc6a8c7",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "00_foundation.ipynb",
+      "reasons": [],
+      "source_hash": "dc3d8f0aae11"
     },
     "append_notebook_edit_feedback": {
       "allowed": true,
@@ -10175,7 +10193,7 @@
         "_mcp_workspace_root->_mcp_bootstrap_workspace->_mcp_log_exception->_mcp_log_event->call:path.parent.mkdir",
         "mcp_tool_result->_response_warnings->_doctor_warnings->_notebook_export_relevant_change->call:subprocess.run"
       ],
-      "source_hash": "b382f5279513"
+      "source_hash": "33f9d8c58ecc"
     },
     "edit": {
       "allowed": true,
@@ -10213,10 +10231,9 @@
         "_mcp_tool_error_result->mcp_tool_result->_response_warnings->_doctor_warnings->_notebook_export_relevant_change->call:subprocess.run",
         "_mcp_workspace_root->_mcp_bootstrap_workspace->_mcp_log_exception->_mcp_log_event->call:handle.write",
         "_mcp_workspace_root->_mcp_bootstrap_workspace->_mcp_log_exception->_mcp_log_event->call:path.parent.mkdir",
-        "_run_mcp_smoke_snippets->call:subprocess.run",
         "mcp_tool_result->_response_warnings->_doctor_warnings->_notebook_export_relevant_change->call:subprocess.run"
       ],
-      "source_hash": "95331855e488"
+      "source_hash": "7eaef00596c7"
     },
     "empty_failure_map": {
       "allowed": true,
@@ -10465,7 +10482,7 @@
       "line": 2,
       "notebook": "00_foundation.ipynb",
       "reasons": [],
-      "source_hash": "bffd9d7cf726"
+      "source_hash": "dba476e4282d"
     },
     "find_cell_by_text": {
       "allowed": true,
@@ -10474,7 +10491,7 @@
       "line": 2,
       "notebook": "00_foundation.ipynb",
       "reasons": [],
-      "source_hash": "86bc078b3db3"
+      "source_hash": "798dcab17143"
     },
     "find_context_command": {
       "allowed": true,
@@ -10748,15 +10765,13 @@
       "source_hash": "5f894c47a9b0"
     },
     "load_cells_text": {
-      "allowed": false,
+      "allowed": true,
       "cell_id": "f5e716d7",
-      "external_effects": true,
+      "external_effects": false,
       "line": 2,
       "notebook": "00_foundation.ipynb",
-      "reasons": [
-        "_decode_cli_newlines->call:text.replace"
-      ],
-      "source_hash": "65e2e60565a7"
+      "reasons": [],
+      "source_hash": "72e9bb9ba63d"
     },
     "load_failure_map": {
       "allowed": true,
@@ -10875,7 +10890,7 @@
       "reasons": [
         "_response_warnings->_doctor_warnings->_notebook_export_relevant_change->call:subprocess.run"
       ],
-      "source_hash": "3c461a0548b0"
+      "source_hash": "fb7ab6f9df6b"
     },
     "metadata": {
       "allowed": true,
@@ -11192,7 +11207,7 @@
       "line": 2,
       "notebook": "00_foundation.ipynb",
       "reasons": [],
-      "source_hash": "a739548fa584"
+      "source_hash": "fe2e94d8d5e6"
     },
     "path_candidates": {
       "allowed": true,
@@ -11561,12 +11576,12 @@
     },
     "replace_cell": {
       "allowed": true,
-      "cell_id": "79034c16",
+      "cell_id": "b3365e7b",
       "external_effects": false,
-      "line": 3,
-      "notebook": "02_edit.ipynb",
+      "line": 2,
+      "notebook": "00_foundation.ipynb",
       "reasons": [],
-      "source_hash": "d2bd56b0856a"
+      "source_hash": "446ff02aa963"
     },
     "replace_lines": {
       "allowed": true,
@@ -11943,7 +11958,7 @@
       "reasons": [
         "mcp_tool_result->_response_warnings->_doctor_warnings->_notebook_export_relevant_change->call:subprocess.run"
       ],
-      "source_hash": "d534927895b7"
+      "source_hash": "eb4e03ddb527"
     },
     "to_record": {
       "allowed": true,
@@ -12000,7 +12015,7 @@
       "line": 2,
       "notebook": "00_foundation.ipynb",
       "reasons": [],
-      "source_hash": "2f7f3db631a1"
+      "source_hash": "29d4014b7b5a"
     },
     "validate_nbs": {
       "allowed": true,

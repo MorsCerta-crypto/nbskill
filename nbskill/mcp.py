@@ -1609,10 +1609,9 @@ def _filter_context_summary_lines(data):
 # %% ../nbs/07_mcp.ipynb #68b427a5
 def _doctor_summary_lines(report):
     report = report or {}
-    errors, warnings = report.get("errors", []), report.get("warnings", [])
-    lines = [f"errors={len(errors)} warnings={len(warnings)}"]
-    issues = [*errors, *warnings] or report.get("issues", [])
-    lines.extend(_diagnostic_line(item) for item in issues[:5])
+    errors, warnings = report.get("error_count", 0), report.get("warning_count", 0)
+    lines = [f"errors={errors} warnings={warnings}"]
+    if not errors and not warnings: lines.append("Next: context, then edit_notebook.")
     return lines
 
 # %% ../nbs/07_mcp.ipynb #f6136874
@@ -1737,17 +1736,13 @@ def mcp_tool_result(tool, arguments, full_output, max_output_chars=12000, detail
     warnings = _dedupe_warnings([*(warnings or []), *([] if status != "completed" else _response_warnings(tool, arguments or {}, preview))])
     lines = _tool_summary_lines(tool, arguments or {}, full_text, preview, status, structured, warnings)
     if detail == "debug" and preview["text"]: lines += ["", "Result:", preview["text"]]
-    text = chr(10).join(lines)
-    data = {
-        "status": status,
-        "output_truncated": preview["truncated"],
-        "output_chars": preview["chars"],
-        "omitted_chars": preview["omitted_chars"],
-        "warnings": warnings,
-    }
+    data = {"status": status}
+    if preview["truncated"]:
+        data.update(output_truncated=True, output_chars=preview["chars"], omitted_chars=preview["omitted_chars"])
+    if warnings: data["warnings"] = warnings
     for key, value in structured.items(): data["result_summary" if key == "summary" else key] = _bounded_structured_value(value, text_limit=12000)
     if detail == "debug": data["debug"] = {"arguments": arguments or {}, "raw_output": _text_preview(full_text, limit=50000)["text"], "hints": list(hints or [])}
-    return ToolResult(content=[TextContent(type="text", text=text)], structured_content=data)
+    return ToolResult(content=[TextContent(type="text", text=chr(10).join(lines))], structured_content=data)
 
 # %% ../nbs/07_mcp.ipynb #d60673ed
 def _mcp_tool_error_result(tool, arguments, exc, max_output_chars=12000, detail="summary", **structured):
@@ -2097,17 +2092,17 @@ _MCP_DIAGNOSTIC_TOOL_CATALOG = {
         'feature': 'diagnostics',
         'usefulness': 'core',
         'tags': ('status', 'diagnostics', 'setup'),
-        'description': 'Cheap liveness probe for the nbskill MCP server, installed version, capabilities, concurrency policy, and reconnect hints.',
-        'when_to_use': 'Call first when checking that the MCP server is connected or after reinstalling/exporting tool signatures.',
-        'combine_with': 'Could be folded into doctor, but a cheap health probe is useful enough to keep separate.',
+        'description': 'Quickly confirm that nbskill is connected and report its available tools.',
+        'when_to_use': 'Call first, and after reinstalling or exporting MCP changes.',
+        'combine_with': 'Use doctor only when healthcheck succeeds but the project needs diagnostics.',
     },
     'doctor': {
         'feature': 'diagnostics',
         'usefulness': 'core',
-        'tags': ('status', 'diagnostics', 'error', 'warning', 'style'),
-        'description': 'Scoped diagnostics for MCP setup, fatal notebook problems, warnings, private symbol leaks, and optional chkstyle output.',
-        'when_to_use': "Use scopes='error', scopes='warning', scopes='style', or scopes='all' depending on the diagnostic depth needed.",
-        'combine_with': 'Now absorbs private symbol warnings and scoped style diagnostics; healthcheck stays separate as a cheap probe.',
+        'tags': ('status', 'diagnostics', 'error', 'warning'),
+        'description': 'Report actionable notebook errors and warnings for a path.',
+        'when_to_use': "Use the default scopes='error,warning' after an edit or when a project needs diagnosis. Use scopes='style' only for an explicit style check.",
+        'combine_with': 'Use healthcheck for server status and diff_nb or exec_nb for focused verification.',
     },
 }
 
@@ -2117,17 +2112,17 @@ _MCP_READ_CONTEXT_TOOL_CATALOG = {
         'feature': 'read_context',
         'usefulness': 'core',
         'tags': ('read', 'context', 'project', 'notebook', 'cell', 'symbol', 'graph'),
-        'description': 'Single notebook-aware reader for project, notebook, chapter, cell id, or Python symbol targets, with optional project graph context.',
-        'when_to_use': "Use first: pass target='project', a notebook path/name, chapter title, cell id, or Python symbol; add include_graph=True with target='project' when placement, reuse, or structure advice needs the notebook knowledge graph.",
-        'combine_with': 'Project graph context is embedded with include_graph=True; cell and symbol targets include symbol graph payloads, so no separate symbol graph tool is needed.',
+        'description': 'Read one notebook-aware target: a project, notebook, cell id, or Python symbol.',
+        'when_to_use': "Use first when you know the target. Choose view='summary', 'implementation', or 'full'; add include_graph=True only when placement or reuse needs project structure.",
+        'combine_with': 'Use filter_context to find an unknown target, then context for its local rationale and impact.',
     },
     'filter_context': {
         'feature': 'read_context',
         'usefulness': 'core',
         'tags': ('read', 'context', 'project', 'notebook', 'search', 'filter'),
-        'description': 'Project-wide notebook-aware context search that filters cells by query selectors and include/exclude regexes.',
-        'when_to_use': 'Use when you need matching cells across a project or notebook scope instead of one resolved target.',
-        'combine_with': 'Use context on a returned path/cell id when a match needs deeper local rationale or symbol impact.',
+        'description': 'Search notebook cells by terms or regular expressions and return concise matches.',
+        'when_to_use': 'Use when the target is unknown. context_lines adds a small amount of surrounding source.',
+        'combine_with': 'Use context on a returned path or cell id before editing.',
     },
 }
 
@@ -2137,7 +2132,7 @@ _MCP_READ_DOC_TOOL_CATALOG = {}
 
 # %% ../nbs/07_mcp.ipynb #mcpcat04
 _MCP_CELL_EDIT_TOOL_CATALOG = {
-    'edit_notebook': {'feature':'notebook_edit','usefulness':'core','tags':('edit','notebook','cell','text','batch'),'description':'Apply deterministic notebook edits.','when_to_use':'Use after context identifies target cells.','combine_with':'Review with diff_nb, exec_nb, or doctor.'},
+    'edit_notebook': {'feature':'notebook_edit','usefulness':'core','tags':('edit','notebook','cell','text','batch'),'description':'Apply atomic notebook edits from a path and edit list.','when_to_use':'Use after context identifies target cells; use dry_run=True to inspect a change without writing.','combine_with':'Verify with diff_nb, exec_nb, verify_change, or doctor.'},
     'create_notebook': {'feature':'notebook_creation','usefulness':'situational','tags':('edit','notebook','create'),'description':'Create one minimal nbdev notebook.','when_to_use':'Use when a new source notebook is needed.','combine_with':'Populate it with edit_notebook.'},
 }
 
@@ -2198,9 +2193,9 @@ _MCP_KNOWLEDGE_TOOL_CATALOG = {
         'feature': 'reference_knowledge',
         'usefulness': 'core',
         'tags': ('knowledge', 'reference', 'search', 'implementation'),
-        'description': 'Manage and search globally indexed reference implementations with add, list, ingest, and query actions.',
-        'when_to_use': 'Use query before implementing similar code; use add/list/ingest to maintain the local reference index.',
-        'combine_with': 'Combines add, list, ingest, and query as actions on one tool.',
+        'description': 'Search indexed reference implementations for prior art.',
+        'when_to_use': 'Use before nontrivial notebook, parsing, AST, filesystem, or formatting work.',
+        'combine_with': 'Use context to compare a useful hit with local code. Maintain the index through the CLI or Python API.',
     },
 }
 
@@ -2246,23 +2241,14 @@ def _mcp_capabilities():
 mcp = FastMCP(
     "nbskill",
     instructions=(
-        "Work notebook-first in nbdev projects. Feature areas are diagnostics, focused context, "
-        "notebook edits, verification/review, symbol impact, agentic planning, and reference search. "
-        "For reading, use context with a project, notebook, chapter title, cell id, "
-        "or public symbol target; mode is auto, overview, edit, or review, and resolution controls source depth. "
-        "For edits, use edit_notebook as the single production mutation tool. It supports whole-cell, "
-        "line-range, insert/delete/move, and notebook-wide replace_text/replace_texts operations with "
-        "expected_hash guards and structured diffs. Set feedback='off' when a dry run or edit needs no automatic execution. "
-        "Use exec_nb, "
-        "diff_nb, and style_check for verification and review; use doctor with scopes='error', 'warning', "
-        "'style', or 'all' for diagnostics. Chkstyle output only appears when doctor includes the style "
-        "scope. Use reference for indexed reference implementations. Normal tool output has one human summary and structured facts; use "
-        "detail='debug' only when troubleshooting. Notebook operations are concurrency-safe: calls touching "
-        "the same notebook are serialized, calls touching different notebooks can run in parallel, and "
-        "execution uses a global semaphore. Prefer an iterative notebook loop: write small exploratory "
-        "code freely, execute it, show visible outputs/errors, then wrap working code into functions/classes. "
-        "For UI/content edits, use smoke snippets or exec output to prove the user-visible result. "
-        "Keep documentation before exported code and show-off examples after it."
+        "Work notebook-first in nbdev projects. Start with healthcheck. "
+        "Read a known notebook, cell, or symbol with context; use filter_context when you only know search terms. "
+        "Use reference only to query indexed prior art. Use edit_notebook for every source-notebook change; its edits "
+        "remain transactional and can include expected_hash guards. Then verify with the smallest useful check: diff_nb, "
+        "exec_nb, verify_change, or doctor. doctor reports actionable errors and warnings; request style checks separately "
+        "when needed. Responses have a short human summary and structured facts, omitting empty metadata. "
+        "Reference indexing and other broad maintenance belong to the CLI or Python API, not the normal MCP path. "
+        "Notebook calls are concurrency-safe: the same notebook is serialized while independent notebooks may run in parallel."
     ),
 )
 mcp.add_middleware(_NbskillMCPLogMiddleware())
@@ -2295,25 +2281,21 @@ async def _healthcheck_tool(detail: str = "summary", ctx: Context = None) -> Too
 
 # %% ../nbs/07_mcp.ipynb #mcptool01
 @mcp.tool(**_mcp_tool_meta("doctor"))
-async def doctor_tool(
-    path: str = ".", scopes: str = "error,warning", detail: str = "summary",
-    fix: bool = False, reset: bool = False, skip_folder_re: str | None = None,
-    skip_path: str | None = None, max_output_chars: int = 12000,
-    max_diagnostics: int = 200, ctx: Context = None,
-) -> ToolResult:
-    "Report scoped MCP diagnostics: errors, warnings, and optional chkstyle/style details."
+async def doctor_tool(path: str = ".", scopes: str = "error,warning", ctx: Context = None) -> ToolResult:
+    "Report notebook errors and warnings for one path."
     root = await _mcp_workspace_root(ctx)
     path = _mcp_workspace_path(path, root)
-    skip_path = _mcp_workspace_path(skip_path, root) if skip_path else skip_path
-    arguments = dict(path=path, scopes=scopes, detail=detail, fix=fix, reset=reset, skip_folder_re=skip_folder_re, skip_path=skip_path, max_output_chars=max_output_chars, max_diagnostics=max_diagnostics, workspace_root=str(root) if root else None)
-    try:
-        report = _doctor_report(path=path, detail=detail, fix=fix, reset=reset, scopes=scopes, skip_folder_re=skip_folder_re, skip_path=skip_path, max_output_chars=max_output_chars, max_diagnostics=max_diagnostics)
-    except Exception as exc:
-        return _mcp_tool_error_result("doctor", arguments, exc, max_output_chars=max_output_chars, detail=detail)
-    return mcp_tool_result(
-        "doctor", arguments, report["text"], detail=detail,
-        warnings=report["issues"], hints=report["hints"], doctor=report,
+    arguments = dict(path=path, scopes=scopes, workspace_root=str(root) if root else None)
+    try: report = _doctor_report(path=path, scopes=scopes)
+    except Exception as exc: return _mcp_tool_error_result("doctor", arguments, exc)
+    doctor = dict(
+        path=report["path"],
+        scopes=report["scopes"],
+        error_count=len(report["errors"]),
+        warning_count=len(report["warnings"]),
+        style_diagnostic_count=(report["style"] or {}).get("summary", {}).get("diagnostic_count", 0),
     )
+    return mcp_tool_result("doctor", arguments, report["text"], warnings=report["issues"], doctor=doctor)
 
 # %% ../nbs/07_mcp.ipynb #4989e3e7
 def _mcp_graph_summary(graph):
@@ -2438,19 +2420,25 @@ def _mcp_context_result_payload(data, graph, resolution="auto"):
 # %% ../nbs/07_mcp.ipynb #5450e1be
 _C = Context
 @mcp.tool(**_mcp_tool_meta("context"))
-async def _context_tool(target="project",targets=None,scope=".",mode="auto",around=0,include_graph=False,detail="summary",resolution="auto",ctx:_C=None):
-    """Resolve context in layers; mode is auto, overview, edit, or review."""
+async def _context_tool(target="project", scope=".", view="summary", include_graph=False, ctx:_C=None):
+    """Read a project, notebook, cell, chapter, or symbol at the requested depth."""
+    resolutions = dict(summary="auto", implementation="implementation", full="full")
+    resolution = resolutions.get(view)
     root = await _mcp_workspace_root(ctx)
-    arguments, context_args, target_is_project = _mcp_context_tool_args(
-        root, target, targets, scope, mode, around, include_graph, detail, resolution,
-    )
-    scope = arguments["scope"]
+    scope = _mcp_workspace_path(scope, root)
+    target = _mcp_context_target_path(target, root)
+    arguments = dict(target=target, scope=scope, view=view, include_graph=include_graph, workspace_root=str(root) if root else None)
+    if resolution is None:
+        return _mcp_tool_error_result("context", arguments, ValueError("view must be summary, implementation, or full"))
+    target_is_project = str(target or "") in {"project", ".", ""}
+    context_args = dict(target=target, scope=scope, mode="auto", around=0)
     try: data = _mcp_run_context_call(scope, context_args)
-    except Exception as exc: return _mcp_tool_error_result("context", arguments, exc, detail=detail)
+    except Exception as exc: return _mcp_tool_error_result("context", arguments, exc)
     warnings, graph = _mcp_context_graph_payload(scope, include_graph, target_is_project)
-    try: full_output, structured = _mcp_context_result_payload(data, graph, resolution)
-    except ValueError as exc: return _mcp_tool_error_result("context", arguments, exc, detail=detail)
-    return mcp_tool_result("context", arguments, full_output, detail=detail, warnings=warnings, **structured)
+    full_output, structured = _mcp_context_result_payload(data, graph, resolution)
+    structured.pop("resolution", None)
+    structured["view"] = view
+    return mcp_tool_result("context", arguments, full_output, warnings=warnings, **structured)
 
 # %% ../nbs/07_mcp.ipynb #0cd3198d
 @mcp.tool(**_mcp_tool_meta("filter_context"))
@@ -2459,93 +2447,85 @@ async def _filter_context_tool(
     query: str | None = None,
     include_re: str | None = None,
     exclude_re: str | None = None,
+    context_lines: int = 0,
     max_matches: int = 50,
-    max_chars_per_cell: int = 1200,
-    view: str = "source",
-    line_numbers: bool = False,
-    before: int = 0,
-    after: int = 0,
-    verbose: bool = True,
-    detail: str = "summary",
-    path: str | None = None,
     ctx: Context = None,
 ) -> ToolResult:
-    "Search notebook cells across a scope with query, view, and neighbor filters."
+    "Search notebook cells when the target is not yet known."
     root = await _mcp_workspace_root(ctx)
-    if path is not None and scope == ".": scope = path
     scope = _mcp_workspace_path(scope, root)
+    context_lines = _mcp_clamp_int(context_lines, 0, 0, 20, "context_lines")
     max_matches = _mcp_clamp_int(max_matches, 50, 1, 200, "max_matches")
-    max_chars_per_cell = _mcp_clamp_int(max_chars_per_cell, 1200, 100, 4000, "max_chars_per_cell")
-    before = _mcp_clamp_int(before, 0, 0, 20, "before")
-    after = _mcp_clamp_int(after, 0, 0, 20, "after")
     arguments = dict(
-        scope=scope, query=query, include_re=include_re, exclude_re=exclude_re,
-        max_matches=max_matches, max_chars_per_cell=max_chars_per_cell,
-        view=view, line_numbers=line_numbers, before=before, after=after,
-        verbose=verbose, detail=detail, path=path, workspace_root=str(root) if root else None,
+        scope=scope,
+        query=query,
+        include_re=include_re,
+        exclude_re=exclude_re,
+        context_lines=context_lines,
+        max_matches=max_matches,
+        workspace_root=str(root) if root else None,
     )
     try:
         with notebook_locks(scope), _CAPTURE_LOCK:
-            out, err = StringIO(), StringIO()
-            with redirect_stdout(out), redirect_stderr(err):
-                data = filter_context(
-                    scope=scope, query=query, include_re=include_re, exclude_re=exclude_re,
-                    max_matches=max_matches, max_chars_per_cell=max_chars_per_cell,
-                    view=view, line_numbers=line_numbers, before=before, after=after,
-                    verbose=verbose,
-                )
+            data = filter_context(
+                scope=scope,
+                query=query,
+                include_re=include_re,
+                exclude_re=exclude_re,
+                max_matches=max_matches,
+                max_chars_per_cell=1200,
+                view="source",
+                line_numbers=False,
+                before=context_lines,
+                after=context_lines,
+                verbose=False,
+            )
     except Exception as exc:
-        return _mcp_tool_error_result("filter_context", arguments, exc, detail=detail)
-    return mcp_tool_result("filter_context", arguments, data["text"], detail=detail, filter_context=data)
+        return _mcp_tool_error_result("filter_context", arguments, exc)
+    data = {key: value for key, value in data.items() if key != "text"}
+    return mcp_tool_result("filter_context", arguments, "", filter_context=data)
 
 # %% ../nbs/07_mcp.ipynb #mcptool06
 @mcp.tool(**_mcp_tool_meta("edit_notebook"))
-async def edit_notebook_tool(
-    path: str, edits: list[dict], validate_code: bool = True,
-    default_cell_type: str = "code", feedback: str = "auto",
-    feedback_timeout: int = 10, dry_run: bool = False,
-    smoke_snippets: list[str] | None = None, smoke_timeout: int = 10,
-    detail: str = "summary", ctx: Context = None,
-) -> ToolResult:
-    "Apply deterministic notebook edit operations atomically."
+async def edit_notebook_tool(path: str, edits: list[dict], dry_run: bool = False, ctx: Context = None) -> ToolResult:
+    "Apply deterministic notebook edits atomically after context identifies target cells."
     if not edits: raise ValueError("Pass at least one edit")
-    if feedback not in {"auto", "off"}: raise ValueError("feedback must be 'auto' or 'off'")
     root = await _mcp_workspace_root(ctx)
     path = _mcp_workspace_path(path, root)
     edits = _mcp_workspace_edit_paths(edits, root)
-    feedback_timeout = _mcp_clamp_int(feedback_timeout, 10, 1, 60, "feedback_timeout")
-    smoke_timeout = _mcp_clamp_int(smoke_timeout, 10, 1, 60, "smoke_timeout")
-    auto_feedback = feedback == "auto"
-    arguments = dict(
-        path=path, edits=edits, validate_code=validate_code, default_cell_type=default_cell_type,
-        feedback=feedback, feedback_timeout=feedback_timeout, dry_run=dry_run,
-        smoke_snippets=smoke_snippets, smoke_timeout=smoke_timeout, detail=detail,
-        workspace_root=str(root) if root else None,
-    )
+    arguments = dict(path=path, edits=edits, dry_run=dry_run, workspace_root=str(root) if root else None)
     process_arguments = dict(
-        path=path, edits=edits, validate_code=validate_code, default_cell_type=default_cell_type,
-        auto_feedback=False, feedback_timeout=feedback_timeout, feedback_safe=True, dry_run=dry_run,
+        path=path,
+        edits=edits,
+        validate_code=True,
+        default_cell_type="code",
+        auto_feedback=False,
+        feedback_timeout=10,
+        feedback_safe=True,
+        dry_run=dry_run,
     )
-    try:
-        result = await asyncio.to_thread(_capture_edit_notebook_process_call, process_arguments, 110.0)
-    except TimeoutError as exc:
-        return _mcp_tool_error_result("edit_notebook", arguments, exc, detail=detail)
-    except (Exception, SystemExit) as exc:
-        return _mcp_tool_error_result("edit_notebook", arguments, exc, detail=detail)
+    try: result = await asyncio.to_thread(_capture_edit_notebook_process_call, process_arguments, 110.0)
+    except TimeoutError as exc: return _mcp_tool_error_result("edit_notebook", arguments, exc)
+    except (Exception, SystemExit) as exc: return _mcp_tool_error_result("edit_notebook", arguments, exc)
     warnings = list(result.get("warnings", [])) if isinstance(result, dict) else []
     full_output = result.get("text", str(result)) if isinstance(result, dict) else str(result)
     if isinstance(result, dict) and result.get("changed") and not result.get("dry_run"):
         full_output = _append_mcp_feedback(
-            full_output, path, result.get("affected_cell_ids", []),
-            auto_feedback=auto_feedback, feedback_timeout=feedback_timeout,
-            feedback_safe=True, detail=detail, warnings=warnings,
+            full_output,
+            path,
+            result.get("affected_cell_ids", []),
+            auto_feedback=True,
+            feedback_timeout=10,
+            feedback_safe=True,
+            warnings=warnings,
         )
-        smoke_text, smoke_warnings = _run_mcp_smoke_snippets(path, smoke_snippets, timeout=smoke_timeout)
-        warnings.extend(smoke_warnings)
-        full_output = "\n\n".join(chunk for chunk in [full_output.rstrip(), smoke_text] if chunk)
         result = dict(result, warnings=warnings, text=full_output)
+    result_data = {key: value for key, value in result.items() if key != "text"} if isinstance(result, dict) else {}
     return mcp_tool_result(
-        "edit_notebook", arguments, full_output, detail=detail, warnings=warnings,
+        "edit_notebook",
+        arguments,
+        full_output,
+        warnings=warnings,
         ok=bool(result.get("ok", False)) if isinstance(result, dict) else True,
         changed=result.get("changed") if isinstance(result, dict) else None,
         no_change=result.get("no_change") if isinstance(result, dict) else None,
@@ -2555,7 +2535,7 @@ async def edit_notebook_tool(
         after_hash=result.get("after_hash") if isinstance(result, dict) else None,
         planned_hash=result.get("planned_hash") if isinstance(result, dict) else None,
         exported=result.get("exported") if isinstance(result, dict) else None,
-        edit_notebook=result if isinstance(result, dict) else {},
+        edit_notebook=result_data,
     )
 
 # %% ../nbs/07_mcp.ipynb #82b51a42
@@ -2905,93 +2885,21 @@ async def agent_session_tool(
 
 # %% ../nbs/07_mcp.ipynb #b6d3f15d
 @mcp.tool(**_mcp_tool_meta("reference"))
-async def _reference_tool(
-    action: str = "query",
-    query: str | None = None,
-    top_k: int = 3,
-    include_branch: bool = False,
-    current_repo: str = ".",
-    repos: str | None = None,
-    repo: str | None = None,
-    url: str | None = None,
-    name: str | None = None,
-    version: str | None = None,
-    package: str | None = None,
-    path: str | None = None,
-    roots: str | None = None,
-    ingest: bool = True,
-    problem: str | None = None,
-    kind: str | None = None,
-    module: str | None = None,
-    symbol: str | None = None,
-    include_local: bool = True,
-    candidate_k: int | None = None,
-    explain: bool = True,
-    all: bool = False,
-    force: bool = False,
-    allow_download: bool = True,
-    tool_timeout: float = 120.0,
-    detail: str = "summary",
-    ctx: Context = None,
-) -> ToolResult:
-    "Add, discover, ingest, query, or propose reference implementations."
+async def _reference_tool(query: str, top_k: int = 5, ctx: Context = None) -> ToolResult:
+    "Find reusable reference implementations."
     root = await _mcp_workspace_root(ctx)
-    current_repo = _mcp_workspace_path(current_repo, root)
-    path = _mcp_workspace_path(path, root) if path else path
-    action = str(action or "query").lower()
-    top_k = _mcp_clamp_int(top_k, 3, 1, 20, "top_k")
-    candidate_k = None if candidate_k is None else _mcp_clamp_int(candidate_k, top_k * 25, top_k, 500, "candidate_k")
-    tool_timeout = _mcp_clamp_float(tool_timeout, 120.0, 0.001, 120.0, "tool_timeout")
-    arguments = dict(
-        action=action, query=query, top_k=top_k, include_branch=include_branch, current_repo=current_repo, repos=repos, repo=repo,
-        url=url, name=name, version=version, package=package, path=path, roots=roots, ingest=ingest, problem=problem,
-        kind=kind, module=module, symbol=symbol, include_local=include_local, candidate_k=candidate_k, explain=explain,
-        all=all, force=force, allow_download=allow_download,
-        tool_timeout=tool_timeout, detail=detail, workspace_root=str(root) if root else None,
-    )
+    top_k = _mcp_clamp_int(top_k, 5, 1, 20, "top_k")
+    arguments = dict(query=query, top_k=top_k, workspace_root=str(root) if root else None)
     try:
-        if action == "add":
-            if not url: raise ValueError("reference action='add' needs url")
-            result_data = await asyncio.wait_for(
-                asyncio.to_thread(reference_add, url, name=name, version=version or "HEAD", package=package, path=path),
-                timeout=tool_timeout,
-            )
-        elif action == "discover":
-            result_data = await asyncio.wait_for(
-                asyncio.to_thread(reference_discover, roots=roots, path=path, ingest=ingest, force=force), timeout=tool_timeout,
-            )
-        elif action == "list":
-            result_data = await asyncio.wait_for(asyncio.to_thread(reference_list, path=path), timeout=tool_timeout)
-        elif action == "ingest":
-            result_data = await asyncio.wait_for(
-                asyncio.to_thread(reference_ingest, name=name, all=all, path=path, force=force), timeout=tool_timeout,
-            )
-        elif action == "propose":
-            if not problem or not repo: raise ValueError("reference action='propose' needs problem and repo")
-            result_data = await asyncio.wait_for(
-                asyncio.to_thread(reference_propose, problem, repo=repo, version=version, symbol=symbol, current_repo=current_repo, path=path),
-                timeout=tool_timeout,
-            )
-        elif action == "query":
-            if not query: raise ValueError("reference action='query' needs query")
-            result_data = await asyncio.wait_for(
-                asyncio.to_thread(
-                    reference_query,
-                    query, top_k=top_k, include_branch=include_branch, current_repo=current_repo, repos=repos, path=path,
-                    kind=kind, package=package, module=module, symbol=symbol, version=version,
-                    include_local=include_local, candidate_k=candidate_k, explain=explain, allow_download=allow_download,
-                ),
-                timeout=tool_timeout,
-            )
-        else:
-            raise ValueError("action must be add, discover, list, ingest, propose, or query")
-        full_output = json.dumps(result_data, indent=2, sort_keys=True)
-        return mcp_tool_result("reference", arguments, full_output, detail=detail, reference=result_data)
+        result_data = await asyncio.wait_for(
+            asyncio.to_thread(reference_query, query, top_k=top_k, current_repo=str(root or "."), include_local=True),
+            timeout=120.0,
+        )
     except TimeoutError as exc:
-        message = f"reference exceeded its MCP timeout of {tool_timeout:g}s before Codex's client timeout."
-        return _mcp_tool_error_result("reference", arguments, TimeoutError(message), detail=detail)
+        return _mcp_tool_error_result("reference", arguments, TimeoutError("reference exceeded its MCP timeout of 120s before the client timeout."))
     except (Exception, SystemExit) as exc:
-        return _mcp_tool_error_result("reference", arguments, exc, detail=detail)
+        return _mcp_tool_error_result("reference", arguments, exc)
+    return mcp_tool_result("reference", arguments, json.dumps(result_data, indent=2, sort_keys=True), reference=result_data)
 
 # %% ../nbs/07_mcp.ipynb #6daab47d
 def _configure_agent_tools():

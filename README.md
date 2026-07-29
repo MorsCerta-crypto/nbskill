@@ -63,6 +63,12 @@ mcp__nbskill__.healthcheck()
 mcp__nbskill__.verify_change(paths=["nbs/02_write.ipynb"])
 ```
 
+## Coexisting with aai-coding
+
+`aai-coding` and `nbskill` cover different parts of one workflow. Let `aai-coding` own the persistent Python session, hooks, ordinary Python files, configuration, and prose. Let `nbskill` own `nbs/**/*.ipynb`, nbdev-generated Python modules, notebook execution, export, and notebook review.
+
+In an nbdev project, do not use `exhash` or a general editor to mutate a source notebook or its generated module. Start with `healthcheck`, read with [`context`](https://MorsCerta-crypto.github.io/nbskill/read.html#context) or [`filter_context`](https://MorsCerta-crypto.github.io/nbskill/read.html#filter_context), search prior art with `reference`, change the notebook with [`edit_notebook`](https://MorsCerta-crypto.github.io/nbskill/edit.html#edit_notebook), and verify with the smallest useful check. This keeps persistent-session convenience without bypassing notebook-aware safety.
+
 ## References
 
 References are a local implementation knowledgebase, not code to copy. Discover or register repositories with [`reference_discover`](https://MorsCerta-crypto.github.io/nbskill/knowledge.html#reference_discover) or [`reference_add`](https://MorsCerta-crypto.github.io/nbskill/knowledge.html#reference_add), ingest them with [`reference_ingest`](https://MorsCerta-crypto.github.io/nbskill/knowledge.html#reference_ingest), then query them with [`reference_query`](https://MorsCerta-crypto.github.io/nbskill/knowledge.html#reference_query) before adding a nontrivial helper. Use [`reference_propose`](https://MorsCerta-crypto.github.io/nbskill/knowledge.html#reference_propose) when a match is worth turning into review material. Results combine structured filters, hybrid BM25/vector search, dependency status, and optional branch context.

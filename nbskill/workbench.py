@@ -14,11 +14,11 @@ from copy import deepcopy
 from io import StringIO
 from pathlib import Path
 
-from fastcore.nbio import read_nb
+from fastcore.nbio import mk_cell, read_nb
 
 from .edit_interactive import execute_plan
 from nbskill.foundation import (
-    cap_text, cell_class_names, cell_source, file_hash, file_line_count,
+    cap_text, cell_class_names, cell_source, file_hash, file_line_count, is_exported_code_cell,
     generated_owner, git_diff_stats, git_root, git_status_paths,
     git_tracked_paths, notebook_paths, source_without_directives,
 )
@@ -168,7 +168,7 @@ def make_task_contract(
 # %% ../nbs/11_agent_workbench.ipynb #62cb8654
 def _public_symbols_in_cell(cell):
     "Return public definitions exported by one notebook cell."
-    if "public_code" not in cell_class_names(cell): return []
+    if not is_exported_code_cell(cell): return []
     try: tree = ast.parse(source_without_directives(cell_source(cell)))
     except SyntaxError: return []
     return [

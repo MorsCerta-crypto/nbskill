@@ -100,6 +100,9 @@ _QUERY_KEY_ALIASES = {
     "type": "cell_type",
     "class": "cell_type",
     "cell_type": "cell_type",
+    "symbol_kind": "symbol_kind",
+    "kind": "symbol_kind",
+    "visibility": "visibility",
     "contains": "contains",
     "text": "contains",
     "regex": "regex",
@@ -128,6 +131,18 @@ def _normalize_query_key(key):
 # %% ../nbs/01_read.ipynb #e3f7da55
 def _normalize_query_dict(spec):
     return {_normalize_query_key(key): None if value is None else str(value) for key, value in dict(spec).items()}
+
+# %% ../nbs/01_read.ipynb #cc7d1f47
+def _cell_symbol_records(cell):
+    try: tree = ast.parse(source_without_directives(cell_source(cell)))
+    except SyntaxError: return []
+    records = []
+    for node in tree.body:
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)): continue
+        kind = "class" if isinstance(node, ast.ClassDef) else "function"
+        visibility = "private" if node.name.startswith("_") else "public"
+        records.append(dict(symbol=node.name, kind=kind, visibility=visibility, line=node.lineno))
+    return records
 
 # %% ../nbs/01_read.ipynb #5b09a9e8
 def _parse_query_terms(text):
@@ -199,6 +214,12 @@ def _select_query_items(nb, spec):
         chapter_idxs = _query_chapter_index_set(nb, spec["chapter"])
         items = [(i, c) for i, c in items if i in chapter_idxs]
     if spec.get("cell_type") is not None: items = [(i, c) for i, c in items if cell_matches_type(c, spec["cell_type"])]
+    if spec.get("symbol_kind") is not None or spec.get("visibility") is not None:
+        items = [(i, c) for i, c in items if any(
+            (spec.get("symbol_kind") is None or item["kind"] == spec["symbol_kind"])
+            and (spec.get("visibility") is None or item["visibility"] == spec["visibility"])
+            for item in _cell_symbol_records(c)
+        )]
     if spec.get("header") is not None: items = [(i, c) for i, c in items if _cell_matches_header(c, spec["header"])]
     if spec.get("export") is not None: items = [(i, c) for i, c in items if is_exported_code_cell(c) == _query_bool(spec["export"])]
     if spec.get("has_error") is not None: items = [(i, c) for i, c in items if _cell_has_error(c) == _query_bool(spec["has_error"])]
@@ -861,6 +882,8 @@ def _filter_match_record(path, idx, cell, max_chars_per_cell):
     item = NotebookCell(cell, idx=idx).context_record()
     item["source"] = _trim_context_source(item.get("source", ""), max_chars_per_cell)
     item["output"] = _trim_context_source(item.get("output", ""), _CONTEXT_CELL_OUTPUT_CHARS)
+    symbols = _cell_symbol_records(cell)
+    if symbols: item["symbols"] = symbols
     item.update(path=str(path), error=_filter_cell_error(cell))
     item["summary"] = _filter_cell_summary(path, item)
     return item
@@ -893,7 +916,7 @@ def _render_filter_match(item, view="source", line_numbers=False):
 # %% ../nbs/01_read.ipynb #c7fc16d9
 def filter_context(
     scope: str = ".",  # Project, folder, glob, or notebook used to choose notebooks
-    query=None,  # Optional query string/dict/list using id/type/chapter/contains/regex/errors/export/header selectors
+    query=None,  # Optional query string/dict/list using id/type/symbol_kind/visibility/chapter/contains/regex/errors/export/header selectors
     include_re: str | None = None,  # Optional regex that matched cell source must include
     exclude_re: str | None = None,  # Optional regex that matched cell source must not include
     max_matches: int = 50,  # Maximum matching cells to return

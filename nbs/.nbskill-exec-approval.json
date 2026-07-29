@@ -992,7 +992,7 @@
       "line": 2,
       "notebook": "11_agent_workbench.ipynb",
       "reasons": [],
-      "source_hash": "4b2115b058f5"
+      "source_hash": "152b472bb0ae"
     },
     "_cell_source_hash": {
       "allowed": true,
@@ -1529,7 +1529,7 @@
       "line": 2,
       "notebook": "01_read.ipynb",
       "reasons": [],
-      "source_hash": "f039139bb31f"
+      "source_hash": "fe69d9db4de8"
     },
     "_context_cell_record": {
       "allowed": true,
@@ -1593,6 +1593,15 @@
       "notebook": "01_read.ipynb",
       "reasons": [],
       "source_hash": "7d6faaf00f47"
+    },
+    "_context_exact_result": {
+      "allowed": true,
+      "cell_id": "faab2c79",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "01_read.ipynb",
+      "reasons": [],
+      "source_hash": "33cccc1d9ba5"
     },
     "_context_existing_notebook": {
       "allowed": true,
@@ -2172,15 +2181,13 @@
       "source_hash": "9398dc9e2c7f"
     },
     "_demo_root": {
-      "allowed": false,
-      "cell_id": "93807953",
-      "external_effects": true,
+      "allowed": true,
+      "cell_id": "101dd126",
+      "external_effects": false,
       "line": 3,
-      "notebook": "07_mcp.ipynb",
-      "reasons": [
-        "call:root.mkdir"
-      ],
-      "source_hash": "dbb0c2a6184f"
+      "notebook": "11_agent_workbench.ipynb",
+      "reasons": [],
+      "source_hash": "9086c37c9959"
     },
     "_dependency_name": {
       "allowed": true,
@@ -6557,12 +6564,12 @@
     },
     "_problem_memory_context": {
       "allowed": true,
-      "cell_id": "65f1c0a0",
+      "cell_id": "37ef5284",
       "external_effects": false,
       "line": 2,
-      "notebook": "08_edit_interactive.ipynb",
+      "notebook": "11_agent_workbench.ipynb",
       "reasons": [],
-      "source_hash": "9eaa86997748"
+      "source_hash": "4f762fb4d3ef"
     },
     "_problem_message": {
       "allowed": true,
@@ -6786,7 +6793,7 @@
       "line": 2,
       "notebook": "11_agent_workbench.ipynb",
       "reasons": [],
-      "source_hash": "dd68e2def2fa"
+      "source_hash": "5b9095606d93"
     },
     "_public_symbols_in_source": {
       "allowed": true,
@@ -7562,7 +7569,7 @@
       "line": 2,
       "notebook": "11_agent_workbench.ipynb",
       "reasons": [],
-      "source_hash": "c9ccf0882053"
+      "source_hash": "905f3100c2ff"
     },
     "_render_definition_record": {
       "allowed": true,
@@ -7625,7 +7632,7 @@
       "line": 2,
       "notebook": "11_agent_workbench.ipynb",
       "reasons": [],
-      "source_hash": "38f71cd9f383"
+      "source_hash": "6bfdfa815060"
     },
     "_render_workbench_header": {
       "allowed": true,
@@ -9588,6 +9595,15 @@
       ],
       "source_hash": "e88da7de2244"
     },
+    "agent_workbench": {
+      "allowed": true,
+      "cell_id": "2927f514",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "11_agent_workbench.ipynb",
+      "reasons": [],
+      "source_hash": "9d1a10837d42"
+    },
     "agent_workbench_result": {
       "allowed": true,
       "cell_id": "7131526e",
@@ -9595,7 +9611,7 @@
       "line": 2,
       "notebook": "11_agent_workbench.ipynb",
       "reasons": [],
-      "source_hash": "b9a53da0525f"
+      "source_hash": "47541c72ae92"
     },
     "agent_workbench_tool": {
       "allowed": false,
@@ -10036,7 +10052,7 @@
       "line": 2,
       "notebook": "11_agent_workbench.ipynb",
       "reasons": [],
-      "source_hash": "4a19a1da9e15"
+      "source_hash": "124a9c2a0ee8"
     },
     "context": {
       "allowed": true,
@@ -10401,7 +10417,7 @@
       "line": 5,
       "notebook": "11_agent_workbench.ipynb",
       "reasons": [],
-      "source_hash": "6ffc465c44fc"
+      "source_hash": "d1a6e7efe22b"
     },
     "fake_make_chat": {
       "allowed": true,

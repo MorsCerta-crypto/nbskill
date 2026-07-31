@@ -20,10 +20,10 @@ from .review import style_check
 from nbskill.foundation import (
     cell_class_names, cell_source, clear_outputs, api_error,
     api_return, commit_notebook, find_cell_by_id, find_cell_by_text,
-    is_exported_code_cell, load_cells_text, one_chapter, parse_cells,
+    is_exported_code_cell, load_cells_text, numbered_notebook_path, one_chapter, parse_cells,
     parse_one_cell, replace_cell, short_call_name, source_hash,
     stamp_notebook_metadata, validate_code_cells,
-)
+    )
 from .parallel import notebook_locks
 
 # %% ../nbs/02_write.ipynb #c1e8be42
@@ -1012,16 +1012,20 @@ def split_nb_chapter(
 
 # %% ../nbs/02_write.ipynb #2287a701
 def create_notebook(path, name=None, template="nbdev", default_exp=None, dry_run=False):
-    """Create a minimal nbdev notebook without overwriting an existing path."""
+    "Create a minimal flat numbered nbdev notebook without overwriting one."
     path = Path(path)
     if template != "nbdev": raise ValueError("template must be 'nbdev'")
-    if path.exists(): raise ValueError(f"Notebook already exists: {path}")
-    default_exp = default_exp or _default_exp_for_dest(path)
+    root = path.parent if path.suffix else path
+    name = name or path.stem
+    out_path = numbered_notebook_path(root, name)
+    if out_path.exists(): raise ValueError(f"Notebook already exists: {out_path}")
+    default_exp = default_exp or name
+    if not re.fullmatch(r"[A-Za-z_]\w*", default_exp): raise ValueError("default_exp must be a simple module name")
     cells = [mk_cell(f"#| default_exp {default_exp}")]
     if name: cells.append(mk_cell(f"# {name}", cell_type="markdown"))
     nb = new_nb(cells)
-    if not dry_run: commit_notebook(path, nb, before=new_nb([]), affected_cell_ids=[cell.id for cell in cells])
-    return dict(path=str(path), name=name, default_exp=default_exp, changed=not dry_run, dry_run=dry_run)
+    if not dry_run: commit_notebook(out_path, nb, before=new_nb([]), affected_cell_ids=[cell.id for cell in cells])
+    return dict(path=str(out_path), name=name, default_exp=default_exp, changed=not dry_run, dry_run=dry_run)
 
 def _move_selection(nb, cell_ids=None, query=None, chapter=None):
     selectors = sum(value is not None for value in (cell_ids, query, chapter))
@@ -1047,14 +1051,14 @@ def _move_anchor(cells, anchor, where):
     if anchor is None: return len(cells)
     if anchor == "imports":
         for idx, cell in enumerate(cells):
-            if re.search(r"^\\s*(from|import)\\s+", cell_source(cell), re.M): return idx + 1
+            if re.search(r"^\s*(from|import)\s+", cell_source(cell), re.M): return idx + 1
         return 0
     for idx, cell in enumerate(cells):
         if str(cell.id) == str(anchor): return idx + (where == "after")
     raise ValueError(f"Unknown destination anchor: {anchor}")
 
 def move_cells(source_path, destination_path=None, cell_ids=None, query=None, chapter=None, name=None, mode="move", destination_anchor=None, destination_where="after", default_exp=None, promote_private=True, dry_run=False):
-    """Move or copy selected cells, preserving full cell payloads and inferred imports."""
+    "Move or copy selected cells, preserving full cell payloads and inferred imports."
     if mode not in {"move", "copy"}: raise ValueError("mode must be 'move' or 'copy'")
     source_path = Path(source_path)
     destination_path = Path(destination_path) if destination_path else source_path

@@ -22,9 +22,7 @@ from mcp.types import TextContent
 from nbdev.doclinks import nbdev_export as _run_nb_export
 
 from .convert import convert
-from .edit_interactive import execute_plan,execute_project_plan,plan_result_text
 from .execute import exec_nb
-from .workbench import agent_workbench_result
 from .foundation import (bootstrap_nbskill_project, empty_failure_map, failure_map_path, load_failure_map,cell_source, exported_py_path, generated_owner, git_root, git_status_paths,notebook_paths, path_candidates, source_hash, stamp_export_metadata)
 from .graph import _unused_exported_symbol_candidates,notebook_knowledge_graph_data,notebook_order_problems,private_symbol_report
 from .knowledge import *
@@ -1716,7 +1714,6 @@ def _tool_summary_lines(tool, arguments, full_text, preview, status, structured,
     elif tool == "reference": lines.extend(_reference_summary_lines(structured.get("reference")))
     elif tool == "edit_notebook": lines.extend(_edit_summary_lines(structured.get("edit_notebook") or structured))
     elif tool == "exec_nb": lines.extend(_exec_summary_lines(full_text))
-    elif tool == "agent_workbench": lines.extend(_workbench_summary_lines(structured.get("agent_workbench")))
     else:
         first = _first_nonblank(full_text)
         if first and status != "completed": lines.append(_short_item(first))
@@ -2228,16 +2225,8 @@ def _mcp_tool_meta(name):
     }
 
 # %% ../nbs/07_mcp.ipynb #mcppublic
-_MCP_AGENT_TOOL_NAMES = set(_MCP_AGENT_TOOL_CATALOG) | {"agent_session"}
-_AGENT_TOOLS_ENABLED = False
-
 def _mcp_capabilities():
-    names = [
-        name for name in _MCP_TOOL_CATALOG
-        if _AGENT_TOOLS_ENABLED or name not in _MCP_AGENT_TOOL_CATALOG
-    ]
-    if _AGENT_TOOLS_ENABLED: names.append("agent_session")
-    return ",".join(names)
+    return ",".join(_MCP_TOOL_CATALOG)
 mcp = FastMCP(
     "nbskill",
     instructions=(

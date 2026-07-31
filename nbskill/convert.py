@@ -16,7 +16,7 @@ from pathlib import Path
 from fastcore.nbio import mk_cell, new_nb
 from fastcore.nbio import write_nb
 
-from .foundation import api_return
+from .foundation import api_return, numbered_notebook_path
 
 # %% ../nbs/05_convert.ipynb #ac1075c9
 def _node_source(lines, node):
@@ -90,60 +90,45 @@ def _py2nb_cells(source, default_exp, class_lines=100, method_lines=10):
     tree = ast.parse(source)
     lines = source.splitlines()
     cells = [mk_cell(f"#| default_exp {default_exp}")]
-    pending_imports = []
-    needs_patch = False
-
-    if tree.body and _is_module_docstring(tree.body[0]):
-        cells.append(mk_cell(tree.body[0].value.value.strip(), cell_type="markdown"))
-
-    def flush_imports():
-        if pending_imports:
-            cells.append(_export_cell("\n".join(pending_imports)))
-            pending_imports.clear()
-
-    for idx, node in enumerate(tree.body):
-        if idx == 0 and _is_module_docstring(node): continue
-        if isinstance(node, (ast.Import, ast.ImportFrom)):
-            pending_imports.append(_node_source(lines, node))
-            continue
-        if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id == "__all__" for target in node.targets):
-            continue
-        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.target.id == "__all__":
-            continue
-        if isinstance(node, ast.AugAssign) and isinstance(node.target, ast.Name) and node.target.id == "__all__":
-            continue
-        flush_imports()
+    body = list(tree.body)
+    if body and _is_module_docstring(body[0]):
+        cells.append(mk_cell(body.pop(0).value.value.strip(), cell_type="markdown"))
+    imports = [_node_source(lines, node) for node in body if isinstance(node, (ast.Import, ast.ImportFrom))]
+    constants = []
+    definitions = []
+    for node in body:
+        if isinstance(node, (ast.Import, ast.ImportFrom)): continue
+        targets = node.targets if isinstance(node, ast.Assign) else [node.target] if isinstance(node, ast.AnnAssign) else []
+        if isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign)) and not any(isinstance(target, ast.Name) and target.id == "__all__" for target in targets):
+            constants.append(_node_source(lines, node))
+        elif not isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign)): definitions.append(node)
+    needs_patch = any(isinstance(node, ast.ClassDef) and _node_line_count(node) > class_lines and any(_patchable_method(child) and _node_line_count(child) > method_lines for child in node.body) for node in definitions)
+    if needs_patch: imports.insert(0, "from fastcore.basics import patch")
+    if imports: cells.append(_export_cell("\n".join(imports)))
+    if constants: cells.append(_export_cell("\n".join(constants)))
+    for node in definitions:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)): cells.append(_export_cell(_node_source(lines, node)))
         elif isinstance(node, ast.ClassDef):
             methods = [child for child in node.body if _patchable_method(child) and _node_line_count(child) > method_lines]
             if _node_line_count(node) > class_lines and methods:
-                needs_patch = True
                 cells.append(_export_cell(_class_without_methods(lines, node, methods)))
                 for method in methods: cells.append(_export_cell(_patch_method_source(method, node.name)))
             else: cells.append(_export_cell(_node_source(lines, node)))
-        else:
-            cells.append(_export_cell(_node_source(lines, node)))
-    flush_imports()
-    if needs_patch: cells.insert(1, _export_cell("from fastcore.basics import patch"))
+        else: cells.append(_export_cell(_node_source(lines, node)))
     return _stabilize_cells(cells, default_exp)
-
 
 # %% ../nbs/05_convert.ipynb #f73ec284
 def _module_name_for_path(path, module_base=None):
-    pth = Path(path)
-    if module_base is None: return pth.stem
-    rel = pth.relative_to(module_base).with_suffix("")
-    return ".".join(rel.parts)
-
+    return Path(path).stem
 
 # %% ../nbs/05_convert.ipynb #e95674c4
-def _py2nb_file(path, nbs_path="nbs", dest=None, class_lines=100, method_lines=10, default_exp=None, dry_run=False, force=True):
+def _py2nb_file(path, nbs_path="nbs", dest=None, class_lines=100, method_lines=10, default_exp=None, dry_run=False, force=True, number=None):
     pth = Path(path)
     source = pth.read_text(encoding="utf-8")
     default_exp = default_exp or pth.stem
-    out_path = Path(dest) if dest else Path(nbs_path) / f"{default_exp.replace('.', '/')}.ipynb"
-    if out_path.exists() and not force:
-        raise FileExistsError(f"Refusing to overwrite existing notebook: {out_path}")
+    out_root = Path(dest) if dest and not Path(dest).suffix else Path(dest).parent if dest else Path(nbs_path)
+    out_path = numbered_notebook_path(out_root, default_exp, index=number)
+    if out_path.exists() and not force: raise FileExistsError(f"Refusing to overwrite existing notebook: {out_path}")
     nb = new_nb(_py2nb_cells(source, default_exp, class_lines=class_lines, method_lines=method_lines))
     if not dry_run:
         out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -155,7 +140,6 @@ def _py2nb_file(path, nbs_path="nbs", dest=None, class_lines=100, method_lines=1
         "cell_count": len(nb.cells),
         "dry_run": dry_run,
     }
-
 
 # %% ../nbs/05_convert.ipynb #a4e2b7ed
 def _new_notebook_path(name, nbs_path="nbs"):
@@ -240,17 +224,16 @@ def _python_files(scan_root, recursive=True, maxdepth=None):
 
 
 # %% ../nbs/05_convert.ipynb #777bde95
-def _dest_for_module(nbs_path, default_exp, preserve_tree):
-    name = f"{default_exp.replace('.', '/')}.ipynb" if preserve_tree else f"{default_exp.rsplit('.', 1)[-1]}.ipynb"
-    return Path(nbs_path) / name
-
+def _dest_for_module(nbs_path, default_exp, index=None):
+    return numbered_notebook_path(nbs_path, default_exp, index=index)
 
 # %% ../nbs/05_convert.ipynb #b61029df
 def _py2nbs_folder(
-    path, nbs_path="nbs", recursive=True, maxdepth=None, preserve_tree=True,
+    path, nbs_path="nbs", recursive=True, maxdepth=None, preserve_tree=False,
     class_lines=100, method_lines=10, package=None, include=None, exclude=None,
     skip_init=True, include_tests=False, dry_run=False, force=True,
 ):
+    if preserve_tree: raise ValueError("Notebook conversion is flat; preserve_tree must be False")
     scan_root, module_base, project_root = _resolve_source_tree(path, package=package)
     include, exclude = _patterns(include), _patterns(exclude)
     report = {
@@ -263,22 +246,24 @@ def _py2nbs_folder(
         "blockers": [],
         "dry_run": dry_run,
     }
-    seen_dests = {}
+    seen_modules = {}
+    number = None
     for pth in _python_files(scan_root, recursive=recursive, maxdepth=maxdepth):
         rel = pth.relative_to(scan_root)
         if _is_ignored_py(pth, rel, include=include, exclude=exclude, skip_init=skip_init, include_tests=include_tests):
             report["skipped"].append(str(pth))
             continue
         default_exp = _module_name_for_path(pth, module_base=module_base)
-        dest = _dest_for_module(nbs_path, default_exp, preserve_tree=preserve_tree)
-        if str(dest) in seen_dests:
-            report["blockers"].append(f"Notebook collision: {pth} and {seen_dests[str(dest)]} -> {dest}")
+        if default_exp in seen_modules:
+            report["blockers"].append(f"Module collision: {pth} and {seen_modules[default_exp]} -> {default_exp}")
             continue
-        seen_dests[str(dest)] = str(pth)
+        seen_modules[default_exp] = str(pth)
+        if number is None: number = int(numbered_notebook_path(nbs_path, default_exp).name.split("_", 1)[0])
         item = _py2nb_file(
-            str(pth), nbs_path=nbs_path, dest=str(dest), class_lines=class_lines,
-            method_lines=method_lines, default_exp=default_exp, dry_run=dry_run, force=force,
+            str(pth), nbs_path=nbs_path, class_lines=class_lines, method_lines=method_lines,
+            default_exp=default_exp, dry_run=dry_run, force=force, number=number,
         )
+        number += 1
         report["converted"].append(item)
         print(f"{'Would write' if dry_run else 'Wrote'} {item['cell_count']} cells to {item['notebook']}")
     print(f"{'Would convert' if dry_run else 'Converted'} {len(report['converted'])} Python files to {nbs_path}")
@@ -286,45 +271,40 @@ def _py2nbs_folder(
     if report["blockers"]: print(f"Blocked {len(report['blockers'])} conversion item(s)")
     return report
 
-
 # %% ../nbs/05_convert.ipynb #e6439330
 def py2nb(
-    path: str,  # Python file or folder to convert
-    nbs_path: str = "nbs",  # Folder for generated notebooks
-    dest: str | None = None,  # Explicit notebook path for one file, or output folder for a directory
-    recursive: bool = True,  # Search subfolders when path is a folder
-    maxdepth: int | None = None,  # Maximum folder depth to search
-    preserve_tree: bool = True,  # Preserve folder structure below nbs_path for folder conversion
-    class_lines: int = 100,  # Split methods out of classes longer than this
-    method_lines: int = 10,  # Split methods longer than this out of large classes
-    package: str | None = None,  # Package name to select inside a project root
-    include: str | None = None,  # Comma-separated include glob(s)
-    exclude: str | None = None,  # Comma-separated exclude glob(s)
-    skip_init: bool = True,  # Skip __init__.py by default
-    include_tests: bool = False,  # Convert test files too
-    dry_run: bool = False,  # Plan conversion without writing notebooks
-    force: bool = True,  # Overwrite existing generated notebooks
+    path: str, # Python file or folder to convert
+    nbs_path: str = "nbs", # Folder for generated notebooks
+    dest: str | None = None, # Output folder for generated notebooks
+    recursive: bool = True, # Search subfolders when path is a folder
+    maxdepth: int | None = None, # Maximum folder depth to search
+    preserve_tree: bool = False, # Must remain false because notebooks are flat
+    class_lines: int = 100, # Split methods out of classes longer than this
+    method_lines: int = 10, # Split methods longer than this out of large classes
+    package: str | None = None, # Package name to select inside a project root
+    include: str | None = None, # Comma-separated include glob(s)
+    exclude: str | None = None, # Comma-separated exclude glob(s)
+    skip_init: bool = True, # Skip __init__.py by default
+    include_tests: bool = False, # Convert test files too
+    dry_run: bool = False, # Plan conversion without writing notebooks
+    force: bool = True, # Overwrite existing generated notebooks
 ):
-    "Convert a Python file or folder into nbdev-style notebooks using AST parsing."
+    "Convert Python files into flat numbered nbdev notebooks using AST parsing."
     pth = Path(path)
     if pth.is_dir():
-        out_root = dest or nbs_path
         report = _py2nbs_folder(
-            pth, nbs_path=out_root, recursive=recursive, maxdepth=maxdepth,
+            pth, nbs_path=dest or nbs_path, recursive=recursive, maxdepth=maxdepth,
             preserve_tree=preserve_tree, class_lines=class_lines, method_lines=method_lines,
             package=package, include=include, exclude=exclude, skip_init=skip_init,
             include_tests=include_tests, dry_run=dry_run, force=force,
         )
         return api_return(report)
-
-    default_exp = _module_name_for_path(pth)
     report = _py2nb_file(
-        path, nbs_path=nbs_path, dest=dest, class_lines=class_lines,
-        method_lines=method_lines, default_exp=default_exp, dry_run=dry_run, force=force,
+        path, nbs_path=nbs_path, dest=dest, class_lines=class_lines, method_lines=method_lines,
+        default_exp=pth.stem, dry_run=dry_run, force=force,
     )
     print(f"{'Would write' if dry_run else 'Wrote'} {report['cell_count']} cells to {report['notebook']}")
     return api_return(report)
-
 
 # %% ../nbs/05_convert.ipynb #35c804b1
 def convert(
@@ -382,16 +362,22 @@ def _write_if_allowed(path, text, dry_run=True, force=False):
 
 # %% ../nbs/05_convert.ipynb #a3ba0101
 def _nbdev_pyproject_text(name, package, nbs_path):
-    return f"""[build-system]
+    return f'''[build-system]
 requires = ["setuptools>=64"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "{name}"
-version = "0.0.1"
+dynamic = ["version"]
 description = "Converted nbdev project"
 requires-python = ">=3.10"
 dependencies = ["nbdev>=3.0.15"]
+
+[project.entry-points.nbdev]
+{package} = "{package}._modidx:d"
+
+[tool.setuptools.dynamic]
+version = {{attr = "{package}.__version__"}}
 
 [tool.setuptools.packages.find]
 include = ["{package}*"]
@@ -400,7 +386,7 @@ include = ["{package}*"]
 nbs_path = "{nbs_path}"
 lib_path = "{package}"
 doc_path = "_docs"
-"""
+'''
 
 # %% ../nbs/05_convert.ipynb #f0f31112
 def _validate_nbdev_project(dest, package, run_validation=True, dry_run=True):
@@ -425,20 +411,21 @@ def _validate_nbdev_project(dest, package, run_validation=True, dry_run=True):
 
 # %% ../nbs/05_convert.ipynb #e2eb9ac6
 def py2nbdev(
-    source: str,  # Existing Python project/package root
-    dest: str,  # Destination nbdev project root
-    package: str | None = None,  # Package name to convert
-    nbs_path: str = "nbs",  # Notebook folder inside dest
-    dry_run: bool = True,  # Plan without writing by default
-    force: bool = False,  # Overwrite existing scaffold/notebooks
-    run_validation: bool = True,  # Run nbdev export and import checks after writing
+    source: str, # Existing Python project/package root
+    dest: str, # Destination nbdev project root
+    package: str | None = None, # Package name to convert
+    nbs_path: str = "nbs", # Notebook folder inside dest
+    dry_run: bool = True, # Plan without writing by default
+    force: bool = False, # Overwrite existing scaffold/notebooks
+    run_validation: bool = True, # Run nbdev export and import checks after writing
 ):
-    "Create a pragmatic nbdev project from a pure-Python package."
+    "Create a small nbdev project from a pure-Python package."
     package_name = _primary_package_name(source, package=package)
     dest_root = Path(dest)
     notebook_root = dest_root / nbs_path
     scaffold = [
         _write_if_allowed(dest_root / "pyproject.toml", _nbdev_pyproject_text(package_name, package_name, nbs_path), dry_run=dry_run, force=force),
+        _write_if_allowed(dest_root / package_name / "__init__.py", '__version__ = "0.0.1"\n', dry_run=dry_run, force=force),
         _write_if_allowed(dest_root / nbs_path / "index.ipynb", json.dumps(new_nb([mk_cell(f"# {package_name}", cell_type="markdown")]), indent=2), dry_run=dry_run, force=force),
     ]
     conversion = _py2nbs_folder(

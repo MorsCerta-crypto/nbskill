@@ -5,7 +5,8 @@ __all__ = ['install_nbskill', 'nbskill_mcp_log', 'nbskill_mcp_log_problems']
 
 # %% ../nbs/13_cli.ipynb #5303005f
 import json
-
+import tomllib
+from pathlib import Path
 from fastcore.script import call_parse
 
 from .mcp import format_mcp_log_report, mcp_log_report
@@ -17,13 +18,24 @@ def install_nbskill(
     target: str = "codex", # codex, claude, cursor, both, or custom with skills_dir
     skills_dir: str | None = None, # Parent skills directory for a custom target
     skill_name: str = "jupyter-notebooks", # Installed skill directory name
-    overwrite: bool = True, # Overwrite an existing skill or MCP entry
+    overwrite: bool = True, # Update stale managed files and MCP entries
     install_hooks: bool = False, # Install nbdev pre-commit hooks in the current project
     restart_mcp: bool = True, # Print reconnect guidance after configuring the server
     cursor_workspace: str | None = None, # Cursor workspace, or global configuration when omitted
+    codex_workspace: str | None = ".", # Project workspace for .codex/config.toml
+    reference_roots: str = "~/projects", # Local Git repositories to register
+    index_references: bool = True, # Index discovered references during installation
+    integrate_aai_coding: bool = True, # Install current notebook routing into aai-coding
+    aai_coding_dir: str | None = None, # Explicit aai-coding checkout, or auto-detect
 ):
-    "Install nbskill instructions and the target MCP configuration."
-    return _install_nbskill(target, skills_dir, skill_name, overwrite, install_hooks, restart_mcp, cursor_workspace)
+    "Install current nbskill instructions, MCP configuration, and aai-coding routing."
+    return _install_nbskill(
+        target=target, skills_dir=skills_dir, skill_name=skill_name, overwrite=overwrite,
+        install_hooks=install_hooks, restart_mcp=restart_mcp, cursor_workspace=cursor_workspace,
+        codex_workspace=codex_workspace, reference_roots=reference_roots,
+        index_references=index_references, integrate_aai_coding=integrate_aai_coding,
+        aai_coding_dir=aai_coding_dir,
+    )
 
 # %% ../nbs/13_cli.ipynb #758325ca
 def _print_mcp_log(report, limit, json_output=False, problems_only=False):

@@ -3,8 +3,7 @@
 # %% auto #0
 __all__ = ['mcp', 'as_text', 'capture_call', 'capture_notebook_call', 'mcp_log_report', 'format_mcp_log_report',
            'mcp_tool_result', 'nbskill_status', 'doctor_tool', 'edit_notebook_tool', 'create_notebook_tool',
-           'exec_nb_tool', 'verify_change_tool', 'execute_plan_tool', 'agent_workbench_tool', 'agent_session_tool',
-           'create_mcp', 'main']
+           'exec_nb_tool', 'verify_change_tool', 'main']
 
 # %% ../nbs/07_mcp.ipynb #mcpimports1
 import asyncio,json,multiprocessing,os,queue,signal,re,shutil,subprocess,sys,threading,time,traceback
@@ -1692,17 +1691,6 @@ def _exec_summary_lines(text):
     if first: lines.append(_short_item(first))
     return lines
 
-# %% ../nbs/07_mcp.ipynb #e6296678
-def _workbench_summary_lines(data):
-    data = data or {}
-    contract = data.get("contract") or {}
-    context_data = data.get("context") or {}
-    notebooks = context_data.get("selected_notebooks") or []
-    lines = [f"goal={_short_item(contract.get('goal') or data.get('summary') or '')}"]
-    if notebooks: lines.append("notebooks=" + ", ".join(item.get("path", "") for item in notebooks[:5]))
-    if data.get("expected_gates"): lines.append("gates=" + ", ".join(data["expected_gates"].get("hard", [])[:5]))
-    return [line for line in lines if line and not line.endswith("=")]
-
 # %% ../nbs/07_mcp.ipynb #77151bd5
 def _tool_summary_lines(tool, arguments, full_text, preview, status, structured, warnings):
     lines = _brief_call(tool, arguments or {}, preview, status=status)
@@ -2164,26 +2152,6 @@ _MCP_REVIEW_TOOL_CATALOG = {
     },
 }
 
-# %% ../nbs/07_mcp.ipynb #mcpcat07
-_MCP_AGENT_TOOL_CATALOG = {
-    'execute_plan': {
-        'feature': 'agentic_planning',
-        'usefulness': 'advanced',
-        'tags': ('agent', 'edit', 'plan', 'notebook', 'project'),
-        'description': 'Run a bounded edit-interactive plan against one notebook or a project-scoped set of notebooks.',
-        'when_to_use': "Use scope='notebook' with notebook=... for one notebook, or scope='project' with notebooks=... for broad plans.",
-        'combine_with': 'Combined former execute_project_plan into this tool via scope.',
-    },
-    'agent_workbench': {
-        'feature': 'agentic_planning',
-        'usefulness': 'advanced',
-        'tags': ('agent', 'context', 'taste', 'contract', 'review'),
-        'description': 'Prepare or execute a taste-aware small-diff workbench run with context, budgets, and gates.',
-        'when_to_use': 'Use before autonomous implementation when taste, scope, context, and patch budgets need to be explicit.',
-        'combine_with': 'Sits above execute_plan; execute_plan remains the bounded notebook executor.',
-    },
-}
-
 # %% ../nbs/07_mcp.ipynb #mcpcat08
 _MCP_KNOWLEDGE_TOOL_CATALOG = {
     'reference': {
@@ -2204,7 +2172,6 @@ _MCP_TOOL_CATALOG = {
     **_MCP_CELL_EDIT_TOOL_CATALOG,
     **_MCP_BATCH_EDIT_TOOL_CATALOG,
     **_MCP_REVIEW_TOOL_CATALOG,
-    **_MCP_AGENT_TOOL_CATALOG,
     **_MCP_KNOWLEDGE_TOOL_CATALOG,
 }
 
@@ -2225,8 +2192,7 @@ def _mcp_tool_meta(name):
     }
 
 # %% ../nbs/07_mcp.ipynb #mcppublic
-def _mcp_capabilities():
-    return ",".join(_MCP_TOOL_CATALOG)
+def _mcp_capabilities(): return ",".join(_MCP_TOOL_CATALOG)
 mcp = FastMCP(
     "nbskill",
     instructions=(
@@ -2744,134 +2710,6 @@ async def verify_change_tool(
     warnings = [warning for report in reports for warning in report.get("warnings", [])]
     return mcp_tool_result("verify_change", arguments, text, detail=detail, warnings=warnings, verify_change=reports)
 
-# %% ../nbs/07_mcp.ipynb #mcptool12
-@mcp.tool(**_mcp_tool_meta("execute_plan"))
-async def execute_plan_tool(
-    plan: str, notebook: str | None = None, scope: str = "notebook",
-    notebooks: str | None = None, model: str | None = None, max_steps: int = 8,
-    timeout: int = 30, symbols: str | None = None, dry_run: bool = True,
-    max_context_commands: int = 8, context_steps: int = 2,
-    session_id: str | None = None, reset_session: bool = False, feedback_rounds: int = 3,
-    tool_timeout: float = 150.0, detail: str = "summary", ctx: Context = None,
-) -> ToolResult:
-    "Run a bounded notebook-editing subagent against one notebook or a project notebook set."
-    root = await _mcp_workspace_root(ctx)
-    notebook = _mcp_workspace_path(notebook, root) if notebook else notebook
-    notebooks = _mcp_workspace_paths(notebooks, root) if notebooks else notebooks
-    max_steps = _mcp_clamp_int(max_steps, 8, 1, 20, "max_steps")
-    timeout = _mcp_clamp_int(timeout, 30, 1, 120, "timeout")
-    max_context_commands = _mcp_clamp_int(max_context_commands, 8, 0, 20, "max_context_commands")
-    context_steps = _mcp_clamp_int(context_steps, 2, 0, 5, "context_steps")
-    feedback_rounds = _mcp_clamp_int(feedback_rounds, 3, 1, 8, "feedback_rounds")
-    tool_timeout = _mcp_clamp_float(tool_timeout, 150.0, 0.001, 150.0, "tool_timeout")
-    arguments = dict(
-        plan=plan, notebook=notebook, scope=scope, notebooks=notebooks, model=model, max_steps=max_steps,
-        timeout=timeout, symbols=symbols, dry_run=dry_run, max_context_commands=max_context_commands,
-        context_steps=context_steps, session_id=session_id, reset_session=reset_session,
-        feedback_rounds=feedback_rounds, tool_timeout=tool_timeout, detail=detail,
-        workspace_root=str(root) if root else None,
-    )
-    try:
-        mode = "project" if scope == "project" or notebooks else "notebook"
-        if mode == "project":
-            project_args = dict(
-                plan=plan, notebooks=notebooks, model=model, max_steps=max_steps, timeout=timeout,
-                dry_run=dry_run, symbols=symbols, max_context_commands=max_context_commands,
-                context_steps=context_steps, session_id=session_id, reset_session=reset_session,
-                feedback_rounds=feedback_rounds,
-            )
-            full_output = await asyncio.wait_for(
-                asyncio.to_thread(capture_call, execute_project_plan, **project_args),
-                timeout=tool_timeout,
-            )
-            return mcp_tool_result("execute_plan", arguments, full_output, detail=detail)
-        if not notebook: raise ValueError("notebook is required when scope='notebook'")
-        notebook_args = dict(
-            notebook=notebook, plan=plan, model=model, max_steps=max_steps, timeout=timeout,
-            dry_run=dry_run, symbols=symbols, max_context_commands=max_context_commands,
-            context_steps=context_steps, session_id=session_id, reset_session=reset_session,
-            feedback_rounds=feedback_rounds,
-        )
-        result = await asyncio.wait_for(asyncio.to_thread(execute_plan, **notebook_args), timeout=tool_timeout)
-        full_output = plan_result_text(result)
-        return mcp_tool_result(
-            "execute_plan", arguments, full_output, detail=detail,
-            execute_plan=result if isinstance(result, dict) else {},
-            history=result.get("history", []) if isinstance(result, dict) else [],
-            result_summary=result.get("summary", "") if isinstance(result, dict) else "",
-        )
-    except TimeoutError as exc:
-        message = f"execute_plan exceeded its MCP timeout of {tool_timeout:g}s before Codex's client timeout."
-        return _mcp_tool_error_result("execute_plan", arguments, TimeoutError(message), detail=detail)
-    except (Exception, SystemExit) as exc:
-        return _mcp_tool_error_result("execute_plan", arguments, exc, detail=detail)
-
-# %% ../nbs/07_mcp.ipynb #mcptool13
-@mcp.tool(**_mcp_tool_meta("agent_workbench"))
-async def agent_workbench_tool(
-    goal: str, notebook: str | None = None, contract_file: str | None = None,
-    execute: bool = False, max_steps: int = 8, timeout: int = 30,
-    session_id: str | None = None, reset_session: bool = False, feedback_rounds: int = 3,
-    tool_timeout: float = 150.0, detail: str = "summary", ctx: Context = None,
-) -> ToolResult:
-    "Prepare or execute a taste-aware small-diff workbench run."
-    root = await _mcp_workspace_root(ctx)
-    notebook = _mcp_workspace_path(notebook, root) if notebook else notebook
-    contract_file = _mcp_workspace_path(contract_file, root) if contract_file else contract_file
-    max_steps = _mcp_clamp_int(max_steps, 8, 1, 20, "max_steps")
-    timeout = _mcp_clamp_int(timeout, 30, 1, 120, "timeout")
-    feedback_rounds = _mcp_clamp_int(feedback_rounds, 3, 1, 8, "feedback_rounds")
-    tool_timeout = _mcp_clamp_float(tool_timeout, 150.0, 0.001, 150.0, "tool_timeout")
-    arguments = dict(goal=goal, notebook=notebook, contract_file=contract_file, execute=execute, max_steps=max_steps, timeout=timeout, session_id=session_id, reset_session=reset_session, feedback_rounds=feedback_rounds, tool_timeout=tool_timeout, detail=detail, workspace_root=str(root) if root else None)
-    try:
-        result = await asyncio.wait_for(
-            asyncio.to_thread(
-                agent_workbench_result,
-                goal, notebook=notebook, contract_file=contract_file, execute=execute,
-                max_steps=max_steps, timeout=timeout, session_id=session_id,
-                reset_session=reset_session, feedback_rounds=feedback_rounds,
-            ),
-            timeout=tool_timeout,
-        )
-        full_output = result.get("rendered_plan") or result.get("summary", "")
-        return mcp_tool_result(
-            "agent_workbench", arguments, full_output, detail=detail,
-            agent_workbench=result if isinstance(result, dict) else {},
-        )
-    except TimeoutError as exc:
-        message = f"agent_workbench exceeded its MCP timeout of {tool_timeout:g}s before Codex's client timeout."
-        return _mcp_tool_error_result("agent_workbench", arguments, TimeoutError(message), detail=detail)
-    except (Exception, SystemExit) as exc:
-        return _mcp_tool_error_result("agent_workbench", arguments, exc, detail=detail)
-
-# %% ../nbs/07_mcp.ipynb #cd18f774
-@mcp.tool(name="agent_session", description="Inspect or resume a checkpointed edit-interactive agent session.")
-async def agent_session_tool(
-    session_id: str,
-    action: str="status",
-    approval_id: str | None=None,
-    decision: str="deny",
-    detail: str="summary",
-    ctx: Context=None,
-) -> ToolResult:
-    "Inspect, approve, deny, or cancel a persistent agent session."
-    arguments = dict(
-        session_id=session_id, action=action, approval_id=approval_id,
-        decision=decision, detail=detail,
-    )
-    try:
-        from nbskill.edit_interactive import agent_session
-        result = await asyncio.to_thread(
-            agent_session, session_id, action=action,
-            approval_id=approval_id, decision=decision,
-        )
-        return mcp_tool_result(
-            "agent_session", arguments, json.dumps(result, default=str),
-            detail=detail, agent_session=result,
-        )
-    except (Exception, SystemExit) as exc:
-        return _mcp_tool_error_result("agent_session", arguments, exc, detail=detail)
-
 # %% ../nbs/07_mcp.ipynb #b6d3f15d
 @mcp.tool(**_mcp_tool_meta("reference"))
 async def _reference_tool(query: str, top_k: int = 5, ctx: Context = None) -> ToolResult:
@@ -2890,26 +2728,12 @@ async def _reference_tool(query: str, top_k: int = 5, ctx: Context = None) -> To
         return _mcp_tool_error_result("reference", arguments, exc)
     return mcp_tool_result("reference", arguments, json.dumps(result_data, indent=2, sort_keys=True), reference=result_data)
 
-# %% ../nbs/07_mcp.ipynb #6daab47d
-def _configure_agent_tools():
-    """Keep broad planning helpers as Python APIs, outside the public MCP surface."""
-    global _AGENT_TOOLS_ENABLED
-    _AGENT_TOOLS_ENABLED = False
-    mcp.disable(names=_MCP_AGENT_TOOL_NAMES)
-    return mcp
-
-def create_mcp():
-    "Return the nine-tool public nbskill FastMCP server."
-    return _configure_agent_tools()
-
-_configure_agent_tools()
-
 # %% ../nbs/07_mcp.ipynb #bc9b02ef
 def main():
     "Run the public nbskill MCP server over stdio."
     _mcp_log_event("server_start", transport="stdio", cwd=str(Path.cwd()), python=sys.executable)
     try:
-        create_mcp().run(transport="stdio", show_banner=False)
+        mcp.run(transport="stdio", show_banner=False)
     except BaseException as exc:
         _mcp_log_exception("server_error", exc, transport="stdio")
         raise

@@ -5200,19 +5200,19 @@
       "allowed": true,
       "cell_id": "2287a701",
       "external_effects": false,
-      "line": 33,
+      "line": 37,
       "notebook": "02_write.ipynb",
       "reasons": [],
-      "source_hash": "35dec69f60a2"
+      "source_hash": "9b0b87199d0a"
     },
     "_move_selection": {
       "allowed": true,
       "cell_id": "2287a701",
       "external_effects": false,
-      "line": 14,
+      "line": 18,
       "notebook": "02_write.ipynb",
       "reasons": [],
-      "source_hash": "35dec69f60a2"
+      "source_hash": "9b0b87199d0a"
     },
     "_name_parts": {
       "allowed": true,
@@ -9391,7 +9391,7 @@
       "line": 2,
       "notebook": "02_write.ipynb",
       "reasons": [],
-      "source_hash": "35dec69f60a2"
+      "source_hash": "9b0b87199d0a"
     },
     "create_notebook_tool": {
       "allowed": false,
@@ -10126,12 +10126,12 @@
       "allowed": false,
       "cell_id": "2287a701",
       "external_effects": true,
-      "line": 44,
+      "line": 48,
       "notebook": "02_write.ipynb",
       "reasons": [
         "call:destination_path.unlink"
       ],
-      "source_hash": "35dec69f60a2"
+      "source_hash": "9b0b87199d0a"
     },
     "move_cells_tool": {
       "allowed": false,

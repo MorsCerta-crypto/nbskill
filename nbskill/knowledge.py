@@ -10,8 +10,9 @@ import ast,hashlib,importlib.util,json,math,os,re,shutil,subprocess,sys,tempfile
 from packaging.specifiers import SpecifierSet
 from packaging.version import Version
 from pathlib import Path
-from fastcore.nbio import read_nb
-from .foundation import cell_source
+from fastcore.nbio import read_nb, write_nb as _write_raw_nb
+from fastcore.nbio import mk_cell, new_nb
+from .foundation import cell_source, demo_path, remove_demo_path
 
 # %% ../nbs/12_knowledge.ipynb #9a59dd2b
 _REFERENCE_MAX_TOP_K = 20

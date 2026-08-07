@@ -560,6 +560,8 @@ class _NbskillMCPLogMiddleware(Middleware):
 
 # %% ../nbs/07_mcp.ipynb #b290a5ea
 def _mcp_bump(mapping, key, amount=1):
+    try: hash(key)
+    except TypeError: key = json.dumps(_mcp_json_safe(key), sort_keys=True)
     mapping[key] = mapping.get(key, 0) + amount
 
 # %% ../nbs/07_mcp.ipynb #2f16f5d2

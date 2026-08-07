@@ -51,16 +51,17 @@ def remove_demo_path(path):
     return path
 
 # %% ../nbs/00_foundation.ipynb #b49ce285
-def demo_path(name, base="nbs/data", reset=True):
-    'Return a scratch path under `base`, optionally removing any previous artifact.'
-    path = Path(base) / name
+def demo_path(name, base=None, reset=True):
+    'Return a scratch path in the system temporary directory or `base`, optionally resetting it.'
+    base = Path(tempfile.gettempdir()) / "nbskill" if base is None else Path(base)
+    path = base / name
     if reset: remove_demo_path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     return path
 
 
 @contextmanager
-def demo_path_context(name, base="nbs/data", reset=True):
+def demo_path_context(name, base=None, reset=True):
     'Yield a demo path and remove it when the block exits.'
     path = demo_path(name, base=base, reset=reset)
     try: yield path
@@ -109,7 +110,7 @@ def is_valid_ipynb(path):
 
 # %% ../nbs/00_foundation.ipynb #e7188cd8
 @contextmanager
-def write_demo_notebook(name, cells=None, base="nbs/data", reset=True):
+def write_demo_notebook(name, cells=None, base=None, reset=True):
     path = demo_path(name, base=base, reset=reset)
     cells = cells or [
         mk_cell("## Demo notebook\nThis tiny notebook gives nbskill tools something real to inspect.", cell_type="markdown"),
@@ -140,7 +141,7 @@ def tool_notebook():
 
 # %% ../nbs/00_foundation.ipynb #7056ad49
 @contextmanager
-def write_tool_notebook(name="tool.ipynb", base="nbs/data"):
+def write_tool_notebook(name="tool.ipynb", base=None):
     "Write the canonical tool notebook for one example or test."
     path = demo_path(name, base=base)
     write_nb(tool_notebook(), path)
@@ -151,7 +152,7 @@ def write_tool_notebook(name="tool.ipynb", base="nbs/data"):
 
 # %% ../nbs/00_foundation.ipynb #05edde5b
 @contextmanager
-def write_demo_file(name, source, base="nbs/data"):
+def write_demo_file(name, source, base=None):
     "Write one disposable text file for an example or test."
     path = demo_path(name, base=base)
     path.write_text(source, encoding="utf-8")

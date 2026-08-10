@@ -919,6 +919,15 @@
       "reasons": [],
       "source_hash": "8eb3d57aa448"
     },
+    "_cell_symbol_records": {
+      "allowed": true,
+      "cell_id": "cc7d1f47",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "01_read.ipynb",
+      "reasons": [],
+      "source_hash": "6db6a287a35a"
+    },
     "_cell_type_text": {
       "allowed": true,
       "cell_id": "ebe7ca04",
@@ -1080,15 +1089,6 @@
       "notebook": "05_convert.ipynb",
       "reasons": [],
       "source_hash": "574a911f79ca"
-    },
-    "_classified_diagnostic": {
-      "allowed": true,
-      "cell_id": "b55eeaa4",
-      "external_effects": false,
-      "line": 2,
-      "notebook": "07_mcp.ipynb",
-      "reasons": [],
-      "source_hash": "77926aa4bb18"
     },
     "_clear_changed_outputs": {
       "allowed": true,
@@ -2087,15 +2087,6 @@
       "reasons": [],
       "source_hash": "8266e47501fd"
     },
-    "_doctor_diagnostic_page": {
-      "allowed": true,
-      "cell_id": "471214c6",
-      "external_effects": false,
-      "line": 2,
-      "notebook": "07_mcp.ipynb",
-      "reasons": [],
-      "source_hash": "1b50047e4f2b"
-    },
     "_doctor_error_items": {
       "allowed": true,
       "cell_id": "d7eeec10",
@@ -2181,17 +2172,6 @@
       "notebook": "07_mcp.ipynb",
       "reasons": [],
       "source_hash": "d6eb7fdbd4a9"
-    },
-    "_doctor_warning_items": {
-      "allowed": false,
-      "cell_id": "e3c40ef0",
-      "external_effects": true,
-      "line": 2,
-      "notebook": "07_mcp.ipynb",
-      "reasons": [
-        "_doctor_warnings->_notebook_export_relevant_change->call:subprocess.run"
-      ],
-      "source_hash": "55017c756565"
     },
     "_doctor_warnings": {
       "allowed": false,
@@ -2972,7 +2952,7 @@
       "line": 2,
       "notebook": "01_read.ipynb",
       "reasons": [],
-      "source_hash": "d263719cd2e3"
+      "source_hash": "6e7b6bd26fb8"
     },
     "_filter_warnings_for_scope": {
       "allowed": true,
@@ -7849,7 +7829,7 @@
       "line": 2,
       "notebook": "01_read.ipynb",
       "reasons": [],
-      "source_hash": "7c7c61190ab2"
+      "source_hash": "03c047294f14"
     },
     "_selected_chapter_span": {
       "allowed": true,
@@ -9893,7 +9873,7 @@
       "line": 2,
       "notebook": "01_read.ipynb",
       "reasons": [],
-      "source_hash": "132c41b94871"
+      "source_hash": "b819204274cb"
     },
     "find_cell_by_id": {
       "allowed": true,

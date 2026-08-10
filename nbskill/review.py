@@ -331,18 +331,33 @@ def _validation_problem(code, path, cell=None, detail="", **kwargs):
 # %% ../nbs/04_review.ipynb #f2db0747
 def _cell_metadata_validation_problems(nb_path, cell):
     info = _nbskill_info(cell)
-    if not isinstance(info, dict):
-        return [_validation_problem("missing-cell-nbskill-metadata", nb_path, cell)]
     problems = []
-    expected_type = getattr(cell, "cell_type", None)
-    if "cell_type" not in info:
-        problems.append(_validation_problem("missing-cell-type", nb_path, cell))
-    elif info.get("cell_type") != expected_type:
-        problems.append(_validation_problem("cell-type-mismatch", nb_path, cell, f"expected {expected_type!r}, stored {info.get('cell_type')!r}"))
-    semantic_types = info.get("semantic_types")
-    if not isinstance(semantic_types, list) or not semantic_types:
-        problems.append(_validation_problem("missing-cell-semantic-types", nb_path, cell))
+    if not isinstance(info, dict):
+        problems.append(_validation_problem("missing-cell-nbskill-metadata", nb_path, cell))
+    else:
+        expected_type = getattr(cell, "cell_type", None)
+        if "cell_type" not in info:
+            problems.append(_validation_problem("missing-cell-type", nb_path, cell))
+        elif info.get("cell_type") != expected_type:
+            problems.append(_validation_problem("cell-type-mismatch", nb_path, cell, f"expected {expected_type!r}, stored {info.get('cell_type')!r}"))
+        semantic_types = info.get("semantic_types")
+        if not isinstance(semantic_types, list) or not semantic_types:
+            problems.append(_validation_problem("missing-cell-semantic-types", nb_path, cell))
+    syntax_problem = _cell_python_syntax_problem(nb_path, cell)
+    if syntax_problem: problems.append(syntax_problem)
     return problems
+
+# %% ../nbs/04_review.ipynb #e256b2c9
+def _cell_python_syntax_problem(nb_path, cell):
+    if getattr(cell, "cell_type", None) != "code": return None
+    try: ast.parse(source_without_directives(cell_source(cell)))
+    except SyntaxError as exc:
+        source_line = exc.text.strip() if exc.text else ""
+        detail = f"{exc.msg}: {source_line}" if source_line else exc.msg
+        return _validation_problem(
+            "invalid-python-cell", nb_path, cell, detail,
+            line=exc.lineno, column=exc.offset,
+        )
 
 # %% ../nbs/04_review.ipynb #41c74eb4
 def _notebook_export_hash_problems(nb_path, nb):
@@ -362,7 +377,7 @@ def _notebook_export_hash_problems(nb_path, nb):
 
 # %% ../nbs/04_review.ipynb #c7ca4786
 def notebook_validation_problems(path="."):
-    "Return invalid nbskill metadata problems for notebooks under `path`."
+    "Return notebook metadata and Python syntax validation problems."
     problems = []
     for nb_path in notebook_paths(path):
         if _style_root_is_skipped(nb_path, _validation_skip_paths): continue

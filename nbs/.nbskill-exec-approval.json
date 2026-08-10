@@ -10035,10 +10035,10 @@
       "allowed": true,
       "cell_id": "37f6cd35",
       "external_effects": false,
-      "line": 7,
+      "line": 6,
       "notebook": "09_parallel.ipynb",
       "reasons": [],
-      "source_hash": "020517da4c34"
+      "source_hash": "38356f458110"
     },
     "hold_process_lock": {
       "allowed": true,

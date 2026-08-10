@@ -83,7 +83,15 @@ def _test_function_count(tree):
 
 # %% ../nbs/04_review.ipynb #aa771abe
 def _public_functions(tree):
-    return [node for node in tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and not node.name.startswith("_") and not node.name.startswith("test_")]
+    return [
+        node for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and not node.name.startswith("_")
+        and not node.name.startswith("test_")
+        and not node.name.startswith("visit_")
+        and not node.name.endswith("_tool")
+        and node.name not in {"main", "cli"}
+    ]
 
 # %% ../nbs/04_review.ipynb #cbba1fcd
 def _docstring_line_count(node):

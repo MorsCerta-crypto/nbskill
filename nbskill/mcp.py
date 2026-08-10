@@ -1610,6 +1610,10 @@ def _doctor_summary_lines(report):
     report = report or {}
     errors, warnings = report.get("error_count", 0), report.get("warning_count", 0)
     lines = [f"errors={errors} warnings={warnings}"]
+    diagnostics = report.get("diagnostic_count", 0)
+    shown = report.get("diagnostics_shown", 0)
+    if diagnostics: lines.append(f"diagnostics={shown} shown of {diagnostics}")
+    if report.get("next_cursor") is not None: lines.append(f"Next: doctor(cursor={report['next_cursor']}).")
     if not errors and not warnings: lines.append("Next: context, then edit_notebook.")
     return lines
 
@@ -1787,6 +1791,8 @@ def _doctor_report(
     skip_path=None,
     max_output_chars=12000,
     max_diagnostics=200,
+    diagnostic_cursor=0,
+    diagnostic_limit=20,
 ):
     root = git_root(path) or _git_base(path).resolve()
     selected = _doctor_scope_set(scopes)
@@ -1795,16 +1801,37 @@ def _doctor_report(
     fixes = [*export_fixes, *style_fixes]
     status = _status_data()
     errors = _doctor_error_items(path, status) if "error" in selected else []
-    warnings, private_text = _doctor_warning_items(path) if "warning" in selected else ([], "")
+    need_warnings = {"warning", "suspicion", "maintenance"} & selected
+    violations, suspicions, maintenance, private_text = (
+        _doctor_warning_items(path) if need_warnings else ([], [], [], "")
+    )
+    warnings = violations if "warning" in selected else []
+    suspicions = suspicions if "suspicion" in selected else []
+    maintenance = maintenance if "maintenance" in selected else []
     style = (
         _doctor_style_report(path, skip_folder_re=skip_folder_re, skip_path=skip_path, max_output_chars=max_output_chars, max_diagnostics=max_diagnostics)
         if "style" in selected else None
     )
+    style_diagnostics = [
+        {
+            **item,
+            "diagnostic_class": "violation" if item.get("severity") == "error" else "maintenance",
+            "message": item.get("detail", item.get("code", "style diagnostic")),
+            "correction": item.get("hint"),
+        }
+        for item in (style or {}).get("diagnostics", [])
+    ]
+    diagnostic_items = [
+        *(_classified_diagnostic(item, "error") for item in errors),
+        *warnings, *suspicions, *maintenance, *style_diagnostics,
+    ]
+    diagnostics = _doctor_diagnostic_page(diagnostic_items, diagnostic_cursor, diagnostic_limit)
     failure_map = _failure_data()
     if reset: reset_global_usage_summary()
     hints = [
-        "Use scopes='error,warning,style' or scopes='all' for the full doctor report.",
-        "Use scopes='style' to include chkstyle output; chkstyle is omitted from error/warning scopes.",
+        "Default scopes report errors and actionable rule violations.",
+        "Use scopes='suspicion,maintenance' for static-analysis candidates and documentation upkeep.",
+        "Use scopes='style' for structured style diagnostics; follow next_cursor to page through them.",
         "Use context, then edit_notebook for deterministic notebook mutations.",
     ]
     changed = sorted(git_status_paths(root)) if (root / ".git").exists() else []
@@ -1812,24 +1839,25 @@ def _doctor_report(
         {"path": _rel_to_root(py, root), "owner": _rel_to_root(owner, root)}
         for py, owner in _generated_files(root)
     ]
-    issue_count = len(errors) + len(warnings)
     style_count = (style or {}).get("summary", {}).get("diagnostic_count", 0)
-    summary = f"nbskill doctor: {len(errors)} error(s), {len(warnings)} warning(s)"
+    summary = f"nbskill doctor: {len(errors)} error(s), {len(warnings)} violation(s)"
     if "style" in selected: summary += f", {style_count} style diagnostic(s)"
-    if not issue_count and "style" not in selected: summary = "nbskill doctor: no actionable errors or warnings"
+    if not diagnostic_items: summary = "nbskill doctor: no actionable errors or rule violations"
     text_lines = [summary]
     if fixes:
         text_lines.append("\nFixes:")
         text_lines.extend(_doctor_fix_line(item, root) for item in fixes)
-    if errors:
-        text_lines.append("\nErrors:")
-        text_lines.extend(f"- {item['message']}" + (f" Next: {item['next_action']}" if item.get("next_action") else "") for item in errors)
-    if warnings:
-        text_lines.append("\nWarnings:")
-        text_lines.extend(f"- {item['message']}" + (f" Next: {item['next_action']}" if item.get("next_action") else "") for item in warnings)
-    if style is not None and style.get("text", "").strip():
-        text_lines.append("\nStyle:")
-        text_lines.append(style["text"].strip())
+    for heading, items in (
+        ("Errors", errors), ("Violations", warnings), ("Suspicions", suspicions), ("Maintenance", maintenance),
+    ):
+        if not items: continue
+        text_lines.append(f"\n{heading}:")
+        text_lines.extend(
+            f"- {item['message']}" + (f" Next: {item['next_action']}" if item.get("next_action") else "")
+            for item in items
+        )
+    if style is not None:
+        text_lines.append(f"\nStyle: {style_count} diagnostic(s); {diagnostics['shown']} shown in structured diagnostics.")
     report = {
         "path": str(path),
         "root": str(root),
@@ -1837,9 +1865,12 @@ def _doctor_report(
         "status": status,
         "errors": errors,
         "warnings": warnings,
+        "suspicions": suspicions,
+        "maintenance": maintenance,
         "issues": [*errors, *warnings],
+        "diagnostics": diagnostics,
         "style": style,
-        "private_symbol_report": private_text if "warning" in selected else "",
+        "private_symbol_report": private_text if need_warnings else "",
         "hints": hints,
         "capabilities": [item for item in _mcp_capabilities().split(",") if item],
         "changed_paths": changed if detail == "debug" else changed[:20],
@@ -1858,7 +1889,7 @@ def nbskill_status():
     return _status_data()
 
 # %% ../nbs/07_mcp.ipynb #0bae0134
-_DOCTOR_SCOPES = {"error", "warning", "style"}
+_DOCTOR_SCOPES = {"error", "warning", "suspicion", "maintenance", "style"}
 
 # %% ../nbs/07_mcp.ipynb #f96ad58c
 def _doctor_scope_set(scopes="error,warning"):
@@ -2004,27 +2035,81 @@ def _public_function_documentation_warnings(path):
     for problem in public_function_literacy_problems(path):
         if problem.get("code") != "public-function-markdown": continue
         symbol = problem.get("symbol", "<unknown>")
+        name = str(symbol).rsplit(".", 1)[-1]
+        if name.startswith("visit_") or name.endswith("_tool") or name in {"main", "cli"}: continue
         warnings.append(_warning(
             "public_function_documentation",
             f"Public function {symbol!r} has no explanatory Markdown documentation cell.",
             "Add a nearby Markdown cell that names the function and explains its behavior.",
-            severity="warning", scope="warning",
+            severity="warning", scope="maintenance", diagnostic_class="maintenance",
             path=problem.get("path"), cell_id=problem.get("cell_id"), problem=problem,
         ))
     return warnings
 
 # %% ../nbs/07_mcp.ipynb #44b0f45c
+def _protocol_hook_symbol(symbol):
+    "Return whether a symbol is called by a framework rather than static project code."
+    name = str(symbol).rsplit(".", 1)[-1]
+    return (
+        name.startswith("visit_")
+        or name == "__post_init__"
+        or name.startswith("__") and name.endswith("__")
+        or name.endswith("_tool")
+        or name in {"main", "cli"}
+    )
+
+# %% ../nbs/07_mcp.ipynb #b55eeaa4
+def _classified_diagnostic(item, diagnostic_class):
+    return {
+        **item,
+        "diagnostic_class": diagnostic_class,
+        "scope": diagnostic_class,
+        "severity": item.get("severity", "warning"),
+    }
+
+# %% ../nbs/07_mcp.ipynb #471214c6
+def _doctor_diagnostic_page(items, cursor=0, limit=20):
+    "Return a stable, bounded page plus summary counts for doctor diagnostics."
+    cursor, limit = max(0, int(cursor)), max(1, int(limit))
+    by_code, by_notebook = {}, {}
+    for item in items:
+        code, path = item.get("code", "<unknown>"), item.get("path", "<unknown>")
+        by_code[code] = by_code.get(code, 0) + 1
+        by_notebook[path] = by_notebook.get(path, 0) + 1
+    page = items[cursor:cursor + limit]
+    next_cursor = cursor + len(page)
+    return {
+        "total": len(items),
+        "shown": len(page),
+        "cursor": cursor,
+        "limit": limit,
+        "next_cursor": next_cursor if next_cursor < len(items) else None,
+        "by_code": dict(sorted(by_code.items())),
+        "by_notebook": dict(sorted(by_notebook.items())),
+        "items": page,
+    }
+
+# %% ../nbs/07_mcp.ipynb #e3c40ef0
 def _doctor_warning_items(path):
     error_codes = {"exported_py_hash_mismatch", "recent_tool_failures"}
-    warnings = [
-        {**item, "severity": item.get("severity", "warning"), "scope": "warning"}
+    violations = [
+        _classified_diagnostic(item, "violation")
         for item in _doctor_warnings(path)
         if item.get("code") not in error_codes
     ]
     private_warnings, private_text = _private_symbol_warnings(path)
-    unused_warnings, unused_text = _unused_symbol_warnings(path)
-    documentation_warnings = _public_function_documentation_warnings(path)
-    return [*warnings, *private_warnings, *unused_warnings, *documentation_warnings], "\n".join([private_text, unused_text])
+    violations.extend(_classified_diagnostic(item, "violation") for item in private_warnings)
+    unused_warnings, _ = _unused_symbol_warnings(path)
+    suspicions, maintenance = [], []
+    for item in unused_warnings:
+        if _protocol_hook_symbol(item.get("symbol", "")): continue
+        diagnostic_class = "suspicion" if item.get("visibility") == "private" else "maintenance"
+        target = suspicions if diagnostic_class == "suspicion" else maintenance
+        target.append(_classified_diagnostic(item, diagnostic_class))
+    for item in _public_function_documentation_warnings(path):
+        if _protocol_hook_symbol(item.get("symbol", "")): continue
+        maintenance.append(_classified_diagnostic(item, "maintenance"))
+    return violations, suspicions, maintenance, private_text
 
 # %% ../nbs/07_mcp.ipynb #a6dc04e5
 def _doctor_style_report(path, skip_folder_re=None, skip_path=None, max_output_chars=12000, max_diagnostics=200):
@@ -2238,21 +2323,39 @@ async def _healthcheck_tool(detail: str = "summary", ctx: Context = None) -> Too
 
 # %% ../nbs/07_mcp.ipynb #mcptool01
 @mcp.tool(**_mcp_tool_meta("doctor"))
-async def doctor_tool(path: str = ".", scopes: str = "error,warning", ctx: Context = None) -> ToolResult:
-    "Report notebook errors and warnings for one path."
+async def doctor_tool(
+    path: str = ".",
+    scopes: str = "error,warning",
+    limit: int = 20,
+    cursor: int = 0,
+    ctx: Context = None,
+) -> ToolResult:
+    "Report actionable notebook diagnostics, with structured pagination."
     root = await _mcp_workspace_root(ctx)
     path = _mcp_workspace_path(path, root)
-    arguments = dict(path=path, scopes=scopes, workspace_root=str(root) if root else None)
-    try: report = _doctor_report(path=path, scopes=scopes)
+    limit = _mcp_clamp_int(limit, 20, 1, 200, "limit")
+    cursor = _mcp_clamp_int(cursor, 0, 0, 100000, "cursor")
+    arguments = dict(path=path, scopes=scopes, limit=limit, cursor=cursor, workspace_root=str(root) if root else None)
+    try:
+        report = _doctor_report(path=path, scopes=scopes, diagnostic_limit=limit, diagnostic_cursor=cursor)
     except Exception as exc: return _mcp_tool_error_result("doctor", arguments, exc)
+    diagnostics = report["diagnostics"]
     doctor = dict(
         path=report["path"],
         scopes=report["scopes"],
         error_count=len(report["errors"]),
         warning_count=len(report["warnings"]),
+        suspicion_count=len(report["suspicions"]),
+        maintenance_count=len(report["maintenance"]),
         style_diagnostic_count=(report["style"] or {}).get("summary", {}).get("diagnostic_count", 0),
+        diagnostic_count=diagnostics["total"],
+        diagnostics_shown=diagnostics["shown"],
+        next_cursor=diagnostics["next_cursor"],
     )
-    return mcp_tool_result("doctor", arguments, report["text"], warnings=report["issues"], doctor=doctor)
+    return mcp_tool_result(
+        "doctor", arguments, report["text"], warnings=report["issues"],
+        doctor=doctor, diagnostics=diagnostics,
+    )
 
 # %% ../nbs/07_mcp.ipynb #4989e3e7
 def _mcp_graph_summary(graph):

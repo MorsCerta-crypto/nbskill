@@ -26,7 +26,7 @@ See `references/mcp-tool-report.md` for the current ranked tool surface.
 
 ## Python-only operations
 
-`convert`, `problem_memory`, `visible_text_inventory`, `move_cells`, and `style_check` remain Python APIs. Reference indexing and maintenance also remain in the CLI or Python API. They are not registered in the MCP schema because they are broad migrations, maintenance, or specialized local review. Use `context(target="notebook.ipynb#cell-id", view="full")` for a complete selected cell.
+`convert`, `problem_memory`, `visible_text_inventory`, and `move_cells` remain Python APIs. The low-level `style_check` helper remains available to Python review code; normal agent-facing style diagnostics use `doctor(scopes="style")`. These APIs are not registered in the MCP schema because they are broad migrations, maintenance operations, or compatibility helpers. Use `context(target="notebook.ipynb#cell-id", view="full")` for a complete selected cell.
 
 | Python API | Use |
 | --- | --- |
@@ -34,7 +34,7 @@ See `references/mcp-tool-report.md` for the current ranked tool surface.
 | `problem_memory` | Query, add, or list reusable problem-solution pairs. |
 | `visible_text_inventory` | List likely user-visible text from notebook code cells. |
 | `move_cells` | Perform deliberate cross-notebook migrations. |
-| `style_check` | Run specialized local hygiene review; use MCP `doctor(scopes="style")` for normal diagnostics. |
+| Python review helpers | Use MCP `doctor(scopes="style")` for normal style diagnostics. |
 
 ## Problem-solving memory
 

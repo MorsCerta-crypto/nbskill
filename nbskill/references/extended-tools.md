@@ -11,7 +11,7 @@ The main `SKILL.md` intentionally stays focused on the core loop: MCP health, `c
 
 - `diff_nb` prints code-cell diffs without notebook output and metadata noise.
 - `style_report(path)` returns structured notebook hygiene and global usage/problem data.
-- `style_check` prints chkstyle hints, nbskill hygiene warnings, and private-symbol warnings.
+- `doctor(scopes="style")` reports chkstyle hints together with notebook hygiene warnings and private-symbol diagnostics.
 - `doctor(scopes="warning")` includes cross-notebook calls to private helpers.
 
 ## Coordinated Editing

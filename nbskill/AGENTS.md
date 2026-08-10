@@ -17,7 +17,7 @@ Use nbskill MCP tools for any task involving:
 For those tasks:
 
 1. Call `mcp__nbskill__.healthcheck` first.
-2. Read with `mcp__nbskill__.context` or `mcp__nbskill__.filter_context`.
+2. Read with `mcp__nbskill__.context`; use its target, view, query, and regex filters to choose the slice.
 3. Search indexed prior art with `mcp__nbskill__.reference` before
    adding nontrivial parsing, notebook, AST, filesystem, or formatting
    behavior.
@@ -25,7 +25,7 @@ For those tasks:
    cell ids or narrow line edits and expected hashes when available.
 5. Verify with the smallest useful MCP check:
    `mcp__nbskill__.diff_nb`, `mcp__nbskill__.exec_nb(check_only=True)`,
-   `mcp__nbskill__.style_check`, or `mcp__nbskill__.doctor`.
+   `mcp__nbskill__.doctor` (add `scopes="style"` for style diagnostics).
 6. For a behavior change, add or revise a focused notebook test before the implementation when a useful reproducer exists. Run the focused check before the edit, then run it again after. Assert the promised behavior, not formatting, `repr`, or incidental order.
 
 Do not edit raw notebook JSON or generated Python for normal notebook
@@ -146,8 +146,8 @@ Same-package searches:
 
 - Use `mcp__nbskill__.context(target="<likely_symbol>", scope="nbs",
   overview=True)` when a likely symbol name exists.
-- Use `mcp__nbskill__.filter_context(scope="nbs",
-  include_re="<domain terms>")` when only behavior is known. Search by
+- Use `mcp__nbskill__.context(scope="nbs", include_re="<domain terms>")`
+  when only behavior is known. Search by
   nouns, error text, data keys, AST node names, regexes, or library
   calls.
 - Use `mcp__nbskill__.context` on the returned symbol to inspect callers
@@ -177,13 +177,12 @@ Examples found in this repo:
 
 Prefer a tight loop:
 
-1. Read with `mcp__nbskill__.context` or
-   `mcp__nbskill__.filter_context`.
+1. Read with `mcp__nbskill__.context`, adding query or regex filters when
+   the target is not yet known.
 2. Make the smallest notebook-aware edit with
    `mcp__nbskill__.edit_notebook`.
 3. Run a focused `mcp__nbskill__.exec_nb(check_only=True)`,
-   `mcp__nbskill__.style_check`, `mcp__nbskill__.diff_nb`, or
-   `mcp__nbskill__.doctor`.
+   `mcp__nbskill__.diff_nb`, or `mcp__nbskill__.doctor`.
 4. Only then continue to the next edit.
 
 After exporting a library change, verify it in a clean process or restart the active kernel. Reloading one module can leave direct imports and patched classes stale.

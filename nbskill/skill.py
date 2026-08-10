@@ -1,8 +1,9 @@
 """Use nbskill from Python for notebook-aware work in nbdev projects.
 
 Use this skill when you need to inspect, edit, execute, or review an nbdev
-notebook without changing raw `.ipynb` JSON. Start with focused context, make
-one structured edit, then run the narrowest useful check.
+notebook without changing raw `.ipynb` JSON. Start with `context`, narrow it
+with its view and filter arguments, make one structured edit, then run the
+narrowest useful check.
 
 ## Read context
 
@@ -42,8 +43,8 @@ print(style_check("nbs/01_read.ipynb", changed_only=True))
 ```
 
 Use `exec_nb` for behavior, `diff_nb` for code-cell changes, and
-`style_check` for notebook hygiene. The MCP server exposes the same workflow
-when structured tool calls are more convenient than Python.
+`style_check` remains available for direct Python workflows. Through MCP,
+use `doctor(scopes="style")` for the same notebook hygiene diagnostics.
 
 After loading this pyskill, use `from nbskill.skill import *` to access the
 curated workflow API directly.
@@ -51,9 +52,9 @@ curated workflow API directly.
 
 from nbskill.edit import edit_notebook
 from nbskill.execute import exec_nb
-from nbskill.read import context, filter_context
+from nbskill.read import context
 from nbskill.review import diff_nb, style_check
 
 __all__ = [
-    "context", "filter_context", "edit_notebook", "exec_nb", "diff_nb", "style_check",
+    "context", "edit_notebook", "exec_nb", "diff_nb", "style_check",
 ]

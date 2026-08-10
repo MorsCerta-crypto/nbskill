@@ -23,8 +23,9 @@ the client is using stale tool metadata.
     reinstalling/exporting tool signatures.
 2.  Use `context` when you know one target: a project, notebook, cell
     id, or public symbol. Choose `view="summary"`,
-    `"implementation"`, or `"full"`; use `filter_context` with a
-    query or regular expression when you need to find the target first.
+    `"implementation"`, or `"full"`; add `query`, `include_re`,
+    `exclude_re`, `chapter`, or `cell_type` when you need to find the
+    useful slice first.
 3.  Keep notebook craft in the loop: preserve the story, add rationale
     before code, and put examples or tests after the behavior they
     exercise.
@@ -71,9 +72,10 @@ For same-package searches, start with symbol and behavior queries:
 
 - Use `context(target="<likely_symbol>", scope="nbs")` when you can
   guess a symbol name.
-- Use `filter_context(scope="nbs", query="<domain terms>")` when
-  you only know the behavior, data shape, AST pattern, error message, or
-  important library calls.
+- Use `context(scope="nbs", query="<domain terms>")` or
+  `context(scope="nbs", include_re="<domain terms>")` when you only
+  know the behavior, data shape, AST pattern, error message, or important
+  library calls.
 
 For external prior art, use
 `reference(query="<behavior and domain terms>", top_k=5)`.
@@ -88,12 +90,12 @@ Concrete duplication patterns to avoid:
   `_chapter_spans`, `_matching_chapters`, `one_chapter`,
   `chapter_index_set`). Queries that would have found them:
   `context(target="_chapter_spans", scope="nbs")` and
-  `filter_context(scope="nbs", query="chapter spans")`.
+  `context(scope="nbs", query="chapter spans")`.
 - AST definition checks recur under different names. Before writing
   `isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))`
   or another symbol-discovery loop, search for
   `context(target="is_definition_node", scope="nbs")` and
-  `filter_context(scope="nbs", query="is_definition_node")`.
+  `context(scope="nbs", query="is_definition_node")`.
 - Notebook/source mapping and AST-location logic has useful external
   prior art. Queries such as
   `reference(query="notebook cells markdown headings chapter spans start end title", top_k=5)`

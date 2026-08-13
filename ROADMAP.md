@@ -52,7 +52,7 @@ The current aai-coding virtual environment does not yet have nbskill and all of 
 
 **Refactor:** Move shared behavior behind the common boundary and remove duplicated orchestration. Preserve MCP compatibility and repeat the paired exercise after the refactor.
 
-## 5. Install one authoritative set of instructions
+## 5. Install one authoritative set of instructions (superseded)
 
 **Build:** Installation gives aai-coding enough routing guidance to discover and load `nbskill.skill` when notebook-owned work appears. Standalone agent instructions draw from the same authoritative skill documentation. Installation information and MCP connection details remain separate from notebook methodology.
 
@@ -65,6 +65,21 @@ The current aai-coding virtual environment does not yet have nbskill and all of 
 - Build and refactor exercise, 2026-08-13: `install_aai_coding_integration` now keeps the routing rule only in aai-coding's persistent-Python skill. Its runtime nbdev notice points to that live skill, and the installer removes the former managed nbskill sections from `README.md` and `SETUP.md`. The packaged routing skill and bootstrap `AGENTS.md` now point to `nbskill.skill`, which owns the native workflow. The focused installer test and the real aai-coding routing-hook test both passed.
 - Fresh native exercise, 2026-08-13: installed copied aai-coding and the current nbskill package into `/private/tmp/nbskill-stage5.TlulFU/runtime` with Python 3.12. The initial `uv sync` exposed a pre-existing aai-coding metadata conflict because its supported Python range still includes 3.10 although direct dependencies require 3.11. In the isolated supported runtime, aai-coding discovered `nbskill.skill`, routed a generated module to its owner, and used the registered Pyskill to edit and prove a notebook change without MCP. The acceptance test passed.
 - Optional transport exercise, 2026-08-13: in the same fresh runtime, a generic skill installation copied the compact routing skill, and a separate temporary Codex workspace received a valid `nbskill_mcp` configuration. Both focused tests passed.
+
+Stage 6 replaces this installation design. The record remains for the history of the experiment; the installer must no longer modify an `aai-coding` checkout, a README, or a setup document.
+
+## 6. Start fresh with a direct Pyskill
+
+**Build:** `nbskill.skill` exposes the direct operations an agent needs: route with `generated_owner`, read with `context`, find prior art with `reference_query`, mutate with `edit_notebook`, and prove the result with `exec_nb`, `diff_nb`, and `style_check`. Its generated module docstring is the operational guide. `#| exportd` supplies a compact executable example without adding it to module code.
+
+**Validate:** Build the package, import the installed Pyskill, and use it on a freshly created notebook. The run must inspect source, make a structured change, execute the affected scope without writing outputs, and review the code-cell diff. In a separate temporary install root, run `install_nbskill` and confirm it installs only package-owned skill files and optional MCP configuration. It must not return or execute aai-coding integration work.
+
+**Refactor:** Delete wrapper orchestration, README-derived skill generation, and all code that discovers or changes an aai-coding checkout. Keep the MCP server as a supported adapter. Run both validations again from the refactored package.
+
+### Stage 6 validation record
+
+- Build and refactor exercise, 2026-08-13: `uv run nbdev-test --path nbs/14_pyskill.ipynb` rebuilt and installed the package, then changed a fresh notebook from `answer = 41` to `answer = 42` through the direct Pyskill. The test executed the affected scope in check-only mode and reviewed the code-cell diff. The test was written against the old wrapper API first and failed, then passed after the direct facade replaced it.
+- Installation exercise, 2026-08-13: `uv run nbdev-test --path nbs/06_skill.ipynb` installed the package skill and Codex MCP configuration in a temporary root. The test first failed because the old result exposed `aai_coding`; it passed after removing all integration paths. `uv run nbdev-test --path nbs/13_cli.ipynb` and `uv run install_nbskill --help` then confirmed that the command-line interface no longer accepts aai-coding setup options.
 
 ## Guardrails
 

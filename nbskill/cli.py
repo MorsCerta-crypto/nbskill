@@ -25,16 +25,13 @@ def install_nbskill(
     codex_workspace: str | None = ".", # Project workspace for .codex/config.toml
     reference_roots: str = "~/projects", # Local Git repositories to register
     index_references: bool = True, # Index discovered references during installation
-    integrate_aai_coding: bool = True, # Install current notebook routing into aai-coding
-    aai_coding_dir: str | None = None, # Explicit aai-coding checkout, or auto-detect
 ):
-    "Install current nbskill instructions, MCP configuration, and aai-coding routing."
+    "Install current nbskill instructions and optional MCP configuration."
     return _install_nbskill(
         target=target, skills_dir=skills_dir, skill_name=skill_name, overwrite=overwrite,
         install_hooks=install_hooks, restart_mcp=restart_mcp, cursor_workspace=cursor_workspace,
         codex_workspace=codex_workspace, reference_roots=reference_roots,
-        index_references=index_references, integrate_aai_coding=integrate_aai_coding,
-        aai_coding_dir=aai_coding_dir,
+        index_references=index_references,
     )
 
 # %% ../nbs/13_cli.ipynb #758325ca

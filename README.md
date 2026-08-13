@@ -63,13 +63,13 @@ mcp__nbskill__.healthcheck()
 mcp__nbskill__.verify_change(paths=["nbs/02_write.ipynb"])
 ```
 
-## Coexisting with aai-coding
+## Use with aai-coding
 
-`aai-coding` and `nbskill` cover different parts of one workflow. Let `aai-coding` own the persistent Python session, hooks, ordinary Python files, configuration, and prose. Let `nbskill` own `nbs/**/*.ipynb`, nbdev-generated Python modules, notebook execution, export, and notebook review.
+`aai-coding` owns the persistent Python session, hooks, ordinary Python files, configuration, and prose. `nbskill.skill` owns notebook source, generated modules, focused execution, and notebook review.
 
-Run `install_nbskill --target codex` after installing or upgrading nbskill. The installer registers the MCP server, installs the `jupyter-notebooks` skill, and, when it finds an `aai-coding` checkout, updates its persistent-Python routing, nbdev orientation, README, and SETUP instructions. Each managed file is compared before writing, so a current installation is left byte-for-byte unchanged. Use `--aai_coding_dir /path/to/aai-coding` when auto-detection cannot find the checkout, or `--no-integrate_aai_coding` to opt out.
+`install_nbskill --target codex` installs the local `jupyter-notebooks` skill and optional MCP configuration. It never rewrites an aai-coding checkout or a README.
 
-In an nbdev project, do not use `exhash` or a general editor to mutate a source notebook or its generated module. Start with `healthcheck`, read with [`context`](https://MorsCerta-crypto.github.io/nbskill/read.html#context) or [`filter_context`](https://MorsCerta-crypto.github.io/nbskill/read.html#filter_context), search prior art with `reference`, change the notebook with [`edit_notebook`](https://MorsCerta-crypto.github.io/nbskill/edit.html#edit_notebook), and verify with the smallest useful check. This keeps persistent-session convenience without bypassing notebook-aware safety.
+In an nbdev project, do not use `exhash` or a general editor to mutate a source notebook or its generated module. Import `nbskill.skill`, call [`generated_owner`](https://MorsCerta-crypto.github.io/nbskill/foundation.html#generated_owner) to route a Python file, read with [`context`](https://MorsCerta-crypto.github.io/nbskill/read.html#context), query [`reference_query`](https://MorsCerta-crypto.github.io/nbskill/knowledge.html#reference_query) for nontrivial prior art, make one [`edit_notebook`](https://MorsCerta-crypto.github.io/nbskill/edit.html#edit_notebook) change, then prove it with [`exec_nb`](https://MorsCerta-crypto.github.io/nbskill/execute.html#exec_nb), [`diff_nb`](https://MorsCerta-crypto.github.io/nbskill/review.html#diff_nb), and [`style_check`](https://MorsCerta-crypto.github.io/nbskill/review.html#style_check).
 
 ## References
 

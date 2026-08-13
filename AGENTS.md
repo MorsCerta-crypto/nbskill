@@ -9,7 +9,7 @@ authoritative notebook workflow here.
 
 Route each file separately. A notebook goes to `nbskill.skill` directly. For a Python module, call `generated_owner(path)`: edit the returned notebook when it exists, and keep the file on the ordinary aai-coding path when it does not. A repository-level nbdev marker never routes every Python file through notebook tooling.
 
-For notebook-owned work, use `prepare_change` before a nontrivial change, make one structured `edit_notebook` mutation using stable cell ids, then use `verify_change`. For a behavior change, add or revise a focused notebook test before implementation when a useful reproducer exists. Run it before and after the edit; assert promised behavior rather than formatting or incidental order.
+For notebook-owned work, use `context` to read the relevant cells and `reference_query` before a nontrivial implementation choice. Make one structured `edit_notebook` mutation using stable cell ids, then prove it with `exec_nb`, `diff_nb`, and `style_check`. For a behavior change, add or revise a focused notebook test before implementation when a useful reproducer exists. Run it before and after the edit; assert promised behavior rather than formatting or incidental order.
 
 Do not edit raw notebook JSON or generated Python for normal notebook source changes. If a generated Python file needs work, inspect and edit the owning notebook unless the user explicitly asks otherwise.
 
@@ -112,8 +112,8 @@ Common directives:
 - `#| exec_doc`: re-execute dynamic documentation content.
 
 Do not add a manual `nbdev.nbdev_export()` cell to every notebook by default.
-Use the repository's normal export and test commands, or
-`nbskill.skill.verify_change`, unless a notebook already follows that pattern.
+Use the repository's normal export and test commands, or the direct
+verification functions from `nbskill.skill`, unless a notebook already follows that pattern.
 
 ## Search Before Writing
 
@@ -125,8 +125,8 @@ intentionally keep a local variant.
 
 Same-package searches:
 
-- Use `prepare_change` for a nontrivial notebook task. It supplies source
-  context and local prior art through the native interface.
+- Use `context` for the relevant source and `reference_query` for local prior
+  art before a nontrivial notebook task.
 - When only behavior is known, first locate the likely source with ordinary
   project search, then switch to the Pyskill before inspecting or changing
   notebook-owned code.
@@ -162,10 +162,10 @@ Examples found in this repo:
 
 Prefer a tight loop:
 
-1. Use `prepare_change` when the task needs context or prior art.
+1. Read with `context` and query `reference_query` when the task needs prior art.
 2. Make the smallest notebook-aware edit with `edit_notebook`.
-3. Run `verify_change` for the code diff, focused check, and changed-source
-   diagnostics.
+3. Run `exec_nb`, `diff_nb`, and `style_check` for the behavior check, code diff,
+   and changed-source diagnostics.
 4. Only then continue to the next edit.
 
 After exporting a library change, verify it in a clean process or restart the active kernel. Reloading one module can leave direct imports and patched classes stale.

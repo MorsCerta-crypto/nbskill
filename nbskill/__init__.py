@@ -2,6 +2,6 @@
 
 Modules:
 
-- `nbskill.skill`: Core notebook operations for coding agents."""
+- `nbskill.skill`: Direct notebook operations for coding agents."""
 
 __version__ = "0.0.15"

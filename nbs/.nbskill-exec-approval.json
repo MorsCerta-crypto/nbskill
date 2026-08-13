@@ -1,14 +1,5 @@
 {
   "functions": {
-    "_aai_coding_root": {
-      "allowed": true,
-      "cell_id": "f2590f57",
-      "external_effects": false,
-      "line": 2,
-      "notebook": "06_skill.ipynb",
-      "reasons": [],
-      "source_hash": "623eb430dd56"
-    },
     "_acquire_process_lock": {
       "allowed": false,
       "cell_id": "476fd308",
@@ -954,15 +945,6 @@
       "notebook": "04_review.ipynb",
       "reasons": [],
       "source_hash": "e7593f422cd6"
-    },
-    "_changed_execution_target": {
-      "allowed": true,
-      "cell_id": "76b38696",
-      "external_effects": false,
-      "line": 2,
-      "notebook": "14_pyskill.ipynb",
-      "reasons": [],
-      "source_hash": "d793e70d2823"
     },
     "_chapter_intro_items": {
       "allowed": true,
@@ -2335,30 +2317,6 @@
       "reasons": [],
       "source_hash": "88a5e02d8425"
     },
-    "_ensure_aai_harness": {
-      "allowed": false,
-      "cell_id": "912cc074",
-      "external_effects": true,
-      "line": 2,
-      "notebook": "06_skill.ipynb",
-      "reasons": [
-        "_write_if_changed->call:path.parent.mkdir",
-        "_write_if_changed->call:path.write_text"
-      ],
-      "source_hash": "4b9490ed6223"
-    },
-    "_ensure_aai_skill": {
-      "allowed": false,
-      "cell_id": "5dca7a88",
-      "external_effects": true,
-      "line": 2,
-      "notebook": "06_skill.ipynb",
-      "reasons": [
-        "_write_if_changed->call:path.parent.mkdir",
-        "_write_if_changed->call:path.write_text"
-      ],
-      "source_hash": "a34176297e4c"
-    },
     "_ensure_library_version_indexed": {
       "allowed": false,
       "cell_id": "383448cf",
@@ -2399,18 +2357,6 @@
         "reference_ingest->_write_reference_rows->_write_lance_table->_reference_table->_reference_db->call:home.mkdir"
       ],
       "source_hash": "db30b6f0b120"
-    },
-    "_ensure_marked_block": {
-      "allowed": false,
-      "cell_id": "55b8980a",
-      "external_effects": true,
-      "line": 2,
-      "notebook": "06_skill.ipynb",
-      "reasons": [
-        "_write_if_changed->call:path.parent.mkdir",
-        "_write_if_changed->call:path.write_text"
-      ],
-      "source_hash": "f295334ecfb9"
     },
     "_ensure_safepyrun_fastcore_param": {
       "allowed": true,
@@ -3791,6 +3737,18 @@
       ],
       "source_hash": "6dfb0375f5b4"
     },
+    "_install_skill_files": {
+      "allowed": false,
+      "cell_id": "8828875e",
+      "external_effects": true,
+      "line": 2,
+      "notebook": "06_skill.ipynb",
+      "reasons": [
+        "_install_skill_tree->_write_if_changed->call:path.parent.mkdir",
+        "_install_skill_tree->_write_if_changed->call:path.write_text"
+      ],
+      "source_hash": "aa2c8e3ef58a"
+    },
     "_install_skill_tree": {
       "allowed": false,
       "cell_id": "45e4c0e8",
@@ -4506,15 +4464,6 @@
       "notebook": "01_read.ipynb",
       "reasons": [],
       "source_hash": "b5c8684c0794"
-    },
-    "_marked_readme_section": {
-      "allowed": true,
-      "cell_id": "797561b0",
-      "external_effects": false,
-      "line": 2,
-      "notebook": "06_skill.ipynb",
-      "reasons": [],
-      "source_hash": "0721e5946fcc"
     },
     "_matches_any": {
       "allowed": true,
@@ -5439,15 +5388,6 @@
       "notebook": "00_foundation.ipynb",
       "reasons": [],
       "source_hash": "d90f6c5dc03d"
-    },
-    "_nbskill_source_project": {
-      "allowed": true,
-      "cell_id": "4c71a41f",
-      "external_effects": false,
-      "line": 2,
-      "notebook": "06_skill.ipynb",
-      "reasons": [],
-      "source_hash": "c63280c00c45"
     },
     "_neighbor_records": {
       "allowed": true,
@@ -7257,18 +7197,6 @@
       "reasons": [],
       "source_hash": "dcb9a35506d3"
     },
-    "_remove_marked_block": {
-      "allowed": false,
-      "cell_id": "55b8980a",
-      "external_effects": true,
-      "line": 2,
-      "notebook": "06_skill.ipynb",
-      "reasons": [
-        "_write_if_changed->call:path.parent.mkdir",
-        "_write_if_changed->call:path.write_text"
-      ],
-      "source_hash": "0641a2161446"
-    },
     "_render_context_cell": {
       "allowed": true,
       "cell_id": "8bc08135",
@@ -7939,14 +7867,14 @@
       "reasons": [],
       "source_hash": "37cec331bc52"
     },
-    "_skill_frontmatter": {
+    "_skill_roots": {
       "allowed": true,
-      "cell_id": "edda3691",
+      "cell_id": "6a186b66",
       "external_effects": false,
       "line": 2,
       "notebook": "06_skill.ipynb",
       "reasons": [],
-      "source_hash": "a78a9ffcc021"
+      "source_hash": "30ee6027f346"
     },
     "_skip_timed_out_cell": {
       "allowed": true,
@@ -8962,7 +8890,7 @@
     },
     "_write_if_changed": {
       "allowed": false,
-      "cell_id": "e13d3b20",
+      "cell_id": "aaccbabb",
       "external_effects": true,
       "line": 2,
       "notebook": "06_skill.ipynb",
@@ -9165,18 +9093,6 @@
         "_patch_pyproject_nbdev->call:path.write_text"
       ],
       "source_hash": "95ed5847b780"
-    },
-    "build_skill_from_readme": {
-      "allowed": false,
-      "cell_id": "8226e202",
-      "external_effects": true,
-      "line": 2,
-      "notebook": "06_skill.ipynb",
-      "reasons": [
-        "call:out.parent.mkdir",
-        "call:out.write_text"
-      ],
-      "source_hash": "ca1f22edb471"
     },
     "call_name": {
       "allowed": true,
@@ -10072,22 +9988,6 @@
       "reasons": [],
       "source_hash": "4ea9190df273"
     },
-    "install_aai_coding_integration": {
-      "allowed": false,
-      "cell_id": "0fd37ad8",
-      "external_effects": true,
-      "line": 2,
-      "notebook": "06_skill.ipynb",
-      "reasons": [
-        "_ensure_aai_harness->_write_if_changed->call:path.parent.mkdir",
-        "_ensure_aai_harness->_write_if_changed->call:path.write_text",
-        "_ensure_aai_skill->_write_if_changed->call:path.parent.mkdir",
-        "_ensure_aai_skill->_write_if_changed->call:path.write_text",
-        "_remove_marked_block->_write_if_changed->call:path.parent.mkdir",
-        "_remove_marked_block->_write_if_changed->call:path.write_text"
-      ],
-      "source_hash": "31cfe809eaf6"
-    },
     "install_nbdev_pre_commit_hooks": {
       "allowed": false,
       "cell_id": "94da0ea4",
@@ -10117,17 +10017,11 @@
         "_install_codex_mcp->call:path.write_text",
         "_install_cursor_mcp->call:path.parent.mkdir",
         "_install_cursor_mcp->call:path.write_text",
-        "_install_skill_tree->_write_if_changed->call:path.parent.mkdir",
-        "_install_skill_tree->_write_if_changed->call:path.write_text",
-        "install_aai_coding_integration->_ensure_aai_harness->_write_if_changed->call:path.parent.mkdir",
-        "install_aai_coding_integration->_ensure_aai_harness->_write_if_changed->call:path.write_text",
-        "install_aai_coding_integration->_ensure_aai_skill->_write_if_changed->call:path.parent.mkdir",
-        "install_aai_coding_integration->_ensure_aai_skill->_write_if_changed->call:path.write_text",
-        "install_aai_coding_integration->_remove_marked_block->_write_if_changed->call:path.parent.mkdir",
-        "install_aai_coding_integration->_remove_marked_block->_write_if_changed->call:path.write_text",
+        "_install_skill_files->_install_skill_tree->_write_if_changed->call:path.parent.mkdir",
+        "_install_skill_files->_install_skill_tree->_write_if_changed->call:path.write_text",
         "nbskill_mcp_restart_notice->_nbskill_mcp_pids->call:subprocess.run"
       ],
-      "source_hash": "cb45958d97ee"
+      "source_hash": "c8cc70e16419"
     },
     "is_definition_node": {
       "allowed": true,
@@ -10617,15 +10511,6 @@
       "notebook": "00_foundation.ipynb",
       "reasons": [],
       "source_hash": "746bb52f957f"
-    },
-    "prepare_change": {
-      "allowed": true,
-      "cell_id": "fe4c03fd",
-      "external_effects": false,
-      "line": 2,
-      "notebook": "14_pyskill.ipynb",
-      "reasons": [],
-      "source_hash": "826cea7b9e4c"
     },
     "private_symbol_report": {
       "allowed": false,
@@ -11422,15 +11307,6 @@
       "notebook": "04_review.ipynb",
       "reasons": [],
       "source_hash": "4a45d003e22f"
-    },
-    "verify_change": {
-      "allowed": true,
-      "cell_id": "6e6a4a71",
-      "external_effects": false,
-      "line": 2,
-      "notebook": "14_pyskill.ipynb",
-      "reasons": [],
-      "source_hash": "a8c61c30c02a"
     },
     "verify_change_tool": {
       "allowed": false,

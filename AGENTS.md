@@ -1,44 +1,17 @@
 # Agent Notes
 
-This is an nbdev notebook-source repository. The nbskill MCP server is
-the normal interface for notebook work here.
+This is an nbdev notebook-source repository. `nbskill.skill` is the
+authoritative notebook workflow here.
 
-## Mandatory nbskill MCP Workflow
+## Native nbskill Pyskill workflow
 
-Use nbskill MCP tools for any task involving:
+`nbskill.skill` owns the notebook workflow for aai-coding. Load its module documentation before notebook work; it defines the public operations and their order. MCP remains an optional adapter for clients that choose that transport.
 
-- `nbs/**/*.ipynb` or another source notebook.
-- Python modules generated from nbdev notebooks.
-- Notebook execution, order, outputs, examples, or tests.
-- Symbol lookup, call impact, implementation search, or refactoring in
-  notebook-owned code.
-- Notebook style, review, diagnostics, conversion, or migration.
+Route each file separately. A notebook goes to `nbskill.skill` directly. For a Python module, call `generated_owner(path)`: edit the returned notebook when it exists, and keep the file on the ordinary aai-coding path when it does not. A repository-level nbdev marker never routes every Python file through notebook tooling.
 
-For those tasks:
+For notebook-owned work, use `prepare_change` before a nontrivial change, make one structured `edit_notebook` mutation using stable cell ids, then use `verify_change`. For a behavior change, add or revise a focused notebook test before implementation when a useful reproducer exists. Run it before and after the edit; assert promised behavior rather than formatting or incidental order.
 
-1. Call `mcp__nbskill__.healthcheck` first.
-2. Read with `mcp__nbskill__.context` or `mcp__nbskill__.filter_context`.
-3. Search indexed prior art with `mcp__nbskill__.reference` before
-   adding nontrivial parsing, notebook, AST, filesystem, or formatting
-   behavior.
-4. Query problem-solving memory with the `problem_memory` CLI before
-   choosing an approach for a nontrivial task. Use the concrete problem and
-   relevant tags such as `topic`, `sub-topic`, `library`, `problem-category`,
-   and `solution-category`; supplied tags are exact all-of filters.
-5. Edit notebooks only with `mcp__nbskill__.edit_notebook`, using stable
-   cell ids or narrow line edits and expected hashes when available.
-6. Verify with the smallest useful MCP check:
-   `mcp__nbskill__.diff_nb`, `mcp__nbskill__.exec_nb(check_only=True)`,
-   `mcp__nbskill__.style_check`, or `mcp__nbskill__.doctor`.
-7. For a behavior change, add or revise a focused notebook test before the implementation when a useful reproducer exists. Run the focused check before the edit, then run it again after. Assert the promised behavior, not formatting, `repr`, or incidental order.
-8. After verification, record each reusable problem-solution pair with the
-   `problem_memory` CLI using `action="add"`, concise evidence, and at least four
-   tags. Problem-solving memory is part of the normal workflow, not optional
-   cleanup.
-
-Do not edit raw notebook JSON or generated Python for normal notebook
-source changes. If a generated Python file needs work, inspect and edit
-the owning notebook unless the user explicitly asks otherwise.
+Do not edit raw notebook JSON or generated Python for normal notebook source changes. If a generated Python file needs work, inspect and edit the owning notebook unless the user explicitly asks otherwise.
 
 Functions beginning with `_` are local to their notebook. If `doctor` reports a cross-notebook private-symbol call, promote the helper deliberately or remove the call before completing the task.
 
@@ -95,7 +68,7 @@ because it already exists.
 ## nbdev Development Shape
 
 When creating or revising nbdev notebooks, keep the literate-programming
-shape visible to the next MCP user:
+shape visible to the next reader:
 
 - New source notebooks should declare their export target near the top with
   `#| default_exp module_name`. Add common imports such as
@@ -139,8 +112,8 @@ Common directives:
 - `#| exec_doc`: re-execute dynamic documentation content.
 
 Do not add a manual `nbdev.nbdev_export()` cell to every notebook by default.
-Use the repository's normal export and test commands, or the nbskill MCP
-verification tools, unless a notebook already follows that pattern.
+Use the repository's normal export and test commands, or
+`nbskill.skill.verify_change`, unless a notebook already follows that pattern.
 
 ## Search Before Writing
 
@@ -152,20 +125,17 @@ intentionally keep a local variant.
 
 Same-package searches:
 
-- Use `mcp__nbskill__.context(target="<likely_symbol>", scope="nbs",
-  overview=True)` when a likely symbol name exists.
-- Use `mcp__nbskill__.filter_context(scope="nbs",
-  include_re="<domain terms>")` when only behavior is known. Search by
-  nouns, error text, data keys, AST node names, regexes, or library
-  calls.
-- Use `mcp__nbskill__.context` on the returned symbol to inspect callers
-  and callees before deciding to add code.
+- Use `prepare_change` for a nontrivial notebook task. It supplies source
+  context and local prior art through the native interface.
+- When only behavior is known, first locate the likely source with ordinary
+  project search, then switch to the Pyskill before inspecting or changing
+  notebook-owned code.
 
 Reference searches:
 
-- Use `mcp__nbskill__.reference(action="query",
-  query="<behavior and domain terms>", top_k=5)` before building
-  nontrivial parsing, notebook, AST, filesystem, or formatting behavior.
+- Use the native prior-art lookup when it is available from the Pyskill
+  before building nontrivial parsing, notebook, AST, filesystem, or
+  formatting behavior. Do not return to MCP solely to obtain that lookup.
 - If a reference hit is from an already-direct dependency, prefer
   importing or adapting its pattern. If it would add a new dependency,
   treat it as prior art unless the dependency is explicitly acceptable.
@@ -192,13 +162,10 @@ Examples found in this repo:
 
 Prefer a tight loop:
 
-1. Read with `mcp__nbskill__.context` or
-   `mcp__nbskill__.filter_context`.
-2. Make the smallest notebook-aware edit with
-   `mcp__nbskill__.edit_notebook`.
-3. Run a focused `mcp__nbskill__.exec_nb(check_only=True)`,
-   `mcp__nbskill__.style_check`, `mcp__nbskill__.diff_nb`, or
-   `mcp__nbskill__.doctor`.
+1. Use `prepare_change` when the task needs context or prior art.
+2. Make the smallest notebook-aware edit with `edit_notebook`.
+3. Run `verify_change` for the code diff, focused check, and changed-source
+   diagnostics.
 4. Only then continue to the next edit.
 
 After exporting a library change, verify it in a clean process or restart the active kernel. Reloading one module can leave direct imports and patched classes stale.

@@ -30,9 +30,20 @@ the client is using stale tool metadata.
     before code, and put examples or tests after the behavior they
     exercise.
 4.  Use `edit_notebook(path, edits, dry_run=False)` for notebook edits.
-    It applies the edit list atomically; individual edits may include
-    expected-hash guards. Use `dry_run=True` before a change whose
-    effect is uncertain.
+    It applies the edit list atomically. The available operations are:
+    `replace_cell`, `insert_cells`, `delete_cells`, `move_cells`,
+    `explode_cells`, `replace_lines`, `insert_lines`, `delete_lines`,
+    `replace_text`, and `replace_texts`.
+
+    Existing cells are selected with `cell_id`, `cell_ids`, or
+    `target="all"` (optionally narrowed by `cell_type`, `contains`, or
+    `re_filter`). Whole-cell edits use `source` or `source_lines`;
+    insertion and movement use `cells`, `anchor_id`, and `where`;
+    line edits use 1-based ranges; text replacement is literal.
+    `replace_texts` takes `replacements` or matching `olds` and `news`.
+    `explode_cells` splits top-level function definitions into cells.
+    Individual edits may include `expected_hash` guards. Use
+    `dry_run=True` before a change whose effect is uncertain.
 5.  For a behavior change, add or revise a focused notebook test before
     the implementation when a useful reproducer exists. Run the focused
     check before the edit, then run it again after. Assert the promised

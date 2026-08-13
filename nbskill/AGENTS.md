@@ -21,8 +21,12 @@ For those tasks:
 3. Search indexed prior art with `mcp__nbskill__.reference` before
    adding nontrivial parsing, notebook, AST, filesystem, or formatting
    behavior.
-4. Edit notebooks only with `mcp__nbskill__.edit_notebook`, using stable
-   cell ids or narrow line edits and expected hashes when available.
+4. Edit notebooks only with `mcp__nbskill__.edit_notebook`, using one of
+   its supported operations: `replace_cell`, `insert_cells`,
+   `delete_cells`, `move_cells`, `explode_cells`, `replace_lines`,
+   `insert_lines`, `delete_lines`, `replace_text`, or `replace_texts`.
+   Select cells with stable ids or a deliberate `target="all"` filter;
+   use narrow line edits and expected hashes when available.
 5. Verify with the smallest useful MCP check:
    `mcp__nbskill__.diff_nb`, `mcp__nbskill__.exec_nb(check_only=True)`,
    `mcp__nbskill__.doctor` (add `scopes="style"` for style diagnostics).

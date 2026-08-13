@@ -26,7 +26,7 @@ See `references/mcp-tool-report.md` for the current ranked tool surface.
 
 ## Python-only operations
 
-`convert`, `problem_memory`, `visible_text_inventory`, and `move_cells` remain Python APIs. The low-level `style_check` helper remains available to Python review code; normal agent-facing style diagnostics use `doctor(scopes="style")`. These APIs are not registered in the MCP schema because they are broad migrations, maintenance operations, or compatibility helpers. Use `context(target="notebook.ipynb#cell-id", view="full")` for a complete selected cell.
+`convert`, `problem_memory`, `visible_text_inventory`, and `move_cells` remain Python APIs. Normal agent-facing diagnostics use `doctor`; pass `scopes="style"` when style diagnostics are needed. These APIs are not registered in the MCP schema because they are broad migrations, maintenance operations, or compatibility helpers. Use `context(target="notebook.ipynb#cell-id", view="full")` for a complete selected cell.
 
 | Python API | Use |
 | --- | --- |
@@ -99,7 +99,27 @@ Edit shape:
 }
 ```
 
-Supported operations are `replace_cell`, `insert_cells`, `delete_cells`, `move_cells`, `replace_lines`, `insert_lines`, `delete_lines`, `replace_text`, and `replace_texts`. Prefer expected hashes when you have just read a cell and want stale context to fail.
+Supported operations:
+
+| Operation | Purpose | Main fields |
+| --- | --- | --- |
+| `replace_cell` | Replace exactly one existing cell while keeping its id. | `cell_id`, `source` or `source_lines`; optional `cell_type`, `directive` |
+| `insert_cells` | Insert one or more new cells. | `cells`, optional `anchor_id`, `where` (`before` or `after`) |
+| `delete_cells` | Delete selected cells. | `cell_id`, `cell_ids`, or `target: "all"` |
+| `move_cells` | Move selected cells as a group. | selector plus `anchor_id`, `where` |
+| `explode_cells` | Split selected code cells at top-level function definitions. | selector |
+| `replace_lines` | Replace a 1-based inclusive line range. | selector, `start_line`, `end_line`, `replacement_lines` |
+| `insert_lines` | Insert lines at a 1-based boundary; `n + 1` appends. | selector, `insert_line`, `new_lines` |
+| `delete_lines` | Delete a 1-based inclusive range or lines matching a filter. | selector, `start_line`, `end_line`, optional `line_filter`, `invert_filter` |
+| `replace_text` | Replace literal text in selected cells. | selector, `old`, `new`; optional line range |
+| `replace_texts` | Apply several literal replacements in order. | selector, `replacements` or paired `olds` and `news`; optional line range |
+
+For existing-cell operations, select with `cell_id`, `cell_ids`, or
+`target: "all"`; `cell_type`, `contains`, `re_filter`, and `invert_filter`
+can narrow a selection. `expected_hash` guards the selected cell source:
+use a string for one cell or a `{cell_id: hash}` map for several cells.
+Text replacement is literal, not regular-expression based. Prefer an
+expected hash when the edit follows a read and stale context must fail.
 
 ## `exec_nb`
 

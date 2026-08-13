@@ -2089,7 +2089,7 @@ _MCP_READ_DOC_TOOL_CATALOG = {}
 
 # %% ../nbs/07_mcp.ipynb #mcpcat04
 _MCP_CELL_EDIT_TOOL_CATALOG = {
-    'edit_notebook': {'feature':'notebook_edit','usefulness':'core','tags':('edit','notebook','cell','text','batch'),'description':'Apply atomic notebook edits from a path and edit list.','when_to_use':'Use after context identifies target cells; use dry_run=True to inspect a change without writing.','combine_with':'Verify with diff_nb, exec_nb, verify_change, or doctor.'},
+    'edit_notebook': {'feature':'notebook_edit','usefulness':'core','tags':('edit','notebook','cell','text','batch'),'description':'Apply atomic notebook edits. Supported ops: replace_cell, insert_cells, delete_cells, move_cells, explode_cells, replace_lines, insert_lines, delete_lines, replace_text, replace_texts. Select cells with cell_id, cell_ids, or target="all"; use source/source_lines, line ranges, cells, anchor_id/where, and expected_hash as appropriate. Text replacement is literal. Use dry_run=True to preview.','when_to_use':'Use after context identifies target cells; use dry_run=True to inspect a change without writing.','combine_with':'Verify with diff_nb, exec_nb, verify_change, or doctor.'},
     'create_notebook': {'feature':'notebook_creation','usefulness':'situational','tags':('edit','notebook','create'),'description':'Create one minimal nbdev notebook.','when_to_use':'Use when a new source notebook is needed.','combine_with':'Populate it with edit_notebook.'},
 }
 

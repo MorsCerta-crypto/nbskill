@@ -50,7 +50,7 @@ nbskill = "nbskill._modidx:d"
 version = {attr = "nbskill.__version__"}
 
 [tool.setuptools.packages.find]
-include = ["nbskill"]
+include = ["nbskill", "nbskill.references"]
 
 [tool.setuptools.package-data]
 nbskill = ["AGENTS.md", "SKILL.md", "SKILL.archive.md", "references/*.md"]

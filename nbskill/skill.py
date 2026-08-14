@@ -1,6 +1,8 @@
 """Direct notebook operations for coding agents.
 
-`nbskill.skill` is the short, direct API for notebook-owned code. Import it with `from nbskill.skill import *`. It is the source of truth for the notebook workflow; MCP remains available for clients that need a tool adapter.
+`nbskill.skill` is the short, direct API for notebook-owned code. Install nbskill in the same Python environment that runs the agent, including its dependencies: use `uv pip install nbskill`, or `uv pip install -e /path/to/nbskill` while developing. A Pyskill entry point alone is discovery metadata, not an installation. Then import it with `from nbskill.skill import *`. It is the source of truth for the notebook workflow; MCP remains available for clients that need a tool adapter.
+
+Reference queries use the machine-level `~/.nbskill/reference_knowledge` directory across workspaces. Set `NBSKILL_REFERENCE_HOME` when a separate reference index is required.
 
 ## Work with a notebook
 
@@ -8,9 +10,66 @@ Call `generated_owner(path)` before touching a Python file. A returned notebook 
 
 Prove the result in the same change loop. `exec_nb` runs the affected notebook scope without writing outputs when `check_only=True`. `diff_nb` shows the code-cell change, and `style_check` reports source diagnostics. Ordinary Python files remain on the normal coding path.
 
+## `context`
+
+`context` reads a notebook through its cells. Start with a summary, then request full context only for the cells that matter:
+
 ```python
 summary = context("nbs/01_read.ipynb#context", scope="nbs", view="summary", verbose=False)
 assert summary["kind"] == "context"
+```
+
+## `generated_owner`
+
+`generated_owner` identifies the notebook that owns a generated Python file. A `None` result means ordinary Python tooling may edit the file:
+
+```python
+owner = generated_owner("nbskill/skill.py")
+assert owner.name == "14_pyskill.ipynb"
+owner
+```
+
+## `reference_query`
+
+Use `reference_query` before adding a nontrivial helper. It searches the shared reference index and direct dependencies:
+
+```python
+matches = reference_query("find an nbdev notebook export helper", top_k=3)
+matches["hits"]
+```
+
+## `edit_notebook`
+
+`edit_notebook` applies a structured edit atomically. Read the notebook first and use the returned cell ID and exact source text:
+
+```python
+edits = [dict(op="replace_text", cell_id="<cell-id>", old="old text", new="new text")]
+change = edit_notebook("nbs/14_pyskill.ipynb", edits)
+change["changed"]
+```
+
+## `exec_nb`
+
+`exec_nb` runs the affected notebook scope. `check_only=True` validates code without writing outputs back to the notebook:
+
+```python
+exec_nb("nbs/14_pyskill.ipynb", check_only=True)
+```
+
+## `diff_nb`
+
+`diff_nb` shows changed source cells without the noise of raw notebook JSON:
+
+```python
+diff_nb("nbs/14_pyskill.ipynb", ref_a="HEAD")
+```
+
+## `style_check`
+
+`style_check` reports notebook hygiene and style diagnostics. Restrict it to changed cells while iterating:
+
+```python
+style_check("nbs/14_pyskill.ipynb", changed_only=True)
 ```
 
 Docs: https://MorsCerta-crypto.github.io/nbskill/pyskill.html.md"""
@@ -28,7 +87,7 @@ from .knowledge import reference_query
 from .read import context
 from .review import diff_nb, style_check
 
-# %% ../nbs/14_pyskill.ipynb #b122e9dd
+# %% ../nbs/14_pyskill.ipynb #f2ae8636
 __all__ = [
     "context", "generated_owner", "reference_query", "edit_notebook",
     "exec_nb", "diff_nb", "style_check",

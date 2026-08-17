@@ -1,0 +1,1169 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.10.18">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>write – nbskill</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="site_libs/quarto-nav/headroom.min.js"></script>
+<script src="site_libs/clipboard/clipboard.min.js"></script>
+<script src="site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="site_libs/quarto-search/fuse.min.js"></script>
+<script src="site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="./">
+<script src="site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="site_libs/quarto-html/popper.min.js"></script>
+<script src="site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="site_libs/quarto-html/anchor.min.js"></script>
+<link href="site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="site_libs/quarto-html/quarto-syntax-highlighting-64a204ab8560d761af7679ceaba22944.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="site_libs/bootstrap/bootstrap-d63a2c9c8df14b07662b36303925c8cc.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+
+
+<link rel="stylesheet" href="styles.css">
+<meta property="og:title" content="nbskill">
+<meta property="og:description" content="LLM-skill for working with nb">
+<meta property="og:site_name" content="nbskill">
+<meta name="twitter:title" content="nbskill">
+<meta name="twitter:description" content="LLM-skill for working with nb">
+<meta name="twitter:card" content="summary">
+</head>
+
+<body class="nav-sidebar floating nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="./index.html">
+    <span class="navbar-title">nbskill</span>
+    </a>
+  </div>
+        <div class="quarto-navbar-tools tools-end">
+</div>
+          <div id="quarto-search" class="" title="Search"></div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./02_write.html">Writing and changing</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation floating overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">nbskill</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./00_foundation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Foundation</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./01_read.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Reading and inspection</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./02_edit.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Notebook editing</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./02_write.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Writing and changing</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./03_execute.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Executing notebooks</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./04_review.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Reviewing notebooks</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./05_convert.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Converting Python into notebooks</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./06_skill.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Installing the skill</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./07_mcp.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">MCP server</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./09_parallel.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Parallel notebook operations</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./10_graph.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Notebook symbol graph</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./12_knowledge.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Reference implementation knowledgebase</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./13_cli.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Restored command-line tools</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./pyskill.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Native nbskill Pyskill</span></a>
+  </div>
+</li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#writing-and-changing" id="toc-writing-and-changing" class="nav-link active" data-scroll-target="#writing-and-changing">Writing and changing</a>
+  <ul class="collapse">
+  <li><a href="#production-contract" id="toc-production-contract" class="nav-link" data-scroll-target="#production-contract">Production contract</a></li>
+  </ul></li>
+  <li><a href="#writing-cells" id="toc-writing-cells" class="nav-link" data-scroll-target="#writing-cells">Writing cells</a>
+  <ul class="collapse">
+  <li><a href="#write_literal_replacements" id="toc-write_literal_replacements" class="nav-link" data-scroll-target="#write_literal_replacements">write_literal_replacements</a></li>
+  <li><a href="#write_nb" id="toc-write_nb" class="nav-link" data-scroll-target="#write_nb">write_nb</a></li>
+  </ul></li>
+  <li><a href="#updating-and-splitting" id="toc-updating-and-splitting" class="nav-link" data-scroll-target="#updating-and-splitting">Updating and splitting</a>
+  <ul class="collapse">
+  <li><a href="#update_cell" id="toc-update_cell" class="nav-link" data-scroll-target="#update_cell">update_cell</a></li>
+  <li><a href="#split_cell" id="toc-split_cell" class="nav-link" data-scroll-target="#split_cell">split_cell</a></li>
+  <li><a href="#explode_cell" id="toc-explode_cell" class="nav-link" data-scroll-target="#explode_cell">explode_cell</a></li>
+  <li><a href="#join_source_lines" id="toc-join_source_lines" class="nav-link" data-scroll-target="#join_source_lines">join_source_lines</a></li>
+  <li><a href="#valid_split_line_numbers" id="toc-valid_split_line_numbers" class="nav-link" data-scroll-target="#valid_split_line_numbers">valid_split_line_numbers</a></li>
+  <li><a href="#split_source_lines" id="toc-split_source_lines" class="nav-link" data-scroll-target="#split_source_lines">split_source_lines</a></li>
+  <li><a href="#source_lines_cell" id="toc-source_lines_cell" class="nav-link" data-scroll-target="#source_lines_cell">source_lines_cell</a></li>
+  <li><a href="#source_lines_cells" id="toc-source_lines_cells" class="nav-link" data-scroll-target="#source_lines_cells">source_lines_cells</a></li>
+  <li><a href="#should_run_cell_feedback" id="toc-should_run_cell_feedback" class="nav-link" data-scroll-target="#should_run_cell_feedback">should_run_cell_feedback</a></li>
+  <li><a href="#notebook_edit_feedback" id="toc-notebook_edit_feedback" class="nav-link" data-scroll-target="#notebook_edit_feedback">notebook_edit_feedback</a></li>
+  <li><a href="#append_notebook_edit_feedback" id="toc-append_notebook_edit_feedback" class="nav-link" data-scroll-target="#append_notebook_edit_feedback">append_notebook_edit_feedback</a></li>
+  <li><a href="#save_notebook_edit" id="toc-save_notebook_edit" class="nav-link" data-scroll-target="#save_notebook_edit">save_notebook_edit</a></li>
+  <li><a href="#replace_notebook_cell" id="toc-replace_notebook_cell" class="nav-link" data-scroll-target="#replace_notebook_cell">replace_notebook_cell</a></li>
+  <li><a href="#replace_notebook_range" id="toc-replace_notebook_range" class="nav-link" data-scroll-target="#replace_notebook_range">replace_notebook_range</a></li>
+  <li><a href="#insert_notebook_cells" id="toc-insert_notebook_cells" class="nav-link" data-scroll-target="#insert_notebook_cells">insert_notebook_cells</a></li>
+  <li><a href="#delete_notebook_cell" id="toc-delete_notebook_cell" class="nav-link" data-scroll-target="#delete_notebook_cell">delete_notebook_cell</a></li>
+  <li><a href="#apply_notebook_edit" id="toc-apply_notebook_edit" class="nav-link" data-scroll-target="#apply_notebook_edit">apply_notebook_edit</a></li>
+  </ul></li>
+  <li><a href="#batch-operations" id="toc-batch-operations" class="nav-link" data-scroll-target="#batch-operations">Batch operations</a>
+  <ul class="collapse">
+  <li><a href="#batch_edit_nb" id="toc-batch_edit_nb" class="nav-link" data-scroll-target="#batch_edit_nb">batch_edit_nb</a></li>
+  <li><a href="#split_nb_chapter" id="toc-split_nb_chapter" class="nav-link" data-scroll-target="#split_nb_chapter">split_nb_chapter</a></li>
+  </ul></li>
+  <li><a href="#moving-cells-between-notebooks" id="toc-moving-cells-between-notebooks" class="nav-link" data-scroll-target="#moving-cells-between-notebooks">Moving cells between notebooks</a>
+  <ul class="collapse">
+  <li><a href="#move_cells" id="toc-move_cells" class="nav-link" data-scroll-target="#move_cells">move_cells</a></li>
+  <li><a href="#create_notebook" id="toc-create_notebook" class="nav-link" data-scroll-target="#create_notebook">create_notebook</a></li>
+  </ul></li>
+  </ul>
+<div class="toc-actions"><ul><li><a href="https://github.com/MorsCerta-crypto/nbskill/issues/new" class="toc-action"><i class="bi bi-github"></i>Report an issue</a></li></ul></div><div class="quarto-alternate-formats"><h2>Other Formats</h2><ul><li><a href="02_write.md"><i class="bi bi-file-code"></i>Markdown</a></li></ul></div></nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content"><header id="title-block-header" class="quarto-title-block"></header>
+
+
+
+
+<!-- WARNING: THIS FILE WAS AUTOGENERATED! DO NOT EDIT! -->
+<section id="writing-and-changing" class="level2">
+<h2 class="anchored" data-anchor-id="writing-and-changing">Writing and changing</h2>
+<p>Cell creation, targeted updates, documentation insertion, and examples.</p>
+<p>Writing notebooks safely is harder than appending text to a file. A notebook edit needs to preserve cell ids, clear stale outputs, validate Python when possible, export through nbdev automatically, and avoid overwriting the wrong cell.</p>
+<p><a href="https://MorsCerta-crypto.github.io/nbskill/write.html#write_nb"><code>write_nb</code></a> inserts cells; <code>replace_str</code> replaces literal text across notebook cell sources.</p>
+<p>There are two writing modes because notebook edits have two different shapes. Use cell-block writes when adding or replacing structured cells, and use literal replacement only for exact renames across existing cells. Both paths stamp nbskill metadata and export affected notebooks automatically when they have an nbdev export target. <a href="https://MorsCerta-crypto.github.io/nbskill/write.html#write_literal_replacements"><code>write_literal_replacements</code></a> is the public literal-replacement API.</p>
+<section id="production-contract" class="level3">
+<h3 class="anchored" data-anchor-id="production-contract">Production contract</h3>
+<p>The writing tools are production core. They must preserve stable cell ids where possible, clear stale outputs for changed cells, validate new Python, export nbdev modules after source changes, support dry-run review for broad replacements, and verify structured batch edits by reading the notebook back.</p>
+</section>
+</section>
+<section id="writing-cells" class="level2">
+<h2 class="anchored" data-anchor-id="writing-cells">Writing cells</h2>
+<p>The write layer turns structured cell plans into valid notebook cells and keeps the on-disk notebook in sync with its exported module.</p>
+<section id="adding-cells" class="level4">
+<h4 class="anchored" data-anchor-id="adding-cells">Adding cells</h4>
+<p><a href="https://MorsCerta-crypto.github.io/nbskill/write.html#write_nb"><code>write_nb</code></a> is the broad insertion tool. It can append, insert before or after a stable cell id, replace a whole notebook, or write into a named chapter while preserving notebook structure.</p>
+<hr>
+<p><a href="https://github.com/MorsCerta-crypto/nbskill/blob/main/nbskill/write.py#L98" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="write_literal_replacements" class="level3">
+<h3 class="anchored" data-anchor-id="write_literal_replacements">write_literal_replacements</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> write_literal_replacements(</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    path:<span class="bu">str</span>, <span class="co"># path of the notebook</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    old_str:<span class="bu">str</span>, <span class="co"># old string to replace</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    new_str:<span class="bu">str</span><span class="op">=</span><span class="st">''</span>, <span class="co"># new string to insert</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    run_test:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span>, <span class="co"># run the tests for this code</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    validate_code:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span>, <span class="co"># run the code to make sure it works</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    dry_run:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span>, <span class="co"># don't make actual changes</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>    show_cells:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span>, <span class="co"># show the cells that were edited</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Replace literal text across notebook cell sources.</em></p>
+<div id="23982b14" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;nbskill&quot;,&quot;value&quot;:{&quot;cell_type&quot;:&quot;code&quot;,&quot;semantic_types&quot;:[&quot;code_cell&quot;]}}">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>write_literal_replacements(<span class="st">"nbs/example.ipynb"</span>, <span class="st">"old_name"</span>, <span class="st">"new_name"</span>, dry_run<span class="op">=</span><span class="va">True</span>, show_cells<span class="op">=</span><span class="va">True</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<hr>
+<p><a href="https://github.com/MorsCerta-crypto/nbskill/blob/main/nbskill/write.py#L147" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="write_nb" class="level3">
+<h3 class="anchored" data-anchor-id="write_nb">write_nb</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> write_nb(</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    path:<span class="bu">str</span>, cells:<span class="bu">str</span><span class="op">=</span><span class="st">''</span>, before_id:<span class="bu">str</span> <span class="op">|</span> <span class="va">None</span><span class="op">=</span><span class="va">None</span>, after_id:<span class="bu">str</span> <span class="op">|</span> <span class="va">None</span><span class="op">=</span><span class="va">None</span>, chapter:<span class="bu">str</span> <span class="op">|</span> <span class="va">None</span><span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    replace:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span>, cell_type:<span class="bu">str</span><span class="op">=</span><span class="st">'code'</span>, <span class="co"># cell type code|markdown</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    run_test:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span>, <span class="co"># execute the tests</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>    run_style:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span>, <span class="co"># return style problems</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>    style_strict:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span>, validate_code:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Write cells to a notebook.</em></p>
+</section>
+</section>
+<section id="updating-and-splitting" class="level2">
+<h2 class="anchored" data-anchor-id="updating-and-splitting">Updating and splitting</h2>
+<p>Use one-cell updates for surgical changes; use explosion or chapter splitting when the notebook structure itself is the thing being changed.</p>
+<section id="updating-one-cell" class="level4">
+<h4 class="anchored" data-anchor-id="updating-one-cell">Updating one cell</h4>
+<p><a href="https://MorsCerta-crypto.github.io/nbskill/write.html#update_cell"><code>update_cell</code></a> is the surgical tool. It keeps the original cell id, can replace a whole cell or only a line range, clears stale outputs,.</p>
+<p>For whole-cell replacement, pass exactly one notebook cell block: optional <code>%%code</code>, <code>%%markdown</code>, or <code>%%raw</code> marker followed by the cell source. Do not include standalone <code>---</code> separators; those mean multiple cells and belong with <a href="https://MorsCerta-crypto.github.io/nbskill/write.html#write_nb"><code>write_nb</code></a> or <a href="https://MorsCerta-crypto.github.io/nbskill/write.html#batch_edit_nb"><code>batch_edit_nb</code></a>. Use <code>line_range</code> or <code>old_str</code> when replacing only part of a cell.</p>
+<p><a href="https://MorsCerta-crypto.github.io/nbskill/write.html#update_cell"><code>update_cell</code></a> accepts exact Python text. MCP callers send structured source directly, so no newline decoding or temporary patch files are needed.</p>
+<hr>
+<p><a href="https://github.com/MorsCerta-crypto/nbskill/blob/main/nbskill/write.py#L263" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="update_cell" class="level3">
+<h3 class="anchored" data-anchor-id="update_cell">update_cell</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> update_cell(</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    path:<span class="bu">str</span>, <span class="co"># Notebook path</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    new:<span class="bu">str</span><span class="op">=</span><span class="st">''</span>, new_file:<span class="bu">str</span> <span class="op">|</span> <span class="va">None</span><span class="op">=</span><span class="va">None</span>, <span class="co"># Read replacement text from a UTF-8 file</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    cell_id:<span class="bu">str</span> <span class="op">|</span> <span class="va">None</span><span class="op">=</span><span class="va">None</span>, <span class="co"># Stable notebook cell id to update</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    old_str:<span class="bu">str</span> <span class="op">|</span> <span class="va">None</span><span class="op">=</span><span class="va">None</span>, <span class="co"># Literal text to replace in the target cell, or used to locate the cell when cell_id is absent</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    line_range:<span class="bu">str</span> <span class="op">|</span> <span class="va">None</span><span class="op">=</span><span class="va">None</span>, <span class="co"># 1-based inclusive lines to replace, e.g. 3 or 3:5</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>    split:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span>, <span class="co"># Split a multi-cell replacement into separate cells</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>    split_before:<span class="bu">str</span> <span class="op">|</span> <span class="va">None</span><span class="op">=</span><span class="va">None</span>, <span class="co"># Split existing cell before the first matching line</span></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>    cell_type:<span class="bu">str</span><span class="op">=</span><span class="st">'code'</span>, <span class="co"># Default type for whole-cell replacements without %% marker</span></span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>    run_test:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span>, <span class="co"># Execute the notebook with execnb after writing</span></span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>    validate_code:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span>, <span class="co"># Validate changed Python code before writing</span></span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>    dry_run:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span>, <span class="co"># Show the update plan without writing</span></span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Update one notebook cell: replace whole cell, a text substring, or a line range.</em></p>
+<hr>
+<p><a href="https://github.com/MorsCerta-crypto/nbskill/blob/main/nbskill/write.py#L336" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="split_cell" class="level3">
+<h3 class="anchored" data-anchor-id="split_cell">split_cell</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> split_cell(</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    path:<span class="bu">str</span>, <span class="co"># Notebook path</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    cell_id:<span class="bu">str</span>, <span class="co"># Stable cell id to split</span></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>    new:<span class="bu">str</span><span class="op">=</span><span class="st">''</span>, new_file:<span class="bu">str</span> <span class="op">|</span> <span class="va">None</span><span class="op">=</span><span class="va">None</span>, <span class="co"># Read replacement text from a UTF-8 file</span></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>    split_before:<span class="bu">str</span> <span class="op">|</span> <span class="va">None</span><span class="op">=</span><span class="va">None</span>, <span class="co"># Split existing cell before the first line containing or matching this text</span></span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>    cell_type:<span class="bu">str</span><span class="op">=</span><span class="st">'code'</span>, <span class="co"># Default type for replacement cells without %% marker</span></span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>    run_test:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span>, <span class="co"># Execute the notebook with execnb after writing</span></span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a>    validate_code:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span>, <span class="co"># Validate changed Python code before writing</span></span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a>    dry_run:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span>, <span class="co"># Show the split plan without writing</span></span>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Split one notebook cell into multiple cells, either at a matching line or by supplying replacement content.</em></p>
+<section id="exploding-function-cells" class="level4">
+<h4 class="anchored" data-anchor-id="exploding-function-cells">Exploding function cells</h4>
+<p><a href="https://MorsCerta-crypto.github.io/nbskill/write.html#explode_cell"><code>explode_cell</code></a> splits a code cell containing multiple top-level functions into one code cell per function. The generated cells keep the original leading directives, and the normal notebook commit path stamps ids and nbskill metadata.</p>
+<hr>
+<p><a href="https://github.com/MorsCerta-crypto/nbskill/blob/main/nbskill/write.py#L383" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+</section>
+<section id="explode_cell" class="level3">
+<h3 class="anchored" data-anchor-id="explode_cell">explode_cell</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> explode_cell(</span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>    path:<span class="bu">str</span>, <span class="co"># Notebook path</span></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>    cell_id:<span class="bu">str</span> <span class="op">|</span> <span class="va">None</span><span class="op">=</span><span class="va">None</span>, <span class="co"># Stable cell id to explode</span></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>    target_all:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span>, <span class="co"># Explode every splittable code cell in the notebook</span></span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>    run_test:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span>, <span class="co"># Execute the notebook with execnb after writing</span></span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>    validate_code:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span>, <span class="co"># Validate changed Python code before writing</span></span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>    dry_run:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span>, <span class="co"># Show the explode plan without writing</span></span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Split top-level function definitions in one or all code cells into separate cells.</em></p>
+<section id="previewing-an-explosion" class="level4">
+<h4 class="anchored" data-anchor-id="previewing-an-explosion">Previewing an explosion</h4>
+<p>A dry run shows the planned split without changing the scratch notebook.</p>
+<div id="79c71974" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;nbskill&quot;,&quot;value&quot;:{&quot;cell_type&quot;:&quot;code&quot;,&quot;semantic_types&quot;:[&quot;code_cell&quot;]}}">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="cf">with</span> write_demo_notebook(<span class="st">"02_write_explode_preview.ipynb"</span>, cells<span class="op">=</span>[mk_cell(<span class="st">"#| export</span><span class="ch">\n</span><span class="st">def first():</span><span class="ch">\n</span><span class="st">    return 1</span><span class="ch">\n\n</span><span class="st">def second():</span><span class="ch">\n</span><span class="st">    return 2"</span>)]) <span class="im">as</span> path:</span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>    cell_id <span class="op">=</span> read_nb(path).cells[<span class="dv">0</span>].<span class="bu">id</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>    explode_cell(<span class="bu">str</span>(path), cell_id<span class="op">=</span>cell_id, dry_run<span class="op">=</span><span class="va">True</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="3d98b0f1" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;nbskill&quot;,&quot;value&quot;:{&quot;cell_type&quot;:&quot;code&quot;,&quot;semantic_types&quot;:[&quot;code_cell&quot;]}}">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="cf">with</span> write_demo_notebook(<span class="st">"02_write_update.ipynb"</span>) <span class="im">as</span> path:</span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>    _exercise_direct_update_cell(path)</span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(<span class="st">"direct update_cell preserved escaped newlines"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</section>
+<section id="structured-cell-edits" class="level4">
+<h4 class="anchored" data-anchor-id="structured-cell-edits">Structured cell edits</h4>
+<p>MCP tools and other structured callers send lists of source lines instead of shell-escaped text. These helpers keep that transport shape in the write layer, including optional <code>split_lines</code> markers that only split on empty lines.</p>
+<hr>
+<p><a href="https://github.com/MorsCerta-crypto/nbskill/blob/main/nbskill/write.py#L404" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+</section>
+<section id="join_source_lines" class="level3">
+<h3 class="anchored" data-anchor-id="join_source_lines">join_source_lines</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> join_source_lines(</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>    lines, field:<span class="bu">str</span><span class="op">=</span><span class="st">'source_lines'</span></span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Return newline text from a structured list of source lines.</em></p>
+<hr>
+<p><a href="https://github.com/MorsCerta-crypto/nbskill/blob/main/nbskill/write.py#L411" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="valid_split_line_numbers" class="level3">
+<h3 class="anchored" data-anchor-id="valid_split_line_numbers">valid_split_line_numbers</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> valid_split_line_numbers(</span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>    source_lines, split_lines:NoneType<span class="op">=</span><span class="va">None</span></span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Return requested 1-based split lines that point at empty source lines.</em></p>
+<hr>
+<p><a href="https://github.com/MorsCerta-crypto/nbskill/blob/main/nbskill/write.py#L423" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="split_source_lines" class="level3">
+<h3 class="anchored" data-anchor-id="split_source_lines">split_source_lines</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> split_source_lines(</span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>    source_lines, split_lines:NoneType<span class="op">=</span><span class="va">None</span></span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Split source lines at requested empty 1-based line numbers.</em></p>
+<hr>
+<p><a href="https://github.com/MorsCerta-crypto/nbskill/blob/main/nbskill/write.py#L437" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="source_lines_cell" class="level3">
+<h3 class="anchored" data-anchor-id="source_lines_cell">source_lines_cell</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb12"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> source_lines_cell(</span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>    source_lines, cell_type:<span class="bu">str</span><span class="op">=</span><span class="st">'code'</span></span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Build one clean notebook cell from structured source lines.</em></p>
+<hr>
+<p><a href="https://github.com/MorsCerta-crypto/nbskill/blob/main/nbskill/write.py#L444" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="source_lines_cells" class="level3">
+<h3 class="anchored" data-anchor-id="source_lines_cells">source_lines_cells</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb13"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> source_lines_cells(</span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a>    cell, default_cell_type:<span class="bu">str</span><span class="op">=</span><span class="st">'code'</span></span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Build one or more cells from a structured cell object.</em></p>
+<hr>
+<p><a href="https://github.com/MorsCerta-crypto/nbskill/blob/main/nbskill/write.py#L473" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="should_run_cell_feedback" class="level3">
+<h3 class="anchored" data-anchor-id="should_run_cell_feedback">should_run_cell_feedback</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb14"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> should_run_cell_feedback(</span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a>    cell</span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Return whether an edited cell should be executed for immediate feedback.</em></p>
+<hr>
+<p><a href="https://github.com/MorsCerta-crypto/nbskill/blob/main/nbskill/write.py#L482" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="notebook_edit_feedback" class="level3">
+<h3 class="anchored" data-anchor-id="notebook_edit_feedback">notebook_edit_feedback</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb15"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> notebook_edit_feedback(</span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>    path, cell_ids, auto_feedback:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span>, timeout:<span class="bu">int</span><span class="op">=</span><span class="dv">10</span>, safe:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span></span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Execute through the last feedback-worthy edited cell and return visible output.</em></p>
+<hr>
+<p><a href="https://github.com/MorsCerta-crypto/nbskill/blob/main/nbskill/write.py#L498" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="append_notebook_edit_feedback" class="level3">
+<h3 class="anchored" data-anchor-id="append_notebook_edit_feedback">append_notebook_edit_feedback</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb16"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> append_notebook_edit_feedback(</span>
+<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a>    message, path, cell_ids, auto_feedback:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span>, feedback_timeout:<span class="bu">int</span><span class="op">=</span><span class="dv">10</span>, feedback_safe:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span></span>
+<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Append automatic notebook execution feedback when an edited cell calls for it.</em></p>
+<hr>
+<p><a href="https://github.com/MorsCerta-crypto/nbskill/blob/main/nbskill/write.py#L504" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="save_notebook_edit" class="level3">
+<h3 class="anchored" data-anchor-id="save_notebook_edit">save_notebook_edit</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb17"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> save_notebook_edit(</span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a>    nb, path</span>
+<span id="cb17-3"><a href="#cb17-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Stamp, write, export, and report whether nbdev produced Python.</em></p>
+<hr>
+<p><a href="https://github.com/MorsCerta-crypto/nbskill/blob/main/nbskill/write.py#L509" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="replace_notebook_cell" class="level3">
+<h3 class="anchored" data-anchor-id="replace_notebook_cell">replace_notebook_cell</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb18"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> replace_notebook_cell(</span>
+<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a>    path, cell_id, source_lines, cell_type:<span class="bu">str</span><span class="op">=</span><span class="st">'code'</span>, split_lines:NoneType<span class="op">=</span><span class="va">None</span>, validate_code:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span>,</span>
+<span id="cb18-3"><a href="#cb18-3" aria-hidden="true" tabindex="-1"></a>    auto_feedback:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span>, feedback_timeout:<span class="bu">int</span><span class="op">=</span><span class="dv">10</span>, feedback_safe:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span></span>
+<span id="cb18-4"><a href="#cb18-4" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Replace one notebook cell from structured source lines, optionally splitting on empty lines.</em></p>
+<hr>
+<p><a href="https://github.com/MorsCerta-crypto/nbskill/blob/main/nbskill/write.py#L530" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="replace_notebook_range" class="level3">
+<h3 class="anchored" data-anchor-id="replace_notebook_range">replace_notebook_range</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb19"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> replace_notebook_range(</span>
+<span id="cb19-2"><a href="#cb19-2" aria-hidden="true" tabindex="-1"></a>    path, cell_id, start_line, end_line, replacement_lines, validate_code:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span>, auto_feedback:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span>,</span>
+<span id="cb19-3"><a href="#cb19-3" aria-hidden="true" tabindex="-1"></a>    feedback_timeout:<span class="bu">int</span><span class="op">=</span><span class="dv">10</span>, feedback_safe:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span></span>
+<span id="cb19-4"><a href="#cb19-4" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Replace one inclusive 1-based line range from structured replacement lines.</em></p>
+<hr>
+<p><a href="https://github.com/MorsCerta-crypto/nbskill/blob/main/nbskill/write.py#L549" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="insert_notebook_cells" class="level3">
+<h3 class="anchored" data-anchor-id="insert_notebook_cells">insert_notebook_cells</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb20"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> insert_notebook_cells(</span>
+<span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a>    path, anchor_id, where:<span class="bu">str</span><span class="op">=</span><span class="st">'after'</span>, cells:NoneType<span class="op">=</span><span class="va">None</span>, validate_code:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span>, default_cell_type:<span class="bu">str</span><span class="op">=</span><span class="st">'code'</span>,</span>
+<span id="cb20-3"><a href="#cb20-3" aria-hidden="true" tabindex="-1"></a>    auto_feedback:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span>, feedback_timeout:<span class="bu">int</span><span class="op">=</span><span class="dv">10</span>, feedback_safe:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span></span>
+<span id="cb20-4"><a href="#cb20-4" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Insert structured cells before or after an anchor cell id.</em></p>
+<hr>
+<p><a href="https://github.com/MorsCerta-crypto/nbskill/blob/main/nbskill/write.py#L571" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="delete_notebook_cell" class="level3">
+<h3 class="anchored" data-anchor-id="delete_notebook_cell">delete_notebook_cell</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb21"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> delete_notebook_cell(</span>
+<span id="cb21-2"><a href="#cb21-2" aria-hidden="true" tabindex="-1"></a>    path, cell_id</span>
+<span id="cb21-3"><a href="#cb21-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Delete one notebook cell by stable id.</em></p>
+<hr>
+<p><a href="https://github.com/MorsCerta-crypto/nbskill/blob/main/nbskill/write.py#L632" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="apply_notebook_edit" class="level3">
+<h3 class="anchored" data-anchor-id="apply_notebook_edit">apply_notebook_edit</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb22"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> apply_notebook_edit(</span>
+<span id="cb22-2"><a href="#cb22-2" aria-hidden="true" tabindex="-1"></a>    edit, default_path:NoneType<span class="op">=</span><span class="va">None</span>, validate_code:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span>, default_cell_type:<span class="bu">str</span><span class="op">=</span><span class="st">'code'</span>, auto_feedback:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span>,</span>
+<span id="cb22-3"><a href="#cb22-3" aria-hidden="true" tabindex="-1"></a>    feedback_timeout:<span class="bu">int</span><span class="op">=</span><span class="dv">10</span>, feedback_safe:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span>, dry_run:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span></span>
+<span id="cb22-4"><a href="#cb22-4" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Apply one structured notebook edit operation through edit_notebook.</em></p>
+<div id="4621c192" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;nbskill&quot;,&quot;value&quot;:{&quot;cell_type&quot;:&quot;code&quot;,&quot;executed_hash&quot;:&quot;306b519a1731cbc72a034ac9f3e438687d4083ddabcd27524c772e39313b8d1c&quot;,&quot;semantic_types&quot;:[&quot;test_code&quot;,&quot;example_code&quot;]}}">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb23"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a>lines <span class="op">=</span> [<span class="st">"def first():"</span>, <span class="st">"    return 1"</span>, <span class="st">""</span>, <span class="st">"def second():"</span>, <span class="st">"    return 2"</span>]</span>
+<span id="cb23-2"><a href="#cb23-2" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> join_source_lines([<span class="st">"a"</span>, <span class="st">"b"</span>]) <span class="op">==</span> <span class="st">"a</span><span class="ch">\n</span><span class="st">b"</span></span>
+<span id="cb23-3"><a href="#cb23-3" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> valid_split_line_numbers(lines, [<span class="dv">2</span>, <span class="dv">3</span>]) <span class="op">==</span> [<span class="dv">3</span>]</span>
+<span id="cb23-4"><a href="#cb23-4" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> split_source_lines(lines, [<span class="dv">2</span>, <span class="dv">3</span>]) <span class="op">==</span> [lines[:<span class="dv">2</span>], lines[<span class="dv">3</span>:]]</span>
+<span id="cb23-5"><a href="#cb23-5" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> source_lines_cell([<span class="st">"scratch = True"</span>]).source <span class="op">==</span> <span class="st">"scratch = True"</span></span>
+<span id="cb23-6"><a href="#cb23-6" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> <span class="bu">len</span>(source_lines_cells({<span class="st">"source_lines"</span>: lines, <span class="st">"split_lines"</span>: [<span class="dv">3</span>]})) <span class="op">==</span> <span class="dv">2</span></span>
+<span id="cb23-7"><a href="#cb23-7" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"structured line helpers:"</span>, <span class="bu">len</span>(split_source_lines(lines, [<span class="dv">3</span>])))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>structured line helpers: 2</code></pre>
+</div>
+</div>
+<div id="d025c460" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;nbskill&quot;,&quot;value&quot;:{&quot;cell_type&quot;:&quot;code&quot;,&quot;executed_hash&quot;:&quot;4903e9248e45bf97a751be1b33cb0409df8b62534c87b9308d90afb8d19d40af&quot;,&quot;semantic_types&quot;:[&quot;test_code&quot;,&quot;example_code&quot;]}}">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb25"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a><span class="cf">with</span> write_demo_notebook(<span class="st">"02_write_structured_edit.ipynb"</span>) <span class="im">as</span> path:</span>
+<span id="cb25-2"><a href="#cb25-2" aria-hidden="true" tabindex="-1"></a>    write_nb(<span class="bu">str</span>(path), <span class="st">"</span><span class="sc">%%</span><span class="st">code</span><span class="ch">\n</span><span class="st">value = 1"</span>, replace<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb25-3"><a href="#cb25-3" aria-hidden="true" tabindex="-1"></a>    cell_id <span class="op">=</span> read_nb(path).cells[<span class="dv">0</span>].<span class="bu">id</span></span>
+<span id="cb25-4"><a href="#cb25-4" aria-hidden="true" tabindex="-1"></a>    source <span class="op">=</span> [<span class="st">"def first():"</span>, <span class="st">"    return 1"</span>, <span class="st">""</span>, <span class="st">"def second():"</span>, <span class="st">"    return 2"</span>]</span>
+<span id="cb25-5"><a href="#cb25-5" aria-hidden="true" tabindex="-1"></a>    msg <span class="op">=</span> replace_notebook_cell(<span class="bu">str</span>(path), cell_id, source, split_lines<span class="op">=</span>[<span class="dv">2</span>, <span class="dv">3</span>])</span>
+<span id="cb25-6"><a href="#cb25-6" aria-hidden="true" tabindex="-1"></a>    nb <span class="op">=</span> read_nb(path)</span>
+<span id="cb25-7"><a href="#cb25-7" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> <span class="bu">len</span>(nb.cells) <span class="op">==</span> <span class="dv">2</span></span>
+<span id="cb25-8"><a href="#cb25-8" aria-hidden="true" tabindex="-1"></a>    range_msg <span class="op">=</span> replace_notebook_range(<span class="bu">str</span>(path), nb.cells[<span class="dv">0</span>].<span class="bu">id</span>, <span class="dv">1</span>, <span class="dv">1</span>, [<span class="st">"def uno():"</span>])</span>
+<span id="cb25-9"><a href="#cb25-9" aria-hidden="true" tabindex="-1"></a>    insert_msg <span class="op">=</span> insert_notebook_cells(<span class="bu">str</span>(path), nb.cells[<span class="dv">1</span>].<span class="bu">id</span>, cells<span class="op">=</span>[{<span class="st">"source_lines"</span>: [<span class="st">"tail = True"</span>]}])</span>
+<span id="cb25-10"><a href="#cb25-10" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> read_nb(path).cells[<span class="dv">2</span>].source <span class="op">==</span> <span class="st">"tail = True"</span></span>
+<span id="cb25-11"><a href="#cb25-11" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(msg)</span>
+<span id="cb25-12"><a href="#cb25-12" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(range_msg)</span>
+<span id="cb25-13"><a href="#cb25-13" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(insert_msg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Wrote 1 cells to nbs/data/02_write_structured_edit.ipynb using replace
+Updated cell into 2 cells id=aa02cf6a
+Updated lines 1:1 id=aa02cf6a
+Inserted 1 cell after id=e05b6833</code></pre>
+</div>
+</div>
+<div id="c7fb74ad" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;nbskill&quot;,&quot;value&quot;:{&quot;cell_type&quot;:&quot;code&quot;,&quot;executed_hash&quot;:&quot;51a9cead0f39b33c946d5fe97b2f8fcb765d7943c182c3e8375079289209ff12&quot;,&quot;semantic_types&quot;:[&quot;test_code&quot;,&quot;example_code&quot;]}}">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb27"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb27-1"><a href="#cb27-1" aria-hidden="true" tabindex="-1"></a><span class="cf">with</span> write_demo_notebook(<span class="st">"02_write_structured_apply.ipynb"</span>) <span class="im">as</span> path:</span>
+<span id="cb27-2"><a href="#cb27-2" aria-hidden="true" tabindex="-1"></a>    write_nb(<span class="bu">str</span>(path), <span class="st">"</span><span class="sc">%%</span><span class="st">code</span><span class="ch">\n</span><span class="st">tail = True"</span>, replace<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb27-3"><a href="#cb27-3" aria-hidden="true" tabindex="-1"></a>    tail_id <span class="op">=</span> read_nb(path).cells[<span class="dv">0</span>].<span class="bu">id</span></span>
+<span id="cb27-4"><a href="#cb27-4" aria-hidden="true" tabindex="-1"></a>    op <span class="op">=</span> <span class="bu">dict</span>(op<span class="op">=</span><span class="st">"replace_cell"</span>, cell_id<span class="op">=</span>tail_id, source_lines<span class="op">=</span>[<span class="st">"tail = 'applied'"</span>])</span>
+<span id="cb27-5"><a href="#cb27-5" aria-hidden="true" tabindex="-1"></a>    apply_msg <span class="op">=</span> apply_notebook_edit(op, <span class="bu">str</span>(path))</span>
+<span id="cb27-6"><a href="#cb27-6" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> read_nb(path).cells[<span class="dv">0</span>].source <span class="op">==</span> <span class="st">"tail = 'applied'"</span></span>
+<span id="cb27-7"><a href="#cb27-7" aria-hidden="true" tabindex="-1"></a>    delete_msg <span class="op">=</span> delete_notebook_cell(<span class="bu">str</span>(path), tail_id)</span>
+<span id="cb27-8"><a href="#cb27-8" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> <span class="bu">len</span>(read_nb(path).cells) <span class="op">==</span> <span class="dv">0</span></span>
+<span id="cb27-9"><a href="#cb27-9" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> save_notebook_edit(read_nb(path), path) <span class="kw">is</span> <span class="va">False</span></span>
+<span id="cb27-10"><a href="#cb27-10" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(apply_msg)</span>
+<span id="cb27-11"><a href="#cb27-11" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(delete_msg)</span>
+<span id="cb27-12"><a href="#cb27-12" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(<span class="st">"structured helpers left cells:"</span>, <span class="bu">len</span>(read_nb(path).cells))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Wrote 1 cells to nbs/data/02_write_structured_apply.ipynb using replace
+Updated cell id=892ad2a6
+Deleted cell id=892ad2a6
+structured helpers left cells: 0</code></pre>
+</div>
+</div>
+<div id="ae2e86cc" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;nbskill&quot;,&quot;value&quot;:{&quot;cell_type&quot;:&quot;code&quot;,&quot;executed_hash&quot;:&quot;f2646b4a4d1037de8b71470c7f4bda3372cc79a8f7b1b70d934de42a994789e8&quot;,&quot;semantic_types&quot;:[&quot;test_code&quot;,&quot;example_code&quot;]}}">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb29"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb29-1"><a href="#cb29-1" aria-hidden="true" tabindex="-1"></a><span class="cf">with</span> write_demo_notebook(<span class="st">"02_write_feedback.ipynb"</span>) <span class="im">as</span> path:</span>
+<span id="cb29-2"><a href="#cb29-2" aria-hidden="true" tabindex="-1"></a>    write_nb(<span class="bu">str</span>(path), <span class="st">"</span><span class="sc">%%</span><span class="st">code</span><span class="ch">\n</span><span class="st">seed = 1"</span>, replace<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb29-3"><a href="#cb29-3" aria-hidden="true" tabindex="-1"></a>    cell_id <span class="op">=</span> read_nb(path).cells[<span class="dv">0</span>].<span class="bu">id</span></span>
+<span id="cb29-4"><a href="#cb29-4" aria-hidden="true" tabindex="-1"></a>    msg <span class="op">=</span> replace_notebook_cell(<span class="bu">str</span>(path), cell_id, [<span class="st">"print('feedback', 3)"</span>])</span>
+<span id="cb29-5"><a href="#cb29-5" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> <span class="st">"Auto feedback"</span> <span class="kw">in</span> msg</span>
+<span id="cb29-6"><a href="#cb29-6" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> <span class="st">"feedback 3"</span> <span class="kw">in</span> msg</span>
+<span id="cb29-7"><a href="#cb29-7" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> read_nb(path).cells[<span class="dv">0</span>].outputs <span class="op">==</span> []</span>
+<span id="cb29-8"><a href="#cb29-8" aria-hidden="true" tabindex="-1"></a>    feedback_cell <span class="op">=</span> read_nb(path).cells[<span class="dv">0</span>]</span>
+<span id="cb29-9"><a href="#cb29-9" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> should_run_cell_feedback(feedback_cell)</span>
+<span id="cb29-10"><a href="#cb29-10" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> <span class="st">"feedback 3"</span> <span class="kw">in</span> notebook_edit_feedback(<span class="bu">str</span>(path), [cell_id])</span>
+<span id="cb29-11"><a href="#cb29-11" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> <span class="st">"feedback 3"</span> <span class="kw">in</span> append_notebook_edit_feedback(<span class="st">"prefix"</span>, <span class="bu">str</span>(path), [cell_id])</span>
+<span id="cb29-12"><a href="#cb29-12" aria-hidden="true" tabindex="-1"></a>    quiet <span class="op">=</span> replace_notebook_cell(<span class="bu">str</span>(path), cell_id, [<span class="st">"seed = 4"</span>])</span>
+<span id="cb29-13"><a href="#cb29-13" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> <span class="st">"Auto feedback"</span> <span class="kw">not</span> <span class="kw">in</span> quiet</span>
+<span id="cb29-14"><a href="#cb29-14" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(<span class="st">"automatic edit feedback returned output"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Wrote 1 cells to nbs/data/02_write_feedback.ipynb using replace
+automatic edit feedback returned output</code></pre>
+</div>
+</div>
+</section>
+</section>
+<section id="batch-operations" class="level2">
+<h2 class="anchored" data-anchor-id="batch-operations">Batch operations</h2>
+<p>Batch plans are useful when several related edits should be validated and committed together.</p>
+<section id="batch-editing" class="level4">
+<h4 class="anchored" data-anchor-id="batch-editing">Batch editing</h4>
+<p>Agents often need to change several notebook cells together. <a href="https://MorsCerta-crypto.github.io/nbskill/write.html#batch_edit_nb"><code>batch_edit_nb</code></a> accepts a JSON edit plan, runs the same notebook-aware validation and locking as the single-cell tools, and prints a compact diff before writing. Use it when repeated shell calls would make multiline code or dry-run diffs fragile.</p>
+</section>
+<section id="verified-batch-edits" class="level4">
+<h4 class="anchored" data-anchor-id="verified-batch-edits">Verified batch edits</h4>
+<p>Batch plans are useful when an agent already knows the exact notebook edits it wants to make. They are also risky if the tool only says “applied” without checking disk. <a href="https://MorsCerta-crypto.github.io/nbskill/write.html#batch_edit_nb"><code>batch_edit_nb</code></a> now writes the notebooks, reads them back, and reports a verification status plus before/after hashes for each operation.</p>
+<hr>
+<p><a href="https://github.com/MorsCerta-crypto/nbskill/blob/main/nbskill/write.py#L697" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="batch_edit_nb" class="level3">
+<h3 class="anchored" data-anchor-id="batch_edit_nb">batch_edit_nb</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb31"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb31-1"><a href="#cb31-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> batch_edit_nb(</span>
+<span id="cb31-2"><a href="#cb31-2" aria-hidden="true" tabindex="-1"></a>    plan:<span class="bu">str</span><span class="op">=</span><span class="st">''</span>, plan_file:<span class="bu">str</span> <span class="op">|</span> <span class="va">None</span><span class="op">=</span><span class="va">None</span>, <span class="co"># Read the JSON plan from a UTF-8 file</span></span>
+<span id="cb31-3"><a href="#cb31-3" aria-hidden="true" tabindex="-1"></a>    path:<span class="bu">str</span> <span class="op">|</span> <span class="va">None</span><span class="op">=</span><span class="va">None</span>, <span class="co"># Default notebook path for operations that omit path</span></span>
+<span id="cb31-4"><a href="#cb31-4" aria-hidden="true" tabindex="-1"></a>    dry_run:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span>, <span class="co"># Show the plan and diffs without writing</span></span>
+<span id="cb31-5"><a href="#cb31-5" aria-hidden="true" tabindex="-1"></a>    validate_code:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span>, <span class="co"># Validate changed Python code before writing</span></span>
+<span id="cb31-6"><a href="#cb31-6" aria-hidden="true" tabindex="-1"></a>    default_cell_type:<span class="bu">str</span><span class="op">=</span><span class="st">'code'</span>, <span class="co"># Default cell type for inserted cells without %% markers</span></span>
+<span id="cb31-7"><a href="#cb31-7" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Apply a JSON batch edit plan as thin edit_notebook operations.</em></p>
+<section id="splitting-one-chapter" class="level4">
+<h4 class="anchored" data-anchor-id="splitting-one-chapter">Splitting one chapter</h4>
+<p><a href="https://MorsCerta-crypto.github.io/nbskill/write.html#split_nb_chapter"><code>split_nb_chapter</code></a> moves one <code>##</code> chapter into a new nbdev notebook. It copies imports used by the moved code, imports source-notebook definitions that the moved chapter still references, and promotes referenced private source helpers by dropping the leading underscore. It remains a Python API rather than an MCP tool because splitting modules is a broad, deliberate refactor.</p>
+<hr>
+<p><a href="https://github.com/MorsCerta-crypto/nbskill/blob/main/nbskill/write.py#L974" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+</section>
+<section id="split_nb_chapter" class="level3">
+<h3 class="anchored" data-anchor-id="split_nb_chapter">split_nb_chapter</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb32"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb32-1"><a href="#cb32-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> split_nb_chapter(</span>
+<span id="cb32-2"><a href="#cb32-2" aria-hidden="true" tabindex="-1"></a>    path:<span class="bu">str</span>, <span class="co"># Source notebook path</span></span>
+<span id="cb32-3"><a href="#cb32-3" aria-hidden="true" tabindex="-1"></a>    chapter:<span class="bu">str</span>, <span class="co"># Chapter title string or regex to split out</span></span>
+<span id="cb32-4"><a href="#cb32-4" aria-hidden="true" tabindex="-1"></a>    dest:<span class="bu">str</span>, <span class="co"># Destination notebook path</span></span>
+<span id="cb32-5"><a href="#cb32-5" aria-hidden="true" tabindex="-1"></a>    default_exp:<span class="bu">str</span> <span class="op">|</span> <span class="va">None</span><span class="op">=</span><span class="va">None</span>, <span class="co"># Destination nbdev default_exp; defaults from dest path</span></span>
+<span id="cb32-6"><a href="#cb32-6" aria-hidden="true" tabindex="-1"></a>    dry_run:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span>, <span class="co"># Show the split plan without writing notebooks</span></span>
+<span id="cb32-7"><a href="#cb32-7" aria-hidden="true" tabindex="-1"></a>    force:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span>, <span class="co"># Overwrite dest if it already exists</span></span>
+<span id="cb32-8"><a href="#cb32-8" aria-hidden="true" tabindex="-1"></a>    promote_private:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span>, <span class="co"># Promote referenced private source helpers by dropping the leading underscore</span></span>
+<span id="cb32-9"><a href="#cb32-9" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Split one ## chapter into a new nbdev notebook.</em></p>
+</section>
+</section>
+<section id="moving-cells-between-notebooks" class="level2">
+<h2 class="anchored" data-anchor-id="moving-cells-between-notebooks">Moving cells between notebooks</h2>
+<p><a href="https://MorsCerta-crypto.github.io/nbskill/write.html#move_cells"><code>move_cells</code></a> is the transfer boundary: it keeps full cells intact, derives imports from their AST names, and rolls both files back when a normal commit fails. A name turns the destination into a new chapter; without one, moves stay inside one notebook.</p>
+<hr>
+<p><a href="https://github.com/MorsCerta-crypto/nbskill/blob/main/nbskill/write.py#L1060" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="move_cells" class="level3">
+<h3 class="anchored" data-anchor-id="move_cells">move_cells</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb33"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb33-1"><a href="#cb33-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> move_cells(</span>
+<span id="cb33-2"><a href="#cb33-2" aria-hidden="true" tabindex="-1"></a>    source_path, destination_path:NoneType<span class="op">=</span><span class="va">None</span>, cell_ids:NoneType<span class="op">=</span><span class="va">None</span>, query:NoneType<span class="op">=</span><span class="va">None</span>, chapter:NoneType<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb33-3"><a href="#cb33-3" aria-hidden="true" tabindex="-1"></a>    name:NoneType<span class="op">=</span><span class="va">None</span>, mode:<span class="bu">str</span><span class="op">=</span><span class="st">'move'</span>, destination_anchor:NoneType<span class="op">=</span><span class="va">None</span>, destination_where:<span class="bu">str</span><span class="op">=</span><span class="st">'after'</span>,</span>
+<span id="cb33-4"><a href="#cb33-4" aria-hidden="true" tabindex="-1"></a>    default_exp:NoneType<span class="op">=</span><span class="va">None</span>, promote_private:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span>, dry_run:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span></span>
+<span id="cb33-5"><a href="#cb33-5" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Move or copy selected cells, preserving full cell payloads and inferred imports.</em></p>
+<hr>
+<p><a href="https://github.com/MorsCerta-crypto/nbskill/blob/main/nbskill/write.py#L1014" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="create_notebook" class="level3">
+<h3 class="anchored" data-anchor-id="create_notebook">create_notebook</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb34"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb34-1"><a href="#cb34-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> create_notebook(</span>
+<span id="cb34-2"><a href="#cb34-2" aria-hidden="true" tabindex="-1"></a>    path, name:NoneType<span class="op">=</span><span class="va">None</span>, template:<span class="bu">str</span><span class="op">=</span><span class="st">'nbdev'</span>, default_exp:NoneType<span class="op">=</span><span class="va">None</span>, dry_run:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span></span>
+<span id="cb34-3"><a href="#cb34-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Create a minimal flat numbered nbdev notebook without overwriting one.</em></p>
+<div id="aff4b614" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;nbskill&quot;,&quot;value&quot;:{&quot;cell_type&quot;:&quot;code&quot;,&quot;executed_hash&quot;:&quot;0bed71bfa0da40778951a5930323596114175fbf4b2a7d4f12456f29f11f5b6a&quot;,&quot;semantic_types&quot;:[&quot;test_code&quot;,&quot;example_code&quot;]}}">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb35"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb35-1"><a href="#cb35-1" aria-hidden="true" tabindex="-1"></a>plan_path <span class="op">=</span> demo_path(<span class="st">"batch_edit_plan.json"</span>)</span>
+<span id="cb35-2"><a href="#cb35-2" aria-hidden="true" tabindex="-1"></a><span class="cf">try</span>:</span>
+<span id="cb35-3"><a href="#cb35-3" aria-hidden="true" tabindex="-1"></a>    <span class="cf">with</span> write_demo_notebook(<span class="st">"batch_edit_target.ipynb"</span>) <span class="im">as</span> nb_path:</span>
+<span id="cb35-4"><a href="#cb35-4" aria-hidden="true" tabindex="-1"></a>        write_nb(<span class="bu">str</span>(nb_path), <span class="st">"</span><span class="sc">%%</span><span class="st">code</span><span class="ch">\n</span><span class="st">value = 1"</span>, replace<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb35-5"><a href="#cb35-5" aria-hidden="true" tabindex="-1"></a>        nb <span class="op">=</span> read_nb(nb_path)</span>
+<span id="cb35-6"><a href="#cb35-6" aria-hidden="true" tabindex="-1"></a>        cell <span class="op">=</span> nb.cells[<span class="dv">0</span>]</span>
+<span id="cb35-7"><a href="#cb35-7" aria-hidden="true" tabindex="-1"></a>        plan <span class="op">=</span> {</span>
+<span id="cb35-8"><a href="#cb35-8" aria-hidden="true" tabindex="-1"></a>            <span class="st">"operations"</span>: [</span>
+<span id="cb35-9"><a href="#cb35-9" aria-hidden="true" tabindex="-1"></a>                {<span class="st">"op"</span>: <span class="st">"set_cell_source"</span>, <span class="st">"path"</span>: <span class="bu">str</span>(nb_path), <span class="st">"cell_id"</span>: cell.<span class="bu">id</span>, <span class="st">"source"</span>: <span class="st">"value = 2"</span>},</span>
+<span id="cb35-10"><a href="#cb35-10" aria-hidden="true" tabindex="-1"></a>                {<span class="st">"op"</span>: <span class="st">"insert_after_id"</span>, <span class="st">"path"</span>: <span class="bu">str</span>(nb_path), <span class="st">"cell_id"</span>: cell.<span class="bu">id</span>, <span class="st">"cells"</span>: <span class="st">"</span><span class="sc">%%</span><span class="st">code</span><span class="ch">\n</span><span class="st">assert value == 2"</span>},</span>
+<span id="cb35-11"><a href="#cb35-11" aria-hidden="true" tabindex="-1"></a>            ]</span>
+<span id="cb35-12"><a href="#cb35-12" aria-hidden="true" tabindex="-1"></a>        }</span>
+<span id="cb35-13"><a href="#cb35-13" aria-hidden="true" tabindex="-1"></a>        plan_path.write_text(json.dumps(plan), encoding<span class="op">=</span><span class="st">"utf-8"</span>)</span>
+<span id="cb35-14"><a href="#cb35-14" aria-hidden="true" tabindex="-1"></a>        batch_edit_nb(plan_file<span class="op">=</span><span class="bu">str</span>(plan_path), dry_run<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb35-15"><a href="#cb35-15" aria-hidden="true" tabindex="-1"></a>        out <span class="op">=</span> StringIO()</span>
+<span id="cb35-16"><a href="#cb35-16" aria-hidden="true" tabindex="-1"></a>        <span class="cf">with</span> redirect_stdout(out):</span>
+<span id="cb35-17"><a href="#cb35-17" aria-hidden="true" tabindex="-1"></a>            batch_edit_nb(plan_file<span class="op">=</span><span class="bu">str</span>(plan_path), dry_run<span class="op">=</span><span class="va">False</span>)</span>
+<span id="cb35-18"><a href="#cb35-18" aria-hidden="true" tabindex="-1"></a>        applied <span class="op">=</span> out.getvalue()</span>
+<span id="cb35-19"><a href="#cb35-19" aria-hidden="true" tabindex="-1"></a>        <span class="bu">print</span>(applied, end<span class="op">=</span><span class="st">""</span>)</span>
+<span id="cb35-20"><a href="#cb35-20" aria-hidden="true" tabindex="-1"></a>        nb <span class="op">=</span> read_nb(nb_path)</span>
+<span id="cb35-21"><a href="#cb35-21" aria-hidden="true" tabindex="-1"></a>        <span class="cf">assert</span> cell_source(nb.cells[<span class="dv">0</span>]) <span class="op">==</span> <span class="st">"value = 2"</span></span>
+<span id="cb35-22"><a href="#cb35-22" aria-hidden="true" tabindex="-1"></a>        <span class="cf">assert</span> <span class="st">"assert value == 2"</span> <span class="kw">in</span> cell_source(nb.cells[<span class="dv">1</span>])</span>
+<span id="cb35-23"><a href="#cb35-23" aria-hidden="true" tabindex="-1"></a>        <span class="cf">assert</span> <span class="st">"[verified]"</span> <span class="kw">in</span> applied</span>
+<span id="cb35-24"><a href="#cb35-24" aria-hidden="true" tabindex="-1"></a>        <span class="cf">assert</span> <span class="st">"-&gt;"</span> <span class="kw">in</span> applied <span class="kw">and</span> <span class="st">"inserted id="</span> <span class="kw">in</span> applied</span>
+<span id="cb35-25"><a href="#cb35-25" aria-hidden="true" tabindex="-1"></a>        <span class="bu">print</span>(<span class="ss">f"verified </span><span class="sc">{</span>applied<span class="sc">.</span>count(<span class="st">'[verified]'</span>)<span class="sc">}</span><span class="ss"> batch edit records"</span>)</span>
+<span id="cb35-26"><a href="#cb35-26" aria-hidden="true" tabindex="-1"></a><span class="cf">finally</span>:</span>
+<span id="cb35-27"><a href="#cb35-27" aria-hidden="true" tabindex="-1"></a>    remove_demo_path(plan_path)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Wrote 1 cells to nbs/data/batch_edit_target.ipynb using replace
+Dry run: would apply 2 batch operations across 1 notebook(s)
+- #1 set_cell_source: nbs/data/batch_edit_target.ipynb id=13f4ef6d [planned] e143e5f6659b-&gt;9cfe9326a093
+    --- before
+    +++ after
+    @@ -1 +1 @@
+    -value = 1
+    +value = 2
+- #2 insert_after_id: nbs/data/batch_edit_target.ipynb id=13f4ef6d [planned]
+    inserted id=f631de99 hash=7e8872481e92
+    inserted 1 cell(s) after id=13f4ef6d
+Applied 2 batch operations across 1 notebook(s)
+- #1 set_cell_source: nbs/data/batch_edit_target.ipynb id=13f4ef6d [verified] e143e5f6659b-&gt;9cfe9326a093
+    --- before
+    +++ after
+    @@ -1 +1 @@
+    -value = 1
+    +value = 2
+- #2 insert_after_id: nbs/data/batch_edit_target.ipynb id=13f4ef6d [verified]
+    inserted id=74af8946 hash=7e8872481e92
+    inserted 1 cell(s) after id=13f4ef6d
+verified 2 batch edit records</code></pre>
+</div>
+</div>
+<p>The write APIs accept ordinary Python values; MCP exposes only the bounded editing operations needed for agent workflows.</p>
+
+
+</section>
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/MorsCerta-crypto\.github\.io\/nbskill");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+</div> <!-- /content -->
+
+
+
+
+<footer class="footer"><div class="nav-footer"><div class="nav-footer-center"><div class="toc-actions d-sm-block d-md-none"><ul><li><a href="https://github.com/MorsCerta-crypto/nbskill/issues/new" class="toc-action"><i class="bi bi-github"></i>Report an issue</a></li></ul></div></div></div></footer></body></html>

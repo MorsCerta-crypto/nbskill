@@ -1,0 +1,1280 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.10.18">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>review – nbskill</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="site_libs/quarto-nav/headroom.min.js"></script>
+<script src="site_libs/clipboard/clipboard.min.js"></script>
+<script src="site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="site_libs/quarto-search/fuse.min.js"></script>
+<script src="site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="./">
+<script src="site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="site_libs/quarto-html/popper.min.js"></script>
+<script src="site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="site_libs/quarto-html/anchor.min.js"></script>
+<link href="site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="site_libs/quarto-html/quarto-syntax-highlighting-64a204ab8560d761af7679ceaba22944.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="site_libs/bootstrap/bootstrap-d63a2c9c8df14b07662b36303925c8cc.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+
+
+<link rel="stylesheet" href="styles.css">
+<meta property="og:title" content="nbskill">
+<meta property="og:description" content="LLM-skill for working with nb">
+<meta property="og:site_name" content="nbskill">
+<meta name="twitter:title" content="nbskill">
+<meta name="twitter:description" content="LLM-skill for working with nb">
+<meta name="twitter:card" content="summary">
+</head>
+
+<body class="nav-sidebar floating nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="./index.html">
+    <span class="navbar-title">nbskill</span>
+    </a>
+  </div>
+        <div class="quarto-navbar-tools tools-end">
+</div>
+          <div id="quarto-search" class="" title="Search"></div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./04_review.html">Reviewing notebooks</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation floating overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">nbskill</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./00_foundation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Foundation</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./01_read.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Reading and inspection</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./02_edit.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Notebook editing</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./02_write.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Writing and changing</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./03_execute.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Executing notebooks</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./04_review.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Reviewing notebooks</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./05_convert.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Converting Python into notebooks</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./06_skill.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Installing the skill</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./07_mcp.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">MCP server</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./09_parallel.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Parallel notebook operations</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./10_graph.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Notebook symbol graph</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./12_knowledge.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Reference implementation knowledgebase</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./13_cli.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Restored command-line tools</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./pyskill.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Native nbskill Pyskill</span></a>
+  </div>
+</li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#reviewing-notebooks" id="toc-reviewing-notebooks" class="nav-link active" data-scroll-target="#reviewing-notebooks">Reviewing notebooks</a>
+  <ul class="collapse">
+  <li><a href="#production-contract" id="toc-production-contract" class="nav-link" data-scroll-target="#production-contract">Production contract</a></li>
+  <li><a href="#style-feedback-as-a-tool" id="toc-style-feedback-as-a-tool" class="nav-link" data-scroll-target="#style-feedback-as-a-tool">Style feedback as a tool</a></li>
+  <li><a href="#public_function_literacy_problems" id="toc-public_function_literacy_problems" class="nav-link" data-scroll-target="#public_function_literacy_problems">public_function_literacy_problems</a></li>
+  <li><a href="#notebook_validation_problems" id="toc-notebook_validation_problems" class="nav-link" data-scroll-target="#notebook_validation_problems">notebook_validation_problems</a></li>
+  <li><a href="#notebook_size_problems" id="toc-notebook_size_problems" class="nav-link" data-scroll-target="#notebook_size_problems">notebook_size_problems</a></li>
+  <li><a href="#reset_global_usage_summary" id="toc-reset_global_usage_summary" class="nav-link" data-scroll-target="#reset_global_usage_summary">reset_global_usage_summary</a></li>
+  <li><a href="#notebook_autofix" id="toc-notebook_autofix" class="nav-link" data-scroll-target="#notebook_autofix">notebook_autofix</a></li>
+  <li><a href="#style_report" id="toc-style_report" class="nav-link" data-scroll-target="#style_report">style_report</a></li>
+  <li><a href="#run_style_check" id="toc-run_style_check" class="nav-link" data-scroll-target="#run_style_check">run_style_check</a></li>
+  <li><a href="#style_check" id="toc-style_check" class="nav-link" data-scroll-target="#style_check">style_check</a></li>
+  <li><a href="#validate_nbs" id="toc-validate_nbs" class="nav-link" data-scroll-target="#validate_nbs">validate_nbs</a></li>
+  <li><a href="#code_source" id="toc-code_source" class="nav-link" data-scroll-target="#code_source">code_source</a></li>
+  <li><a href="#code-cell-diffs" id="toc-code-cell-diffs" class="nav-link" data-scroll-target="#code-cell-diffs">Code-cell diffs</a></li>
+  <li><a href="#public-ui-text-surface" id="toc-public-ui-text-surface" class="nav-link" data-scroll-target="#public-ui-text-surface">Public UI text surface</a></li>
+  <li><a href="#visible_text_inventory" id="toc-visible_text_inventory" class="nav-link" data-scroll-target="#visible_text_inventory">visible_text_inventory</a></li>
+  <li><a href="#diff_nb" id="toc-diff_nb" class="nav-link" data-scroll-target="#diff_nb">diff_nb</a></li>
+  </ul></li>
+  </ul>
+<div class="toc-actions"><ul><li><a href="https://github.com/MorsCerta-crypto/nbskill/issues/new" class="toc-action"><i class="bi bi-github"></i>Report an issue</a></li></ul></div><div class="quarto-alternate-formats"><h2>Other Formats</h2><ul><li><a href="04_review.md"><i class="bi bi-file-code"></i>Markdown</a></li></ul></div></nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content"><header id="title-block-header" class="quarto-title-block"></header>
+
+
+
+
+<!-- WARNING: THIS FILE WAS AUTOGENERATED! DO NOT EDIT! -->
+<section id="reviewing-notebooks" class="level2">
+<h2 class="anchored" data-anchor-id="reviewing-notebooks">Reviewing notebooks</h2>
+<p>Diff and style feedback that focuses on code cells.</p>
+<p>Review should focus on the behavior encoded in code cells, not on notebook metadata churn. This notebook keeps that review loop small: run fast.ai style hints when desired, and print nbdev-style code diffs when comparing notebooks.</p>
+<p>Review tools draw a line between source changes and notebook noise. <a href="https://MorsCerta-crypto.github.io/nbskill/review.html#style_check"><code>style_check</code></a> is useful before publishing exported code because it combines fast.ai style hints with notebook hygiene reports, while <a href="https://MorsCerta-crypto.github.io/nbskill/review.html#diff_nb"><code>diff_nb</code></a> is useful during agent edits because it ignores outputs and metadata unless metadata is the only thing that changed.</p>
+<section id="production-contract" class="level3">
+<h3 class="anchored" data-anchor-id="production-contract">Production contract</h3>
+<p>Review tools are production core. Validation must fail on missing or stale nbskill metadata, <a href="https://MorsCerta-crypto.github.io/nbskill/review.html#style_check"><code>style_check</code></a> must combine capped style output with notebook hygiene diagnostics, and <a href="https://MorsCerta-crypto.github.io/nbskill/review.html#diff_nb"><code>diff_nb</code></a> must show code-cell behavior changes without raw notebook metadata noise.</p>
+<div id="f49d0ccd" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;nbskill&quot;,&quot;value&quot;:{&quot;cell_type&quot;:&quot;code&quot;,&quot;semantic_types&quot;:[&quot;code_cell&quot;]}}">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> os</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> fastcore.nbio <span class="im">import</span> new_nb</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> fastcore.test <span class="im">import</span> test_eq</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> nbskill.foundation <span class="im">import</span> demo_path, remove_demo_path, write_demo_notebook, write_tool_notebook</span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> _write_review_notebook(path, cells, stamp<span class="op">=</span><span class="va">True</span>):</span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>    nb <span class="op">=</span> new_nb(cells)</span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> stamp: stamp_notebook_metadata(nb)</span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>    _write_nb(nb, path)</span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> nb</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</section>
+<section id="style-feedback-as-a-tool" class="level3">
+<h3 class="anchored" data-anchor-id="style-feedback-as-a-tool">Style feedback as a tool</h3>
+<p><a href="https://MorsCerta-crypto.github.io/nbskill/review.html#style_check"><code>style_check</code></a> wraps the fast.ai style checker as a direct Python API; MCP exposes its common diagnostics through <code>doctor</code>.</p>
+<p>Public notebook APIs stay maintainable when their docs, implementation, examples, and tests travel together. <a href="https://MorsCerta-crypto.github.io/nbskill/review.html#public_function_literacy_problems"><code>public_function_literacy_problems</code></a> checks exported public functions for that compact contract so maintainers and agents can quickly understand what each function is for, how to call it, and what behavior is protected.</p>
+<hr>
+<p><a href="https://github.com/MorsCerta-crypto/nbskill/blob/main/nbskill/review.py#L210" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="public_function_literacy_problems" class="level3">
+<h3 class="anchored" data-anchor-id="public_function_literacy_problems">public_function_literacy_problems</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> public_function_literacy_problems(</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    path:<span class="bu">str</span><span class="op">=</span><span class="st">'.'</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Return docs/example/test contract warnings for exported public notebook functions.</em></p>
+<p>Notebook craft is a small subset of style diagnostics that should steer agents toward literate, reviewable notebook changes.</p>
+<div id="daf2a1ba" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;nbskill&quot;,&quot;value&quot;:{&quot;cell_type&quot;:&quot;code&quot;,&quot;executed_hash&quot;:&quot;24f6813f1ae8cbc47e7bb0a6dc7558e9159fa6abb91f2a5acfdb2f75a4fd3596&quot;,&quot;semantic_types&quot;:[&quot;example_code&quot;]}}">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>_literacy_preview <span class="op">=</span> public_function_literacy_problems(<span class="st">"nbs/04_review.ipynb"</span>)[:<span class="dv">2</span>]</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>_literacy_preview</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display">
+<pre><code>[{'code': 'public-function-markdown',
+  'path': '04_review.ipynb',
+  'severity': 'warning',
+  'source': 'nbskill',
+  'detail': "public function 'notebook_size_problems' needs Markdown docs cell mentioning the function",
+  'cell_id': '93269841',
+  'symbol': 'notebook_size_problems',
+  'line': 1,
+  'missing': 'Markdown docs cell mentioning the function'},
+ {'code': 'public-function-example',
+  'path': '04_review.ipynb',
+  'severity': 'warning',
+  'source': 'nbskill',
+  'detail': "public function 'notebook_size_problems' needs example cell that calls the function",
+  'cell_id': '93269841',
+  'symbol': 'notebook_size_problems',
+  'line': 1,
+  'missing': 'example cell that calls the function'}]</code></pre>
+</div>
+</div>
+<div id="1862ee67" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;nbskill&quot;,&quot;value&quot;:{&quot;cell_type&quot;:&quot;code&quot;,&quot;executed_hash&quot;:&quot;69778d07b819ebd70b962d8f06a3dae47b90daea274991b187a6b7b3d599fd74&quot;,&quot;semantic_types&quot;:[&quot;test_code&quot;]}}">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> {</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    <span class="st">"public-function-docstring"</span>, <span class="st">"public-function-markdown"</span>,</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    <span class="st">"public-function-example"</span>, <span class="st">"public-function-test"</span>,</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>} <span class="op">&lt;=</span> {problem[<span class="st">"code"</span>] <span class="cf">for</span> problem <span class="kw">in</span> public_function_literacy_problems(<span class="st">"nbs/04_review.ipynb"</span>)}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<hr>
+<p><a href="https://github.com/MorsCerta-crypto/nbskill/blob/main/nbskill/review.py#L387" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="notebook_validation_problems" class="level3">
+<h3 class="anchored" data-anchor-id="notebook_validation_problems">notebook_validation_problems</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> notebook_validation_problems(</span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>    path:<span class="bu">str</span><span class="op">=</span><span class="st">'.'</span></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Return notebook metadata and Python syntax validation problems.</em></p>
+<hr>
+<p><a href="https://github.com/MorsCerta-crypto/nbskill/blob/main/nbskill/review.py#L407" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="notebook_size_problems" class="level3">
+<h3 class="anchored" data-anchor-id="notebook_size_problems">notebook_size_problems</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> notebook_size_problems(</span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>    path:<span class="bu">str</span><span class="op">=</span><span class="st">'.'</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Return size warnings for notebook cells and generated Python files.</em></p>
+<hr>
+<p><a href="https://github.com/MorsCerta-crypto/nbskill/blob/main/nbskill/review.py#L524" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="reset_global_usage_summary" class="level3">
+<h3 class="anchored" data-anchor-id="reset_global_usage_summary">reset_global_usage_summary</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> reset_global_usage_summary():</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Call self as a function.</em></p>
+<hr>
+<p><a href="https://github.com/MorsCerta-crypto/nbskill/blob/main/nbskill/review.py#L780" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="notebook_autofix" class="level3">
+<h3 class="anchored" data-anchor-id="notebook_autofix">notebook_autofix</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> notebook_autofix(</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>    path:<span class="bu">str</span><span class="op">=</span><span class="st">'.'</span>, dry_run:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span></span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Call self as a function.</em></p>
+<hr>
+<p><a href="https://github.com/MorsCerta-crypto/nbskill/blob/main/nbskill/review.py#L821" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="style_report" class="level3">
+<h3 class="anchored" data-anchor-id="style_report">style_report</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> style_report(</span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>    path:<span class="bu">str</span><span class="op">=</span><span class="st">'.'</span>, <span class="co"># File or folder to check</span></span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>    chkstyle:<span class="bu">dict</span> <span class="op">|</span> <span class="va">None</span><span class="op">=</span><span class="va">None</span>, <span class="co"># Captured chkstyle result to include</span></span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a>    max_output_chars:<span class="bu">int</span><span class="op">=</span><span class="dv">12000</span>, <span class="co"># Maximum raw chkstyle text to keep in report</span></span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a>    max_diagnostics:<span class="bu">int</span><span class="op">=</span><span class="dv">200</span>, <span class="co"># Maximum parsed chkstyle diagnostics</span></span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a>    changed_only:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span>, <span class="co"># Report only diagnostics for changed code cells</span></span>
+<span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a>    ref_a:<span class="bu">str</span> <span class="op">|</span> <span class="va">None</span><span class="op">=</span><span class="st">'HEAD'</span>, <span class="co"># First git ref for changed_only filtering</span></span>
+<span id="cb10-8"><a href="#cb10-8" aria-hidden="true" tabindex="-1"></a>    ref_b:<span class="bu">str</span> <span class="op">|</span> <span class="va">None</span><span class="op">=</span><span class="va">None</span>, <span class="co"># Second git ref; defaults to working tree</span></span>
+<span id="cb10-9"><a href="#cb10-9" aria-hidden="true" tabindex="-1"></a>    skip_folder_re:<span class="bu">str</span> <span class="op">|</span> <span class="va">None</span><span class="op">=</span><span class="va">None</span>, <span class="co"># Regex for notebook paths to skip</span></span>
+<span id="cb10-10"><a href="#cb10-10" aria-hidden="true" tabindex="-1"></a>    skip_path:<span class="bu">str</span> <span class="op">|</span> <span class="va">None</span><span class="op">=</span><span class="va">None</span>, <span class="co"># Folder name/path to skip</span></span>
+<span id="cb10-11"><a href="#cb10-11" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Return structured style diagnostics, problem chart, and global nbskill usage data.</em></p>
+<div id="5c46a33b" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;nbskill&quot;,&quot;value&quot;:{&quot;cell_type&quot;:&quot;code&quot;,&quot;semantic_types&quot;:[&quot;test_code&quot;]}}">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb11"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="cf">with</span> write_tool_notebook(<span class="st">"04_review_style_report.ipynb"</span>) <span class="im">as</span> path:</span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>    report <span class="op">=</span> style_report(path)</span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>    test_eq({<span class="st">"summary"</span>, <span class="st">"notebook_problems"</span>} <span class="op">&lt;=</span> <span class="bu">set</span>(report), <span class="va">True</span>)</span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a>    test_eq(<span class="bu">isinstance</span>(report[<span class="st">"notebook_problems"</span>], <span class="bu">list</span>), <span class="va">True</span>)</span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a>    test_eq(<span class="st">"Global nbskill usage:"</span> <span class="kw">in</span> report[<span class="st">"text"</span>], <span class="va">True</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>The structured report is meant for tools as much as people. <code>summary</code> gives a compact count of problems, <code>problem_chart</code> groups diagnostics by source and code, and <code>text</code> is the human-readable report.</p>
+<div id="19587714" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;nbskill&quot;,&quot;value&quot;:{&quot;cell_type&quot;:&quot;code&quot;,&quot;semantic_types&quot;:[&quot;code_cell&quot;]}}">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb12"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a>sample_chkstyle <span class="op">=</span> {<span class="st">"status"</span>: <span class="dv">1</span>, <span class="st">"output"</span>: <span class="st">"# demo.ipynb:cell[abc123]:2: Missing whitespace (hint: add a blank line)"</span>}</span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a><span class="cf">with</span> write_tool_notebook(<span class="st">"04_review_sample_report.ipynb"</span>) <span class="im">as</span> path:</span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a>    sample_report <span class="op">=</span> style_report(path, chkstyle<span class="op">=</span>sample_chkstyle, max_output_chars<span class="op">=</span><span class="dv">200</span>, max_diagnostics<span class="op">=</span><span class="dv">5</span>)</span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(sample_report[<span class="st">"summary"</span>])</span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(sample_report[<span class="st">"problem_chart"</span>][<span class="st">"by_source"</span>])</span>
+<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(sample_report[<span class="st">"diagnostics"</span>][<span class="dv">0</span>])</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<hr>
+<p><a href="https://github.com/MorsCerta-crypto/nbskill/blob/main/nbskill/review.py#L882" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="run_style_check" class="level3">
+<h3 class="anchored" data-anchor-id="run_style_check">run_style_check</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb13"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> run_style_check(</span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a>    path:<span class="bu">str</span><span class="op">=</span><span class="st">'.'</span>, skip_folder_re:NoneType<span class="op">=</span><span class="va">None</span>, skip_path:NoneType<span class="op">=</span><span class="va">None</span>, strict:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a>    max_output_chars:NoneType<span class="op">=</span><span class="va">None</span></span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Run chkstyle with nbskill’s default skip paths and capped output.</em></p>
+<div id="6923d965" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;nbskill&quot;,&quot;value&quot;:{&quot;cell_type&quot;:&quot;code&quot;,&quot;executed_hash&quot;:&quot;5d578d625b36ff94b870b73e5a9ac2c9157e8030597e670ad293ae8d626186c6&quot;,&quot;semantic_types&quot;:[&quot;test_code&quot;]}}">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb14"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a>argv <span class="op">=</span> _style_check_argv(<span class="st">"."</span>)</span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> <span class="st">"--skip-path"</span> <span class="kw">in</span> argv</span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> <span class="st">"_proc"</span> <span class="kw">in</span> argv</span>
+<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> <span class="st">"--skip-folder-re"</span> <span class="kw">not</span> <span class="kw">in</span> argv</span>
+<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> <span class="st">"--skip-path-re"</span> <span class="kw">in</span> _style_check_argv(<span class="st">"."</span>, skip_folder_re<span class="op">=</span><span class="vs">r"</span><span class="dv">^</span><span class="vs">_proc/"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="4b20e196" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;nbskill&quot;,&quot;value&quot;:{&quot;cell_type&quot;:&quot;code&quot;,&quot;semantic_types&quot;:[&quot;test_code&quot;]}}">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb15"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a>proc_report <span class="op">=</span> run_style_check(<span class="st">"_proc/01_read.ipynb"</span>)</span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> proc_report[<span class="st">"status"</span>] <span class="op">==</span> <span class="dv">0</span></span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> proc_report[<span class="st">"output"</span>] <span class="op">==</span> <span class="st">""</span></span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> notebook_validation_problems(<span class="st">"_proc/01_read.ipynb"</span>) <span class="op">==</span> []</span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> <span class="kw">not</span> <span class="bu">any</span>(_style_root_is_skipped(problem[<span class="st">"path"</span>], skip_style_paths) <span class="cf">for</span> problem <span class="kw">in</span> _notebook_style_problems(<span class="st">"."</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<hr>
+<p><a href="https://github.com/MorsCerta-crypto/nbskill/blob/main/nbskill/review.py#L895" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="style_check" class="level3">
+<h3 class="anchored" data-anchor-id="style_check">style_check</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb16"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> style_check(</span>
+<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a>    path:<span class="bu">str</span><span class="op">=</span><span class="st">'.'</span>, skip_folder_re:<span class="bu">str</span> <span class="op">|</span> <span class="va">None</span><span class="op">=</span><span class="va">None</span>, <span class="co"># Regex for folders to skip</span></span>
+<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a>    skip_path:<span class="bu">str</span> <span class="op">|</span> <span class="va">None</span><span class="op">=</span><span class="va">None</span>, <span class="co"># Folder name/path to skip</span></span>
+<span id="cb16-4"><a href="#cb16-4" aria-hidden="true" tabindex="-1"></a>    strict:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span>, <span class="co"># Raise when style hints or notebook hygiene problems are found</span></span>
+<span id="cb16-5"><a href="#cb16-5" aria-hidden="true" tabindex="-1"></a>    delete_after_output:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span>, <span class="co"># Reset ~/.nbskill-errors.json after printing the global summary</span></span>
+<span id="cb16-6"><a href="#cb16-6" aria-hidden="true" tabindex="-1"></a>    max_output_chars:<span class="bu">int</span><span class="op">=</span><span class="dv">12000</span>, <span class="co"># Cap printed chkstyle output</span></span>
+<span id="cb16-7"><a href="#cb16-7" aria-hidden="true" tabindex="-1"></a>    max_diagnostics:<span class="bu">int</span><span class="op">=</span><span class="dv">200</span>, <span class="co"># Cap returned diagnostics</span></span>
+<span id="cb16-8"><a href="#cb16-8" aria-hidden="true" tabindex="-1"></a>    fix:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span>, <span class="co"># Show conservative fix suggestions</span></span>
+<span id="cb16-9"><a href="#cb16-9" aria-hidden="true" tabindex="-1"></a>    dry_run:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span>, <span class="co"># Keep fix mode non-mutating by default</span></span>
+<span id="cb16-10"><a href="#cb16-10" aria-hidden="true" tabindex="-1"></a>    changed_only:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span>, <span class="co"># Report only diagnostics for changed code cells</span></span>
+<span id="cb16-11"><a href="#cb16-11" aria-hidden="true" tabindex="-1"></a>    ref_a:<span class="bu">str</span> <span class="op">|</span> <span class="va">None</span><span class="op">=</span><span class="st">'HEAD'</span>, <span class="co"># First git ref for changed_only filtering</span></span>
+<span id="cb16-12"><a href="#cb16-12" aria-hidden="true" tabindex="-1"></a>    ref_b:<span class="bu">str</span> <span class="op">|</span> <span class="va">None</span><span class="op">=</span><span class="va">None</span>, <span class="co"># Second git ref; defaults to working tree</span></span>
+<span id="cb16-13"><a href="#cb16-13" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Print capped fast.ai style hints, notebook hygiene warnings, and global tool usage.</em></p>
+<hr>
+<p><a href="https://github.com/MorsCerta-crypto/nbskill/blob/main/nbskill/review.py#L930" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="validate_nbs" class="level3">
+<h3 class="anchored" data-anchor-id="validate_nbs">validate_nbs</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb17"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> validate_nbs(</span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a>    path:<span class="bu">str</span><span class="op">=</span><span class="st">'nbs'</span>, strict:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span>, <span class="co"># Raise when invalid metadata is found</span></span>
+<span id="cb17-3"><a href="#cb17-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Validate nbskill metadata needed for safe notebook tools.</em></p>
+<hr>
+<p><a href="https://github.com/MorsCerta-crypto/nbskill/blob/main/nbskill/review.py#L946" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="code_source" class="level3">
+<h3 class="anchored" data-anchor-id="code_source">code_source</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb18"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> code_source(</span>
+<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a>    cell</span>
+<span id="cb18-3"><a href="#cb18-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Return source for code cells; ignore markdown and raw cells.</em></p>
+<p><a href="https://MorsCerta-crypto.github.io/nbskill/review.html#style_check"><code>style_check</code></a> is the direct Python wrapper around <a href="https://MorsCerta-crypto.github.io/nbskill/review.html#style_report"><code>style_report</code></a>. It captures fast.ai style output, appends notebook hygiene findings, prints the combined text report, and raises in strict mode when diagnostics are present.</p>
+<div id="84d1266c" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;nbskill&quot;,&quot;value&quot;:{&quot;cell_type&quot;:&quot;code&quot;,&quot;semantic_types&quot;:[&quot;code_cell&quot;]}}">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb19"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a><span class="cf">with</span> write_tool_notebook(<span class="st">"04_review_style_check.ipynb"</span>) <span class="im">as</span> path:</span>
+<span id="cb19-2"><a href="#cb19-2" aria-hidden="true" tabindex="-1"></a>    style_output <span class="op">=</span> StringIO()</span>
+<span id="cb19-3"><a href="#cb19-3" aria-hidden="true" tabindex="-1"></a>    <span class="cf">with</span> redirect_stdout(style_output): style_check(path, strict<span class="op">=</span><span class="va">False</span>, max_output_chars<span class="op">=</span><span class="dv">500</span>, max_diagnostics<span class="op">=</span><span class="dv">5</span>)</span>
+<span id="cb19-4"><a href="#cb19-4" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(<span class="st">"</span><span class="ch">\n</span><span class="st">"</span>.join(style_output.getvalue().splitlines()[:<span class="dv">6</span>]))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="31385746" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;nbskill&quot;,&quot;value&quot;:{&quot;cell_type&quot;:&quot;code&quot;,&quot;semantic_types&quot;:[&quot;test_code&quot;]}}">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb20"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a><span class="cf">with</span> write_demo_notebook(<span class="st">"04_review_validate_valid.ipynb"</span>) <span class="im">as</span> valid_path:</span>
+<span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a>    _write_review_notebook(valid_path, [mk_cell(<span class="st">"assert True"</span>, cell_type<span class="op">=</span><span class="st">"code"</span>)])</span>
+<span id="cb20-3"><a href="#cb20-3" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> notebook_validation_problems(valid_path) <span class="op">==</span> []</span>
+<span id="cb20-4"><a href="#cb20-4" aria-hidden="true" tabindex="-1"></a>    validate_nbs(<span class="bu">str</span>(valid_path), strict<span class="op">=</span><span class="va">False</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="3788ca74" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;nbskill&quot;,&quot;value&quot;:{&quot;cell_type&quot;:&quot;code&quot;,&quot;executed_hash&quot;:&quot;b6a0db22e4a84dd713c6f289774e300c75c2e2532055ada019a2d2b869cff387&quot;,&quot;semantic_types&quot;:[&quot;test_code&quot;]}}">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb21"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a><span class="cf">with</span> write_demo_notebook(<span class="st">"04_review_validate_invalid.ipynb"</span>) <span class="im">as</span> invalid_path:</span>
+<span id="cb21-2"><a href="#cb21-2" aria-hidden="true" tabindex="-1"></a>    invalid_nb <span class="op">=</span> _write_review_notebook(invalid_path, [</span>
+<span id="cb21-3"><a href="#cb21-3" aria-hidden="true" tabindex="-1"></a>        mk_cell(<span class="st">"x = 1"</span>, cell_type<span class="op">=</span><span class="st">"code"</span>),</span>
+<span id="cb21-4"><a href="#cb21-4" aria-hidden="true" tabindex="-1"></a>        mk_cell(<span class="st">"Some docs"</span>, cell_type<span class="op">=</span><span class="st">"markdown"</span>),</span>
+<span id="cb21-5"><a href="#cb21-5" aria-hidden="true" tabindex="-1"></a>        mk_cell(<span class="st">"assert True"</span>, cell_type<span class="op">=</span><span class="st">"code"</span>),</span>
+<span id="cb21-6"><a href="#cb21-6" aria-hidden="true" tabindex="-1"></a>    ])</span>
+<span id="cb21-7"><a href="#cb21-7" aria-hidden="true" tabindex="-1"></a>    invalid_nb.cells[<span class="dv">1</span>].metadata[<span class="st">"nbskill"</span>][<span class="st">"semantic_types"</span>] <span class="op">=</span> []</span>
+<span id="cb21-8"><a href="#cb21-8" aria-hidden="true" tabindex="-1"></a>    invalid_nb.cells[<span class="dv">2</span>].metadata[<span class="st">"nbskill"</span>][<span class="st">"cell_type"</span>] <span class="op">=</span> <span class="st">"markdown"</span></span>
+<span id="cb21-9"><a href="#cb21-9" aria-hidden="true" tabindex="-1"></a>    _write_nb(invalid_nb, invalid_path)</span>
+<span id="cb21-10"><a href="#cb21-10" aria-hidden="true" tabindex="-1"></a>    codes <span class="op">=</span> {problem[<span class="st">"code"</span>] <span class="cf">for</span> problem <span class="kw">in</span> notebook_validation_problems(invalid_path)}</span>
+<span id="cb21-11"><a href="#cb21-11" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> {<span class="st">"missing-cell-semantic-types"</span>, <span class="st">"cell-type-mismatch"</span>} <span class="op">&lt;=</span> codes</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="7a0eaf1d" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;nbskill&quot;,&quot;value&quot;:{&quot;cell_type&quot;:&quot;code&quot;,&quot;executed_hash&quot;:&quot;efaa0b8e0b412f0c5e6253a4f9c78d53a81b7da63b8c9467f3bd6e3408df803c&quot;,&quot;semantic_types&quot;:[&quot;test_code&quot;]}}">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb22"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a><span class="cf">with</span> write_demo_notebook(<span class="st">"04_review_export_hash.ipynb"</span>, base<span class="op">=</span><span class="st">"nbs"</span>) <span class="im">as</span> export_nb_path:</span>
+<span id="cb22-2"><a href="#cb22-2" aria-hidden="true" tabindex="-1"></a>    export_nb <span class="op">=</span> _write_review_notebook(export_nb_path, [mk_cell(<span class="st">"#| default_exp sample_tool"</span>)])</span>
+<span id="cb22-3"><a href="#cb22-3" aria-hidden="true" tabindex="-1"></a>    generated_py_path <span class="op">=</span> exported_py_path(export_nb_path, export_nb)</span>
+<span id="cb22-4"><a href="#cb22-4" aria-hidden="true" tabindex="-1"></a>    <span class="cf">try</span>:</span>
+<span id="cb22-5"><a href="#cb22-5" aria-hidden="true" tabindex="-1"></a>        generated_py_path.parent.mkdir(parents<span class="op">=</span><span class="va">True</span>, exist_ok<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb22-6"><a href="#cb22-6" aria-hidden="true" tabindex="-1"></a>        generated_py_path.write_text(<span class="st">"actual = 1</span><span class="ch">\n</span><span class="st">"</span>, encoding<span class="op">=</span><span class="st">"utf-8"</span>)</span>
+<span id="cb22-7"><a href="#cb22-7" aria-hidden="true" tabindex="-1"></a>        export_nb.metadata[<span class="st">"nbskill"</span>] <span class="op">=</span> {<span class="st">"exported_py_hash"</span>: <span class="st">"bad"</span>}</span>
+<span id="cb22-8"><a href="#cb22-8" aria-hidden="true" tabindex="-1"></a>        _write_nb(export_nb, export_nb_path)</span>
+<span id="cb22-9"><a href="#cb22-9" aria-hidden="true" tabindex="-1"></a>        codes <span class="op">=</span> {problem[<span class="st">"code"</span>] <span class="cf">for</span> problem <span class="kw">in</span> notebook_validation_problems(export_nb_path)}</span>
+<span id="cb22-10"><a href="#cb22-10" aria-hidden="true" tabindex="-1"></a>        <span class="cf">assert</span> <span class="st">"exported-py-hash-mismatch"</span> <span class="kw">in</span> codes</span>
+<span id="cb22-11"><a href="#cb22-11" aria-hidden="true" tabindex="-1"></a>    <span class="cf">finally</span>:</span>
+<span id="cb22-12"><a href="#cb22-12" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> generated_py_path <span class="kw">is</span> <span class="kw">not</span> <span class="va">None</span>: remove_demo_path(generated_py_path)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p><a href="https://MorsCerta-crypto.github.io/nbskill/review.html#notebook_validation_problems"><code>notebook_validation_problems</code></a> is narrower than <a href="https://MorsCerta-crypto.github.io/nbskill/review.html#style_report"><code>style_report</code></a>: it checks nbskill metadata plus Python syntax in code cells, the prerequisites for reliable notebook tooling. <a href="https://MorsCerta-crypto.github.io/nbskill/review.html#validate_nbs"><code>validate_nbs</code></a> exposes the same failures to Python callers.</p>
+<div id="bbe4665d" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;nbskill&quot;,&quot;value&quot;:{&quot;cell_type&quot;:&quot;code&quot;,&quot;executed_hash&quot;:&quot;ab77c2e9969eca5882d94643fc58a5ef45ff06d58bb0124fee47a22cbd837351&quot;,&quot;semantic_types&quot;:[&quot;code_cell&quot;]}}">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb23"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a><span class="cf">with</span> write_demo_notebook(<span class="st">"04_review_validation_example.ipynb"</span>) <span class="im">as</span> validation_path:</span>
+<span id="cb23-2"><a href="#cb23-2" aria-hidden="true" tabindex="-1"></a>    _write_review_notebook(validation_path, [</span>
+<span id="cb23-3"><a href="#cb23-3" aria-hidden="true" tabindex="-1"></a>        mk_cell(<span class="st">"x = 1"</span>, cell_type<span class="op">=</span><span class="st">"code"</span>),</span>
+<span id="cb23-4"><a href="#cb23-4" aria-hidden="true" tabindex="-1"></a>        mk_cell(<span class="st">"Some docs"</span>, cell_type<span class="op">=</span><span class="st">"markdown"</span>),</span>
+<span id="cb23-5"><a href="#cb23-5" aria-hidden="true" tabindex="-1"></a>    ], stamp<span class="op">=</span><span class="va">False</span>)</span>
+<span id="cb23-6"><a href="#cb23-6" aria-hidden="true" tabindex="-1"></a>    problems <span class="op">=</span> notebook_validation_problems(validation_path)</span>
+<span id="cb23-7"><a href="#cb23-7" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>([problem[<span class="st">"code"</span>] <span class="cf">for</span> problem <span class="kw">in</span> problems[:<span class="dv">4</span>]])</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</section>
+<section id="code-cell-diffs" class="level3">
+<h3 class="anchored" data-anchor-id="code-cell-diffs">Code-cell diffs</h3>
+<p>Notebook diffs are noisy when metadata and outputs are included. <a href="https://MorsCerta-crypto.github.io/nbskill/review.html#diff_nb"><code>diff_nb</code></a> asks nbdev for code-cell source on each side of a comparison and prints only the added, changed, or deleted code blocks the caller requested.</p>
+</section>
+<section id="public-ui-text-surface" class="level3">
+<h3 class="anchored" data-anchor-id="public-ui-text-surface">Public UI text surface</h3>
+<p>FastHTML and HTML-producing notebook cells often hide customer-visible copy inside Python component calls. A normal text search finds too much: headings, button labels, docstrings, route names, tests, exceptions, and implementation notes all look like strings. The public UI text surface gives agents a smaller first pass over likely visible copy before editing.</p>
+<p>Use <a href="https://MorsCerta-crypto.github.io/nbskill/review.html#visible_text_inventory"><code>visible_text_inventory</code></a> before an edit when the task is phrased in product or customer language. It answers: which notebook cell and symbol owns the visible words I may need to change? That reduces the manual <code>rg</code> loop where an agent has to compare notebook source, exported modules, and internal strings by hand.</p>
+<p>Use <code>diff_nb(surface="public-ui")</code> after an edit when the review question is user-facing copy rather than Python structure. It keeps headings, labels, link text, image alt text, and similar UI literals separate from code churn, metadata churn, tests, and docstring edits.</p>
+<p>This is deliberately heuristic. It is meant to support a faster notebook iteration loop, not to prove accessibility or render every possible runtime branch: inventory the likely visible text, make a focused edit, run the route/example smoke snippet, then review the public UI diff.</p>
+<hr>
+<p><a href="https://github.com/MorsCerta-crypto/nbskill/blob/main/nbskill/review.py#L1152" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="visible_text_inventory" class="level3">
+<h3 class="anchored" data-anchor-id="visible_text_inventory">visible_text_inventory</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb24"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> visible_text_inventory(</span>
+<span id="cb24-2"><a href="#cb24-2" aria-hidden="true" tabindex="-1"></a>    path:<span class="bu">str</span><span class="op">=</span><span class="st">'.'</span>, include_re:NoneType<span class="op">=</span><span class="va">None</span>, max_records:<span class="bu">int</span><span class="op">=</span><span class="dv">200</span></span>
+<span id="cb24-3"><a href="#cb24-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Print likely user-visible text from FastHTML/HTML-producing notebook code cells.</em></p>
+<hr>
+<p><a href="https://github.com/MorsCerta-crypto/nbskill/blob/main/nbskill/review.py#L1195" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="diff_nb" class="level3">
+<h3 class="anchored" data-anchor-id="diff_nb">diff_nb</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb25"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> diff_nb(</span>
+<span id="cb25-2"><a href="#cb25-2" aria-hidden="true" tabindex="-1"></a>    path:<span class="bu">str</span>, <span class="co"># Notebook path</span></span>
+<span id="cb25-3"><a href="#cb25-3" aria-hidden="true" tabindex="-1"></a>    ref_a:<span class="bu">str</span> <span class="op">|</span> <span class="va">None</span><span class="op">=</span><span class="st">'HEAD'</span>, <span class="co"># First git ref; use None for working tree</span></span>
+<span id="cb25-4"><a href="#cb25-4" aria-hidden="true" tabindex="-1"></a>    ref_b:<span class="bu">str</span> <span class="op">|</span> <span class="va">None</span><span class="op">=</span><span class="va">None</span>, <span class="co"># Second git ref; defaults to working tree</span></span>
+<span id="cb25-5"><a href="#cb25-5" aria-hidden="true" tabindex="-1"></a>    adds:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span>, <span class="co"># Include code cells added in ref_b</span></span>
+<span id="cb25-6"><a href="#cb25-6" aria-hidden="true" tabindex="-1"></a>    changes:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span>, <span class="co"># Include changed code cells</span></span>
+<span id="cb25-7"><a href="#cb25-7" aria-hidden="true" tabindex="-1"></a>    dels:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span>, <span class="co"># Include deleted code cells</span></span>
+<span id="cb25-8"><a href="#cb25-8" aria-hidden="true" tabindex="-1"></a>    cell_id:<span class="bu">str</span> <span class="op">|</span> <span class="va">None</span><span class="op">=</span><span class="va">None</span>, <span class="co"># Limit output to comma/space-separated cell ids</span></span>
+<span id="cb25-9"><a href="#cb25-9" aria-hidden="true" tabindex="-1"></a>    after_id:<span class="bu">str</span> <span class="op">|</span> <span class="va">None</span><span class="op">=</span><span class="va">None</span>, <span class="co"># Limit output to cells after this id in ref_b/the working tree</span></span>
+<span id="cb25-10"><a href="#cb25-10" aria-hidden="true" tabindex="-1"></a>    surface:<span class="bu">str</span><span class="op">=</span><span class="st">'code'</span>, <span class="co"># Review surface: "code" or "public-ui"</span></span>
+<span id="cb25-11"><a href="#cb25-11" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Print nbdev-style diffs for code cells, or a public UI text surface.</em></p>
+<div id="revnogit" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;nbskill&quot;,&quot;value&quot;:{&quot;cell_type&quot;:&quot;code&quot;,&quot;executed_hash&quot;:&quot;3e107ccbd9492ab4e539da7ad0c704c2db4ed48f99cf1efd70efa3d82c26c325&quot;,&quot;semantic_types&quot;:[&quot;test_code&quot;]}}">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb26"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> tempfile <span class="im">import</span> gettempdir</span>
+<span id="cb26-2"><a href="#cb26-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb26-3"><a href="#cb26-3" aria-hidden="true" tabindex="-1"></a><span class="cf">with</span> write_demo_notebook(<span class="st">"04_review_no_git.ipynb"</span>, base<span class="op">=</span>gettempdir()) <span class="im">as</span> path:</span>
+<span id="cb26-4"><a href="#cb26-4" aria-hidden="true" tabindex="-1"></a>    _write_review_notebook(path, [mk_cell(<span class="st">"x = 1"</span>, cell_type<span class="op">=</span><span class="st">"code"</span>)])</span>
+<span id="cb26-5"><a href="#cb26-5" aria-hidden="true" tabindex="-1"></a>    <span class="cf">try</span>:</span>
+<span id="cb26-6"><a href="#cb26-6" aria-hidden="true" tabindex="-1"></a>        diff_nb(<span class="bu">str</span>(path))</span>
+<span id="cb26-7"><a href="#cb26-7" aria-hidden="true" tabindex="-1"></a>    <span class="cf">except</span> (<span class="pp">SystemExit</span>, <span class="pp">ValueError</span>) <span class="im">as</span> exc:</span>
+<span id="cb26-8"><a href="#cb26-8" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> <span class="bu">isinstance</span>(exc, <span class="pp">SystemExit</span>): <span class="cf">assert</span> exc.code <span class="op">==</span> <span class="dv">1</span></span>
+<span id="cb26-9"><a href="#cb26-9" aria-hidden="true" tabindex="-1"></a>        <span class="cf">else</span>:</span>
+<span id="cb26-10"><a href="#cb26-10" aria-hidden="true" tabindex="-1"></a>            msg <span class="op">=</span> <span class="bu">str</span>(exc)</span>
+<span id="cb26-11"><a href="#cb26-11" aria-hidden="true" tabindex="-1"></a>            <span class="cf">assert</span> <span class="st">"disposable notebook"</span> <span class="kw">in</span> msg <span class="kw">and</span> <span class="st">"ref_a=None"</span> <span class="kw">in</span> msg <span class="kw">and</span> <span class="st">"ref_b=None"</span> <span class="kw">in</span> msg</span>
+<span id="cb26-12"><a href="#cb26-12" aria-hidden="true" tabindex="-1"></a>    out <span class="op">=</span> StringIO()</span>
+<span id="cb26-13"><a href="#cb26-13" aria-hidden="true" tabindex="-1"></a>    <span class="cf">with</span> redirect_stdout(out):</span>
+<span id="cb26-14"><a href="#cb26-14" aria-hidden="true" tabindex="-1"></a>        diff_nb(<span class="bu">str</span>(path), ref_a<span class="op">=</span><span class="va">None</span>, ref_b<span class="op">=</span><span class="va">None</span>)</span>
+<span id="cb26-15"><a href="#cb26-15" aria-hidden="true" tabindex="-1"></a>    report <span class="op">=</span> out.getvalue()</span>
+<span id="cb26-16"><a href="#cb26-16" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> <span class="st">"--- code cell"</span> <span class="kw">in</span> report <span class="kw">and</span> <span class="st">"+x = 1"</span> <span class="kw">in</span> report</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="revgitsetup" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;nbskill&quot;,&quot;value&quot;:{&quot;cell_type&quot;:&quot;code&quot;,&quot;executed_hash&quot;:&quot;aa1bb055d106f3d1aeef363ed21523fcb3254aaa82433b9bb6e8886619254f22&quot;,&quot;semantic_types&quot;:[&quot;code_cell&quot;]}}">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb27"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb27-1"><a href="#cb27-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> _committed_review_notebook(root, cells<span class="op">=</span><span class="va">None</span>):</span>
+<span id="cb27-2"><a href="#cb27-2" aria-hidden="true" tabindex="-1"></a>    root.mkdir()</span>
+<span id="cb27-3"><a href="#cb27-3" aria-hidden="true" tabindex="-1"></a>    path <span class="op">=</span> root <span class="op">/</span> <span class="st">"demo.ipynb"</span></span>
+<span id="cb27-4"><a href="#cb27-4" aria-hidden="true" tabindex="-1"></a>    _write_review_notebook(path, cells <span class="kw">or</span> [mk_cell(<span class="st">"x = 1"</span>, cell_type<span class="op">=</span><span class="st">"code"</span>)])</span>
+<span id="cb27-5"><a href="#cb27-5" aria-hidden="true" tabindex="-1"></a>    subprocess.run([<span class="st">"git"</span>, <span class="st">"init"</span>], cwd<span class="op">=</span>root, check<span class="op">=</span><span class="va">True</span>, capture_output<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb27-6"><a href="#cb27-6" aria-hidden="true" tabindex="-1"></a>    subprocess.run([<span class="st">"git"</span>, <span class="st">"add"</span>, <span class="st">"demo.ipynb"</span>], cwd<span class="op">=</span>root, check<span class="op">=</span><span class="va">True</span>, capture_output<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb27-7"><a href="#cb27-7" aria-hidden="true" tabindex="-1"></a>    subprocess.run([</span>
+<span id="cb27-8"><a href="#cb27-8" aria-hidden="true" tabindex="-1"></a>        <span class="st">"git"</span>, <span class="st">"-c"</span>, <span class="st">"user.name=Nbskill"</span>, <span class="st">"-c"</span>, <span class="st">"user.email=nbskill@example.com"</span>,</span>
+<span id="cb27-9"><a href="#cb27-9" aria-hidden="true" tabindex="-1"></a>        <span class="st">"commit"</span>, <span class="st">"-m"</span>, <span class="st">"base"</span>,</span>
+<span id="cb27-10"><a href="#cb27-10" aria-hidden="true" tabindex="-1"></a>    ], cwd<span class="op">=</span>root, check<span class="op">=</span><span class="va">True</span>, capture_output<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb27-11"><a href="#cb27-11" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> path</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="revmetadiff" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;nbskill&quot;,&quot;value&quot;:{&quot;cell_type&quot;:&quot;code&quot;,&quot;executed_hash&quot;:&quot;9f32a005c53dd35e09563218918798569fe4f7a6fbd91fde02e95fc5fce30410&quot;,&quot;semantic_types&quot;:[&quot;test_code&quot;]}}">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb28"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb28-1"><a href="#cb28-1" aria-hidden="true" tabindex="-1"></a>root <span class="op">=</span> demo_path(<span class="st">"04_review_git_metadata"</span>)</span>
+<span id="cb28-2"><a href="#cb28-2" aria-hidden="true" tabindex="-1"></a><span class="cf">try</span>:</span>
+<span id="cb28-3"><a href="#cb28-3" aria-hidden="true" tabindex="-1"></a>    path <span class="op">=</span> _committed_review_notebook(root)</span>
+<span id="cb28-4"><a href="#cb28-4" aria-hidden="true" tabindex="-1"></a>    nb <span class="op">=</span> read_nb(path)</span>
+<span id="cb28-5"><a href="#cb28-5" aria-hidden="true" tabindex="-1"></a>    nb.cells[<span class="dv">0</span>].metadata[<span class="st">"nbskill"</span>] <span class="op">=</span> {<span class="st">"cell_type"</span>: <span class="st">"code"</span>, <span class="st">"semantic_types"</span>: []}</span>
+<span id="cb28-6"><a href="#cb28-6" aria-hidden="true" tabindex="-1"></a>    _write_nb(nb, path)</span>
+<span id="cb28-7"><a href="#cb28-7" aria-hidden="true" tabindex="-1"></a>    out <span class="op">=</span> StringIO()</span>
+<span id="cb28-8"><a href="#cb28-8" aria-hidden="true" tabindex="-1"></a>    <span class="cf">with</span> redirect_stdout(out):</span>
+<span id="cb28-9"><a href="#cb28-9" aria-hidden="true" tabindex="-1"></a>        diff_nb(<span class="bu">str</span>(path))</span>
+<span id="cb28-10"><a href="#cb28-10" aria-hidden="true" tabindex="-1"></a>    text <span class="op">=</span> out.getvalue()</span>
+<span id="cb28-11"><a href="#cb28-11" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> <span class="st">"No code cell changes"</span> <span class="kw">in</span> text</span>
+<span id="cb28-12"><a href="#cb28-12" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> <span class="st">"Ignored nbskill metadata changes in 1 cell"</span> <span class="kw">in</span> text</span>
+<span id="cb28-13"><a href="#cb28-13" aria-hidden="true" tabindex="-1"></a><span class="cf">finally</span>:</span>
+<span id="cb28-14"><a href="#cb28-14" aria-hidden="true" tabindex="-1"></a>    remove_demo_path(root)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="revfilters" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;nbskill&quot;,&quot;value&quot;:{&quot;cell_type&quot;:&quot;code&quot;,&quot;executed_hash&quot;:&quot;2aa3e5f689376321dc4af9c6da884795ea8ac081b6c319d280125bcdfaeb016d&quot;,&quot;semantic_types&quot;:[&quot;test_code&quot;]}}">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb29"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb29-1"><a href="#cb29-1" aria-hidden="true" tabindex="-1"></a>root <span class="op">=</span> demo_path(<span class="st">"04_review_git_filters"</span>)</span>
+<span id="cb29-2"><a href="#cb29-2" aria-hidden="true" tabindex="-1"></a><span class="cf">try</span>:</span>
+<span id="cb29-3"><a href="#cb29-3" aria-hidden="true" tabindex="-1"></a>    path <span class="op">=</span> _committed_review_notebook(root)</span>
+<span id="cb29-4"><a href="#cb29-4" aria-hidden="true" tabindex="-1"></a>    nb <span class="op">=</span> read_nb(path)</span>
+<span id="cb29-5"><a href="#cb29-5" aria-hidden="true" tabindex="-1"></a>    first_id <span class="op">=</span> nb.cells[<span class="dv">0</span>].<span class="bu">id</span></span>
+<span id="cb29-6"><a href="#cb29-6" aria-hidden="true" tabindex="-1"></a>    nb.cells[<span class="dv">0</span>].source <span class="op">=</span> <span class="st">"x = 2"</span></span>
+<span id="cb29-7"><a href="#cb29-7" aria-hidden="true" tabindex="-1"></a>    nb.cells.append(mk_cell(<span class="st">"y = 3"</span>, cell_type<span class="op">=</span><span class="st">"code"</span>))</span>
+<span id="cb29-8"><a href="#cb29-8" aria-hidden="true" tabindex="-1"></a>    _write_nb(nb, path)</span>
+<span id="cb29-9"><a href="#cb29-9" aria-hidden="true" tabindex="-1"></a>    out <span class="op">=</span> StringIO()</span>
+<span id="cb29-10"><a href="#cb29-10" aria-hidden="true" tabindex="-1"></a>    <span class="cf">with</span> redirect_stdout(out): diff_nb(<span class="bu">str</span>(path), cell_id<span class="op">=</span>first_id)</span>
+<span id="cb29-11"><a href="#cb29-11" aria-hidden="true" tabindex="-1"></a>    text <span class="op">=</span> out.getvalue()</span>
+<span id="cb29-12"><a href="#cb29-12" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> <span class="st">"x = 2"</span> <span class="kw">in</span> text <span class="kw">and</span> <span class="st">"y = 3"</span> <span class="kw">not</span> <span class="kw">in</span> text</span>
+<span id="cb29-13"><a href="#cb29-13" aria-hidden="true" tabindex="-1"></a>    out <span class="op">=</span> StringIO()</span>
+<span id="cb29-14"><a href="#cb29-14" aria-hidden="true" tabindex="-1"></a>    <span class="cf">with</span> redirect_stdout(out): diff_nb(<span class="bu">str</span>(path), after_id<span class="op">=</span>first_id)</span>
+<span id="cb29-15"><a href="#cb29-15" aria-hidden="true" tabindex="-1"></a>    text <span class="op">=</span> out.getvalue()</span>
+<span id="cb29-16"><a href="#cb29-16" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> <span class="st">"y = 3"</span> <span class="kw">in</span> text <span class="kw">and</span> <span class="st">"x = 2"</span> <span class="kw">not</span> <span class="kw">in</span> text</span>
+<span id="cb29-17"><a href="#cb29-17" aria-hidden="true" tabindex="-1"></a>    delta <span class="op">=</span> style_report(<span class="bu">str</span>(path), changed_only<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb29-18"><a href="#cb29-18" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> delta[<span class="st">"summary"</span>][<span class="st">"changed_only"</span>] <span class="kw">is</span> <span class="va">True</span></span>
+<span id="cb29-19"><a href="#cb29-19" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> delta[<span class="st">"summary"</span>][<span class="st">"changed_cell_count"</span>] <span class="op">==</span> <span class="dv">2</span></span>
+<span id="cb29-20"><a href="#cb29-20" aria-hidden="true" tabindex="-1"></a><span class="cf">finally</span>:</span>
+<span id="cb29-21"><a href="#cb29-21" aria-hidden="true" tabindex="-1"></a>    remove_demo_path(root)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="revstylemk" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;nbskill&quot;,&quot;value&quot;:{&quot;cell_type&quot;:&quot;code&quot;,&quot;semantic_types&quot;:[&quot;code_cell&quot;]}}">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb30"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb30-1"><a href="#cb30-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> _write_style_problem_notebook(path):</span>
+<span id="cb30-2"><a href="#cb30-2" aria-hidden="true" tabindex="-1"></a>    long_source <span class="op">=</span> <span class="st">"</span><span class="ch">\n</span><span class="st">"</span>.join([<span class="ss">f"x</span><span class="sc">{</span>i<span class="sc">}</span><span class="ss"> = </span><span class="sc">{</span>i<span class="sc">}</span><span class="ss">"</span> <span class="cf">for</span> i <span class="kw">in</span> <span class="bu">range</span>(<span class="dv">31</span>)])</span>
+<span id="cb30-3"><a href="#cb30-3" aria-hidden="true" tabindex="-1"></a>    long_markdown <span class="op">=</span> <span class="st">"</span><span class="ch">\n</span><span class="st">"</span>.join([<span class="ss">f"paragraph </span><span class="sc">{</span>i<span class="sc">}</span><span class="ss">"</span> <span class="cf">for</span> i <span class="kw">in</span> <span class="bu">range</span>(<span class="dv">21</span>)])</span>
+<span id="cb30-4"><a href="#cb30-4" aria-hidden="true" tabindex="-1"></a>    mixed_import <span class="op">=</span> mk_cell(<span class="st">"import json"</span>, cell_type<span class="op">=</span><span class="st">"code"</span>)</span>
+<span id="cb30-5"><a href="#cb30-5" aria-hidden="true" tabindex="-1"></a>    mixed_import.outputs <span class="op">=</span> [<span class="bu">dict</span>(output_type<span class="op">=</span><span class="st">"stream"</span>, name<span class="op">=</span><span class="st">"stdout"</span>, text<span class="op">=</span><span class="st">"json</span><span class="ch">\n</span><span class="st">"</span>)]</span>
+<span id="cb30-6"><a href="#cb30-6" aria-hidden="true" tabindex="-1"></a>    _write_review_notebook(path, [</span>
+<span id="cb30-7"><a href="#cb30-7" aria-hidden="true" tabindex="-1"></a>        mk_cell(</span>
+<span id="cb30-8"><a href="#cb30-8" aria-hidden="true" tabindex="-1"></a>            <span class="st">"#| export</span><span class="ch">\n</span><span class="st">"</span></span>
+<span id="cb30-9"><a href="#cb30-9" aria-hidden="true" tabindex="-1"></a>            <span class="st">"def a():</span><span class="ch">\n</span><span class="st">"</span></span>
+<span id="cb30-10"><a href="#cb30-10" aria-hidden="true" tabindex="-1"></a>            <span class="st">"    pass</span><span class="ch">\n</span><span class="st">"</span></span>
+<span id="cb30-11"><a href="#cb30-11" aria-hidden="true" tabindex="-1"></a>            <span class="st">"def b():</span><span class="ch">\n</span><span class="st">"</span></span>
+<span id="cb30-12"><a href="#cb30-12" aria-hidden="true" tabindex="-1"></a>            <span class="st">"    </span><span class="ch">\"\"\"</span><span class="st">Describe b.</span><span class="ch">\"\"\"\n</span><span class="st">"</span></span>
+<span id="cb30-13"><a href="#cb30-13" aria-hidden="true" tabindex="-1"></a>            <span class="st">"    pass</span><span class="ch">\n</span><span class="st">"</span></span>
+<span id="cb30-14"><a href="#cb30-14" aria-hidden="true" tabindex="-1"></a>            <span class="st">"def c():</span><span class="ch">\n</span><span class="st">"</span></span>
+<span id="cb30-15"><a href="#cb30-15" aria-hidden="true" tabindex="-1"></a>            <span class="st">"    </span><span class="ch">\"\"\"</span><span class="st">Line one.</span><span class="ch">\n</span><span class="st">"</span></span>
+<span id="cb30-16"><a href="#cb30-16" aria-hidden="true" tabindex="-1"></a>            <span class="st">"    Line two.</span><span class="ch">\"\"\"\n</span><span class="st">"</span></span>
+<span id="cb30-17"><a href="#cb30-17" aria-hidden="true" tabindex="-1"></a>            <span class="st">"    pass</span><span class="ch">\n</span><span class="st">"</span></span>
+<span id="cb30-18"><a href="#cb30-18" aria-hidden="true" tabindex="-1"></a>            <span class="st">"def _private():</span><span class="ch">\n</span><span class="st">"</span></span>
+<span id="cb30-19"><a href="#cb30-19" aria-hidden="true" tabindex="-1"></a>            <span class="st">"    pass"</span>,</span>
+<span id="cb30-20"><a href="#cb30-20" aria-hidden="true" tabindex="-1"></a>            cell_type<span class="op">=</span><span class="st">"code"</span>,</span>
+<span id="cb30-21"><a href="#cb30-21" aria-hidden="true" tabindex="-1"></a>        ),</span>
+<span id="cb30-22"><a href="#cb30-22" aria-hidden="true" tabindex="-1"></a>        mk_cell(long_source, cell_type<span class="op">=</span><span class="st">"code"</span>),</span>
+<span id="cb30-23"><a href="#cb30-23" aria-hidden="true" tabindex="-1"></a>        mk_cell(long_markdown, cell_type<span class="op">=</span><span class="st">"markdown"</span>),</span>
+<span id="cb30-24"><a href="#cb30-24" aria-hidden="true" tabindex="-1"></a>        mk_cell(<span class="st">"assert 1 == 1</span><span class="ch">\n</span><span class="st">assert 2 == 2</span><span class="ch">\n</span><span class="st">assert 3 == 3</span><span class="ch">\n</span><span class="st">assert 4 == 4"</span>, cell_type<span class="op">=</span><span class="st">"code"</span>),</span>
+<span id="cb30-25"><a href="#cb30-25" aria-hidden="true" tabindex="-1"></a>        mk_cell(<span class="st">"#| export</span><span class="ch">\n</span><span class="st">import os"</span>, cell_type<span class="op">=</span><span class="st">"code"</span>),</span>
+<span id="cb30-26"><a href="#cb30-26" aria-hidden="true" tabindex="-1"></a>        mk_cell(<span class="st">"#| export</span><span class="ch">\n</span><span class="st">import os"</span>, cell_type<span class="op">=</span><span class="st">"code"</span>),</span>
+<span id="cb30-27"><a href="#cb30-27" aria-hidden="true" tabindex="-1"></a>        mixed_import,</span>
+<span id="cb30-28"><a href="#cb30-28" aria-hidden="true" tabindex="-1"></a>        mk_cell(<span class="st">"import sys"</span>, cell_type<span class="op">=</span><span class="st">"code"</span>),</span>
+<span id="cb30-29"><a href="#cb30-29" aria-hidden="true" tabindex="-1"></a>        mk_cell(<span class="st">"import sys"</span>, cell_type<span class="op">=</span><span class="st">"code"</span>),</span>
+<span id="cb30-30"><a href="#cb30-30" aria-hidden="true" tabindex="-1"></a>        mk_cell(<span class="st">"result = later_helper()"</span>, cell_type<span class="op">=</span><span class="st">"code"</span>),</span>
+<span id="cb30-31"><a href="#cb30-31" aria-hidden="true" tabindex="-1"></a>        mk_cell(<span class="st">"def later_helper():</span><span class="ch">\n</span><span class="st">    return 1"</span>, cell_type<span class="op">=</span><span class="st">"code"</span>),</span>
+<span id="cb30-32"><a href="#cb30-32" aria-hidden="true" tabindex="-1"></a>        mk_cell(<span class="st">"def loader():</span><span class="ch">\n</span><span class="st">    return MissingPath('x')"</span>, cell_type<span class="op">=</span><span class="st">"code"</span>),</span>
+<span id="cb30-33"><a href="#cb30-33" aria-hidden="true" tabindex="-1"></a>    ])</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p><code>_write_literacy_problem_notebook</code> builds a compact demo notebook for the literate review contract. The fixture keeps compliant, missing-docs, missing-example, missing-test, and multiline-docstring cases in one place so each warning code has a precise example.</p>
+<div id="677d17f3" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;nbskill&quot;,&quot;value&quot;:{&quot;cell_type&quot;:&quot;code&quot;,&quot;semantic_types&quot;:[&quot;code_cell&quot;]}}">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb31"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb31-1"><a href="#cb31-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> _write_literacy_problem_notebook(path):</span>
+<span id="cb31-2"><a href="#cb31-2" aria-hidden="true" tabindex="-1"></a>    _write_review_notebook(path, [</span>
+<span id="cb31-3"><a href="#cb31-3" aria-hidden="true" tabindex="-1"></a>        mk_cell(<span class="st">"`ready` has docs, a docstring, an example, and a test."</span>, cell_type<span class="op">=</span><span class="st">"markdown"</span>),</span>
+<span id="cb31-4"><a href="#cb31-4" aria-hidden="true" tabindex="-1"></a>        mk_cell(<span class="st">"#| export</span><span class="ch">\n</span><span class="st">def ready(x):</span><span class="ch">\n</span><span class="st">    </span><span class="ch">\"</span><span class="st">Return x plus one.</span><span class="ch">\"\n</span><span class="st">    return x + 1"</span>, cell_type<span class="op">=</span><span class="st">"code"</span>),</span>
+<span id="cb31-5"><a href="#cb31-5" aria-hidden="true" tabindex="-1"></a>        mk_cell(<span class="st">"`no_example` has docs and a test but no example call."</span>, cell_type<span class="op">=</span><span class="st">"markdown"</span>),</span>
+<span id="cb31-6"><a href="#cb31-6" aria-hidden="true" tabindex="-1"></a>        mk_cell(<span class="st">"#| export</span><span class="ch">\n</span><span class="st">def no_example(x):</span><span class="ch">\n</span><span class="st">    </span><span class="ch">\"</span><span class="st">Return x plus one.</span><span class="ch">\"\n</span><span class="st">    return x + 1"</span>, cell_type<span class="op">=</span><span class="st">"code"</span>),</span>
+<span id="cb31-7"><a href="#cb31-7" aria-hidden="true" tabindex="-1"></a>        mk_cell(<span class="st">"`no_test` has docs and an example but no test assertion."</span>, cell_type<span class="op">=</span><span class="st">"markdown"</span>),</span>
+<span id="cb31-8"><a href="#cb31-8" aria-hidden="true" tabindex="-1"></a>        mk_cell(<span class="st">"#| export</span><span class="ch">\n</span><span class="st">def no_test(x):</span><span class="ch">\n</span><span class="st">    </span><span class="ch">\"</span><span class="st">Return x plus one.</span><span class="ch">\"\n</span><span class="st">    return x + 1"</span>, cell_type<span class="op">=</span><span class="st">"code"</span>),</span>
+<span id="cb31-9"><a href="#cb31-9" aria-hidden="true" tabindex="-1"></a>        mk_cell(<span class="st">"`bad_doc` has a Markdown note but its docstring is too long."</span>, cell_type<span class="op">=</span><span class="st">"markdown"</span>),</span>
+<span id="cb31-10"><a href="#cb31-10" aria-hidden="true" tabindex="-1"></a>        mk_cell(<span class="st">"#| export</span><span class="ch">\n</span><span class="st">def bad_doc(x):</span><span class="ch">\n</span><span class="st">    </span><span class="ch">\"\"\"</span><span class="st">Return x plus one.</span><span class="ch">\n</span><span class="st">    Keep this second line out of file_context.</span><span class="ch">\"\"\"\n</span><span class="st">    return x + 1"</span>, cell_type<span class="op">=</span><span class="st">"code"</span>),</span>
+<span id="cb31-11"><a href="#cb31-11" aria-hidden="true" tabindex="-1"></a>        mk_cell(<span class="st">"`eq_checked`, `ne_checked`, and `fail_checked` cover fastcore test helpers."</span>, cell_type<span class="op">=</span><span class="st">"markdown"</span>),</span>
+<span id="cb31-12"><a href="#cb31-12" aria-hidden="true" tabindex="-1"></a>        mk_cell(<span class="st">"#| export</span><span class="ch">\n</span><span class="st">def eq_checked(x):</span><span class="ch">\n</span><span class="st">    </span><span class="ch">\"</span><span class="st">Return x plus one.</span><span class="ch">\"\n</span><span class="st">    return x + 1"</span>, cell_type<span class="op">=</span><span class="st">"code"</span>),</span>
+<span id="cb31-13"><a href="#cb31-13" aria-hidden="true" tabindex="-1"></a>        mk_cell(<span class="st">"#| export</span><span class="ch">\n</span><span class="st">def ne_checked(x):</span><span class="ch">\n</span><span class="st">    </span><span class="ch">\"</span><span class="st">Return x plus one.</span><span class="ch">\"\n</span><span class="st">    return x + 1"</span>, cell_type<span class="op">=</span><span class="st">"code"</span>),</span>
+<span id="cb31-14"><a href="#cb31-14" aria-hidden="true" tabindex="-1"></a>        mk_cell(<span class="st">"#| export</span><span class="ch">\n</span><span class="st">def fail_checked():</span><span class="ch">\n</span><span class="st">    </span><span class="ch">\"</span><span class="st">Raise a demo failure.</span><span class="ch">\"\n</span><span class="st">    raise ValueError(</span><span class="ch">\"</span><span class="st">boom</span><span class="ch">\"</span><span class="st">)"</span>, cell_type<span class="op">=</span><span class="st">"code"</span>),</span>
+<span id="cb31-15"><a href="#cb31-15" aria-hidden="true" tabindex="-1"></a>        mk_cell(<span class="st">"#| export</span><span class="ch">\n</span><span class="st">def no_docs(x):</span><span class="ch">\n</span><span class="st">    </span><span class="ch">\"</span><span class="st">Return x plus one.</span><span class="ch">\"\n</span><span class="st">    return x + 1"</span>, cell_type<span class="op">=</span><span class="st">"code"</span>),</span>
+<span id="cb31-16"><a href="#cb31-16" aria-hidden="true" tabindex="-1"></a>        mk_cell(<span class="st">"#| export</span><span class="ch">\n</span><span class="st">def _hidden(x):</span><span class="ch">\n</span><span class="st">    return x</span><span class="ch">\n\n</span><span class="st">def test_helper(x):</span><span class="ch">\n</span><span class="st">    return x"</span>, cell_type<span class="op">=</span><span class="st">"code"</span>),</span>
+<span id="cb31-17"><a href="#cb31-17" aria-hidden="true" tabindex="-1"></a>        mk_cell(<span class="st">"ready(1)</span><span class="ch">\n</span><span class="st">no_docs(1)</span><span class="ch">\n</span><span class="st">no_test(1)</span><span class="ch">\n</span><span class="st">bad_doc(1)</span><span class="ch">\n</span><span class="st">eq_checked(1)</span><span class="ch">\n</span><span class="st">ne_checked(1)</span><span class="ch">\n</span><span class="st">try:</span><span class="ch">\n</span><span class="st">    fail_checked()</span><span class="ch">\n</span><span class="st">except ValueError:</span><span class="ch">\n</span><span class="st">    pass"</span>, cell_type<span class="op">=</span><span class="st">"code"</span>),</span>
+<span id="cb31-18"><a href="#cb31-18" aria-hidden="true" tabindex="-1"></a>        mk_cell(<span class="st">"assert ready(1) == 2</span><span class="ch">\n</span><span class="st">assert no_docs(1) == 2</span><span class="ch">\n</span><span class="st">assert no_example(1) == 2</span><span class="ch">\n</span><span class="st">assert bad_doc(1) == 2</span><span class="ch">\n</span><span class="st">test_eq(eq_checked(1), 2)</span><span class="ch">\n</span><span class="st">test_ne(ne_checked(1), 3)</span><span class="ch">\n</span><span class="st">test_fail(lambda: fail_checked())</span><span class="ch">\n</span><span class="st">assert _hidden(1) == 1</span><span class="ch">\n</span><span class="st">assert test_helper(1) == 1"</span>, cell_type<span class="op">=</span><span class="st">"code"</span>),</span>
+<span id="cb31-19"><a href="#cb31-19" aria-hidden="true" tabindex="-1"></a>    ])</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="5aceb0c3" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;nbskill&quot;,&quot;value&quot;:{&quot;cell_type&quot;:&quot;code&quot;,&quot;semantic_types&quot;:[&quot;test_code&quot;]}}">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb32"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb32-1"><a href="#cb32-1" aria-hidden="true" tabindex="-1"></a><span class="cf">with</span> write_demo_notebook(<span class="st">"04_review_literacy.ipynb"</span>) <span class="im">as</span> path:</span>
+<span id="cb32-2"><a href="#cb32-2" aria-hidden="true" tabindex="-1"></a>    _write_literacy_problem_notebook(path)</span>
+<span id="cb32-3"><a href="#cb32-3" aria-hidden="true" tabindex="-1"></a>    problems <span class="op">=</span> public_function_literacy_problems(path)</span>
+<span id="cb32-4"><a href="#cb32-4" aria-hidden="true" tabindex="-1"></a>    codes <span class="op">=</span> {(problem.get(<span class="st">"symbol"</span>), problem[<span class="st">"code"</span>]) <span class="cf">for</span> problem <span class="kw">in</span> problems}</span>
+<span id="cb32-5"><a href="#cb32-5" aria-hidden="true" tabindex="-1"></a>    missing_codes <span class="op">=</span> {(<span class="st">"no_docs"</span>, <span class="st">"public-function-markdown"</span>), (<span class="st">"no_example"</span>, <span class="st">"public-function-example"</span>), (<span class="st">"no_test"</span>, <span class="st">"public-function-test"</span>)}</span>
+<span id="cb32-6"><a href="#cb32-6" aria-hidden="true" tabindex="-1"></a>    ready_codes <span class="op">=</span> {code <span class="cf">for</span> symbol, code <span class="kw">in</span> codes <span class="cf">if</span> symbol <span class="op">==</span> <span class="st">"ready"</span>}</span>
+<span id="cb32-7"><a href="#cb32-7" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> missing_codes <span class="op">&lt;=</span> codes</span>
+<span id="cb32-8"><a href="#cb32-8" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> <span class="kw">not</span> ready_codes</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="4ea194d8" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;nbskill&quot;,&quot;value&quot;:{&quot;cell_type&quot;:&quot;code&quot;,&quot;executed_hash&quot;:&quot;7b29eb638f5cac7924b69d0ef44bca2038c67c6c076e0e1ac654ae1c1f4f3100&quot;,&quot;semantic_types&quot;:[&quot;test_code&quot;]}}">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb33"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb33-1"><a href="#cb33-1" aria-hidden="true" tabindex="-1"></a><span class="cf">with</span> write_demo_notebook(<span class="st">"04_review_literacy_docstrings.ipynb"</span>) <span class="im">as</span> path:</span>
+<span id="cb33-2"><a href="#cb33-2" aria-hidden="true" tabindex="-1"></a>    _write_literacy_problem_notebook(path)</span>
+<span id="cb33-3"><a href="#cb33-3" aria-hidden="true" tabindex="-1"></a>    problems <span class="op">=</span> public_function_literacy_problems(path)</span>
+<span id="cb33-4"><a href="#cb33-4" aria-hidden="true" tabindex="-1"></a>    codes <span class="op">=</span> {(problem.get(<span class="st">"symbol"</span>), problem[<span class="st">"code"</span>]) <span class="cf">for</span> problem <span class="kw">in</span> problems}</span>
+<span id="cb33-5"><a href="#cb33-5" aria-hidden="true" tabindex="-1"></a>    tested_codes <span class="op">=</span> {</span>
+<span id="cb33-6"><a href="#cb33-6" aria-hidden="true" tabindex="-1"></a>        (<span class="st">"eq_checked"</span>, <span class="st">"public-function-test"</span>),</span>
+<span id="cb33-7"><a href="#cb33-7" aria-hidden="true" tabindex="-1"></a>        (<span class="st">"ne_checked"</span>, <span class="st">"public-function-test"</span>),</span>
+<span id="cb33-8"><a href="#cb33-8" aria-hidden="true" tabindex="-1"></a>        (<span class="st">"fail_checked"</span>, <span class="st">"public-function-test"</span>),</span>
+<span id="cb33-9"><a href="#cb33-9" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb33-10"><a href="#cb33-10" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> (<span class="st">"bad_doc"</span>, <span class="st">"public-function-docstring"</span>) <span class="kw">in</span> codes</span>
+<span id="cb33-11"><a href="#cb33-11" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> <span class="kw">not</span> tested_codes <span class="op">&amp;</span> codes</span>
+<span id="cb33-12"><a href="#cb33-12" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> <span class="kw">not</span> <span class="bu">any</span>(problem.get(<span class="st">"symbol"</span>) <span class="kw">in</span> {<span class="st">"_hidden"</span>, <span class="st">"test_helper"</span>} <span class="cf">for</span> problem <span class="kw">in</span> problems)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="b8023020" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;nbskill&quot;,&quot;value&quot;:{&quot;cell_type&quot;:&quot;code&quot;,&quot;semantic_types&quot;:[&quot;example_code&quot;]}}">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb34"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb34-1"><a href="#cb34-1" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(report)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Notebook style report:
+- missing-cell-nbskill-metadata: nbs/data/04_review_style.ipynb id=18cf6a7f
+- missing-cell-nbskill-metadata: nbs/data/04_review_style.ipynb id=3e6417a6
+- missing-cell-nbskill-metadata: nbs/data/04_review_style.ipynb id=9d964403
+- missing-cell-nbskill-metadata: nbs/data/04_review_style.ipynb id=56e0e6c4
+- missing-cell-nbskill-metadata: nbs/data/04_review_style.ipynb id=4debe573
+- missing-cell-nbskill-metadata: nbs/data/04_review_style.ipynb id=742a5cf5
+- missing-cell-nbskill-metadata: nbs/data/04_review_style.ipynb id=f41bdaef
+- missing-cell-nbskill-metadata: nbs/data/04_review_style.ipynb id=3b1110e1
+- missing-cell-nbskill-metadata: nbs/data/04_review_style.ipynb id=23f2d90a
+- missing-cell-nbskill-metadata: nbs/data/04_review_style.ipynb id=4268cb78
+- missing-cell-nbskill-metadata: nbs/data/04_review_style.ipynb id=762d5962
+- missing-cell-nbskill-metadata: nbs/data/04_review_style.ipynb id=711b360d
+- large-cell: nbs/data/04_review_style.ipynb id=18cf6a7f function_count=4 4 top-level functions; split into one-idea cells
+- large-cell: nbs/data/04_review_style.ipynb id=3e6417a6 line_count=31 31 code content lines; keep one idea per cell
+- large-cell: nbs/data/04_review_style.ipynb id=9d964403 line_count=21 21 markdown content lines; keep one idea per cell
+- public-function-docstring: nbs/data/04_review_style.ipynb id=18cf6a7f line=1 symbol='a' missing='one-line docstring' docstring_lines=0 public function 'a' needs a one-line docstring for context summaries
+- public-function-markdown: nbs/data/04_review_style.ipynb id=18cf6a7f line=1 symbol='a' missing='Markdown docs cell mentioning the function' public function 'a' needs Markdown docs cell mentioning the function
+- public-function-example: nbs/data/04_review_style.ipynb id=18cf6a7f line=1 symbol='a' missing='example cell that calls the function' public function 'a' needs example cell that calls the function
+- public-function-test: nbs/data/04_review_style.ipynb id=18cf6a7f line=1 symbol='a' missing='test cell that asserts or checks the function' public function 'a' needs test cell that asserts or checks the function
+- public-function-markdown: nbs/data/04_review_style.ipynb id=18cf6a7f line=3 symbol='b' missing='Markdown docs cell mentioning the function' public function 'b' needs Markdown docs cell mentioning the function
+- public-function-example: nbs/data/04_review_style.ipynb id=18cf6a7f line=3 symbol='b' missing='example cell that calls the function' public function 'b' needs example cell that calls the function
+- public-function-test: nbs/data/04_review_style.ipynb id=18cf6a7f line=3 symbol='b' missing='test cell that asserts or checks the function' public function 'b' needs test cell that asserts or checks the function
+- public-function-docstring: nbs/data/04_review_style.ipynb id=18cf6a7f line=6 symbol='c' missing='one-line docstring' docstring_lines=2 public function 'c' has 2 docstring lines; keep it to one line for context summaries
+- public-function-markdown: nbs/data/04_review_style.ipynb id=18cf6a7f line=6 symbol='c' missing='Markdown docs cell mentioning the function' public function 'c' needs Markdown docs cell mentioning the function
+- public-function-example: nbs/data/04_review_style.ipynb id=18cf6a7f line=6 symbol='c' missing='example cell that calls the function' public function 'c' needs example cell that calls the function
+- public-function-test: nbs/data/04_review_style.ipynb id=18cf6a7f line=6 symbol='c' missing='test cell that asserts or checks the function' public function 'c' needs test cell that asserts or checks the function
+- multi-problem-test: nbs/data/04_review_style.ipynb id=56e0e6c4 4 asserts/test functions; split into one-problem-at-a-time cells
+- unclean-cell: nbs/data/04_review_style.ipynb id=f41bdaef semantic_types=test_cell, private_code
+- duplicate-import: nbs/data/04_review_style.ipynb scope=exported import_key='import os as os' cells=4debe573, 742a5cf5
+- duplicate-import: nbs/data/04_review_style.ipynb scope=internal import_key='import sys as sys' cells=3b1110e1, 23f2d90a
+- cell-order: nbs/data/04_review_style.ipynb id=4268cb78 line=1 symbol='later_helper' confidence=high called before definition/import in later cell id=762d5962
+- missing-import: nbs/data/04_review_style.ipynb id=711b360d line=2 symbol='MissingPath' confidence=medium called without an earlier definition/import</code></pre>
+</div>
+</div>
+<div id="revgenwarn" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;nbskill&quot;,&quot;value&quot;:{&quot;cell_type&quot;:&quot;code&quot;,&quot;semantic_types&quot;:[&quot;test_code&quot;]}}">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb36"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb36-1"><a href="#cb36-1" aria-hidden="true" tabindex="-1"></a><span class="cf">with</span> write_demo_notebook(<span class="st">"04_review_generated.ipynb"</span>) <span class="im">as</span> generated_path:</span>
+<span id="cb36-2"><a href="#cb36-2" aria-hidden="true" tabindex="-1"></a>    generated_nb <span class="op">=</span> _write_review_notebook(generated_path, [mk_cell(<span class="st">"#| default_exp big_review_demo"</span>)])</span>
+<span id="cb36-3"><a href="#cb36-3" aria-hidden="true" tabindex="-1"></a>    generated_py_path <span class="op">=</span> exported_py_path(generated_path, generated_nb)</span>
+<span id="cb36-4"><a href="#cb36-4" aria-hidden="true" tabindex="-1"></a>    <span class="cf">try</span>:</span>
+<span id="cb36-5"><a href="#cb36-5" aria-hidden="true" tabindex="-1"></a>        generated_py_path.parent.mkdir(parents<span class="op">=</span><span class="va">True</span>, exist_ok<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb36-6"><a href="#cb36-6" aria-hidden="true" tabindex="-1"></a>        generated_py_path.write_text(<span class="st">"</span><span class="ch">\n</span><span class="st">"</span>.join(<span class="ss">f"x</span><span class="sc">{</span>i<span class="sc">}</span><span class="ss"> = </span><span class="sc">{</span>i<span class="sc">}</span><span class="ss">"</span> <span class="cf">for</span> i <span class="kw">in</span> <span class="bu">range</span>(<span class="dv">1001</span>)), encoding<span class="op">=</span><span class="st">"utf-8"</span>)</span>
+<span id="cb36-7"><a href="#cb36-7" aria-hidden="true" tabindex="-1"></a>        size_codes <span class="op">=</span> {problem[<span class="st">"code"</span>] <span class="cf">for</span> problem <span class="kw">in</span> notebook_size_problems(generated_path)}</span>
+<span id="cb36-8"><a href="#cb36-8" aria-hidden="true" tabindex="-1"></a>        <span class="cf">assert</span> <span class="st">"large-generated-py"</span> <span class="kw">in</span> size_codes</span>
+<span id="cb36-9"><a href="#cb36-9" aria-hidden="true" tabindex="-1"></a>    <span class="cf">finally</span>:</span>
+<span id="cb36-10"><a href="#cb36-10" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> generated_py_path <span class="kw">is</span> <span class="kw">not</span> <span class="va">None</span>: remove_demo_path(generated_py_path)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="revusage" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;nbskill&quot;,&quot;value&quot;:{&quot;cell_type&quot;:&quot;code&quot;,&quot;semantic_types&quot;:[&quot;test_code&quot;]}}">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb37"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb37-1"><a href="#cb37-1" aria-hidden="true" tabindex="-1"></a><span class="cf">with</span> write_demo_notebook(<span class="st">"04_review_style.ipynb"</span>) <span class="im">as</span> path:</span>
+<span id="cb37-2"><a href="#cb37-2" aria-hidden="true" tabindex="-1"></a>    _write_style_problem_notebook(path)</span>
+<span id="cb37-3"><a href="#cb37-3" aria-hidden="true" tabindex="-1"></a>    custom_map <span class="op">=</span> demo_path(<span class="st">"04_review_errors.json"</span>)</span>
+<span id="cb37-4"><a href="#cb37-4" aria-hidden="true" tabindex="-1"></a>    old_map <span class="op">=</span> os.environ.get(<span class="st">"NBSKILL_FAILURE_MAP"</span>)</span>
+<span id="cb37-5"><a href="#cb37-5" aria-hidden="true" tabindex="-1"></a>    <span class="cf">try</span>:</span>
+<span id="cb37-6"><a href="#cb37-6" aria-hidden="true" tabindex="-1"></a>        os.environ[<span class="st">"NBSKILL_FAILURE_MAP"</span>] <span class="op">=</span> <span class="bu">str</span>(custom_map)</span>
+<span id="cb37-7"><a href="#cb37-7" aria-hidden="true" tabindex="-1"></a>        <span class="cf">with</span> redirect_stdout(StringIO()):</span>
+<span id="cb37-8"><a href="#cb37-8" aria-hidden="true" tabindex="-1"></a>            style_check(<span class="bu">str</span>(path), delete_after_output<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb37-9"><a href="#cb37-9" aria-hidden="true" tabindex="-1"></a>        <span class="cf">assert</span> <span class="st">"usage:"</span> <span class="kw">in</span> _format_global_usage_summary()</span>
+<span id="cb37-10"><a href="#cb37-10" aria-hidden="true" tabindex="-1"></a>        <span class="cf">assert</span> <span class="kw">not</span> custom_map.exists()</span>
+<span id="cb37-11"><a href="#cb37-11" aria-hidden="true" tabindex="-1"></a>    <span class="cf">finally</span>:</span>
+<span id="cb37-12"><a href="#cb37-12" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> old_map <span class="kw">is</span> <span class="va">None</span>: os.environ.pop(<span class="st">"NBSKILL_FAILURE_MAP"</span>, <span class="va">None</span>)</span>
+<span id="cb37-13"><a href="#cb37-13" aria-hidden="true" tabindex="-1"></a>        <span class="cf">else</span>: os.environ[<span class="st">"NBSKILL_FAILURE_MAP"</span>] <span class="op">=</span> old_map</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="revstrict" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;nbskill&quot;,&quot;value&quot;:{&quot;cell_type&quot;:&quot;code&quot;,&quot;semantic_types&quot;:[&quot;code_cell&quot;]}}">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb38"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb38-1"><a href="#cb38-1" aria-hidden="true" tabindex="-1"></a><span class="cf">with</span> write_demo_notebook(<span class="st">"04_review_style.ipynb"</span>) <span class="im">as</span> path:</span>
+<span id="cb38-2"><a href="#cb38-2" aria-hidden="true" tabindex="-1"></a>    _write_style_problem_notebook(path)</span>
+<span id="cb38-3"><a href="#cb38-3" aria-hidden="true" tabindex="-1"></a>    <span class="cf">try</span>:</span>
+<span id="cb38-4"><a href="#cb38-4" aria-hidden="true" tabindex="-1"></a>        <span class="cf">with</span> redirect_stdout(StringIO()): style_check(<span class="bu">str</span>(path), strict<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb38-5"><a href="#cb38-5" aria-hidden="true" tabindex="-1"></a>    <span class="cf">except</span> <span class="pp">RuntimeError</span>:</span>
+<span id="cb38-6"><a href="#cb38-6" aria-hidden="true" tabindex="-1"></a>        <span class="cf">pass</span></span>
+<span id="cb38-7"><a href="#cb38-7" aria-hidden="true" tabindex="-1"></a>    <span class="cf">else</span>:</span>
+<span id="cb38-8"><a href="#cb38-8" aria-hidden="true" tabindex="-1"></a>        <span class="cf">raise</span> <span class="pp">AssertionError</span>(<span class="st">"strict style_check should raise for notebook hygiene problems"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="222d81e3" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;nbskill&quot;,&quot;value&quot;:{&quot;cell_type&quot;:&quot;code&quot;,&quot;executed_hash&quot;:&quot;ef6630e837e9bc007640684c97feb68c4706e0665269c2b76adc2c9cf697d88c&quot;,&quot;semantic_types&quot;:[&quot;test_code&quot;]}}">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb39"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb39-1"><a href="#cb39-1" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> code_source(mk_cell(<span class="st">"plain docs"</span>, cell_type<span class="op">=</span><span class="st">"markdown"</span>)) <span class="kw">is</span> <span class="va">None</span></span>
+<span id="cb39-2"><a href="#cb39-2" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> code_source(mk_cell(<span class="st">"answer = 42"</span>, cell_type<span class="op">=</span><span class="st">"code"</span>)) <span class="op">==</span> <span class="st">"answer = 42"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p><a href="https://MorsCerta-crypto.github.io/nbskill/review.html#diff_nb"><code>diff_nb</code></a> deliberately compares code-cell source only. Markdown edits and notebook metadata churn stay out of the main diff so reviewers can see the executable behavior that changed.</p>
+<div id="19bf1c4e" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;nbskill&quot;,&quot;value&quot;:{&quot;cell_type&quot;:&quot;code&quot;,&quot;executed_hash&quot;:&quot;82e3c3ddb91121f199dbf29ce98022f70aa067bd60fb37c42066ed785ec5d3d7&quot;,&quot;semantic_types&quot;:[&quot;code_cell&quot;]}}">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb40"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb40-1"><a href="#cb40-1" aria-hidden="true" tabindex="-1"></a>diff_root <span class="op">=</span> demo_path(<span class="st">"04_review_diff_example"</span>)</span>
+<span id="cb40-2"><a href="#cb40-2" aria-hidden="true" tabindex="-1"></a>remove_demo_path(diff_root)</span>
+<span id="cb40-3"><a href="#cb40-3" aria-hidden="true" tabindex="-1"></a><span class="cf">try</span>:</span>
+<span id="cb40-4"><a href="#cb40-4" aria-hidden="true" tabindex="-1"></a>    diff_root.mkdir()</span>
+<span id="cb40-5"><a href="#cb40-5" aria-hidden="true" tabindex="-1"></a>    diff_path <span class="op">=</span> diff_root <span class="op">/</span> <span class="st">"demo.ipynb"</span></span>
+<span id="cb40-6"><a href="#cb40-6" aria-hidden="true" tabindex="-1"></a>    _write_nb(new_nb([</span>
+<span id="cb40-7"><a href="#cb40-7" aria-hidden="true" tabindex="-1"></a>        mk_cell(<span class="st">"value = 1</span><span class="ch">\n</span><span class="st">value"</span>, cell_type<span class="op">=</span><span class="st">"code"</span>),</span>
+<span id="cb40-8"><a href="#cb40-8" aria-hidden="true" tabindex="-1"></a>        mk_cell(<span class="st">"Original note"</span>, cell_type<span class="op">=</span><span class="st">"markdown"</span>),</span>
+<span id="cb40-9"><a href="#cb40-9" aria-hidden="true" tabindex="-1"></a>    ]), diff_path)</span>
+<span id="cb40-10"><a href="#cb40-10" aria-hidden="true" tabindex="-1"></a>    subprocess.run([<span class="st">"git"</span>, <span class="st">"init"</span>], cwd<span class="op">=</span>diff_root, check<span class="op">=</span><span class="va">True</span>, capture_output<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb40-11"><a href="#cb40-11" aria-hidden="true" tabindex="-1"></a>    subprocess.run([<span class="st">"git"</span>, <span class="st">"add"</span>, <span class="st">"demo.ipynb"</span>], cwd<span class="op">=</span>diff_root, check<span class="op">=</span><span class="va">True</span>, capture_output<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb40-12"><a href="#cb40-12" aria-hidden="true" tabindex="-1"></a>    subprocess.run([</span>
+<span id="cb40-13"><a href="#cb40-13" aria-hidden="true" tabindex="-1"></a>        <span class="st">"git"</span>, <span class="st">"-c"</span>, <span class="st">"user.name=Nbskill"</span>, <span class="st">"-c"</span>, <span class="st">"user.email=nbskill@example.com"</span>,</span>
+<span id="cb40-14"><a href="#cb40-14" aria-hidden="true" tabindex="-1"></a>        <span class="st">"commit"</span>, <span class="st">"-m"</span>, <span class="st">"base"</span>,</span>
+<span id="cb40-15"><a href="#cb40-15" aria-hidden="true" tabindex="-1"></a>    ], cwd<span class="op">=</span>diff_root, check<span class="op">=</span><span class="va">True</span>, capture_output<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb40-16"><a href="#cb40-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb40-17"><a href="#cb40-17" aria-hidden="true" tabindex="-1"></a>    diff_nb_json <span class="op">=</span> read_nb(diff_path)</span>
+<span id="cb40-18"><a href="#cb40-18" aria-hidden="true" tabindex="-1"></a>    diff_nb_json.cells[<span class="dv">0</span>].source <span class="op">=</span> <span class="st">"value = 2</span><span class="ch">\n</span><span class="st">value"</span></span>
+<span id="cb40-19"><a href="#cb40-19" aria-hidden="true" tabindex="-1"></a>    diff_nb_json.cells[<span class="dv">1</span>].source <span class="op">=</span> <span class="st">"Updated note that will not appear in the code diff"</span></span>
+<span id="cb40-20"><a href="#cb40-20" aria-hidden="true" tabindex="-1"></a>    _write_nb(diff_nb_json, diff_path)</span>
+<span id="cb40-21"><a href="#cb40-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb40-22"><a href="#cb40-22" aria-hidden="true" tabindex="-1"></a>    diff_output <span class="op">=</span> StringIO()</span>
+<span id="cb40-23"><a href="#cb40-23" aria-hidden="true" tabindex="-1"></a>    <span class="cf">with</span> redirect_stdout(diff_output):</span>
+<span id="cb40-24"><a href="#cb40-24" aria-hidden="true" tabindex="-1"></a>        diff_nb(<span class="bu">str</span>(diff_path), ref_a<span class="op">=</span><span class="st">"HEAD"</span>)</span>
+<span id="cb40-25"><a href="#cb40-25" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(diff_output.getvalue())</span>
+<span id="cb40-26"><a href="#cb40-26" aria-hidden="true" tabindex="-1"></a><span class="cf">finally</span>:</span>
+<span id="cb40-27"><a href="#cb40-27" aria-hidden="true" tabindex="-1"></a>    remove_demo_path(diff_root)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>Here is the intended workflow on a tiny FastHTML-shaped notebook: first inventory likely visible text, then review just the public UI surface. The output is compact enough for an agent to paste into a status update or use as a pre-edit checklist.</p>
+<div id="4f1c5c46" class="cell" data-quarto-private-1="{&quot;key&quot;:&quot;nbskill&quot;,&quot;value&quot;:{&quot;cell_type&quot;:&quot;code&quot;,&quot;semantic_types&quot;:[&quot;code_cell&quot;]}}">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb41"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb41-1"><a href="#cb41-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> tempfile <span class="im">import</span> gettempdir</span>
+<span id="cb41-2"><a href="#cb41-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-3"><a href="#cb41-3" aria-hidden="true" tabindex="-1"></a>ui_source <span class="op">=</span> <span class="st">"""</span></span>
+<span id="cb41-4"><a href="#cb41-4" aria-hidden="true" tabindex="-1"></a><span class="st">def _hero():</span></span>
+<span id="cb41-5"><a href="#cb41-5" aria-hidden="true" tabindex="-1"></a><span class="st">    return Div(</span></span>
+<span id="cb41-6"><a href="#cb41-6" aria-hidden="true" tabindex="-1"></a><span class="st">        H1('Welcome'),</span></span>
+<span id="cb41-7"><a href="#cb41-7" aria-hidden="true" tabindex="-1"></a><span class="st">        P('Compare providers in minutes.'),</span></span>
+<span id="cb41-8"><a href="#cb41-8" aria-hidden="true" tabindex="-1"></a><span class="st">        Button('Start now'),</span></span>
+<span id="cb41-9"><a href="#cb41-9" aria-hidden="true" tabindex="-1"></a><span class="st">        Img(src='/logo.png', alt='Company logo'),</span></span>
+<span id="cb41-10"><a href="#cb41-10" aria-hidden="true" tabindex="-1"></a><span class="st">    )</span></span>
+<span id="cb41-11"><a href="#cb41-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-12"><a href="#cb41-12" aria-hidden="true" tabindex="-1"></a><span class="st">raise ValueError('internal diagnostic, not customer copy')</span></span>
+<span id="cb41-13"><a href="#cb41-13" aria-hidden="true" tabindex="-1"></a><span class="st">"""</span></span>
+<span id="cb41-14"><a href="#cb41-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-15"><a href="#cb41-15" aria-hidden="true" tabindex="-1"></a><span class="cf">with</span> write_demo_notebook(<span class="st">"04_review_public_ui_demo.ipynb"</span>, base<span class="op">=</span>gettempdir()) <span class="im">as</span> ui_path:</span>
+<span id="cb41-16"><a href="#cb41-16" aria-hidden="true" tabindex="-1"></a>    _write_review_notebook(ui_path, [mk_cell(ui_source, cell_type<span class="op">=</span><span class="st">"code"</span>)])</span>
+<span id="cb41-17"><a href="#cb41-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-18"><a href="#cb41-18" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(<span class="st">"Inventory before editing:"</span>)</span>
+<span id="cb41-19"><a href="#cb41-19" aria-hidden="true" tabindex="-1"></a>    visible_text_inventory(ui_path)</span>
+<span id="cb41-20"><a href="#cb41-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-21"><a href="#cb41-21" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(<span class="st">"</span><span class="ch">\n</span><span class="st">Public UI diff for the current notebook contents:"</span>)</span>
+<span id="cb41-22"><a href="#cb41-22" aria-hidden="true" tabindex="-1"></a>    diff_nb(<span class="bu">str</span>(ui_path), ref_a<span class="op">=</span><span class="va">None</span>, ref_b<span class="op">=</span><span class="va">None</span>, surface<span class="op">=</span><span class="st">"public-ui"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Inventory before editing:
+cell_id | line | symbol | call | text
+a19e06a5 | 4 | _hero | H1 | Welcome
+a19e06a5 | 5 | _hero | P | Compare providers in minutes.
+a19e06a5 | 6 | _hero | Button | Start now
+a19e06a5 | 7 | _hero | Img.alt | Company logo
+
+Public UI diff for the current notebook contents:
+--- public-ui cell a19e06a5 ---
+--- 
++++ 
+@@ -0,0 +1,4 @@
++H1: Welcome
++P: Compare providers in minutes.
++Button: Start now
++Img.alt: Company logo</code></pre>
+</div>
+</div>
+<p>Review functions are direct Python APIs; MCP consolidates their common diagnostics through <code>doctor</code>.</p>
+
+
+</section>
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/MorsCerta-crypto\.github\.io\/nbskill");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+</div> <!-- /content -->
+
+
+
+
+<footer class="footer"><div class="nav-footer"><div class="nav-footer-center"><div class="toc-actions d-sm-block d-md-none"><ul><li><a href="https://github.com/MorsCerta-crypto/nbskill/issues/new" class="toc-action"><i class="bi bi-github"></i>Report an issue</a></li></ul></div></div></div></footer></body></html>

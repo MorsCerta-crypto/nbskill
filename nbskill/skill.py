@@ -1,4 +1,4 @@
-"""Direct notebook operations for coding agents.
+"""Use for nbdev notebooks and their generated Python modules.
 
 `nbskill.skill` is the short, direct API for notebook-owned code. Install nbskill in the same Python environment that runs the agent, including its dependencies: use `uv pip install nbskill`, or `uv pip install -e /path/to/nbskill` while developing. A Pyskill entry point alone is discovery metadata, not an installation. Then import it with `from nbskill.skill import *`. It is the source of truth for the notebook workflow; MCP remains available for clients that need a tool adapter.
 

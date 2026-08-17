@@ -982,7 +982,7 @@ def _current_dependencies(current_repo):
     text = pyproject.read_text(encoding="utf-8", errors="replace")
     names = set()
     for quoted in re.findall(r"['\"]([^'\"]+)['\"]", text):
-        name = re.split(r"[<>=!~;\[]", quoted, 1)[0].strip()
+        name = re.split(r"[<>=!~;\[]", quoted, maxsplit=1)[0].strip()
         if name: names.add(_norm_dist_name(name))
     return names
 

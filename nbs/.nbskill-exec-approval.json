@@ -8082,6 +8082,78 @@
       "reasons": [],
       "source_hash": "1f3a2ca2525f"
     },
+    "_state_cell_facts": {
+      "allowed": true,
+      "cell_id": "2ecc9086",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "15_state.ipynb",
+      "reasons": [],
+      "source_hash": "f4445c517adb"
+    },
+    "_state_dependencies": {
+      "allowed": true,
+      "cell_id": "80945fb8",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "15_state.ipynb",
+      "reasons": [],
+      "source_hash": "9829bc8e35f0"
+    },
+    "_state_direct": {
+      "allowed": true,
+      "cell_id": "ed9b4d01",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "15_state.ipynb",
+      "reasons": [],
+      "source_hash": "a70292697017"
+    },
+    "_state_dynamic_reasons": {
+      "allowed": true,
+      "cell_id": "5ae1a704",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "15_state.ipynb",
+      "reasons": [],
+      "source_hash": "38d2db999d9e"
+    },
+    "_state_edges": {
+      "allowed": true,
+      "cell_id": "e135d0d1",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "15_state.ipynb",
+      "reasons": [],
+      "source_hash": "e05b1505f717"
+    },
+    "_state_propagate": {
+      "allowed": true,
+      "cell_id": "89426740",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "15_state.ipynb",
+      "reasons": [],
+      "source_hash": "83edacb7a1bc"
+    },
+    "_state_records": {
+      "allowed": true,
+      "cell_id": "e7e9192d",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "15_state.ipynb",
+      "reasons": [],
+      "source_hash": "a38144dfeea1"
+    },
+    "_state_scope_reads": {
+      "allowed": true,
+      "cell_id": "e82b42e2",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "15_state.ipynb",
+      "reasons": [],
+      "source_hash": "23feecf60895"
+    },
     "_statement_has_output_call": {
       "allowed": true,
       "cell_id": "8d5448d9",
@@ -10400,6 +10472,15 @@
       "notebook": "00_foundation.ipynb",
       "reasons": [],
       "source_hash": "8949675c331a"
+    },
+    "notebook_state": {
+      "allowed": true,
+      "cell_id": "02eea850",
+      "external_effects": false,
+      "line": 2,
+      "notebook": "15_state.ipynb",
+      "reasons": [],
+      "source_hash": "43b875039a69"
     },
     "notebook_validation_problems": {
       "allowed": true,

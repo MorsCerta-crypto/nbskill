@@ -8,7 +8,7 @@ Reference queries use the machine-level `~/.nbskill/reference_knowledge` directo
 
 Call `generated_owner(path)` before touching a Python file. A returned notebook means the Python file is generated and must not be edited. Call `context` to read the relevant notebook cells. For a change that needs prior art, call `reference_query` before choosing an implementation. Use `edit_notebook` for the one structured mutation.
 
-Prove the result in the same change loop. `exec_nb` runs the affected notebook scope without writing outputs when `check_only=True`. `diff_nb` shows the code-cell change, and `style_check` reports source diagnostics. Ordinary Python files remain on the normal coding path.
+Prove the result in the same change loop. `exec_nb` runs the affected notebook scope without writing outputs when `check_only=True`. Call `notebook_state` when recorded execution evidence and likely downstream impact matter. `diff_nb` shows the code-cell change, and `style_check` reports source diagnostics. Ordinary Python files remain on the normal coding path.
 
 ## `context`
 
@@ -17,6 +17,17 @@ Prove the result in the same change loop. `exec_nb` runs the affected notebook s
 ```python
 summary = context("nbs/01_read.ipynb#context", scope="nbs", view="summary", verbose=False)
 assert summary["kind"] == "context"
+```
+
+## `notebook_state`
+
+`notebook_state` reports which code cells match their last recorded execution, which source changed, and which downstream cells are likely stale. It keeps dynamic effects explicit under `uncertainty`:
+
+```python
+state_notebook = Path("15_state.ipynb")
+if not state_notebook.exists(): state_notebook = Path("nbs") / state_notebook
+state = notebook_state(state_notebook)
+state["counts"]
 ```
 
 ## `generated_owner`
@@ -86,9 +97,10 @@ from .foundation import generated_owner
 from .knowledge import reference_query
 from .read import context
 from .review import diff_nb, style_check
+from .state import notebook_state
 
 # %% ../nbs/14_pyskill.ipynb #f2ae8636
 __all__ = [
     "context", "generated_owner", "reference_query", "edit_notebook",
-    "exec_nb", "diff_nb", "style_check",
+    "exec_nb", "notebook_state", "diff_nb", "style_check",
 ]

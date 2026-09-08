@@ -34,7 +34,7 @@ Repository = "https://github.com/MorsCerta-crypto/nbskill"
 Documentation = "https://MorsCerta-crypto.github.io/nbskill/"
 
 [project.scripts]
-install_nbskill = "nbskill.nbskill:install_nbskill"
+install_nbskill = "nbskill.nbskill:install_nbskill_cli"
 
 [project.entry-points.nbdev]
 nbskill = "nbskill._modidx:d"

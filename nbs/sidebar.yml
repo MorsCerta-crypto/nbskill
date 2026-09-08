@@ -4,12 +4,14 @@ website:
       - index.ipynb
       - 00_foundation.ipynb
       - 01_read.ipynb
+      - 02_edit.ipynb
       - 02_write.ipynb
       - 03_execute.ipynb
       - 04_review.ipynb
       - 05_convert.ipynb
       - 06_skill.ipynb
-      - 07_mcp.ipynb
       - 09_parallel.ipynb
       - 10_graph.ipynb
       - 12_knowledge.ipynb
+      - 14_pyskill.ipynb
+      - 15_state.ipynb

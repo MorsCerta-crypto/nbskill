@@ -135,7 +135,7 @@ Reference searches:
 
 - Use the native prior-art lookup when it is available from the Pyskill
   before building nontrivial parsing, notebook, AST, filesystem, or
-  formatting behavior. Do not return to MCP solely to obtain that lookup.
+  formatting behavior.
 - If a reference hit is from an already-direct dependency, prefer
   importing or adapting its pattern. If it would add a new dependency,
   treat it as prior art unless the dependency is explicitly acceptable.

@@ -1116,6 +1116,8 @@ def exec_nb(
     elif up2id is not None: msg += f" (up2id={up2id})"
     if timeout and timeout > 0: msg += f" (timeout={timeout}s)"
     evidence = _execution_evidence(nb, up2id=up2id)
+    evidence["warnings"] = _uncalled_function_warnings(nb, up2id=up2id)
+    if show_output: _print_outputs_from_nb(nb, up2id=up2id)
     return notebook_result({
         "kind": "execution", "text": msg, "path": str(path), "dest": str(dest) if dest else None,
         "safe": safe, "check_only": check_only, "scope": "notebook" if up2id is None else "limited",

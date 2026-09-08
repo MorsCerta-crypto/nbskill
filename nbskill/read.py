@@ -18,7 +18,7 @@ from fastcore.basics import patch
 from nbskill.foundation import (
     Notebook, NotebookCell, call_name, cell_matches_type, cell_output_text, cell_prefix,
     cell_source, chapter_index_set, chapter_spans, find_cell_by_id, first_line,
-    heading_title, is_exported_code_cell, matches_filter, notebook_paths, one_chapter,
+    heading_title, is_exported_code_cell, matches_filter, notebook_paths, notebook_result, one_chapter,
     source_hash, source_without_directives, symbol_short_name,
 )
 
@@ -228,9 +228,7 @@ def _select_query_items(nb, spec):
 
 # %% ../nbs/01_read.ipynb #contextbase
 def _context_result(kind, text, verbose=True, **data):
-    result = {"kind": kind, "text": text, **data}
-    if verbose and text: print(text)
-    return result
+    return notebook_result({"kind": kind, "text": text, **data})
 
 # %% ../nbs/01_read.ipynb #8d0e4bde
 def _context_root(path):
@@ -308,7 +306,7 @@ def _import_lines(cell):
 
 # %% ../nbs/01_read.ipynb #ef3eae3d
 def _definition_record(path, idx, cell, node, symbol=None, kind=None):
-    symbol = symbol or getattr(node, "name", "")
+    symbol = symbol or _definition_symbol(node)
     kind = kind or ("class" if isinstance(node, ast.ClassDef) else "function")
     lines = _class_overview(node) if isinstance(node, ast.ClassDef) else _function_overview(node)
     return {
@@ -1005,18 +1003,29 @@ def _assignment_target_names(node):
     return names
 
 # %% ../nbs/01_read.ipynb #2bed43f2
+def _patch_symbol(node):
+    if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)): return None
+    decorators = [item.func if isinstance(item, ast.Call) else item for item in node.decorator_list]
+    if not any(isinstance(item, ast.Name) and item.id == "patch" for item in decorators): return None
+    owner = _first_arg_annotation(node)
+    return f"{owner}.{node.name}" if owner else None
+
+
+def _definition_symbol(node): return _patch_symbol(node) or getattr(node, "name", "")
+
+
 def _node_defines_symbol(node, symbol):
     parts = symbol.split(".")
     name = parts[-1]
     if len(parts) == 1 and name in _assignment_target_names(node): return True
-    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and node.name == name:
-        return True
-    if len(parts) < 2: return False
-    cls_name, meth_name = parts[-2], parts[-1]
-    if isinstance(node, ast.ClassDef) and node.name == cls_name:
-        return any(isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)) and child.name == meth_name for child in node.body)
-    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == meth_name:
-        return _first_arg_annotation(node) == cls_name
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        return node.name == name and _patch_symbol(node) is None if len(parts) == 1 else _patch_symbol(node) == symbol
+    if isinstance(node, ast.ClassDef):
+        if len(parts) == 1: return node.name == name
+        return node.name == parts[-2] and any(
+            isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)) and child.name == name
+            for child in node.body
+        )
     return False
 
 # %% ../nbs/01_read.ipynb #de0add17
@@ -1671,7 +1680,9 @@ def _context_cell_payload(path, cell_idx, mode, around):
 def _context_symbol_payload(path, symbol, mode, around):
     nb = read_nb(path)
     idx, cell, node, source = _symbol_source(path, nb, symbol)
-    if mode == "edit":
+    if mode == "exact":
+        result, graphs = _context_exact_result(path, idx, verbose=False), []
+    elif mode == "edit":
         result, graphs = _context_edit_result(path, idx, symbol=symbol, source=source, verbose=False), []
     else:
         result = _symbol_focus_context(path, symbol, overview=(mode == "overview"), verbose=False)
@@ -1768,7 +1779,7 @@ def _context_single(
     mode, around = _context_mode(mode), _context_around(around)
     filter_view = None if view in (None, "", "full") else str(view).lower()
     filtering = any(item is not None for item in (query, include_re, exclude_re, chapter, cell_type)) or filter_view in {"summary", "source", "cell"}
-    if filtering:
+    if filtering and "#" not in target:
         if filter_view == "summary":
             selected_view = "summary"
         elif filter_view == "cell":

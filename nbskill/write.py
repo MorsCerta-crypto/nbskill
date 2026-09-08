@@ -16,7 +16,6 @@ from pathlib import Path
 from fastcore.nbio import mk_cell, new_nb, read_nb
 
 from .execute import exec_nb, run_notebook_test
-from .review import style_check
 from nbskill.foundation import (
     cell_class_names, cell_source, clear_outputs, api_error,
     api_return, commit_notebook, find_cell_by_id, find_cell_by_text,
@@ -196,6 +195,7 @@ def write_nb(
         if run_test: run_notebook_test(path)
         if run_style:
             print(f"Running chstyle on {path}")
+            from nbskill.review import style_check
             style_check(path, strict=style_strict)
     return api_return(path)
 

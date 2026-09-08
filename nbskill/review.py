@@ -15,7 +15,6 @@ from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
 
-from chkstyle.core import main as _chkstyle_main
 from fastcore.nbio import mk_cell, read_nb
 from fastcore.nbio import write_nb as _write_nb
 from nbdev.diff import nbs_pair, source_diff
@@ -879,6 +878,15 @@ def style_report(
         text=text)
 
 # %% ../nbs/04_review.ipynb #bc59a7ff
+def _chkstyle_main():
+    try: from chkstyle.core import main
+    except ModuleNotFoundError as exc:
+        if exc.name == 'chkstyle':
+            raise RuntimeError('Style checking requires chkstyle; install the style extra.') from exc
+        raise
+    return main
+
+
 def run_style_check(path=".", skip_folder_re=None, skip_path=None, strict=False, max_output_chars=None):
     "Run chkstyle with nbskill's default skip paths and capped output."
     skip_paths = _style_skip_paths(skip_path)
@@ -886,10 +894,11 @@ def run_style_check(path=".", skip_folder_re=None, skip_path=None, strict=False,
         return {"status": 0, "output": "", "text": "", "truncated": False, "chars": 0, "omitted_chars": 0}
     out, err = StringIO(), StringIO()
     with redirect_stdout(out), redirect_stderr(err):
-        status = _chkstyle_main(_style_check_argv(path, skip_folder_re, skip_path))
+        status = _chkstyle_main()(_style_check_argv(path, skip_folder_re, skip_path))
     output = "\n".join(chunk.rstrip() for chunk in (out.getvalue(), err.getvalue()) if chunk)
     capped = cap_text(output, max_output_chars=max_output_chars) if max_output_chars else {"text": output, "truncated": False, "chars": len(output), "omitted_chars": 0}
     return {"status": status, "output": output, **capped}
+
 
 # %% ../nbs/04_review.ipynb #d2f84049
 def style_check(

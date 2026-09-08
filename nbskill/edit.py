@@ -675,7 +675,7 @@ def edit_notebook(
     detail="summary",
     dry_run=False,
 ):
-    """Apply structured notebook edits atomically and return MCP-friendly details."""
+    """Apply structured notebook edits atomically and return structured details."""
     if not edits: raise ValueError("edits must be a non-empty list")
     path = Path(path)
     normalized = [dict(edit) for edit in edits]

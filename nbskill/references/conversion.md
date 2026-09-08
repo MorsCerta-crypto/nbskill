@@ -1,6 +1,6 @@
 # Conversion Reference
 
-Use the `convert` Python API when Python modules should become nbdev notebook source. `convert` is not registered as an MCP tool.
+Use the `convert` Python API when Python modules should become nbdev notebook source.
 Keep this out of the main skill path unless the task is specifically about converting `.py` files.
 
 ## `convert`

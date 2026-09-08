@@ -5,7 +5,7 @@ authoritative notebook workflow here.
 
 ## Native nbskill Pyskill workflow
 
-`nbskill.skill` owns the notebook workflow for aai-coding. Load its module documentation before notebook work; it defines the public operations and their order. MCP remains an optional adapter for clients that choose that transport.
+`nbskill.skill` owns the notebook workflow for aai-coding. Load its module documentation before notebook work; it defines the public operations and their order.
 
 Route each file separately. A notebook goes to `nbskill.skill` directly. For a Python module, call `generated_owner(path)`: edit the returned notebook when it exists, and keep the file on the ordinary aai-coding path when it does not. A repository-level nbdev marker never routes every Python file through notebook tooling.
 

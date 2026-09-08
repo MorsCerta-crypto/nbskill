@@ -1,11 +1,11 @@
 # Extended Tool Reference
 
-The main `SKILL.md` intentionally stays focused on the core loop: MCP health, `context`, structured edit tools, and `exec_nb`. Use this reference when a task needs supporting tools.
+The main `SKILL.md` intentionally stays focused on the core loop: `context`, structured edit tools, and `exec_nb`. Use this reference when a task needs supporting tools.
 
 ## Reading More Context
 
 - `context(target=..., scope=...)` prints project, notebook, chapter, cell, or symbol context.
-- `context(...)` includes symbol graph payloads for cell and symbol targets in MCP.
+- `context(...)` can include symbol graph payloads for cell and symbol targets.
 
 ## Review And Analysis
 

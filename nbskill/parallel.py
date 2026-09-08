@@ -82,7 +82,7 @@ def notebook_locks(*paths):
 # %% ../nbs/09_parallel.ipynb #01f6a5cf
 @contextmanager
 def execution_slot():
-    "Serialize notebook execution across parallel MCP calls."
+    "Serialize notebook execution across parallel Python calls."
     _EXECUTION_SEMAPHORE.acquire()
     try:
         yield

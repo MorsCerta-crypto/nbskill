@@ -3559,7 +3559,7 @@
       ],
       "source_hash": "efbd19663a1c"
     },
-    "_httpx_guard": {
+    "_httpx2_guard": {
       "allowed": false,
       "cell_id": "081998f7",
       "external_effects": true,
@@ -3568,7 +3568,7 @@
       "reasons": [
         "_cachy_key->_cachy_norm_content->_cachy_content->call:request.content.replace"
       ],
-      "source_hash": "f0e37f1d47b8"
+      "source_hash": "d3a859090b6a"
     },
     "_implementation_context": {
       "allowed": true,

@@ -124,7 +124,7 @@ def _write_execution_policy(policy):
 
 # %% ../nbs/03_execute.ipynb #aa608db2
 _EXTERNAL_EFFECT_CALLS = {
-    "aiosqlite.connect", "asyncpg.connect", "httpx.delete", "httpx.get", "httpx.patch", "httpx.post", "httpx.put", "httpx.request", "httpx.stream",
+    "aiosqlite.connect", "asyncpg.connect", "httpx2.delete", "httpx2.get", "httpx2.patch", "httpx2.post", "httpx2.put", "httpx2.request", "httpx2.stream",
     "psycopg.connect", "psycopg2.connect", "pymongo.MongoClient", "redis.Redis", "redis.StrictRedis",
     "os.chmod", "os.chown", "os.makedirs", "os.mkdir", "os.popen", "os.remove", "os.replace", "os.rename",
     "os.rmdir", "os.symlink", "os.system", "os.unlink",
@@ -499,8 +499,8 @@ def _cachy_content(request):
     content_type = request.headers.get("Content-Type", "").encode()
     boundary = None
     try:
-        import httpx
-        boundary = httpx._multipart.get_multipart_boundary_from_content_type(content_type)
+        import httpx2
+        boundary = httpx2._multipart.get_multipart_boundary_from_content_type(content_type)
     except Exception:
         boundary = None
     return request.content.replace(boundary, b"cachy-boundary") if boundary else request.content
@@ -538,7 +538,7 @@ def _cache_path_for_notebook(path, cache_dir=None):
 # %% ../nbs/03_execute.ipynb #6e9a5e24
 def _cached_response(key, cache_path, request):
     if not cache_path.exists(): return None
-    import httpx
+    import httpx2
     with cache_path.open(encoding="utf-8") as handle:
         for line in handle:
             if not line.strip(): continue
@@ -546,7 +546,7 @@ def _cached_response(key, cache_path, request):
             if entry.get("key") != key: continue
             content = entry.get("response", "")
             if entry.get("binary"): content = base64.b64decode(content)
-            return httpx.Response(
+            return httpx2.Response(
                 status_code=entry.get("status_code", 200),
                 content=content,
                 headers=entry.get("headers"),
@@ -562,34 +562,34 @@ def _url_allowed(url, domains):
 
 # %% ../nbs/03_execute.ipynb #081998f7
 @contextmanager
-def _httpx_guard(path, cache_httpx=False, cache_dir=None, cache_domains=None):
-    try: import httpx
+def _httpx2_guard(path, cache_httpx2=False, cache_dir=None, cache_domains=None):
+    try: import httpx2
     except ImportError:
         yield
         return
     _safepyrun_allow({
-        httpx: ["get", "post", "put", "patch", "delete", "head", "options", "request", "stream"],
-        httpx.Client: ["send", "request", "get", "post", "put", "patch", "delete", "head", "options", "stream"],
-        httpx.AsyncClient: ["send", "request", "get", "post", "put", "patch", "delete", "head", "options", "stream"],
+        httpx2: ["get", "post", "put", "patch", "delete", "head", "options", "request", "stream"],
+        httpx2.Client: ["send", "request", "get", "post", "put", "patch", "delete", "head", "options", "stream"],
+        httpx2.AsyncClient: ["send", "request", "get", "post", "put", "patch", "delete", "head", "options", "stream"],
     })
-    original_sync, original_async = httpx.Client.send, httpx.AsyncClient.send
+    original_sync, original_async = httpx2.Client.send, httpx2.AsyncClient.send
     original_funcs = {
-        name: getattr(httpx, name)
+        name: getattr(httpx2, name)
         for name in ("request", "get", "post", "put", "patch", "delete", "head", "options")
-        if hasattr(httpx, name)
+        if hasattr(httpx2, name)
     }
     domains = tuple(_parse_str_list(cache_domains, default=_DEFAULT_CACHE_DOMAINS))
     cache_path = _cache_path_for_notebook(path, cache_dir)
 
     def from_cache(request, is_stream):
-        if not cache_httpx:
-            raise RuntimeError(f"nbskill safe execution blocked live httpx call to {request.url}")
+        if not cache_httpx2:
+            raise RuntimeError(f"nbskill safe execution blocked live httpx2 call to {request.url}")
         if not _url_allowed(request.url, domains):
             raise RuntimeError(f"nbskill safe execution has no cached domain rule for {request.url}")
         key = _cachy_key(request, is_stream=is_stream)
         response = _cached_response(key, cache_path, request)
         if response is None:
-            raise RuntimeError(f"nbskill safe execution has no cached httpx response for {request.url} (key={key})")
+            raise RuntimeError(f"nbskill safe execution has no cached httpx2 response for {request.url} (key={key})")
         return response
 
     def send(self, request, **kwargs):
@@ -599,7 +599,7 @@ def _httpx_guard(path, cache_httpx=False, cache_dir=None, cache_domains=None):
         return from_cache(request, kwargs.get("stream", False))
 
     def request(method, url, **kwargs):
-        req = httpx.Request(
+        req = httpx2.Request(
             method, url, params=kwargs.get("params"), headers=kwargs.get("headers"),
             content=kwargs.get("content"), data=kwargs.get("data"), json=kwargs.get("json"),
         )
@@ -608,16 +608,16 @@ def _httpx_guard(path, cache_httpx=False, cache_dir=None, cache_domains=None):
     def method_request(method):
         return lambda url, **kwargs: request(method, url, **kwargs)
 
-    httpx.Client.send = send
-    httpx.AsyncClient.send = asend
-    httpx.request = request
+    httpx2.Client.send = send
+    httpx2.AsyncClient.send = asend
+    httpx2.request = request
     for method in ("get", "post", "put", "patch", "delete", "head", "options"):
-        setattr(httpx, method, method_request(method.upper()))
+        setattr(httpx2, method, method_request(method.upper()))
     try: yield
     finally:
-        httpx.Client.send = original_sync
-        httpx.AsyncClient.send = original_async
-        for name, func in original_funcs.items(): setattr(httpx, name, func)
+        httpx2.Client.send = original_sync
+        httpx2.AsyncClient.send = original_async
+        for name, func in original_funcs.items(): setattr(httpx2, name, func)
 
 
 # %% ../nbs/03_execute.ipynb #47148cae
@@ -702,14 +702,14 @@ class NBSafeShell:
         extra_paths=None,
         allow=None,
         ok_dests=None,
-        cache_httpx=False,
+        cache_httpx2=False,
         cache_dir=None,
         cache_domains=None,
         execution_policy=None,
     ):
         self.path = Path(path)
         self.paths = [*(_local_import_paths(path)), *(_project_env_site_paths(path)), *(extra_paths or [])]
-        self.cache_httpx = cache_httpx
+        self.cache_httpx2 = cache_httpx2
         self.cache_dir = cache_dir
         self.cache_domains = cache_domains
         self.execution_policy = execution_policy
@@ -733,8 +733,8 @@ class NBSafeShell:
         result = None
         try:
             async def call_runner():
-                with _temporary_sys_path(self.paths), _httpx_guard(
-                    self.path, cache_httpx=self.cache_httpx, cache_dir=self.cache_dir, cache_domains=self.cache_domains,
+                with _temporary_sys_path(self.paths), _httpx2_guard(
+                    self.path, cache_httpx2=self.cache_httpx2, cache_dir=self.cache_dir, cache_domains=self.cache_domains,
                 ), redirect_stdout(out), redirect_stderr(err):
                     result = await _run_safe_source(self.runner, self.g, source)
                     _register_project_allowed(self.execution_policy, self.g)
@@ -761,7 +761,7 @@ def _exec_shell(
     safe=True,
     allow=None,
     ok_dests=None,
-    cache_httpx=False,
+    cache_httpx2=False,
     cache_dir=None,
     cache_domains=None,
     execution_policy=None,
@@ -770,7 +770,7 @@ def _exec_shell(
     if safe:
         return NBSafeShell(
             path, extra_paths=extra_paths, allow=allow, ok_dests=ok_dests,
-            cache_httpx=cache_httpx, cache_dir=cache_dir, cache_domains=cache_domains,
+            cache_httpx2=cache_httpx2, cache_dir=cache_dir, cache_domains=cache_domains,
             execution_policy=execution_policy,
         )
     shell = CaptureShell()
@@ -901,7 +901,7 @@ def _execute_nb(
     safe=True,
     allow=None,
     ok_dests=None,
-    cache_httpx=False,
+    cache_httpx2=False,
     cache_dir=None,
     cache_domains=None,
     allow_new=False,
@@ -913,7 +913,7 @@ def _execute_nb(
             first_exc = None
             with _temporary_allow_registry():
                 shell = _exec_shell(
-                    path, safe=safe, allow=allow, ok_dests=ok_dests, cache_httpx=cache_httpx,
+                    path, safe=safe, allow=allow, ok_dests=ok_dests, cache_httpx2=cache_httpx2,
                     cache_dir=cache_dir, cache_domains=cache_domains, execution_policy=execution_policy,
                 )
                 for cell in nb.cells:
@@ -1086,7 +1086,7 @@ def exec_nb(
     safe: bool = True,  # Use safepyrun instead of the legacy execnb shell
     allow: str | None = None,  # Comma-separated or literal list of trusted callables to allow
     ok_dests: str | None = None,  # Comma-separated or literal list of allowed write destinations
-    cache_httpx: bool = False,  # Return cached httpx responses instead of making live calls
+    cache_httpx2: bool = False,  # Return cached httpx2 responses instead of making live calls
     cache_dir: str | None = None,  # Directory containing cachy.jsonl; defaults to project root
     cache_domains: str | None = None,  # Comma-separated or literal list of cacheable domains
     allow_new: bool = False,  # Execute cells without prior user/nbskill execution approval
@@ -1105,7 +1105,7 @@ def exec_nb(
     nb = _execute_nb(
         path, dest=dest, exc_stop=exc_stop, preproc=preproc, postproc=postproc,
         timeout=timeout, verbose=verbose, safe=safe, allow=allow, ok_dests=ok_dests,
-        cache_httpx=cache_httpx, cache_dir=cache_dir, cache_domains=cache_domains,
+        cache_httpx2=cache_httpx2, cache_dir=cache_dir, cache_domains=cache_domains,
         allow_new=allow_new,
     )
     mode = "safe" if safe else "unsafe"

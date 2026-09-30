@@ -27,6 +27,7 @@ dependencies = [
     "remold>=0.1.0",
     "safepyrun>=0.2.3",
     "sentence-transformers>=5.5.1",
+    "httpx2>=2.13.1",
 ]
 
 [project.urls]

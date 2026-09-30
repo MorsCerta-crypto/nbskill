@@ -334,7 +334,7 @@ _REFERENCE_KIND_TERMS = {
     "test": {"test", "tests", "pytest", "fixture", "assert"},
 }
 _REFERENCE_LIBRARY_HINTS = {
-    "asyncio", "click", "fastapi", "fastcore", "fasthtml", "httpx", "jinja2", "lancedb", "numpy", "pandas",
+    "asyncio", "click", "fastapi", "fastcore", "fasthtml", "httpx2", "jinja2", "lancedb", "numpy", "pandas",
     "pathlib", "pydantic", "pytest", "requests", "rich", "sqlite", "sqlalchemy", "tomllib", "typer",
 }
 _REFERENCE_CALL_WORDS = {"endpoint", "route", "page", "button", "handler", "query", "search", "parse", "render", "click"}

@@ -1,38 +1,39 @@
 """Use for nbdev notebooks and their generated Python modules.
 
-`nbskill.skill` is the short, direct API for notebook-owned code. Install nbskill in the same Python environment that runs the agent, including its dependencies: use `uv pip install nbskill`, or `uv pip install -e /path/to/nbskill` while developing. A Pyskill entry point alone is discovery metadata, not an installation. Then import it with `from nbskill.skill import *`. It is the source of truth for the notebook workflow.
+`nbskill.skill` is the direct API for notebook-owned code. Install `nbskill` in the same Python environment that runs the agent, then import it with `from nbskill.skill import *`. The `pyskills` entry point in `pyproject.toml` makes the module discoverable after installation. An entry point does not install the package. Use an editable install while developing this checkout.
 
 Reference queries use the machine-level `~/.nbskill/reference_knowledge` directory across workspaces. Set `NBSKILL_REFERENCE_HOME` when a separate reference index is required.
 
-## Work with a notebook
+## Notebook contract
 
-Call `generated_owner(path)` before touching a Python file. A returned notebook means the Python file is generated and must not be edited. Call `context` to read the relevant notebook cells. For a change that needs prior art, call `reference_query` before choosing an implementation. Use `edit_notebook` for the one structured mutation.
+Treat one notebook as one part of a larger problem. Split that part into H2 chapters. Each chapter tells one domain story from the motivating problem through the implementation and its evidence. Put each chapter heading in its own markdown cell so Jupyter can collapse the chapter as a unit.
 
-Prove the result in the same change loop. `exec_nb` runs the affected notebook scope without writing outputs when `check_only=True`. Call `notebook_state` when recorded execution evidence and likely downstream impact matter. `diff_nb` shows the code-cell change, and `style_check` reports source diagnostics. Ordinary Python files remain on the normal coding path.
+Give every public function its own `#| export` definition cell. Keep its function bundle together in this order: a markdown description, the definition, one executable example, and one focused test. The description states the domain contract and the reason the function belongs in the chapter. The example ends with the value a reader should inspect. The test asserts one promised behavior. An example may contain the assertion when that keeps the story clearer, but the definition never shares a cell with imports, setup, examples, or tests.
 
-## `context`
-
-`context` reads a notebook through its cells. Start with a summary, then request full context only for the cells that matter:
+Keep imports in import-only cells. Use `#| export` on the short markdown summaries that must appear in the Pyskill module docstring. Use `#| exportd` on compact runnable examples that must appear there as fenced Python. `#| exportd` never adds the example to the generated module.
 
 ```python
-summary = context("nbs/01_read.ipynb#context", scope="nbs", view="summary", verbose=False)
-assert summary["kind"] == "context"
+function_bundle = [
+    dict(cell_type="markdown", source=r'''### `parse_order`
+
+Convert one order row into domain values.'''),
+    dict(cell_type="code", source=r'''#| export
+def parse_order(row):
+    return dict(row)'''),
+    dict(cell_type="code", source=r'''parsed = parse_order({"total": 12})
+parsed'''),
+    dict(cell_type="code", source=r'''assert parsed["total"] == 12'''),]
+assert [cell["cell_type"] for cell in function_bundle] == ["markdown", "code", "code", "code"]
+function_bundle
 ```
 
-## `notebook_state`
+## Read notebooks
 
-`notebook_state` reports which code cells match their last recorded execution, which source changed, and which downstream cells are likely stale. It keeps dynamic effects explicit under `uncertainty`:
+Start with notebook structure, then narrow to the chapter or symbol that owns the work. Call `generated_owner` before touching a Python module. Call `context` to read the relevant notebook cells. Use `chapter=` for one domain story and a qualified `#symbol` target for one definition. Call `reference_query` before adding a nontrivial helper.
 
-```python
-state_notebook = Path("15_state.ipynb")
-if not state_notebook.exists(): state_notebook = Path("nbs") / state_notebook
-state = notebook_state(state_notebook)
-state["counts"]
-```
+### `generated_owner`
 
-## `generated_owner`
-
-`generated_owner` identifies the notebook that owns a generated Python file. A `None` result means ordinary Python tooling may edit the file:
+`generated_owner` routes a generated Python module back to its source notebook. A `None` result means the Python file is hand-written and stays on the ordinary code path:
 
 ```python
 owner = generated_owner("nbskill/skill.py")
@@ -40,47 +41,84 @@ assert owner.name == "14_pyskill.ipynb"
 owner
 ```
 
-## `reference_query`
+### `context`
 
-Use `reference_query` before adding a nontrivial helper. It searches the shared reference index and direct dependencies:
+`context` reads notebooks as cells rather than raw JSON. Start with `view="summary"`. Then request `view="full"` only for the chapter or symbol that matters:
+
+```python
+summary = context("nbs/14_pyskill.ipynb", view="summary", verbose=False)
+chapter = context("nbs/14_pyskill.ipynb", chapter="Read notebooks", view="full", verbose=False)
+assert summary["kind"] == "context"
+assert chapter["selection"]["matches"]
+chapter["selection"]["matches"]
+```
+
+### `reference_query`
+
+`reference_query` searches the shared reference index and direct dependencies. Use it before choosing a nontrivial parsing, notebook, abstract syntax tree, filesystem, or formatting implementation:
 
 ```python
 matches = reference_query("find an nbdev notebook export helper", top_k=3)
 matches["hits"]
 ```
 
-## `edit_notebook`
+## Write notebooks
 
-`edit_notebook` applies a structured edit atomically. Read the notebook first and use the returned cell ID and exact source text:
+Use one `edit_notebook` call for one coherent change. Read stable cell IDs and exact source text first. Submit every related operation together so validation happens before the notebook is written. Never splice notebook JSON or edit a generated Python module.
+
+### `edit_notebook`
+
+`edit_notebook` applies text and structural cell edits atomically. `replace_text` is the smallest edit when the old text is known. Structural operations add, move, replace, or remove whole cells:
 
 ```python
-edits = [dict(op="replace_text", cell_id="<cell-id>", old="old text", new="new text")]
-change = edit_notebook("nbs/14_pyskill.ipynb", edits)
-change["changed"]
+edits = [dict(op="replace_text", cell_id="6df2357f", old="direct API", new="direct notebook API")]
+change = edit_notebook("nbs/14_pyskill.ipynb", edits, dry_run=True)
+assert change["changed"]
+change["diffs"]
 ```
 
-## `exec_nb`
+## Run notebooks
 
-`exec_nb` runs the affected notebook scope. `check_only=True` validates code without writing outputs back to the notebook:
+Run the smallest scope that proves the changed story. `exec_nb` accepts a chapter name or an ending cell ID. Use `check_only=True` while iterating so execution does not write outputs or metadata. Use `allow_new=True` only when the new cells are trusted and must execute.
+
+### `exec_nb`
+
+`exec_nb` executes the affected chapter in the project environment. Safe execution is the default. `check_only=True` keeps the run in memory:
 
 ```python
-exec_nb("nbs/14_pyskill.ipynb", check_only=True)
+run = exec_nb("nbs/14_pyskill.ipynb", chapter="Run notebooks", check_only=True)
+run
 ```
 
-## `diff_nb`
+### `notebook_state`
 
-`diff_nb` shows changed source cells without the noise of raw notebook JSON:
+`notebook_state` compares code cells with their last recorded execution and reports likely stale downstream cells. Dynamic effects remain explicit under `uncertainty`:
 
 ```python
-diff_nb("nbs/14_pyskill.ipynb", ref_a="HEAD")
+state = notebook_state("nbs/15_state.ipynb")
+state["counts"]
 ```
 
-## `style_check`
+## Validate notebooks
 
-`style_check` reports notebook hygiene and style diagnostics. Restrict it to changed cells while iterating:
+Validation combines execution evidence, a cell-level diff, and style diagnostics. Run `exec_nb` first. Read `diff_nb` as the source review and fix every relevant `style_check` diagnostic. Then run `nbdev-export` and verify the generated module from a clean interpreter. The notebook remains the source of truth.
+
+### `diff_nb`
+
+`diff_nb` shows changed cell sources without raw notebook JSON, output noise, or unrelated metadata:
 
 ```python
-style_check("nbs/14_pyskill.ipynb", changed_only=True)
+review = diff_nb("nbs/14_pyskill.ipynb", ref_a="HEAD")
+review
+```
+
+### `style_check`
+
+`style_check` reports notebook hygiene and source diagnostics. Restrict it to changed cells while iterating, then check the whole notebook before export:
+
+```python
+diagnostics = style_check("nbs/14_pyskill.ipynb", changed_only=True)
+diagnostics
 ```
 
 Docs: https://MorsCerta-crypto.github.io/nbskill/pyskill.html.md"""
@@ -97,6 +135,12 @@ from .foundation import generated_owner
 from .read import context
 
 from .state import notebook_state
+
+# %% ../nbs/14_pyskill.ipynb #f2ae8636
+__all__ = [
+    "context", "generated_owner", "reference_query", "edit_notebook",
+    "exec_nb", "notebook_state", "diff_nb", "style_check",
+]
 
 # %% ../nbs/14_pyskill.ipynb #46e3aae1
 def reference_query(*args, **kwargs):
@@ -116,9 +160,3 @@ def style_check(*args, **kwargs):
     "Run style diagnostics without loading review dependencies until needed."
     from nbskill.review import style_check as check
     return check(*args, **kwargs)
-
-# %% ../nbs/14_pyskill.ipynb #f2ae8636
-__all__ = [
-    "context", "generated_owner", "reference_query", "edit_notebook",
-    "exec_nb", "notebook_state", "diff_nb", "style_check",
-]

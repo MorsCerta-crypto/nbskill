@@ -987,11 +987,11 @@ wheels = [
 
 [[package]]
 name = "fastcore"
-version = "2.1.20"
+version = "2.2.32"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/3b/1b/17476ca70a1d6fce2dda98b9cf1669f7c0dde4d3ddde8543b527c3681f5f/fastcore-2.1.20.tar.gz", hash = "sha256:152b83e2c0e44739a880b52e3b0d63f0fd6f483090db2c8c97e369762c0fb4ba", size = 138745, upload-time = "2026-08-05T04:23:09.415Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/88/c0/666a6c30d7b94089542576bd8b1751b1e8fc6e203e45702790fe95c13115/fastcore-2.2.32.tar.gz", hash = "sha256:ba1ac1d859d28e8a39861d4960643f73a550aa21dc828821de0865d6206b0111", size = 146237, upload-time = "2026-09-30T20:35:25.773Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d6/f5/56c32343fb5212e48010f76770e6a650a10f96a1849a0ec522fb00d847d6/fastcore-2.1.20-py3-none-any.whl", hash = "sha256:5d0275a94c93c9fabbd43f9a9ec494e0bef3eeae71c16ef67f2313c0675ffece", size = 145520, upload-time = "2026-08-05T04:23:07.782Z" },
+    { url = "https://files.pythonhosted.org/packages/21/54/1e59b78b7dfaa16ca61d0a21933dae110da055dcb74c5ed304f792335471/fastcore-2.2.32-py3-none-any.whl", hash = "sha256:e37d56216a92b3b57bac7fee605d1d5c13189c0de2dbd30b5c127db915390f77", size = 152880, upload-time = "2026-09-30T20:35:24.099Z" },
 ]
 
 [[package]]
@@ -2706,7 +2706,7 @@ requires-dist = [
     { name = "botocore", specifier = ">=1.43.42" },
     { name = "execnb", specifier = ">=0.2.2" },
     { name = "fastaistyle", specifier = ">=0.0.15" },
-    { name = "fastcore", specifier = "==2.1.*" },
+    { name = "fastcore", specifier = "==2.2.*" },
     { name = "httpx2", specifier = ">=2.13.1" },
     { name = "lancedb", specifier = ">=0.25.0" },
     { name = "lisette", specifier = ">=0.1.33" },

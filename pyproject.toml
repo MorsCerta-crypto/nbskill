@@ -26,7 +26,6 @@ dependencies = [
     "packaging>=24",
     "remold>=0.1.0",
     "safepyrun>=0.2.3",
-    "sentence-transformers>=5.5.1",
     "httpx2>=2.13.1",
 ]
 
@@ -68,4 +67,5 @@ dev = [
     "nbdev>=3.3.5",
     "pytest>=9.0.3",
     "remold>=0.1.0",
+    "sentence-transformers>=5.5.1",
 ]

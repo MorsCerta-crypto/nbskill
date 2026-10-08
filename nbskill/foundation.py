@@ -318,7 +318,7 @@ def notebook_paths(path="nbs"):
         return any(part in exclude for part in rel.parts)
     for candidate in path_candidates(raw):
         pth = Path(candidate).expanduser()
-        if pth.is_file(): paths = [pth]
+        if pth.is_file(): return [pth] if _is_notebook_path(pth.name) else []
         elif _has_glob_chars(raw): paths = _glob_notebook_paths(pth)
         elif pth.is_dir(): paths = _nbdev_notebook_paths(pth) or _glob_notebook_paths(pth)
         else: paths = []

@@ -2688,7 +2688,6 @@ dependencies = [
     { name = "packaging" },
     { name = "remold" },
     { name = "safepyrun" },
-    { name = "sentence-transformers" },
 ]
 
 [package.dev-dependencies]
@@ -2699,6 +2698,7 @@ dev = [
     { name = "nbdev" },
     { name = "pytest" },
     { name = "remold" },
+    { name = "sentence-transformers" },
 ]
 
 [package.metadata]
@@ -2714,7 +2714,6 @@ requires-dist = [
     { name = "packaging", specifier = ">=24" },
     { name = "remold", specifier = ">=0.1.0" },
     { name = "safepyrun", specifier = ">=0.2.3" },
-    { name = "sentence-transformers", specifier = ">=5.5.1" },
 ]
 
 [package.metadata.requires-dev]
@@ -2725,6 +2724,7 @@ dev = [
     { name = "nbdev", specifier = ">=3.3.5" },
     { name = "pytest", specifier = ">=9.0.3" },
     { name = "remold", specifier = ">=0.1.0" },
+    { name = "sentence-transformers", specifier = ">=5.5.1" },
 ]
 
 [[package]]

@@ -1,8 +1,21 @@
 r"""Use for nbdev notebooks and their generated Python modules.
 
-`nbskill.skill` is the direct API for notebook-owned code. Install `nbskill` in the same Python environment that runs the agent, then import it with `from nbskill.skill import *`. The `pyskills` entry point in `pyproject.toml` makes the module discoverable after installation. An entry point does not install the package. Use an editable install while developing this checkout.
+`nbskill.skill` is the direct API for notebook-owned code. Install `nbskill` in the agent's Python environment, then import it with `from nbskill.skill import *`. Pyskills discovers the registered entry point; its listing does not install the package.
 
-Reference queries use the machine-level `~/.nbskill/reference_knowledge` directory across workspaces. Set `NBSKILL_REFERENCE_HOME` when a separate reference index is required.
+Read `doc(skill)` for the shared workflow and `doc()` for the selected callable before using it. Read/edit/execute operations need cell identities and execution policy, so a function listing alone is not enough. The domain modules explain their own functions through executable notebook lessons. Review and reference wrappers load those domains only when called; inspect `nbskill.review` or `nbskill.knowledge` for their full options.
+
+Reference queries use the machine-level `~/.nbskill/reference_knowledge` directory across workspaces. Set `NBSKILL_REFERENCE_HOME` for a separate index. Basic context, editing, execution, and state inspection do not require an embedding model.
+
+```python
+from pathlib import Path
+from tempfile import TemporaryDirectory, gettempdir
+from pyskills import doc, list_pyskills
+from fastcore.nbio import mk_cell, read_nb
+from nbdev.export import nb_mdoc
+from nbskill import skill
+from nbskill.foundation import write_demo_notebook
+from nbskill.skill import *
+```
 
 ## Notebook contract
 
@@ -11,21 +24,6 @@ Treat one notebook as one part of a larger problem. Split that part into H2 chap
 Give every public function its own `#| export` definition cell. Keep its function bundle together in this order: a markdown description, the definition, one executable example, and one focused test. The description states the domain contract and the reason the function belongs in the chapter. The example ends with the value a reader should inspect. The test asserts one promised behavior. An example may contain the assertion when that keeps the story clearer, but the definition never shares a cell with imports, setup, examples, or tests.
 
 Keep imports in import-only cells. Use `#| export` on the short markdown summaries that must appear in the Pyskill module docstring. Use `#| exportd` on compact runnable examples that must appear there as fenced Python. `#| exportd` never adds the example to the generated module.
-
-```python
-function_bundle = [
-    dict(cell_type="markdown", source=r'''### `parse_order`
-
-Convert one order row into domain values.'''),
-    dict(cell_type="code", source=r'''#| export
-def parse_order(row):
-    return dict(row)'''),
-    dict(cell_type="code", source=r'''parsed = parse_order({"total": 12})
-parsed'''),
-    dict(cell_type="code", source=r'''assert parsed["total"] == 12'''),]
-assert [cell["cell_type"] for cell in function_bundle] == ["markdown", "code", "code", "code"]
-function_bundle
-```
 
 ## Read notebooks
 
@@ -55,14 +53,7 @@ chapter["selection"]["matches"]
 
 ### `reference_query`
 
-`reference_query` searches the shared reference index and direct dependencies. It uses the optional `sentence-transformers` dependency. Install it with `pip install sentence-transformers`, or use `uv sync --dev` in a source checkout. Basic notebook operations do not import it. The following example needs a populated reference index and a locally cached embedding model.
-
-Use `reference_query` before choosing a nontrivial parsing, notebook, abstract syntax tree, filesystem, or formatting implementation:
-
-```python
-matches = reference_query("find an nbdev notebook export helper", top_k=3)
-matches["hits"]
-```
+`reference_query` finds prior implementations before adding nontrivial parsing, notebook, abstract syntax tree, filesystem, or formatting behavior. Reference queries require `sentence-transformers`; install it with `pip install sentence-transformers` or use `uv sync --dev` in this checkout. Basic notebook operations do not import it. This example requires a populated local index and may load an embedding model. Run it after following the knowledge notebook's ingestion lesson:
 
 ## Write notebooks
 
@@ -129,41 +120,55 @@ diagnostics = style_check(owner, changed_only=True)
 diagnostics
 ```
 
+## Prove the complete workflow
+
+Use a disposable real notebook to check the whole path without changing the repository. Read its cell IDs, edit one value, execute the assertion, and inspect the diff. `check_only=True` leaves execution outputs in memory, while the edit itself writes the intended source change:
+
+```python
+workflow_cells = [mk_cell("## Answer", cell_type="markdown"),
+    mk_cell("answer = 41"), mk_cell("assert answer == 42")]
+with write_demo_notebook("pyskill_workflow.ipynb", base=gettempdir(), cells=workflow_cells) as path:
+    answer_cell = read_nb(path).cells[1]
+    edit = dict(op="replace_text", cell_id=answer_cell.id, old="answer = 41", new="answer = 42")
+    change = edit_notebook(path, [edit], auto_feedback=False)
+    run = exec_nb(path, check_only=True, allow_new=True, show_output=False)
+    assert change["changed"] and run["ok"], run["errors"]
+    assert "+answer = 42" in diff_nb(path, ref_a=None, ref_b=None)
+    workflow_result = dict(changed=change["changed"], executed=run["ok"], outputs_written=run["dest"])
+workflow_result
+```
+
 Docs: https://MorsCerta-crypto.github.io/nbskill/pyskill.html.md"""
 
 # AUTOGENERATED! DO NOT EDIT! File to edit: ../nbs/14_pyskill.ipynb.
 
 # %% auto #0
-__all__ = ['reference_query', 'diff_nb', 'style_check']
+__all__ = ['reference_query', 'diff_nb', 'style_check', 'context', 'generated_owner', 'edit_notebook', 'exec_nb',
+           'notebook_state']
 
-# %% ../nbs/14_pyskill.ipynb #a100cb81
+# %% ../nbs/14_pyskill.ipynb #bbe795cc
 from .edit import edit_notebook
 from .execute import exec_nb
 from .foundation import generated_owner
 from .read import context
-
 from .state import notebook_state
 
-# %% ../nbs/14_pyskill.ipynb #f2ae8636
-__all__ = [
-    "context", "generated_owner", "reference_query", "edit_notebook",
-    "exec_nb", "notebook_state", "diff_nb", "style_check",
-]
+# %% ../nbs/14_pyskill.ipynb #6741dda4
+_all_ = [context, generated_owner, edit_notebook, exec_nb, notebook_state]
 
-# %% ../nbs/14_pyskill.ipynb #46e3aae1
+# %% ../nbs/14_pyskill.ipynb #46e5dc6c
 def reference_query(*args, **kwargs):
-    "Search optional local references without loading that stack for basic workflow use."
+    "Search optional references without loading that stack for basic workflow use."
     from nbskill.knowledge import reference_query as query
     return query(*args, **kwargs)
 
-
-# %% ../nbs/14_pyskill.ipynb #6594761a
+# %% ../nbs/14_pyskill.ipynb #22b6b475
 def diff_nb(*args, **kwargs):
     "Show source changes without loading review dependencies until needed."
     from nbskill.review import diff_nb as review_diff
     return review_diff(*args, **kwargs)
 
-# %% ../nbs/14_pyskill.ipynb #4fb20649
+# %% ../nbs/14_pyskill.ipynb #633ffdda
 def style_check(*args, **kwargs):
     "Run style diagnostics without loading review dependencies until needed."
     from nbskill.review import style_check as check

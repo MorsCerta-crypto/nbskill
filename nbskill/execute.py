@@ -17,6 +17,7 @@ import traceback
 from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
+from types import FunctionType
 from typing import Annotated
 
 import pyskills
@@ -668,11 +669,12 @@ def _magic_error(source):
 
 # %% ../nbs/03_execute.ipynb #823ba097
 def _sync_safe_callable_globals(value, namespace):
-    if hasattr(value, "__globals__"):
-        value.__globals__.update(namespace)
-    if isinstance(value, type):
-        for item in vars(value).values():
-            if hasattr(item, "__globals__"): item.__globals__.update(namespace)
+    items = vars(value).values() if isinstance(value, type) else (value,)
+    for item in items:
+        if not isinstance(item, FunctionType): continue
+        scope = item.__globals__
+        if scope.get(_SAFE_SENTINEL) is namespace[_SAFE_SENTINEL]: scope.update(namespace)
+
 
 # %% ../nbs/03_execute.ipynb #0e2b245e
 def _sync_safe_globals(namespace):
@@ -716,7 +718,7 @@ class NBSafeShell:
         self.safe = True
         self.exc = None
         self.g = {
-            _SAFE_SENTINEL: True,
+            _SAFE_SENTINEL: object(),
             "__name__": "__main__",
             "__file__": str(self.path),
         }

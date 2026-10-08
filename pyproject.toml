@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "nbskill"
 dynamic = ["version"]
-description = "LLM-skill for working with nb"
+description = "Notebook-aware context, editing, execution, and review for Python agents"
 readme = "README.md"
 requires-python = ">=3.12"
 license = {text = "Apache-2.0"}
@@ -19,11 +19,12 @@ dependencies = [
     "botocore>=1.43.42",
     "execnb>=0.2.2",
     "fastaistyle>=0.0.15",
-    "fastcore==2.2.*",
+    "fastcore>=2.2.31,<2.3",
     "lancedb>=0.25.0",
     "lisette>=0.1.33",
-    "nbdev>=3.0.15",
+    "nbdev>=3.3.25",
     "packaging>=24",
+    "pyskills>=0.0.33",
     "remold>=0.1.0",
     "safepyrun>=0.2.3",
     "httpx2>=2.13.1",
@@ -64,7 +65,7 @@ dev = [
     "fastship>=0.1.0",
     "ipykernel>=7.2.0",
     "jupyter>=1.1.1",
-    "nbdev>=3.3.5",
+    "nbdev>=3.3.25",
     "pytest>=9.0.3",
     "remold>=0.1.0",
     "sentence-transformers>=5.5.1",

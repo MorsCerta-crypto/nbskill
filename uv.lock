@@ -941,15 +941,15 @@ wheels = [
 
 [[package]]
 name = "execnb"
-version = "0.2.10"
+version = "0.3.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "fastcore" },
     { name = "ipython" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/82/8b/52d73cfbd9b49db20996c5a5f9011b4bbe622e55024ab92c65ed15ea8509/execnb-0.2.10.tar.gz", hash = "sha256:3161d11abba5f46f0ef923e6c898fada0bb0bc32803bc69b6f578b5f13662fad", size = 14779, upload-time = "2026-08-07T08:12:47.879Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/96/0a/157a22ca0728856bb654ecf7da49cc0398307edec292f45a11467d10a321/execnb-0.3.3.tar.gz", hash = "sha256:d026b7e507e1acd13205d61ff4a0a5e6d0498ce3c395aefd87c5b4a0e1875aed", size = 15883, upload-time = "2026-08-25T01:23:27.918Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c2/5e/4e100d7adb726692edfb7311ce497a8bc07c7e912d10c866af930f0f2065/execnb-0.2.10-py3-none-any.whl", hash = "sha256:b5e26a7f15efb1756718fd0038ffb1d5ce074a4b564f689b4b9099fbea344c91", size = 14162, upload-time = "2026-08-07T08:12:46.685Z" },
+    { url = "https://files.pythonhosted.org/packages/e0/b2/532b4335fd03d9213579de37352ff7db16fc8874b4b4a5d58977b6124d04/execnb-0.3.3-py3-none-any.whl", hash = "sha256:0f55c824a8f98c58b43bd107071c23bc873a70f298fce737d6b3bb85546c576e", size = 14611, upload-time = "2026-08-25T01:23:26.674Z" },
 ]
 
 [[package]]
@@ -2639,7 +2639,7 @@ wheels = [
 
 [[package]]
 name = "nbdev"
-version = "3.3.5"
+version = "3.3.25"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "asttokens" },
@@ -2653,9 +2653,9 @@ dependencies = [
     { name = "setuptools" },
     { name = "watchdog" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c1/2f/d3a664075e9b5465e043811d24e8d6387a5ccf91ba016ae6bbebea1f33d2/nbdev-3.3.5.tar.gz", hash = "sha256:81be1b877023265d46800ddb2af10b743cb881e2f5b7ec0102d05a6d28388074", size = 85741, upload-time = "2026-08-06T10:35:15.862Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/3c/fa/d80fb6b061023677bb88a8d59ac1ebefb74ad9add37d7c1211a01d56dbba/nbdev-3.3.25.tar.gz", hash = "sha256:cd48c235d18e5d53128f82c676cdb9a3f66f084ef05e48e8d4b9f56b3832d80d", size = 91478, upload-time = "2026-10-05T08:31:15.544Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/73/bd/4b993c555cbb83db0449aa4adc2054839d8287ba5c4bd1b76aa5d1698a81/nbdev-3.3.5-py3-none-any.whl", hash = "sha256:455eb4723f04af9a7fa955101be32b4cc49c3281ca570630f464a7861be8abb5", size = 91078, upload-time = "2026-08-06T10:35:14.234Z" },
+    { url = "https://files.pythonhosted.org/packages/ab/ce/d0cfdd1bc8338285ae26db62771450b4c2b05f5befe81819f77789d8dc06/nbdev-3.3.25-py3-none-any.whl", hash = "sha256:9912cba878b0919aa40b0fd8e4f1ddcfabf186ea877b52f77b6dd75677312288", size = 95596, upload-time = "2026-10-05T08:31:13.906Z" },
 ]
 
 [[package]]
@@ -2686,6 +2686,7 @@ dependencies = [
     { name = "lisette" },
     { name = "nbdev" },
     { name = "packaging" },
+    { name = "pyskills" },
     { name = "remold" },
     { name = "safepyrun" },
 ]
@@ -2706,12 +2707,13 @@ requires-dist = [
     { name = "botocore", specifier = ">=1.43.42" },
     { name = "execnb", specifier = ">=0.2.2" },
     { name = "fastaistyle", specifier = ">=0.0.15" },
-    { name = "fastcore", specifier = "==2.2.*" },
+    { name = "fastcore", specifier = ">=2.2.31,<2.3" },
     { name = "httpx2", specifier = ">=2.13.1" },
     { name = "lancedb", specifier = ">=0.25.0" },
     { name = "lisette", specifier = ">=0.1.33" },
-    { name = "nbdev", specifier = ">=3.0.15" },
+    { name = "nbdev", specifier = ">=3.3.25" },
     { name = "packaging", specifier = ">=24" },
+    { name = "pyskills", specifier = ">=0.0.33" },
     { name = "remold", specifier = ">=0.1.0" },
     { name = "safepyrun", specifier = ">=0.2.3" },
 ]
@@ -2721,7 +2723,7 @@ dev = [
     { name = "fastship", specifier = ">=0.1.0" },
     { name = "ipykernel", specifier = ">=7.2.0" },
     { name = "jupyter", specifier = ">=1.1.1" },
-    { name = "nbdev", specifier = ">=3.3.5" },
+    { name = "nbdev", specifier = ">=3.3.25" },
     { name = "pytest", specifier = ">=9.0.3" },
     { name = "remold", specifier = ">=0.1.0" },
     { name = "sentence-transformers", specifier = ">=5.5.1" },
@@ -3548,15 +3550,15 @@ wheels = [
 
 [[package]]
 name = "pyskills"
-version = "0.0.27"
+version = "0.0.34"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "fastaudit" },
     { name = "fastcore" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/e4/c2/df6b10631cdf7b0c85f5f80524482a6785f0568ae97ad608f7299f04eeca/pyskills-0.0.27.tar.gz", hash = "sha256:690c14bcf141fa50b1b24513e5ef87d62307556c472233e401c2e71846a0b53b", size = 25761, upload-time = "2026-07-31T23:43:27.445Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/61/7d/88a2fdf3e85eb32ec65b9a1aa8be8183b186c6a35b5b33fff8158ff7ecaf/pyskills-0.0.34.tar.gz", hash = "sha256:90f0dd7eaaa1951e23eeb4d28d2667711b84e34ab805e7ae8a110c856a9c3299", size = 34214, upload-time = "2026-09-30T20:42:07.025Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b0/48/5a3facaa9ca20d3e0f241d31cd5d7fde3d3db643e37cac30dca8c5e3a65b/pyskills-0.0.27-py3-none-any.whl", hash = "sha256:2886f69817ef2e06f3837ef35860b437f21dcd1c9c765d3fbcdd809aec2d1e8b", size = 23818, upload-time = "2026-07-31T23:43:26.222Z" },
+    { url = "https://files.pythonhosted.org/packages/2f/47/ff811f21e59eadd376ce7c290b1cc12d7e8470985858be1dae5fbcd50462/pyskills-0.0.34-py3-none-any.whl", hash = "sha256:ee6e1a30bb8374edb049f21bb842b85dc8444f2f5cb4c608ee3809186928a338", size = 30177, upload-time = "2026-09-30T20:42:05.59Z" },
 ]
 
 [[package]]

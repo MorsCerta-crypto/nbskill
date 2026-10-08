@@ -4,7 +4,7 @@ project:
 website:
   title: "nbskill"
   site-url: "https://MorsCerta-crypto.github.io/nbskill"
-  description: "LLM-skill for working with nb"
+  description: "Notebook-aware context, editing, execution, and review for Python agents"
   repo-branch: main
   repo-url: "https://github.com/MorsCerta-crypto/nbskill"
 

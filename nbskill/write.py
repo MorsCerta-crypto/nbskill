@@ -1,3 +1,106 @@
+r"""Create and revise notebook cells while preserving their identities and evidence.
+
+`nbskill.write` builds on the foundation models and atomic editor. Use `write_nb` for cell-block insertion, `update_cell` for one cell, and `split_cell` or `explode_cell` when separate definitions belong in separate cells. Use `edit_notebook` when related operations need one validated transaction.
+
+Writing preserves stable ids for retained cells, clears outputs made stale by a change, and exports notebooks with an nbdev target inside the project. These details distinguish notebook mutation from writing Python text to a file. A saved notebook must retain the explanations and tests that make its code usable.
+
+There are two writing modes because notebook edits have two different shapes. Use cell-block writes when adding or replacing structured cells, and use literal replacement only for exact renames across existing cells. Both paths stamp nbskill metadata and export affected notebooks automatically when they have an nbdev export target. `write_literal_replacements` is the public literal-replacement API.
+
+## Writing cells
+
+The write layer turns structured cell plans into valid notebook cells and keeps the on-disk notebook in sync with its exported module.
+
+`write_literal_replacements` applies an exact rename to existing cells and validates the changed Python. Use `dry_run=True` to preview the same replacement without writing. A temporary real notebook shows the saved result:
+
+```python
+with write_demo_notebook("02_write_literal_example.ipynb", cells=[mk_cell("old_name = 1")]) as literal_path:
+    write_literal_replacements(literal_path, "old_name", "new_name")
+    literal_source = read_nb(literal_path).cells[0].source
+    assert literal_source == "new_name = 1"
+literal_source
+```
+
+`write_nb` appends by default. `replace=True` replaces the notebook contents, while `before_id`, `after_id`, and `chapter` narrow insertion. The call returns the saved path; read the cells to inspect the result:
+
+```python
+with write_demo_notebook("02_write_cells_example.ipynb") as write_path:
+    saved_path = write_nb(write_path, "%%markdown\n## Values\n---\n%%code\nanswer = 42", replace=True)
+    written_cells = read_nb(saved_path).cells
+    assert [cell.cell_type for cell in written_cells] == ["markdown", "code"]
+    saved_summary = [(cell.cell_type, cell.source) for cell in written_cells]
+saved_summary
+```
+
+## Updating and splitting
+
+Use one-cell updates for surgical changes; use explosion or chapter splitting when the notebook structure itself is the thing being changed.
+
+#### Updating one cell
+
+`update_cell` is the surgical tool. It keeps the original cell id, can replace a whole cell or only a line range, and clears stale outputs.
+
+For whole-cell replacement, pass exactly one notebook cell block: optional `%%code`, `%%markdown`, or `%%raw` marker followed by the cell source. Do not include standalone `---` separators; those mean multiple cells and belong with `write_nb` or `batch_edit_nb`. Use `line_range` or `old_str` when replacing only part of a cell.
+
+`update_cell` accepts exact Python text and structured source lines, so callers need no newline decoding or temporary patch files.
+
+### Structured cell edits
+
+`source_lines_cell` builds a cell from Python source lines. `source_lines_cells` and `split_source_lines` split only at requested empty lines, which lets agents submit valid Python without embedding escaped newlines. `join_source_lines` and `valid_split_line_numbers` share that representation:
+
+```python
+source_lines = ["def first():", "    return 1", "", "def second():", "    return 2"]
+chunks = split_source_lines(source_lines, [2, 3])
+assert valid_split_line_numbers(source_lines, [2, 3]) == [3]
+assert chunks == [source_lines[:2], source_lines[3:]]
+[join_source_lines(chunk) for chunk in chunks]
+```
+
+## Batch operations
+
+Batch plans are useful when several related edits should be validated and committed together.
+
+#### Splitting one chapter
+
+`split_nb_chapter` moves one `##` chapter into a new nbdev notebook. It copies imports used by the moved code, imports source-notebook definitions that the moved chapter still references, and promotes referenced private source helpers by dropping the leading underscore. Splitting modules is a broad, deliberate refactor, so it remains an explicit Python API.
+
+## Creating numbered notebooks
+
+`create_notebook` chooses the next flat notebook number and declares its nbdev export target. It rejects an existing target instead of overwriting a notebook. Inspect the created filename and module target:
+
+```python
+with TemporaryDirectory() as temp:
+    created = create_notebook(Path(temp) / "nbs" / "widget.ipynb")
+    created_path = Path(created["path"])
+    test_eq(created_path.name, "00_widget.ipynb")
+    test_eq(created["default_exp"], "widget")
+    assert read_nb(created_path).cells[0].source == "#| default_exp widget"
+    create_summary = dict(filename=created_path.name, default_exp=created["default_exp"])
+create_summary
+```
+
+## Moving cells between notebooks
+
+`move_cells` is the transfer boundary: it keeps full cells intact, derives imports from their AST names, and rolls both files back when a normal commit fails. A name turns the destination into a new chapter; without one, moves stay inside one notebook.
+
+### Moving or copying selected cells
+
+`move_cells` selects by ids, a text query, or a chapter. A transfer retains the selected cell ids and carries required imports to the destination. Use `mode="copy"` to retain the source, and `dry_run=True` to inspect the selected ids before writing:
+
+```python
+with write_demo_notebook("02_write_move_source.ipynb", cells=[mk_cell("import math"), mk_cell("answer = math.ceil(1.2)")]) as source:
+    with write_demo_notebook("02_write_move_target.ipynb", cells=[mk_cell("destination = True")]) as target:
+        answer_id = read_nb(source).cells[1].id
+        copied = move_cells(source, target, cell_ids=[answer_id], name="Answer", mode="copy")
+        target_cells = read_nb(target).cells
+        assert any(cell.id == answer_id for cell in read_nb(source).cells)
+        assert any(cell.id == answer_id for cell in target_cells)
+        assert any("import math" in cell.source for cell in target_cells)
+        copy_summary = dict(changed=copied["changed"], source_retained=True, destination_sources=[cell.source for cell in target_cells])
+copy_summary
+```
+
+Docs: https://MorsCerta-crypto.github.io/nbskill/write.html.md"""
+
 # AUTOGENERATED! DO NOT EDIT! File to edit: ../nbs/02_write.ipynb.
 
 # %% auto #0
@@ -17,11 +120,11 @@ from fastcore.nbio import mk_cell, new_nb, read_nb
 
 from .execute import exec_nb, run_notebook_test
 from nbskill.foundation import (
-    cell_class_names, cell_source, clear_outputs, api_error,
+    cell_class_names, cell_directives, cell_source, clear_outputs, api_error,
     api_return, commit_notebook, find_cell_by_id, find_cell_by_text,
     is_exported_code_cell, load_cells_text, numbered_notebook_path, one_chapter, parse_cells,
     parse_one_cell, replace_cell, short_call_name, source_hash,
-    stamp_notebook_metadata, validate_code_cells,
+    notebook_directive, stamp_notebook_metadata, validate_code_cells,
     )
 from .parallel import notebook_locks
 
@@ -743,21 +846,6 @@ def batch_edit_nb(
     print(msg)
     return api_return({"paths": [str(path) for path in paths], "details": details})
 
-# %% ../nbs/02_write.ipynb #8e5f6d2d
-def _cell_lines(cell):
-    source = cell_source(cell)
-    return source.splitlines()
-
-
-# %% ../nbs/02_write.ipynb #a179770a
-def _default_exp_from_cells(cells):
-    for cell in cells:
-        for line in _cell_lines(cell):
-            match = re.match(r"^\s*#\|\s*default_exp\s+(.+?)\s*$", line)
-            if match: return match.group(1).strip()
-    return None
-
-
 # %% ../nbs/02_write.ipynb #fc95bb7f
 def _default_exp_for_dest(dest):
     dest = Path(dest)
@@ -786,8 +874,7 @@ def _module_for_default_exp(default_exp, path=None):
 
 
 # %% ../nbs/02_write.ipynb #7f55becc
-def _is_default_exp_cell(cell):
-    return any(re.match(r"^\s*#\|\s*default_exp\s+", line) for line in _cell_lines(cell))
+def _is_default_exp_cell(cell): return "default_exp" in cell_directives(cell)
 
 
 # %% ../nbs/02_write.ipynb #30173626
@@ -906,7 +993,7 @@ def _split_chapter_plan(nb, chapter, dest, default_exp=None, promote_private=Tru
     remaining_uses = _loaded_names(remaining)
     outside_defs = _definition_names(remaining)
     moved_defs = _definition_names(moved)
-    source_default_exp = _default_exp_from_cells(nb.cells)
+    source_default_exp = notebook_directive(nb, "default_exp")
     source_module = _module_for_default_exp(source_default_exp, path=dest)
     dest_default_exp = default_exp or _default_exp_for_dest(dest)
     dest_module = _module_for_default_exp(dest_default_exp, path=dest)
@@ -1027,6 +1114,7 @@ def create_notebook(path, name=None, template="nbdev", default_exp=None, dry_run
     if not dry_run: commit_notebook(out_path, nb, before=new_nb([]), affected_cell_ids=[cell.id for cell in cells])
     return dict(path=str(out_path), name=name, default_exp=default_exp, changed=not dry_run, dry_run=dry_run)
 
+# %% ../nbs/02_write.ipynb #8ef25286
 def _move_selection(nb, cell_ids=None, query=None, chapter=None):
     selectors = sum(value is not None for value in (cell_ids, query, chapter))
     if selectors != 1: raise ValueError("Pass exactly one of cell_ids, query, or chapter")
@@ -1046,6 +1134,7 @@ def _move_selection(nb, cell_ids=None, query=None, chapter=None):
     if not selected: raise ValueError("query matched no cells")
     return selected
 
+# %% ../nbs/02_write.ipynb #22b5fe5c
 def _move_anchor(cells, anchor, where):
     if where not in {"before", "after"}: raise ValueError("destination_where must be 'before' or 'after'")
     if anchor is None: return len(cells)
@@ -1057,6 +1146,7 @@ def _move_anchor(cells, anchor, where):
         if str(cell.id) == str(anchor): return idx + (where == "after")
     raise ValueError(f"Unknown destination anchor: {anchor}")
 
+# %% ../nbs/02_write.ipynb #9c231058
 def move_cells(source_path, destination_path=None, cell_ids=None, query=None, chapter=None, name=None, mode="move", destination_anchor=None, destination_where="after", default_exp=None, promote_private=True, dry_run=False):
     "Move or copy selected cells, preserving full cell payloads and inferred imports."
     if mode not in {"move", "copy"}: raise ValueError("mode must be 'move' or 'copy'")
@@ -1076,7 +1166,7 @@ def move_cells(source_path, destination_path=None, cell_ids=None, query=None, ch
             uses = _loaded_names(moving)
             remaining_defs = _definition_names(source_trial.cells)
             imports = _import_lines_for_names(source_before.cells, uses - set(remaining_defs))
-            source_default = _default_exp_from_cells(source_before.cells)
+            source_default = notebook_directive(source_before, "default_exp")
             deps = sorted(uses & set(remaining_defs))
             if deps:
                 module = _module_for_default_exp(source_default, path=source_path)

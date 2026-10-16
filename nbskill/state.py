@@ -15,7 +15,7 @@ state_folder = TemporaryDirectory()
 state_path = Path(state_folder.name) / "state.ipynb"
 state_nb = new_nb([mk_cell("raw = 1"), mk_cell("clean = raw + 1"),
     mk_cell("result = clean * 2"), mk_cell('globals()["candidate"] = result')])
-for state_cell in state_nb.cells[:3]: nbskill_cell_metadata(state_cell)["executed_hash"] = source_hash(cell_source(state_cell), length=None)
+for state_cell in state_nb.cells[:3]: nbskill_cell_metadata(state_cell, create=True)["executed_hash"] = source_hash(cell_source(state_cell), length=None)
 write_nb(state_nb, state_path)
 initial_state = notebook_state(state_path)
 test_eq(notebook_state(state_path)["counts"]["clean"], 3)
@@ -50,7 +50,7 @@ from pathlib import Path
 
 from fastcore.nbio import read_nb
 
-from .foundation import nbskill_cell_metadata, cell_source, source_hash
+from .foundation import nbskill_cell_metadata, cell_source, source_hash, track_call
 
 # %% ../nbs/15_state.ipynb #e82b42e2
 def _state_scope_reads(table):
@@ -142,6 +142,7 @@ def _state_edges(dependencies):
         for target, sources in dependencies.items() for source, symbols in sources.items()]
 
 # %% ../nbs/15_state.ipynb #02eea850
+@track_call
 def notebook_state(path):
     "Return evidence-backed execution state and likely downstream impact for one notebook."
     path = Path(path)

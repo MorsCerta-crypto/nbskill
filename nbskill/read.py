@@ -70,9 +70,10 @@ from fastcore.nbio import read_nb
 from fastcore.basics import patch
 
 from nbskill.foundation import (
-    Notebook, NotebookCell, call_name, cell_matches_type, cell_output_text, cell_prefix,
+    track_call,
+    Notebook, NotebookCell, definition_nodes, definition_names, parse_code_cell, call_name, cell_matches_type, cell_output_text, cell_prefix,
     cell_source, chapter_index_set, chapter_spans, find_cell_by_id, first_line,
-    heading_title, is_exported_code_cell, matches_filter, notebook_paths, notebook_result, one_chapter,
+    heading_title, is_exported_code_cell, matches_filter, matching_chapters, notebook_paths, notebook_result, one_chapter,
     source_hash, source_without_directives, symbol_short_name,
 )
 
@@ -376,12 +377,10 @@ def _definition_record(path, idx, cell, node, symbol=None, kind=None):
 def _definition_records(path, nb):
     records = []
     for idx, cell in enumerate(nb.cells):
-        if getattr(cell, "cell_type", None) != "code": continue
-        try: tree = ast.parse(source_without_directives(cell_source(cell)))
-        except SyntaxError: continue
-        for node in tree.body:
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-                records.append(_definition_record(path, idx, cell, node))
+        tree = parse_code_cell(cell)
+        if tree is None: continue
+        records.extend(_definition_record(path, idx, cell, node, symbol=symbol, kind=kind)
+            for symbol, node, kind in definition_nodes(tree))
     return records
 
 # %% ../nbs/01_read.ipynb #contextoutput
@@ -477,15 +476,8 @@ def _format_callee_items(items, indent=""):
         lines.extend(_format_callee_items(item.get("callees", []), indent=indent + "  "))
     return lines
 
-# %% ../nbs/01_read.ipynb #37ae8575
-def _normalize_chapter_title(value):
-    return re.sub(r"\s+", " ", str(value).strip().lower())
-
 # %% ../nbs/01_read.ipynb #411b4891
 def _chapter_spans_for_nb(cells): return chapter_spans(cells, levels=(2,), fallback="Notebook")
-
-# %% ../nbs/01_read.ipynb #050bf6f0
-def _all_heading_spans_for_nb(cells): return chapter_spans(cells, levels=range(1, 7), fallback="Notebook")
 
 # %% ../nbs/01_read.ipynb #fa91bd16
 def _notebook_head_items(cells):
@@ -502,26 +494,9 @@ def _chapter_span_for_index(cells, idx):
         if span["start"] <= idx < span["end"]: return span
     raise ValueError(f"Cell index {idx} is outside the notebook")
 
-# %% ../nbs/01_read.ipynb #27e44c97
-def _chapter_matches(span, name):
-    title = span["title"]
-    if matches_filter(title, name): return True
-    wanted, candidate = _normalize_chapter_title(name), _normalize_chapter_title(title)
-    return bool(wanted and (wanted in candidate or candidate in wanted))
-
 # %% ../nbs/01_read.ipynb #8cbbb8bd
 def _one_chapter_span(cells, name):
-    spans = _chapter_spans_for_nb(cells)
-    matches = [span for span in spans if _chapter_matches(span, name)]
-    if not matches:
-        nested_spans = _all_heading_spans_for_nb(cells)
-        nested_matches = [span for span in nested_spans if _chapter_matches(span, name)]
-        if nested_matches: spans, matches = nested_spans, nested_matches
-    if len(matches) == 1: return matches[0]
-    titles = ", ".join(span["title"] for span in spans[:8]) or "none"
-    if not matches: raise ValueError(f"No chapter matches {name!r}. Available chapters: {titles}")
-    matched = ", ".join(span["title"] for span in matches)
-    raise ValueError(f"Chapter {name!r} matches multiple chapters: {matched}")
+    return one_chapter(cells, name)
 
 # %% ../nbs/01_read.ipynb #c605990b
 def _query_items(nb, query):
@@ -1031,19 +1006,6 @@ def _context_filtered(
         total_matches=total, matches=matches,
     )
 
-# %% ../nbs/01_read.ipynb #38ee5411
-def _annotation_name(annotation):
-    if annotation is None: return None
-    if isinstance(annotation, ast.Name): return annotation.id
-    if isinstance(annotation, ast.Attribute): return annotation.attr
-    if isinstance(annotation, ast.Constant): return annotation.value
-    return ast.unparse(annotation)
-
-# %% ../nbs/01_read.ipynb #13d79959
-def _first_arg_annotation(node):
-    args = node.args.posonlyargs or node.args.args
-    return _annotation_name(args[0].annotation) if args else None
-
 # %% ../nbs/01_read.ipynb #a16d35a9
 def _assignment_target_names(node):
     if isinstance(node, ast.Assign): raw_targets = node.targets
@@ -1057,37 +1019,17 @@ def _assignment_target_names(node):
     return names
 
 # %% ../nbs/01_read.ipynb #2bed43f2
-def _patch_symbol(node):
-    if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)): return None
-    decorators = [item.func if isinstance(item, ast.Call) else item for item in node.decorator_list]
-    if not any(isinstance(item, ast.Name) and item.id == "patch" for item in decorators): return None
-    owner = _first_arg_annotation(node)
-    return f"{owner}.{node.name}" if owner else None
+def _definition_symbol(node):
+    return definition_names(node)[0] if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) else getattr(node, "name", "")
 
-
-def _definition_symbol(node): return _patch_symbol(node) or getattr(node, "name", "")
-
-
+# %% ../nbs/01_read.ipynb #d68ec5ca
 def _node_defines_symbol(node, symbol):
-    parts = symbol.split(".")
-    name = parts[-1]
-    if len(parts) == 1 and name in _assignment_target_names(node): return True
-    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-        return node.name == name and _patch_symbol(node) is None if len(parts) == 1 else _patch_symbol(node) == symbol
-    if isinstance(node, ast.ClassDef):
-        if len(parts) == 1: return node.name == name
-        return node.name == parts[-2] and any(
-            isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)) and child.name == name
-            for child in node.body
-        )
-    return False
+    if symbol in _assignment_target_names(node): return True
+    return any(name == symbol for name, _, _ in definition_nodes(node)) if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) else False
 
 # %% ../nbs/01_read.ipynb #de0add17
 def _cell_defines_symbol(cell, symbol):
-    if cell.cell_type != "code": return False
-    try: tree = ast.parse(source_without_directives(cell.source))
-    except SyntaxError: return False
-    return any(_node_defines_symbol(node, symbol) for node in tree.body)
+    return _find_symbol_node(cell, symbol) is not None
 
 # %% ../nbs/01_read.ipynb #085c92b6
 def _find_symbol_cell(nb, symbol):
@@ -1097,20 +1039,11 @@ def _find_symbol_cell(nb, symbol):
 
 # %% ../nbs/01_read.ipynb #063695a7
 def _find_symbol_node(cell, symbol):
-    if getattr(cell, "cell_type", None) != "code": return None
-    try: tree = ast.parse(source_without_directives(cell.source))
-    except SyntaxError: return None
-    parts = symbol.split(".")
+    tree = parse_code_cell(cell)
+    if tree is None: return None
     for node in tree.body:
-        if len(parts) == 1 and symbol in _assignment_target_names(node): return node
-        if len(parts) == 1 and isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and node.name == symbol:
-            return node
-        if _node_defines_symbol(node, symbol):
-            if isinstance(node, ast.ClassDef) and len(parts) > 1:
-                name = parts[-1]
-                return next((child for child in node.body if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)) and child.name == name), node)
-            return node
-    return None
+        if symbol in _assignment_target_names(node): return node
+    return next((node for name, node, _ in definition_nodes(tree) if name == symbol), None)
 
 # %% ../nbs/01_read.ipynb #442aa659
 def _following_markdown(cells, idx, limit):
@@ -1142,58 +1075,19 @@ def _symbol_signature_text(cell, symbol):
     if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)): return _function_overview(node)
     return [_source_for_node(cell, node)]
 
-# %% ../nbs/01_read.ipynb #b209907e
-def _usage_group_locations(raw_locations):
-    raw = str(raw_locations or "").strip()
-    if not raw or raw == "none": return [], 0
-    grouped = {}
-    for item in [part.strip() for part in raw.split(";") if part.strip()]:
-        path, _, cell_id = item.rpartition(" id=")
-        if not path: path, cell_id = item, ""
-        grouped.setdefault(path, []).append(cell_id)
-    return list(grouped.items()), sum(len(ids) for ids in grouped.values())
-
-# %% ../nbs/01_read.ipynb #ae0338fd
-def _format_usage_locations(label, raw_locations, max_paths=4, max_ids=4):
-    groups, total = _usage_group_locations(raw_locations)
-    if not total: return [f"{label}: none"]
-    cell_word = "cell" if total == 1 else "cells"
-    notebook_word = "notebook" if len(groups) == 1 else "notebooks"
-    lines = [f"{label}: {total} {cell_word} across {len(groups)} {notebook_word}"]
-    for path, ids in groups[:max_paths]:
-        shown_ids = [item for item in ids[:max_ids] if item]
-        suffix = f": {', '.join(shown_ids)}" if shown_ids else ""
-        if len(ids) > max_ids: suffix += f", +{len(ids) - max_ids} more"
-        lines.append(f"- {path}{suffix}")
-    if len(groups) > max_paths: lines.append(f"- +{len(groups) - max_paths} more notebooks")
-    return lines
-
-# %% ../nbs/01_read.ipynb #5b0a93f6
-def _raw_caller_usage_lines(raw_lines):
-    if "Caller usages:" not in raw_lines: return []
-    start = raw_lines.index("Caller usages:") + 1
-    return [line for line in raw_lines[start:] if line.startswith("- ")]
-
 # %% ../nbs/01_read.ipynb #9d424218
 def _format_symbol_usage(path, symbol):
     try:
-        from nbskill.graph import symbol_usage_summary
-        raw = symbol_usage_summary(path, [symbol])
+        from nbskill.graph import symbol_graph_data
+        data = symbol_graph_data(path, symbol)
     except Exception as exc:
         return [f"Usage unavailable: {type(exc).__name__}: {exc}"]
-    if not raw: return []
-    raw_lines = raw.splitlines()
-    line = raw_lines[0]
-    prefix = f"{symbol}: callers="
-    if not line.startswith(prefix) or "; callees=" not in line: return raw_lines
-    callers, _, callees = line[len(prefix):].partition("; callees=")
-    lines = _format_usage_locations("Callers", callers)
-    caller_usage = _raw_caller_usage_lines(raw_lines)
-    if caller_usage:
-        lines.append("Caller usages:")
-        lines.extend(caller_usage)
-    callee_items = [item.strip() for item in callees.split(";") if item.strip() and item.strip() != "none"]
-    lines.append(f"Callees: {', '.join(callee_items)}" if callee_items else "Callees: none")
+    callers = data.get("callers", [])
+    lines = ["Callers: " + (", ".join(f"{item['path']}#{item['cell_id']}" for item in callers) or "none")]
+    usages = [site["line"] for item in callers for site in item.get("call_sites", []) if site.get("line")]
+    if usages: lines.extend(["Caller usages:", *dict.fromkeys(usages)])
+    callees = [item.get("symbol", item.get("name", "")) for item in data.get("callees", [])]
+    lines.append("Callees: " + (", ".join(dict.fromkeys(callees)) or "none"))
     return lines
 
 # %% ../nbs/01_read.ipynb #1584953f
@@ -1467,16 +1361,11 @@ def _context_symbol_matches(target, notebooks):
 
 # %% ../nbs/01_read.ipynb #e254cfd2
 def _context_chapter_matches(target, notebooks):
-    chapter_matches, subchapter_matches = [], []
+    matches = []
     for path in notebooks:
         nb = read_nb(path)
-        for span in _chapter_spans_for_nb(nb.cells):
-            if _chapter_matches(span, target):
-                chapter_matches.append(dict(path=str(path), chapter=span))
-        for span in _all_heading_spans_for_nb(nb.cells):
-            if _chapter_matches(span, target):
-                subchapter_matches.append(dict(path=str(path), chapter=span))
-    return chapter_matches or subchapter_matches
+        matches.extend(dict(path=str(path), chapter=span) for span in matching_chapters(nb.cells, target))
+    return matches
 
 # %% ../nbs/01_read.ipynb #3b0fe227
 def _context_candidate_target(item):
@@ -1950,6 +1839,7 @@ def _context_batch(
     )
 
 # %% ../nbs/01_read.ipynb #faa6d792
+@track_call
 def context(
     target: str = "project",
     scope: str = ".",

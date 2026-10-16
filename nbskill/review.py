@@ -23,9 +23,29 @@ with write_demo_notebook("04_review_literacy_usage.ipynb") as path:
 literacy_codes
 ```
 
+`notebook_autofix` previews repairs without writing. Applying the same plan splits independent definitions into cells and retains their export directives. This example checks the saved source as well as the proposed fixes:
+
+```python
+style_source = "\n".join([
+    "#| export", "def first(flag):", "", "    if flag:", "        return 1", "",
+    "def second():", "    return 2",
+]) + "\n"
+with write_demo_notebook("review_real_autofix.ipynb", cells=[mk_cell(style_source)]) as path:
+    before = path.read_bytes()
+    preview = notebook_autofix(path, dry_run=True)
+    assert {"compact-if", "split-definitions"} <= {record["code"] for record in preview}
+    assert path.read_bytes() == before
+    notebook_autofix(path)
+    fixed = read_nb(path)
+    assert len(fixed.cells) == 2
+    assert all(is_exported_code_cell(cell) for cell in fixed.cells)
+    fix_summary = dict(fixes=[record["code"] for record in preview], sources=[cell.source for cell in fixed.cells])
+fix_summary
+```
+
 ### `style_report`
 
-`style_report` returns structured diagnostics, a summary, and suggested fixes without changing the notebook. It is useful for agents that need cell IDs and warning codes rather than terminal text. Supply `changed_only=True` to restrict feedback to the current edit. The canonical disposable notebook gives a compact report:
+`style_report` returns structured diagnostics, a summary, and suggested fixes without changing the notebook. It is useful for agents that need cell IDs and warning codes rather than terminal text. Supply `changed_only=True` to restrict feedback to the current edit in either a file or a directory. Global usage stays in structured data; `include_usage=True` also shows its history. The canonical disposable notebook gives a compact report:
 
 ```python
 with write_tool_notebook("04_review_report_usage.ipynb") as path:
@@ -37,7 +57,7 @@ review_preview
 
 ### `style_check`
 
-`style_check` runs fast.ai style hints and prints notebook hygiene feedback. It returns a nonzero status when problems are present. Use `strict=True` when a problem should raise, and `style_report` when a caller needs structured data. Suggested fixes remain a review aid; applying a source change still belongs to the notebook editor.
+`style_check` runs fast.ai style hints and prints notebook hygiene feedback. It returns a nonzero status when the selected source has diagnostics or the checker fails. The complete display, including optional usage history and fix suggestions, obeys `max_output_chars`. Use `strict=True` when a problem should raise, and `style_report` when a caller needs structured data. Suggested fixes remain a review aid; applying a source change still belongs to the notebook editor.
 
 ### `diff_nb`
 
@@ -62,7 +82,7 @@ __all__ = ['skip_style_paths', 'public_function_literacy_problems', 'notebook_va
            'validate_nbs', 'code_source', 'visible_text_inventory', 'diff_nb']
 
 # %% ../nbs/04_review.ipynb #3cff0f46
-import ast
+import ast, copy
 import json
 import re
 import subprocess
@@ -74,10 +94,9 @@ from pathlib import Path
 from fastcore.nbio import mk_cell, read_nb
 from fastcore.nbio import write_nb as _write_nb
 from nbdev.diff import nbs_pair, source_diff
-from nbdev.doclinks import nbdev_export as _run_nb_export
-from remold import cst, m, cstmap, code
 
 from nbskill.foundation import (
+    track_call, reset_usage,
     empty_failure_map, failure_map_path, load_failure_map, cell_class_names, cell_semantic_warnings,
     cell_source, clear_outputs, api_error, api_return, exported_py_path, file_hash, file_line_count,
     cap_text, notebook_paths, parse_code_cell, short_call_name, source_without_directives,
@@ -407,17 +426,8 @@ def _validation_problem(code, path, cell=None, detail="", **kwargs):
 def _cell_metadata_validation_problems(nb_path, cell):
     info = _nbskill_info(cell)
     problems = []
-    if not isinstance(info, dict):
-        problems.append(_validation_problem("missing-cell-nbskill-metadata", nb_path, cell))
-    else:
-        expected_type = getattr(cell, "cell_type", None)
-        if "cell_type" not in info:
-            problems.append(_validation_problem("missing-cell-type", nb_path, cell))
-        elif info.get("cell_type") != expected_type:
-            problems.append(_validation_problem("cell-type-mismatch", nb_path, cell, f"expected {expected_type!r}, stored {info.get('cell_type')!r}"))
-        semantic_types = info.get("semantic_types")
-        if not isinstance(semantic_types, list) or not semantic_types:
-            problems.append(_validation_problem("missing-cell-semantic-types", nb_path, cell))
+    if info is not None and not isinstance(info, dict):
+        problems.append(_validation_problem("invalid-cell-nbskill-metadata", nb_path, cell))
     syntax_problem = _cell_python_syntax_problem(nb_path, cell)
     if syntax_problem: problems.append(syntax_problem)
     return problems
@@ -575,7 +585,7 @@ def _format_global_usage_summary(data=None):
     data = data or _global_usage_summary_data()
     if not data["exists"]: return f"Global nbskill usage: no records at {data['path']}"
     counts = data.get("counts", {})
-    lines = [f"Global nbskill usage: {data['path']}"]
+    lines = [f"Global nbskill usage: {data['path']}", "Counts include intentional failing tests; they are operation outcomes, not a tool-quality score."]
     lines += _format_count_group("usage", counts.get("usage", {}))
     lines += _format_count_group("failures", counts.get("failures", {}))
     lines += _format_count_group("friction", counts.get("friction", {}))
@@ -589,10 +599,8 @@ def _format_global_usage_summary(data=None):
 
 # %% ../nbs/04_review.ipynb #0db645a6
 def reset_global_usage_summary():
-    path = failure_map_path()
-    try: path.unlink()
-    except FileNotFoundError: pass
-    except OSError: path.write_text(json.dumps(empty_failure_map(), indent=2, sort_keys=True), encoding="utf-8")
+    "Clear saved usage and discard the active tool call's pending record."
+    return reset_usage()
 
 # %% ../nbs/04_review.ipynb #86f15b90
 _CHKSTYLE_RE = re.compile(r"^# (?P<path>.*?):cell\[(?P<cell>[^\]]+)\]:(?P<line>\d+): (?P<detail>.*)$")
@@ -732,10 +740,9 @@ def _remove_function_blank_lines(lines):
     return removed
 
 # %% ../nbs/04_review.ipynb #04fed3b8
-_SIMPLE_CST_BODY_TYPES = (cst.Assign, cst.AnnAssign, cst.AugAssign, cst.Expr, cst.Return, cst.Raise, cst.Pass, cst.Break, cst.Continue, cst.Del)
-
-
 def _compact_simple_ifs_with_remold(source, max_len=180):
+    from remold import cst, m, cstmap, code
+    simple_types = (cst.Assign, cst.AnnAssign, cst.AugAssign, cst.Expr, cst.Return, cst.Raise, cst.Pass, cst.Break, cst.Continue, cst.Del)
     changed = 0
 
     def fix(node, _):
@@ -744,7 +751,7 @@ def _compact_simple_ifs_with_remold(source, max_len=180):
         if node.body.header.comment or len(node.body.body) != 1: return None
         stmt = node.body.body[0]
         if not isinstance(stmt, cst.SimpleStatementLine) or stmt.leading_lines: return None
-        if len(stmt.body) != 1 or not isinstance(stmt.body[0], _SIMPLE_CST_BODY_TYPES): return None
+        if len(stmt.body) != 1 or not isinstance(stmt.body[0], simple_types): return None
         body = code(stmt).strip()
         if "\n" in body: return None
         replacement = f"if {code(node.test).strip()}: {body}"
@@ -804,21 +811,20 @@ def _fix_code_cell_source(source):
     if _source_ast_dump(new_source) != before_dump: return {"source": original, "fixes": {}, "changed": False}
     return _source_transform_result(new_source, counts)
 
-# %% ../nbs/04_review.ipynb #17a4ad54
-def _cst_split_definition(stmt):
-    return isinstance(stmt, (cst.FunctionDef, cst.ClassDef)) and not stmt.decorators
-
 # %% ../nbs/04_review.ipynb #f63bd79e
 def _cst_definition_split_sources(source):
+    from remold import cst, code
     if not _safe_python_source(source): return []
     try: mod = cst.parse_module(source)
     except Exception: return []
     body = list(mod.body)
-    if len(body) < 2 or not all(_cst_split_definition(stmt) for stmt in body): return []
+    if len(body) < 2 or not all(isinstance(stmt, (cst.FunctionDef, cst.ClassDef)) and not stmt.decorators for stmt in body): return []
     header = "".join(code(line) for line in mod.header)
+    directives, _ = _split_directive_lines(source)
     chunks = []
     for idx, stmt in enumerate(body):
-        chunk = (header if idx == 0 else "") + code(stmt)
+        prefix = header if idx == 0 else ("\n".join(directives) + "\n" if directives else "")
+        chunk = prefix + code(stmt)
         chunk = chunk.strip("\n") + "\n"
         if not _safe_python_source(chunk) or _source_ast_dump(chunk) is None: return []
         chunks.append(chunk)
@@ -845,105 +851,104 @@ def _autofix_record(path, cell_id, code, count=1):
 
 # %% ../nbs/04_review.ipynb #23fd608a
 def notebook_autofix(path=".", dry_run=False):
-    records = []
+    "Plan conservative fixes, then commit the affected notebooks together."
+    from nbskill.edit import commit_notebooks
+    records, plans = [], []
     for nb_path in notebook_paths(path):
-        with notebook_locks(nb_path):
-            nb = read_nb(nb_path)
-            changed, idx = False, 0
-            while idx < len(nb.cells):
-                cell = nb.cells[idx]
-                if getattr(cell, "cell_type", None) != "code":
-                    idx += 1
-                    continue
-                source = cell_source(cell)
-                fixed = _fix_code_cell_source(source)
+        before = read_nb(nb_path)
+        trial = copy.deepcopy(before)
+        cells, affected = [], []
+        for cell in trial.cells:
+            if cell.cell_type != "code":
+                cells.append(cell)
+                continue
+            fixed = _fix_code_cell_source(cell_source(cell))
+            source = fixed["source"]
+            records.extend(_autofix_record(nb_path, cell.id, code, count) for code, count in fixed["fixes"].items())
+            split_sources = _cst_definition_split_sources(source)
+            if split_sources:
+                records.append(_autofix_record(nb_path, cell.id, "split-definitions", len(split_sources)))
+                chunks = [mk_cell(chunk, metadata=copy.deepcopy(cell.metadata)) for chunk in split_sources]
+                chunks[0].id = cell.id
+                cells.extend(chunks)
+                affected.extend(chunk.id for chunk in chunks)
+            else:
                 if fixed["changed"]:
-                    source = fixed["source"]
-                    records.extend(_autofix_record(nb_path, cell.id, code, count) for code, count in fixed["fixes"].items())
-                    if not dry_run:
-                        cell.source = source
-                        clear_outputs(cell)
-                    changed = True
-                split_sources = _cst_definition_split_sources(source)
-                if split_sources:
-                    records.append(_autofix_record(nb_path, cell.id, "split-definitions", len(split_sources)))
-                    records.append(_autofix_record(nb_path, cell.id, "split-functions", len(split_sources)))
-                    if source.lstrip().startswith("#|"): records.append(_autofix_record(nb_path, cell.id, "preserve-directives"))
-                    if not dry_run:
-                        new_cells = [mk_cell(chunk, cell_type="code") for chunk in split_sources]
-                        new_cells[0].id = cell.id
-                        for new_cell in new_cells: clear_outputs(new_cell)
-                        nb.cells[idx:idx + 1] = new_cells
-                    changed = True
-                    idx += len(split_sources)
-                else:
-                    idx += 1
-            if changed and not dry_run:
-                stamp_notebook_metadata(nb)
-                _write_nb(nb, nb_path)
-                if exported_py_path(nb_path, nb) is not None: _run_nb_export(path=str(nb_path))
+                    cell.source = source
+                    affected.append(cell.id)
+                cells.append(cell)
+        if affected:
+            trial.cells = cells
+            plans.append(dict(path=nb_path, before=before, trial=trial, affected_cell_ids=affected))
+    if plans: commit_notebooks(plans, dry_run=dry_run)
     return records
 
+# %% ../nbs/04_review.ipynb #41b9fd02
+def _format_style_report(path, diagnostics, changed_cells=None):
+    count = len(diagnostics)
+    header = f"Style report for {path}: {count} diagnostic(s)"
+    if changed_cells is not None:
+        changed_count = sum(len(ids) for ids in changed_cells.values())
+        header = f"Style delta for {path}: {count} diagnostic(s) across {changed_count} changed cell(s)"
+    lines = [header, f"Notebook craft: {len(_craft_diagnostics(diagnostics))} diagnostic(s)."]
+    for item in diagnostics:
+        if item.get("source") != "chkstyle":
+            lines.append(_format_problem(item))
+            continue
+        cell = f" id={item['cell_id']}" if item.get("cell_id") else ""
+        line = f" line={item['line']}" if item.get("line") else ""
+        detail = item.get("detail") or item["code"]
+        hint = f" (hint: {item['hint']})" if item.get("hint") else ""
+        lines.append(f"- {item.get('source', 'nbskill')}: {item.get('path', path)}{cell}{line} {detail}{hint}".rstrip())
+    return "\n".join(lines)
+
 # %% ../nbs/04_review.ipynb #06616c3e
+@track_call
 def style_report(
     path: str = ".",  # File or folder to check
     chkstyle: dict | None = None,  # Captured chkstyle result to include
-    max_output_chars: int = 12000,  # Maximum raw chkstyle text to keep in report
-    max_diagnostics: int = 200,  # Maximum parsed chkstyle diagnostics
+    max_output_chars: int = 12000,  # Maximum complete display length
+    max_diagnostics: int = 200,  # Maximum diagnostics to display and return
     changed_only: bool = False,  # Report only diagnostics for changed code cells
     ref_a: str | None = "HEAD",  # First git ref for changed_only filtering
     ref_b: str | None = None,  # Second git ref; defaults to working tree
     skip_folder_re: str | None = None,  # Regex for notebook paths to skip
     skip_path: str | None = None,  # Folder name/path to skip
+    include_usage: bool = False,  # Include global usage history in the display
 ):
-    "Return structured style diagnostics, problem chart, and global nbskill usage data."
+    "Return selected style diagnostics, a bounded display, and usage data."
     notebook_problems = _notebook_style_problems(path, skip_folder_re=skip_folder_re, skip_path=skip_path)
-    changed_cell_ids = _changed_code_cell_ids(path, ref_a=ref_a, ref_b=ref_b) if changed_only else None
-    if changed_cell_ids is not None and notebook_paths(path):
-        skip_paths = _style_skip_paths(skip_path)
-        explicit = _explicit_notebook_path(path)
+    changed_cells = _changed_style_cells(path, ref_a, ref_b, skip_folder_re, skip_path) if changed_only else None
+    if changed_cells is not None:
         from nbskill.graph import notebook_advice_problems
-        advice_problems = [
-            problem for problem in notebook_advice_problems(path)
-            if problem.get("cell_id") in changed_cell_ids
-            and (explicit or not _style_path_is_skipped(problem.get("path", ""), skip_paths, skip_folder_re))
-        ]
-        notebook_problems = [
-            item for item in notebook_problems if item.get("cell_id") in changed_cell_ids
-        ] + advice_problems
-    usage = _global_usage_summary_data()
+        notebook_problems = _select_changed_diagnostics(
+            notebook_problems + notebook_advice_problems(path), changed_cells)
     chkstyle = chkstyle or {"status": 0, "output": ""}
-    capped = cap_text(chkstyle.get("output", ""), max_output_chars=max_output_chars)
-    diagnostics = _chkstyle_diagnostics(chkstyle.get("output", ""), max_diagnostics=max_diagnostics) + notebook_problems
-    if changed_cell_ids is not None:
-        diagnostics = [item for item in diagnostics if item.get("cell_id") in changed_cell_ids]
-    notebook_text = _format_notebook_style_report(path, skip_folder_re=skip_folder_re, skip_path=skip_path)
-    craft_text = _format_notebook_craft_report(diagnostics)
-    usage_text = _format_global_usage_summary(usage)
-    chkstyle_text = capped["text"].strip()
-    if changed_cell_ids is not None: text = _format_style_delta_report(path, diagnostics, changed_cell_ids, usage_text)
-    else: text = "\n\n".join(chunk for chunk in [chkstyle_text, craft_text, notebook_text, usage_text] if chunk)
+    checker_problems = _chkstyle_diagnostics(chkstyle.get("output", ""), max_diagnostics=None)
+    diagnostics = checker_problems + notebook_problems
+    if changed_cells is not None: diagnostics = _select_changed_diagnostics(diagnostics, changed_cells)
+    checker_failed = bool(chkstyle.get("status") and not checker_problems)
+    status = int(bool(diagnostics) or checker_failed)
+    shown = diagnostics[:max_diagnostics] if max_diagnostics else diagnostics
+    text = _format_style_report(path, shown, changed_cells)
+    if len(shown) < len(diagnostics): text += f"\n{len(diagnostics) - len(shown)} further diagnostic(s) omitted."
+    if checker_failed: text += "\nChecker failed:\n" + chkstyle.get("output", "")
+    usage = _global_usage_summary_data()
+    if include_usage: text += "\n\n" + _format_global_usage_summary(usage)
+    capped = cap_text(text, max_output_chars=max_output_chars)
     summary = dict(
         notebook_problem_count=len(notebook_problems),
-        chkstyle_problem_count=len([item for item in diagnostics if item.get("source") == "chkstyle"]),
+        chkstyle_problem_count=sum(item.get("source") == "chkstyle" for item in diagnostics),
         diagnostic_count=len(diagnostics),
         recent_problem_count=len(usage.get("recent_problems", [])),
-        output_truncated=capped["truncated"],
-        output_chars=capped["chars"],
-        omitted_chars=capped["omitted_chars"],
-        changed_only=changed_only,
-        changed_cell_count=len(changed_cell_ids or []),
+        output_truncated=capped["truncated"], output_chars=capped["chars"], omitted_chars=capped["omitted_chars"],
+        changed_only=changed_only, changed_cell_count=sum(len(ids) for ids in (changed_cells or {}).values()),
         **_craft_summary(diagnostics))
     return dict(
-        path=str(path),
-        summary=summary,
-        diagnostics=diagnostics[:max_diagnostics] if max_diagnostics else diagnostics,
-        problem_chart=_problem_chart(diagnostics),
-        notebook_problems=notebook_problems,
-        global_usage=usage,
-        chkstyle={"status": chkstyle.get("status", 0), **capped},
-        fixes=_fix_suggestions(diagnostics),
-        text=text)
+        path=str(path), status=status, summary=summary, diagnostics=shown, changed_cells=changed_cells,
+        problem_chart=_problem_chart(diagnostics), notebook_problems=notebook_problems, global_usage=usage,
+        chkstyle={"status": chkstyle.get("status", 0), **cap_text(chkstyle.get("output", ""), max_output_chars=max_output_chars)},
+        fixes=_fix_suggestions(diagnostics), text=capped["text"])
 
 # %% ../nbs/04_review.ipynb #bc59a7ff
 def _chkstyle_main():
@@ -969,39 +974,42 @@ def run_style_check(path=".", skip_folder_re=None, skip_path=None, strict=False,
 
 
 # %% ../nbs/04_review.ipynb #d2f84049
+@track_call
 def style_check(
     path: str = ".",
     skip_folder_re: str | None = None,  # Regex for folders to skip
     skip_path: str | None = None,  # Folder name/path to skip
-    strict: bool = False,  # Raise when style hints or notebook hygiene problems are found
-    delete_after_output: bool = False,  # Reset ~/.nbskill-errors.json after printing the global summary
-    max_output_chars: int = 12000,  # Cap printed chkstyle output
-    max_diagnostics: int = 200,  # Cap returned diagnostics
+    strict: bool = False,  # Raise when selected diagnostics or checker failures are found
+    delete_after_output: bool = False,  # Show and reset global usage after printing
+    max_output_chars: int = 12000,  # Cap the complete printed report
+    max_diagnostics: int = 200,  # Cap displayed diagnostics
     fix: bool = False,  # Show conservative fix suggestions
     dry_run: bool = True,  # Keep fix mode non-mutating by default
     changed_only: bool = False,  # Report only diagnostics for changed code cells
     ref_a: str | None = "HEAD",  # First git ref for changed_only filtering
     ref_b: str | None = None,  # Second git ref; defaults to working tree
+    include_usage: bool = False,  # Include global usage history in the display
 ):
-    "Print capped fast.ai style hints, notebook hygiene warnings, and global tool usage."
+    "Print bounded diagnostics for the selected source and return their status."
     chkstyle = run_style_check(path, skip_folder_re, skip_path, strict=False, max_output_chars=max_output_chars)
     report = style_report(
         path, chkstyle=chkstyle, max_output_chars=max_output_chars,
         max_diagnostics=max_diagnostics, changed_only=changed_only, ref_a=ref_a, ref_b=ref_b,
-        skip_folder_re=skip_folder_re, skip_path=skip_path,
+        skip_folder_re=skip_folder_re, skip_path=skip_path, include_usage=include_usage or delete_after_output,
     )
-    print(report["text"])
+    text = report["text"]
     if fix:
-        print("\nFix suggestions:")
-        fixes = report.get("fixes", [])
-        if not fixes: print("- no deterministic fixes available")
-        for item in fixes:
-            mode = "would apply" if dry_run else "manual-review-required"
-            print(f"- {mode}: {item['description']} ({item['path']})")
+        fixes = report["fixes"]
+        lines = ["Fix suggestions:"]
+        if not fixes: lines.append("- no deterministic fixes available")
+        mode = "would apply" if dry_run else "manual-review-required"
+        lines.extend(f"- {mode}: {item['description']} ({item['path']})" for item in fixes)
+        text += "\n\n" + "\n".join(lines)
+    text = cap_text(text, max_output_chars=max_output_chars)["text"]
+    print(text)
     if delete_after_output: reset_global_usage_summary()
-    has_problems = bool(report["diagnostics"])
-    if strict and (chkstyle["status"] or has_problems): raise RuntimeError(report["text"])
-    return api_return(chkstyle["status"] or int(has_problems))
+    if strict and report["status"]: raise RuntimeError(text)
+    return api_return(report["status"])
 
 # %% ../nbs/04_review.ipynb #12c4df69
 def validate_nbs(
@@ -1115,13 +1123,37 @@ def _metadata_summary(count):
 # %% ../nbs/04_review.ipynb #588d27c7
 def _changed_code_cell_ids(path, ref_a="HEAD", ref_b=None):
     ref_a, ref_b = none_if_string(ref_a), none_if_string(ref_b)
-    try:
-        old, new = nbs_pair(path, ref_a=ref_a, ref_b=ref_b, f=code_source)
-    except Exception:
-        return set()
+    if ref_a is not None or ref_b is not None:
+        root, _ = _git_root_rel(path)
+        for ref in (ref_a, ref_b):
+            if ref is None: continue
+            check = subprocess.run(["git", "-C", str(root), "rev-parse", "--verify", f"{ref}^{{commit}}"],
+                                   capture_output=True, text=True)
+            if check.returncode: raise ValueError(f"Cannot compare notebook {path!s}: unknown git ref {ref!r}")
+    old, new = nbs_pair(path, ref_a=ref_a, ref_b=ref_b, f=code_source)
     old = {cid: src for cid, src in old.items() if src is not None}
     new = {cid: src for cid, src in new.items() if src is not None}
     return {cid for cid in set(old) | set(new) if old.get(cid) != new.get(cid)}
+
+# %% ../nbs/04_review.ipynb #44b8335e
+def _changed_style_cells(path, ref_a, ref_b, skip_folder_re=None, skip_path=None):
+    skip_paths = _style_skip_paths(skip_path)
+    explicit = _explicit_notebook_path(path)
+    return {
+        str(nb_path.resolve()): _changed_code_cell_ids(nb_path, ref_a, ref_b)
+        for nb_path in notebook_paths(path)
+        if explicit or not _style_path_is_skipped(nb_path, skip_paths, skip_folder_re)
+    }
+
+# %% ../nbs/04_review.ipynb #d3a88a7b
+def _select_changed_diagnostics(diagnostics, changed_cells):
+    selected = []
+    for item in diagnostics:
+        changed = changed_cells.get(str(Path(item["path"]).resolve()), set())
+        ids = [item["cell_id"]] if item.get("cell_id") else item.get("cells", [])
+        affected = set(ids) & changed if ids else changed
+        if affected: selected.append(item)
+    return selected
 
 # %% ../nbs/04_review.ipynb #f9df4bbb
 def _diff_filter_ids(path, ref_b=None, cell_id=None, after_id=None):
@@ -1135,19 +1167,6 @@ def _diff_filter_ids(path, ref_b=None, cell_id=None, after_id=None):
         if after_id not in ids: return selected & set()
         selected &= set(ids[ids.index(after_id) + 1:])
     return selected
-
-# %% ../nbs/04_review.ipynb #41b9fd02
-def _format_style_delta_report(path, diagnostics, changed_cell_ids, usage_text):
-    header = f"Style delta for changed code cells in {path}: {len(diagnostics)} diagnostic(s) across {len(changed_cell_ids)} changed cell(s)"
-    craft_text = _format_notebook_craft_report(diagnostics)
-    if not diagnostics: return "\n\n".join([header, craft_text, usage_text])
-    lines = [header]
-    for item in diagnostics:
-        cell = f" id={item['cell_id']}" if item.get("cell_id") else ""
-        line = f" line={item['line']}" if item.get("line") else ""
-        detail = item.get("detail") or item.get("code", "")
-        lines.append(f"- {item.get('source', 'nbskill')}: {item.get('path', path)}{cell}{line} {detail}".rstrip())
-    return "\n\n".join(["\n".join(lines), craft_text, usage_text])
 
 # %% ../nbs/04_review.ipynb #b0f566d1
 _FASTHTML_VISIBLE_TEXT_CALLS = set("""
@@ -1269,9 +1288,10 @@ def _format_public_ui_diff(path, old, new, adds=True, changes=True, dels=False, 
     return "\n\n".join(blocks) if blocks else "No public UI text changes"
 
 # %% ../nbs/04_review.ipynb #fe9b3c86
+@track_call
 def diff_nb(
     path: str,  # Notebook path
-    ref_a: str|None = "HEAD",  # First git ref; use None for working tree
+    ref_a: str|None = "HEAD",  # First git ref; both None review current code as additions
     ref_b: str|None = None,  # Second git ref; defaults to working tree
     adds: bool = True,  # Include code cells added in ref_b
     changes: bool = True,  # Include changed code cells
@@ -1284,7 +1304,7 @@ def diff_nb(
     ref_a, ref_b = none_if_string(ref_a), none_if_string(ref_b)
     surface = (surface or "code").replace("_", "-").lower()
     if surface not in {"code", "public-ui"}: raise ValueError("surface must be 'code' or 'public-ui'")
-    if ref_a is None and ref_b is None and _git_root_rel(path)[0] is None:
+    if ref_a is None and ref_b is None:
         old, new = {}, _working_tree_code_sources(path)
     else:
         if msg := (_git_ref_path_error(path, ref_a) or _git_ref_path_error(path, ref_b)):

@@ -1,8 +1,8 @@
-r"""Read, validate, model, and commit notebook data consistently.
+r"""Model notebook data, metadata, chapters and Python structure consistently.
 
 `nbskill.foundation` supplies the notebook vocabulary used by every later module. Cells have stable ids, chapters are spans opened by separate `##` markdown cells, and generated Python files point back to their source notebook.
 
-Use `parse_cells` to turn cell-block text into notebook cells, `NotebookDocument` to navigate them, and `commit_notebook` to validate and write a trial notebook. These operations keep the notebook structure, source ownership, and execution metadata together. Text-only editing would leave callers to manage those relationships themselves.
+Use `parse_cells` to turn cell-block text into notebook cells, `NotebookDocument` to navigate them, and `nbskill.edit.commit_notebook` to validate and write a trial notebook. These operations keep the notebook structure, source ownership, and execution metadata together. Text-only editing would leave callers to manage those relationships themselves.
 
 ## Demo scratch files
 
@@ -37,7 +37,7 @@ fixture_summary
 
 ## Python API contracts and diagnostics
 
-The public functions in later notebooks are direct Python APIs. These helpers keep return values and validation errors predictable while recording tool starts or failures in a small local failure map for debugging repeated friction.
+The public functions in later notebooks are direct Python APIs. These helpers keep return values and validation errors predictable while recording completed calls and failures in a small local statistics file.
 
 ## Generated source ownership
 
@@ -51,6 +51,12 @@ Selectors are the boundary between human shorthand and list operations. A caller
 
 Write tools accept plain text because that is what agents and humans can produce quickly. This section turns that text into real cells: split on block separators, honor `%%markdown`/`%%code` markers, and split exported code into symbol-sized chunks when needed. It is the small parser that makes notebook edits feel like editing a document instead of assembling JSON.
 
+```python
+calls_source = "result = package.calculate(value)"
+assert call_sites(ast.parse(calls_source), calls_source) == (dict(name="package.calculate", lineno=1, line=calls_source),)
+call_sites(ast.parse(calls_source), calls_source)
+```
+
 ## Cell metadata and semantic classes
 
 Once cells can be parsed, the tools need names for what they *are doing*. A code cell with output is an example; a code cell with an `assert` is a test; a markdown cell with prose is documentation. Those labels power filters such as `type=tests` and help review tools talk about notebooks in human terms.
@@ -59,6 +65,16 @@ Once cells can be parsed, the tools need names for what they *are doing*. A code
 
 These tiny models give the project names for the shapes it already manipulates: cells, chapters, notebooks, and symbols. The classes stay thin; most behavior is patched onto them so each concept can grow near the helper that understands it.
 
+```python
+raw_nb = new_nb([mk_cell("answer = 42")])
+raw_document = Notebook(raw_nb)
+raw_cell = Cell(raw_nb.cells[0])
+raw_graph = {}
+raw_symbol = NotebookSymbol("answer", data=raw_graph)
+assert raw_document.raw is raw_nb and raw_cell.raw is raw_nb.cells[0] and raw_symbol.raw is raw_graph
+raw_cell.raw.source
+```
+
 `NotebookDocument.cell` resolves a stable id even when cells have moved. `chapter` returns the cells belonging to a heading, and `notebook_source_hash` identifies the ordered notebook source. The model keeps cell navigation separate from file writes:
 
 ```python
@@ -66,19 +82,62 @@ document = NotebookDocument(new_nb([mk_cell("## Alpha", cell_type="markdown"), m
 (document.cell(document.nb.cells[1].id).source, document.chapter("Alpha").title, document.notebook_source_hash())
 ```
 
-## Project-scoped nbdev export
+```python
+read_cell = mk_cell("value = 1", metadata={"nbskill_executed_hash": "evidence"})
+read_info = nbskill_cell_metadata(read_cell)
+assert read_info["executed_hash"] == "evidence" and "nbskill" not in read_cell.metadata
+read_info
+```
 
-`run_nbdev_export_from_project` and `export_notebook` deliberately run nbdev export in an isolated process under a project-scoped lock. This looks heavier than calling `nbdev_export` directly, but it protects concurrent Python callers working in different repositories.
+```python
+with tempfile.TemporaryDirectory(prefix="nbskill-ownership-") as folder:
+    ownership_root = Path(folder)
+    (ownership_root/"nbs").mkdir()
+    assert not is_nbdev_project(ownership_root)
+    (ownership_root/"pyproject.toml").write_text("[tool.nbdev]\n", encoding="utf-8")
+    assert is_nbdev_project(ownership_root)
+    assert nbdev_project_root(ownership_root/"nbs"/"example.ipynb") == ownership_root
+    ownership_summary = dict(declared=is_nbdev_project(ownership_root), owner=nbdev_project_root(ownership_root/"nbs"/"example.ipynb").name)
+ownership_summary
+```
 
-The two failures this avoids are subtle. First, nbdev export depends on project context; changing the process cwd with `os.chdir` is global state, so concurrent exports from different projects can race. Second, a caller timeout does not stop a Python worker thread, so a timed-out edit can keep exporting in the background and consume memory. A child process is a boundary the caller can terminate, while the lock only serializes exports for the same project. Different projects get different lock files and can still make progress independently.
-
-## Stable ids and notebook commits
-
-`ensure_cell_ids` fills in missing notebook cell ids. `notebook_hash` changes when a cell's id or source changes. `commit_notebook` validates and records a proposed notebook change, or writes and exports it when `dry_run` is false.
+```python
+replacement = parse_one_cell("%%markdown\n## Replacement")
+assert replacement.cell_type == "markdown" and cell_source(replacement) == "## Replacement"
+replacement.cell_type, cell_source(replacement)
+```
 
 ## Naming cells by behavior
 
 The reading layer presents cells by meaning, not only by `code` or `markdown`. This section detects imports, private helpers, exported code, tests, examples, docs, section headers, and mixed cells so callers can filter notebooks at a useful level. A test that produces a useful output is intentionally both a test and an example; that pairing is not an unclean mixed cell.
+
+```python
+definition_cell = mk_cell("@patch(nm='renamed')\ndef original(self: Thing): return 1")
+definition_tree = parse_code_cell(definition_cell)
+names = definition_names(definition_tree.body[0])
+definitions = definition_nodes(definition_tree)
+assert names == ["Thing.renamed"]
+assert definitions[0][0] == names[0]
+names
+```
+
+```python
+owned = new_nb([mk_cell("value = 1", metadata={"nbskill_executed_hash": "evidence", "nbskill": {"semantic_types": ["public_code"]}})])
+owned_id = owned.cells[0].id
+stamp_notebook_metadata(owned)
+assert owned.cells[0].id == owned_id and owned.cells[0].metadata["nbskill"] == {"executed_hash": "evidence"}
+owned.cells[0].metadata["nbskill"]
+```
+
+```python
+analysis_cell = mk_cell("assert 2 + 2 == 4")
+analysis = cell_analysis(analysis_cell)
+roles = cell_class_names(analysis_cell)
+warnings = cell_semantic_warnings(analysis_cell)
+assert analysis["raw"] is analysis_cell
+assert roles == ("test_code",) and warnings == ()
+roles
+```
 
 `parse_cells` accepts `%%markdown` and `%%code` blocks separated by a dashed line. Exported definitions are split into individual cells while markdown stays intact. The resulting cell types and sources remain available for inspection:
 
@@ -96,6 +155,20 @@ assert [cell.cell_type for cell in parsed_cells] == ["markdown", "code"]
 ## Chapters as editing scopes
 
 Chapters are the notebook-native version of a module section. A heading cell opens a span, and everything until the next heading belongs to that span. Write, execute, and read tools use these spans so users can say "the query language chapter" instead of counting cell indexes by hand.
+
+```python
+selection_cells = [mk_cell("## Parse Data", cell_type="markdown"), mk_cell("value = 1"),
+    mk_cell("## Parse Dataset", cell_type="markdown"), mk_cell("other = 2")]
+selected_matches = matching_chapters(selection_cells, "  parse   DATA ")
+selected_chapter = one_chapter(selection_cells, "parse data")
+selected_indices = chapter_index_set(selection_cells, "parse data")
+assert selected_matches == [selected_chapter]
+assert selected_indices == {0, 1}
+try: one_chapter(selection_cells, "Parse Data.*")
+except ValueError: pass
+else: raise AssertionError("an ambiguous chapter was accepted")
+selected_chapter
+```
 
 `chapter_spans` reads a table of contents from separate heading cells. A real temporary notebook makes the example independent of the working directory. `chapter_index_set` selects the whole chapter without requiring callers to count cell positions:
 
@@ -118,25 +191,27 @@ Docs: https://MorsCerta-crypto.github.io/nbskill/foundation.html.md"""
 __all__ = ['NotebookCell', 'NotebookChapter', 'NotebookDocument', 'output_text', 'numbered_notebook_path', 'remove_demo_path',
            'demo_path', 'demo_path_context', 'path_candidates', 'is_valid_ipynb', 'write_demo_notebook',
            'tool_notebook', 'write_tool_notebook', 'write_demo_file', 'api_return', 'api_error', 'failure_map_path',
-           'empty_failure_map', 'load_failure_map', 'git_run', 'git_root', 'git_status_paths', 'git_tracked_paths',
-           'git_diff_stats', 'load_nbskill_config', 'notebook_paths', 'source_without_directives', 'source_hash',
-           'file_line_count', 'cap_text', 'NotebookResult', 'notebook_result', 'generated_owner',
-           'install_nbdev_pre_commit_hooks', 'bootstrap_nbskill_project', 'parse_literal', 'none_if_string',
-           'symbol_short_name', 'call_name', 'short_call_name', 'is_definition_node', 'node_start_line',
+           'empty_failure_map', 'load_failure_map', 'track_call', 'reset_usage', 'git_run', 'git_root',
+           'git_status_paths', 'git_tracked_paths', 'git_diff_stats', 'load_nbskill_config', 'notebook_paths',
+           'source_without_directives', 'source_hash', 'file_line_count', 'cap_text', 'NotebookResult',
+           'notebook_result', 'generated_owner', 'is_nbdev_project', 'parse_literal', 'none_if_string',
+           'symbol_short_name', 'call_name', 'call_sites', 'short_call_name', 'is_definition_node', 'node_start_line',
            'cell_directives', 'is_export_directive', 'cell_source', 'parse_code_cell', 'CellType', 'SemanticType',
            'Directive', 'directive_lines', 'apply_directives', 'Cell', 'Chapter', 'Notebook', 'NotebookSymbol',
            'xml_escape', 'xml_attrs', 'find_cell_by_id', 'notebook_hash', 'matches_filter', 'chapter_spans',
-           'one_chapter', 'ensure_cell_ids', 'validate_code_cells', 'notebook_directive', 'exported_py_path',
-           'commit_notebook', 'cell_metadata', 'notebook_metadata', 'nbskill_cell_metadata', 'file_hash',
-           'stamp_export_metadata', 'run_nbdev_export_from_project', 'export_notebook', 'parse_one_cell',
-           'find_cell_by_text', 'replace_cell', 'clear_outputs', 'load_cells_text', 'parse_cells', 'first_line',
-           'cell_prefix', 'is_exported_code_cell', 'output_value_text', 'cell_output_text', 'cell_semantic_warnings',
-           'stamp_notebook_metadata', 'cell_class_names', 'cell_matches_type', 'with_context', 'heading_title',
-           'chapter_index_set']
+           'matching_chapters', 'one_chapter', 'ensure_cell_ids', 'validate_code_cells', 'notebook_directive',
+           'exported_py_path', 'cell_metadata', 'notebook_metadata', 'nbskill_cell_metadata', 'file_hash',
+           'stamp_export_metadata', 'nbdev_project_root', 'find_cell_by_text', 'replace_cell', 'clear_outputs',
+           'load_cells_text', 'parse_cells', 'parse_one_cell', 'first_line', 'cell_prefix', 'is_exported_code_cell',
+           'output_value_text', 'cell_output_text', 'cell_analysis', 'definition_names', 'definition_nodes',
+           'cell_semantic_warnings', 'stamp_notebook_metadata', 'cell_class_names', 'cell_matches_type', 'with_context',
+           'heading_title', 'chapter_index_set']
 
 # %% ../nbs/00_foundation.ipynb #2500639f
 import ast,hashlib,json,multiprocessing,os,queue,re,tempfile,tomllib,traceback
-import shutil,subprocess,sys
+import logging,shutil,subprocess,sys,time
+from contextvars import ContextVar
+from functools import wraps
 from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from dataclasses import dataclass, field
 from enum import Enum
@@ -298,32 +373,91 @@ def empty_failure_map():
 
 
 # %% ../nbs/00_foundation.ipynb #2f80149c
-def load_failure_map(path):
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
+def load_failure_map(path, strict=False):
+    "Read saved usage, optionally rejecting corrupt or unreadable statistics."
+    try: data = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError: data = empty_failure_map()
+    except (json.JSONDecodeError, OSError):
+        if strict: raise
         data = empty_failure_map()
+    if not isinstance(data, dict): raise ValueError("nbskill usage must be a JSON object")
     data.setdefault("version", 1)
     data.setdefault("events", [])
     data.setdefault("counts", {})
     data.setdefault("last_call", None)
     return data
 
-# %% ../nbs/00_foundation.ipynb #48374f0e
-_NBSKILL_HOOKS_MARKER_START = "# nbskill nbdev hooks:start"
+# %% ../nbs/00_foundation.ipynb #2772ee81
+_ACTIVE_USAGE_CALL = ContextVar("nbskill_usage_call", default=None)
+_USAGE_EVENT_LIMIT = 100
+_USAGE_ERROR_LIMIT = 1000
 
+# %% ../nbs/00_foundation.ipynb #f961ef22
+def _update_usage(data, tool, error=None):
+    counts, events = data["counts"], data["events"]
+    if not isinstance(counts, dict) or not isinstance(events, list): raise ValueError("Invalid nbskill usage counts or events")
+    groups = ["usage"] if error is None else ["usage", "failures"]
+    for group in groups:
+        totals = counts.setdefault(group, {})
+        if not isinstance(totals, dict): raise ValueError(f"Invalid {group} counts")
+        count = totals.get(tool, 0)
+        if not isinstance(count, int) or count < 0: raise ValueError(f"Invalid {tool} count")
+        totals[tool] = count + 1
+    event = dict(tool=tool, cwd=str(Path.cwd()), ts=time.time())
+    data["last_call"] = event
+    if error is not None:
+        events.append(dict(kind="failure", error=error[:_USAGE_ERROR_LIMIT], **event))
+        data["events"] = events[-_USAGE_EVENT_LIMIT:]
 
-# %% ../nbs/00_foundation.ipynb #eab28b52
-_NBSKILL_HOOKS_MARKER_END = "# nbskill nbdev hooks:end"
+# %% ../nbs/00_foundation.ipynb #1f2fdd20
+def _write_usage(path, data):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle = tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, delete=False)
+    temporary = Path(handle.name)
+    try:
+        with handle: json.dump(data, handle, indent=2, sort_keys=True)
+        os.replace(temporary, path)
+    finally: temporary.unlink(missing_ok=True)
 
+# %% ../nbs/00_foundation.ipynb #dd575b23
+def _record_usage_call(tool, error=None):
+    if _ACTIVE_USAGE_CALL.get() != os.getpid(): return
+    from nbskill.parallel import notebook_locks
+    path = failure_map_path()
+    try:
+        with notebook_locks(path):
+            data = load_failure_map(path, strict=True)
+            _update_usage(data, tool, error)
+            _write_usage(path, data)
+    except (OSError, ValueError, TypeError) as exc: logging.getLogger(__name__).warning("Could not record nbskill %s usage: %s", tool, exc)
 
-# %% ../nbs/00_foundation.ipynb #67a3c225
-_NBSKILL_HOOKS_INSTALLED_SENTINEL = "nbskill-hooks-installed"
+# %% ../nbs/00_foundation.ipynb #abca0c79
+def track_call(func):
+    "Record an outermost synchronous tool call without changing its Python contract."
+    @wraps(func)
+    def tracked(*args, **kwargs):
+        if _ACTIVE_USAGE_CALL.get() == os.getpid(): return func(*args, **kwargs)
+        token = _ACTIVE_USAGE_CALL.set(os.getpid())
+        try: result = func(*args, **kwargs)
+        except BaseException as exc:
+            error = f"{type(exc).__name__}: {exc}" if isinstance(exc, Exception) else None
+            _record_usage_call(func.__name__, error)
+            raise
+        else:
+            error = None
+            if isinstance(result, dict) and result.get("ok") is False: error = str(result.get("errors") or result.get("text") or "ok=False")
+            _record_usage_call(func.__name__, error)
+            return result
+        finally: _ACTIVE_USAGE_CALL.reset(token)
+    return tracked
 
-
-# %% ../nbs/00_foundation.ipynb #10840497
-_NBSKILL_HOOKS_DISABLED_SENTINEL = "nbskill-hooks-disabled"
-
+# %% ../nbs/00_foundation.ipynb #b9418957
+def reset_usage():
+    "Clear saved statistics and discard the current call's pending record."
+    from nbskill.parallel import notebook_locks
+    path = failure_map_path()
+    with notebook_locks(path): path.unlink(missing_ok=True)
+    _ACTIVE_USAGE_CALL.set(None)
 
 # %% ../nbs/00_foundation.ipynb #8f029a46
 def git_run(root, *args):
@@ -454,38 +588,38 @@ def source_hash(source, length=12):
 
 # %% ../nbs/00_foundation.ipynb #4f8cb340
 def file_line_count(path):
-    "Return the number of text lines in `path`, or zero when it cannot be read."
+    "Return the number of text lines in path, or zero when it cannot be read."
     try: return len(Path(path).read_text(encoding="utf-8", errors="ignore").splitlines())
     except OSError: return 0
 
-
-def cap_text(text, limit=2000, max_output_chars=None):
-    "Cap text, returning a string or review-style metadata when `max_output_chars` is used."
-    metadata = max_output_chars is not None
+# %% ../nbs/00_foundation.ipynb #ef4988a0
+def cap_text(text, limit=2000, max_output_chars=...):
+    "Bound the complete text; an explicit max_output_chars returns metadata, with None meaning unlimited."
+    metadata = max_output_chars is not ...
     limit = max_output_chars if metadata else limit
+    if limit is not None and limit < 0: raise ValueError("text budget must be non-negative or None")
     text = "" if text is None else str(text)
     if limit is None or len(text) <= limit:
         capped, omitted = text, 0
     else:
-        omitted = len(text) - limit
-        capped = f"{text[:limit].rstrip()}\n... truncated {omitted} chars ..."
+        marker = "\n... truncated ..."
+        content_limit = limit - len(marker) if limit >= len(marker) else limit
+        prefix = text[:content_limit].rstrip()
+        capped = prefix + marker if limit >= len(marker) else prefix
+        omitted = len(text) - len(prefix)
     if not metadata: return capped
     return {"text": capped, "truncated": bool(omitted), "chars": len(text), "omitted_chars": omitted}
 
 # %% ../nbs/00_foundation.ipynb #6a7068a9
 class NotebookResult(dict):
     "Dictionary result with one compact interpreter display."
-    def __repr__(self): return self.get("display", dict.__repr__(self))
+    def __repr__(self): return self["display"] if "display" in self else dict.__repr__(self)
 
 
 def notebook_result(data, max_display_chars=6000):
-    "Keep complete structured data while bounding the interpreter display."
-    text = str(data.get("text", ""))
-    capped = cap_text(text, max_output_chars=max_display_chars)
-    display = capped["text"]
-    if capped["truncated"]:
-        display += f"\n\nDisplay budget: {max_display_chars} chars; omitted {capped['omitted_chars']} chars. Set max_display_chars=None to show all."
-    return NotebookResult({**data, "display": display, "display_budget": capped})
+    "Bound the interpreter display while retaining the complete structured text."
+    capped = cap_text(data.get("text", ""), max_output_chars=max_display_chars)
+    return NotebookResult({**data, "display": capped["text"], "display_budget": capped})
 
 # %% ../nbs/00_foundation.ipynb #65e47857
 _GENERATED_HEADER_RE = re.compile(r"^# AUTOGENERATED! DO NOT EDIT! File to edit: (.+)$")
@@ -500,6 +634,7 @@ def _generated_owner_from_header(path):
     return None
 
 
+@track_call
 def generated_owner(path, notebooks=None):
     "Return the source notebook for an nbdev-generated Python file, when known."
     path = Path(path)
@@ -515,246 +650,13 @@ def generated_owner(path, notebooks=None):
     return None
 
 # %% ../nbs/00_foundation.ipynb #035dbb05
-def _looks_like_nbdev_project(root):
+def is_nbdev_project(root):
+    "Return whether a directory declares an nbdev project."
     root = Path(root)
+    if (root / "settings.ini").exists(): return True
     pyproject = root / "pyproject.toml"
-    if (root / "nbs").exists() or (root / "settings.ini").exists(): return True
-    return pyproject.exists() and "[tool.nbdev]" in pyproject.read_text(encoding="utf-8", errors="ignore")
-
-
-# %% ../nbs/00_foundation.ipynb #6eca46ec
-def _nbdev_hook_block():
-    return f"""{_NBSKILL_HOOKS_MARKER_START}
-run_nbdev_cmd() {{
-  if command -v "$1" >/dev/null 2>&1; then
-    "$@"
-  elif command -v uv >/dev/null 2>&1; then
-    uv run "$@"
-  else
-    echo "nbskill: missing $1; install nbdev or uv" >&2
-    exit 127
-  fi
-}}
-
-run_nbdev_cmd nbdev-clean
-if ! git diff --quiet -- .; then
-  echo "nbskill: nbdev-clean changed notebooks. Review and stage those changes before committing." >&2
-  exit 1
-fi
-run_nbdev_cmd nbdev-test --n_workers 0
-{_NBSKILL_HOOKS_MARKER_END}
-"""
-
-
-# %% ../nbs/00_foundation.ipynb #7f521a35
-def _replace_marked_block(text, block):
-    if _NBSKILL_HOOKS_MARKER_START in text and _NBSKILL_HOOKS_MARKER_END in text:
-        before = text.split(_NBSKILL_HOOKS_MARKER_START, 1)[0].rstrip()
-        after = text.split(_NBSKILL_HOOKS_MARKER_END, 1)[1].lstrip()
-        return f"{before}\n\n{block}\n{after}".rstrip() + "\n"
-    prefix = text.rstrip() if text.strip() else "#!/bin/sh"
-    return f"{prefix}\n\n{block}\n"
-
-
-# %% ../nbs/00_foundation.ipynb #61d4b0b9
-def _hook_state_paths(root):
-    info = Path(root) / ".git" / "info"
-    return info / _NBSKILL_HOOKS_INSTALLED_SENTINEL, info / _NBSKILL_HOOKS_DISABLED_SENTINEL
-
-
-# %% ../nbs/00_foundation.ipynb #4f06478e
-def _has_nbskill_hook_block(pre_commit):
-    if not pre_commit.exists(): return False
-    text = pre_commit.read_text(encoding="utf-8", errors="ignore")
-    return _NBSKILL_HOOKS_MARKER_START in text and _NBSKILL_HOOKS_MARKER_END in text
-
-
-# %% ../nbs/00_foundation.ipynb #fe5dd49f
-def _hooks_removed_by_user(root, pre_commit):
-    installed, disabled = _hook_state_paths(root)
-    if disabled.exists(): return True
-    if installed.exists() and not _has_nbskill_hook_block(pre_commit):
-        disabled.write_text("nbskill hooks were removed; not reinstalling automatically\n", encoding="utf-8")
-        return True
-    return False
-
-
-# %% ../nbs/00_foundation.ipynb #94da0ea4
-def install_nbdev_pre_commit_hooks(path=".", run_nbdev_install_hooks=True):
-    "Install nbdev-clean and nbdev-test pre-commit hooks in a git-backed nbdev project."
-    root = git_root(path)
-    if root is None: return {"installed": False, "reason": "not-a-git-repo"}
-    if not _looks_like_nbdev_project(root): return {"installed": False, "reason": "not-an-nbdev-project", "root": str(root)}
-    hooks = root / ".git" / "hooks"
-    pre_commit = hooks / "pre-commit"
-    if _hooks_removed_by_user(root, pre_commit): return {"installed": False, "reason": "hooks-removed-by-user", "root": str(root)}
-    if run_nbdev_install_hooks:
-        cmd = ["nbdev-install-hooks"] if shutil.which("nbdev-install-hooks") else None
-        if cmd is None and shutil.which("uv"): cmd = ["uv", "run", "nbdev-install-hooks"]
-        if cmd is not None: subprocess.run(cmd, cwd=root, text=True, capture_output=True)
-    hooks.mkdir(parents=True, exist_ok=True)
-    text = pre_commit.read_text(encoding="utf-8", errors="ignore") if pre_commit.exists() else ""
-    pre_commit.write_text(_replace_marked_block(text, _nbdev_hook_block()), encoding="utf-8")
-    pre_commit.chmod(pre_commit.stat().st_mode | 0o111)
-    installed, _ = _hook_state_paths(root)
-    installed.parent.mkdir(parents=True, exist_ok=True)
-    installed.write_text("nbskill hooks installed once\n", encoding="utf-8")
-    return {"installed": True, "root": str(root), "hook": str(pre_commit)}
-
-# %% ../nbs/00_foundation.ipynb #00572440
-_NBSKILL_PROJECT_BOOTSTRAP_ENV = "NBSKILL_NO_PROJECT_BOOTSTRAP"
-_NBSKILL_AGENTS_TEMPLATE = "AGENTS.md"
-_NBSKILL_CI_PAUSE = "1"
-_NBSKILL_NBDEV_CONFIG = {
-    "allowed_metadata_keys": '["nbskill"]',
-    "jupyter_hooks": "true",
-    "allowed_cell_metadata_keys": '["nbskill"]',
-}
-
-# %% ../nbs/00_foundation.ipynb #e98afa55
-def _project_root_path(path):
-    root = Path(path).expanduser()
-    if root.is_file(): root = root.parent
-    return root.resolve()
-
-# %% ../nbs/00_foundation.ipynb #2c52875e
-def _read_nbskill_agents_template():
-    try:
-        return files("nbskill").joinpath(_NBSKILL_AGENTS_TEMPLATE).read_text(encoding="utf-8")
-    except (FileNotFoundError, ModuleNotFoundError, OSError):
-        pass
-    fallback = Path(__file__).with_name(_NBSKILL_AGENTS_TEMPLATE) if "__file__" in globals() else None
-    for path in (fallback, Path(_NBSKILL_AGENTS_TEMPLATE)):
-        if path is None: continue
-        try:
-            if path.exists(): return path.read_text(encoding="utf-8")
-        except OSError:
-            continue
-    return None
-
-# %% ../nbs/00_foundation.ipynb #93cf30c0
-def _install_agents_md(root, overwrite=False):
-    path = root / "AGENTS.md"
-    if path.exists() and not overwrite:
-        return {"changed": False, "path": str(path), "reason": "exists"}
-    text = _read_nbskill_agents_template()
-    if text is None:
-        return {"changed": False, "path": str(path), "reason": "missing-template"}
-    try:
-        current = path.read_text(encoding="utf-8") if path.exists() else None
-    except OSError:
-        current = None
-    if current == text:
-        return {"changed": False, "path": str(path), "reason": "current"}
-    path.write_text(text, encoding="utf-8")
-    reason = "installed" if current is None else "updated"
-    return {"changed": True, "path": str(path), "reason": reason}
-
-# %% ../nbs/00_foundation.ipynb #de7d86cc
-def _set_cli_option(args, name, value):
-    pattern = re.compile(rf"(^|\s){re.escape(name)}(?:=|\s+)\S+")
-    if pattern.search(args):
-        return pattern.sub(lambda match: f"{match.group(1)}{name} {value}", args, count=1)
-    return f"{args} {name} {value}"
-
-# %% ../nbs/00_foundation.ipynb #0acbbc0e
-def _nbdev_test_serial_command(text, pause=_NBSKILL_CI_PAUSE):
-    pattern = re.compile(r"(?P<cmd>\b(?:uv\s+run\s+)?nbdev-test\b)(?P<args>[^\n#]*)")
-
-    def repl(match):
-        raw_args = match.group("args")
-        args = raw_args.rstrip()
-        trailing = raw_args[len(args):]
-        args = _set_cli_option(args, "--n_workers", "0")
-        args = _set_cli_option(args, "--pause", str(pause))
-        return f"{match.group('cmd')}{args}{trailing}"
-
-    return pattern.sub(repl, text)
-
-# %% ../nbs/00_foundation.ipynb #1032ec1c
-def _patch_github_actions(root, pause=_NBSKILL_CI_PAUSE):
-    workflow_dir = root / ".github" / "workflows"
-    paths = sorted([*workflow_dir.glob("*.yml"), *workflow_dir.glob("*.yaml")]) if workflow_dir.exists() else []
-    results = []
-    for path in paths:
-        text = path.read_text(encoding="utf-8")
-        updated = _nbdev_test_serial_command(text, pause=pause)
-        changed = updated != text
-        if changed: path.write_text(updated, encoding="utf-8")
-        reason = "patched" if changed else "current"
-        results.append({"changed": changed, "path": str(path), "reason": reason})
-    return results
-
-# %% ../nbs/00_foundation.ipynb #dce067cb
-def _toml_section_bounds(lines, section):
-    header = f"[{section}]"
-    start = next((idx for idx, line in enumerate(lines) if line.strip() == header), None)
-    if start is None: return None, None
-    end = len(lines)
-    for idx in range(start + 1, len(lines)):
-        stripped = lines[idx].strip()
-        if stripped.startswith("[") and stripped.endswith("]"):
-            end = idx
-            break
-    return start, end
-
-# %% ../nbs/00_foundation.ipynb #1fae8d2a
-def _set_toml_section_keys(text, section, values):
-    lines = text.splitlines()
-    start, end = _toml_section_bounds(lines, section)
-    if start is None:
-        if lines and lines[-1].strip(): lines.append("")
-        lines.append(f"[{section}]")
-        start, end = len(lines) - 1, len(lines)
-    for key, value in values.items():
-        pattern = re.compile(rf"^\s*{re.escape(key)}\s*=")
-        found = next((idx for idx in range(start + 1, end) if pattern.match(lines[idx])), None)
-        line = f"{key} = {value}"
-        if found is None:
-            lines.insert(end, line)
-            end += 1
-        elif lines[found] != line:
-            lines[found] = line
-    return "\n".join(lines) + "\n"
-
-# %% ../nbs/00_foundation.ipynb #59d7087d
-def _patch_pyproject_nbdev(root):
-    path = root / "pyproject.toml"
-    if not path.exists():
-        return {"changed": False, "path": str(path), "reason": "missing"}
-    text = path.read_text(encoding="utf-8")
-    updated = _set_toml_section_keys(text, "tool.nbdev", _NBSKILL_NBDEV_CONFIG)
-    try:
-        tomllib.loads(updated)
-    except tomllib.TOMLDecodeError as exc:
-        return {"changed": False, "path": str(path), "reason": f"invalid-toml: {exc}"}
-    changed = updated != text
-    if changed: path.write_text(updated, encoding="utf-8")
-    reason = "patched" if changed else "current"
-    return {"changed": changed, "path": str(path), "reason": reason}
-
-# %% ../nbs/00_foundation.ipynb #330c14fe
-def bootstrap_nbskill_project(path=".", overwrite_agents=False, pause=_NBSKILL_CI_PAUSE):
-    "Install nbskill project guardrails once a workspace root is known."
-    if os.environ.get(_NBSKILL_PROJECT_BOOTSTRAP_ENV):
-        return {"changed": False, "root": str(path), "reason": "disabled"}
-    root = _project_root_path(path)
-    if not root.exists():
-        return {"changed": False, "root": str(root), "reason": "missing-root"}
-    if not _looks_like_nbdev_project(root):
-        return {"changed": False, "root": str(root), "reason": "not-an-nbdev-project"}
-    agents = _install_agents_md(root, overwrite=overwrite_agents)
-    pyproject = _patch_pyproject_nbdev(root)
-    workflows = _patch_github_actions(root, pause=pause)
-    changed = agents.get("changed", False) or pyproject.get("changed", False)
-    changed = changed or any(item.get("changed", False) for item in workflows)
-    return {
-        "changed": changed,
-        "root": str(root),
-        "agents": agents,
-        "pyproject": pyproject,
-        "workflows": workflows,
-    }
+    if not pyproject.exists(): return False
+    return isinstance(tomllib.loads(pyproject.read_text(encoding="utf-8")).get("tool", {}).get("nbdev"), dict)
 
 # %% ../nbs/00_foundation.ipynb #41efc12d
 def parse_literal(value):
@@ -802,6 +704,17 @@ def call_name(node):
     "Return dotted name text for an AST name, attribute, or call expression."
     parts = _name_parts(node)
     return ".".join(parts) if parts else None
+
+# %% ../nbs/00_foundation.ipynb #9906edc4
+def call_sites(node, source=""):
+    "Return dotted call names and source locations from one parsed Python tree."
+    lines, records = str(source or "").splitlines(), []
+    for child in ast.walk(node):
+        if not isinstance(child, ast.Call) or not (name := call_name(child.func)): continue
+        lineno = getattr(child, "lineno", None)
+        line = lines[lineno-1].strip() if lineno and lineno <= len(lines) else ""
+        records.append(dict(name=name, lineno=lineno, line=line))
+    return tuple(records)
 
 # %% ../nbs/00_foundation.ipynb #6d14abd0
 def short_call_name(node, default=None):
@@ -958,7 +871,7 @@ class Cell:
     def __post_init__(self):
         if self.path is not None: self.path = str(self.path)
 
-
+# %% ../nbs/00_foundation.ipynb #a1ef9390
 @dataclass
 class Chapter:
     "A contiguous heading-owned span inside a notebook."
@@ -971,9 +884,9 @@ class Chapter:
         self.title = str(self.title)
         self.start = int(self.start)
         self.end = int(self.end)
-        self.cells = list(self.cells or [])
+        if self.cells is None: self.cells = []
 
-
+# %% ../nbs/00_foundation.ipynb #ed21e31c
 @dataclass
 class Notebook:
     "A notebook plus the path it was read from."
@@ -983,7 +896,7 @@ class Notebook:
     def __post_init__(self):
         if self.path is not None: self.path = str(self.path)
 
-
+# %% ../nbs/00_foundation.ipynb #91cbf5d1
 @dataclass
 class NotebookSymbol:
     "A named notebook symbol plus optional placement and graph data."
@@ -1001,13 +914,29 @@ class NotebookSymbol:
         self.cell_id = self.cell_id or ''
         self.module = self.module or ''
         self.kind = self.kind or ''
-        self.data = self.data or {}
+        if self.data is None: self.data = {}
 
-
-# Historical names kept as aliases so older imports keep working.
 NotebookCell = Cell
 NotebookChapter = Chapter
 NotebookDocument = Notebook
+
+# %% ../nbs/00_foundation.ipynb #55d8ee22
+@patch(as_prop=True)
+def raw(self: Cell):
+    "Return the original cell without copying it."
+    return self.cell
+
+# %% ../nbs/00_foundation.ipynb #695ecb5b
+@patch(as_prop=True)
+def raw(self: Notebook):
+    "Return the original notebook without copying it."
+    return self.nb
+
+# %% ../nbs/00_foundation.ipynb #e5932d5e
+@patch(as_prop=True)
+def raw(self: NotebookSymbol):
+    "Return the original graph data without copying it."
+    return self.data
 
 # %% ../nbs/00_foundation.ipynb #a56bf02d
 def xml_escape(text):
@@ -1213,14 +1142,18 @@ def chapter_spans(cells, levels=(2,), fallback=None):
     return [chapter.to_span() for chapter in NotebookChapter.all(cells, levels=levels, fallback=fallback)]
 
 # %% ../nbs/00_foundation.ipynb #19aa5f58
-def _matching_chapters(cells, chapter=None):
+def matching_chapters(cells, chapter=None):
+    'Select H2 spans by normalized exact title, then pattern.'
     spans = chapter_spans(cells)
     if chapter is None: return spans
-    return [span for span in spans if matches_filter(span["title"], chapter)]
+    normalized = re.sub(r"\s+", " ", str(chapter).strip().casefold())
+    exact = [span for span in spans if re.sub(r"\s+", " ", span["title"].strip().casefold()) == normalized]
+    return exact or [span for span in spans if matches_filter(span["title"], chapter)]
 
 # %% ../nbs/00_foundation.ipynb #20d41cee
 def one_chapter(cells, chapter, create=False):
-    matches = _matching_chapters(cells, chapter)
+    'Resolve one H2 span, rejecting missing and ambiguous matches.'
+    matches = matching_chapters(cells, chapter)
     if len(matches) == 1: return matches[0]
     if not matches and create:
         cells.append(mk_cell(f"## {chapter}", cell_type="markdown"))
@@ -1301,91 +1234,6 @@ def exported_py_path(nb_path, nb=None):
         lib_path = nb_path.parent.parent / default_exp.split(".", 1)[0]
     return lib_path / (default_exp.replace(".", "/") + ".py")
 
-# %% ../nbs/00_foundation.ipynb #e67de695
-def _readback_cell_hashes(nb, cell_ids):
-    wanted = {cell_id for cell_id in (cell_ids or []) if cell_id}
-    return {
-        getattr(cell, "id", ""): source_hash(cell_source(cell))
-        for cell in getattr(nb, "cells", [])
-        if not wanted or getattr(cell, "id", "") in wanted
-    }
-
-# %% ../nbs/00_foundation.ipynb #ca7976da
-def commit_notebook(
-    path,
-    trial,
-    before=None,
-    affected_cell_ids=None,
-    validate_code=True,
-    dry_run=False,
-    export=True,
-    writer=write_nb,
-):
-    "Validate, stamp, write, export, and rollback one notebook as one commit."
-    from fastcore.nbio import read_nb, validate_nb
-
-    path = Path(path)
-    before = before if before is not None else (read_nb(path) if path.exists() else new_nb([]))
-    missing_cell_ids = any("id" not in cell for cell in getattr(trial, "cells", []))
-    ensure_cell_ids(before)
-    ensure_cell_ids(trial)
-    validate_nb(trial)
-    before_hash = notebook_hash(before)
-    planned_hash = notebook_hash(trial)
-    changed = before_hash != planned_hash or missing_cell_ids
-    affected = [cell_id for cell_id in dict.fromkeys(affected_cell_ids or []) if cell_id]
-    if validate_code and changed: validate_code_cells(trial.cells)
-
-    exported = False
-    export_no_drift = False
-    py_path = exported_py_path(path, trial)
-    if changed and not dry_run:
-        _clear_changed_outputs(trial, affected or None)
-        stamp_notebook_metadata(trial)
-        before_path_bytes = path.read_bytes() if path.exists() else None
-        before_py_bytes = py_path.read_bytes() if py_path is not None and py_path.exists() else None
-        try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            writer(trial, path)
-            if export and py_path is not None and _path_inside_cwd(path):
-                run_nbdev_export_from_project(path)
-                if py_path.exists():
-                    stamp_export_metadata(trial, py_path)
-                    writer(trial, path)
-                    exported = True
-        except Exception:
-            _restore_file_bytes(path, before_path_bytes)
-            if py_path is not None: _restore_file_bytes(py_path, before_py_bytes)
-            raise
-        readback = read_nb(path)
-        if exported and py_path is not None and py_path.exists():
-            info = _nbskill_notebook_metadata(readback, create=False) or {}
-            export_no_drift = info.get("exported_py_hash") == file_hash(py_path)
-        after_hash = notebook_hash(readback)
-        readback_hashes = _readback_cell_hashes(readback, affected)
-    else:
-        after_hash = before_hash if dry_run else planned_hash
-        readback_hashes = _readback_cell_hashes(before if dry_run else trial, affected)
-
-    return {
-        "changed": changed,
-        "dry_run": dry_run,
-        "affected_cell_ids": affected,
-        "before_hash": before_hash,
-        "planned_hash": planned_hash,
-        "after_hash": after_hash,
-        "readback_hashes": readback_hashes,
-        "exported": exported,
-        "exported_py_path": str(py_path) if py_path is not None else "",
-        "export_no_drift": export_no_drift,
-    }
-
-# %% ../nbs/00_foundation.ipynb #60a12fd8
-@patch
-def commit(self: NotebookDocument, **kwargs):
-    "Commit this notebook model through the shared atomic writer."
-    return commit_notebook(self.path, self.nb, **kwargs)
-
 # %% ../nbs/00_foundation.ipynb #f49dab47
 @patch
 def chapters(self: NotebookDocument, levels=(2,), fallback=None):
@@ -1463,23 +1311,19 @@ def notebook_metadata(nb):
 
 
 # %% ../nbs/00_foundation.ipynb #5b39bc0b
-def nbskill_cell_metadata(cell, create=True):
-    "Return the shared nbskill metadata block for a cell."
-    meta = cell_metadata(cell) if create else (cell.get("metadata", {}) if isinstance(cell, dict) else getattr(cell, "metadata", {}) or {})
-    info = meta.get(_NBSKILL_METADATA_KEY) if isinstance(meta, dict) else None
-    if not isinstance(info, dict):
-        if not create:
-            legacy = {
-                new_key: meta[old_key]
-                for old_key, new_key in _NBSKILL_CELL_METADATA_ALIASES.items()
-                if isinstance(meta, dict) and old_key in meta
-            }
-            return legacy or None
-        meta[_NBSKILL_METADATA_KEY] = {}
-        info = meta[_NBSKILL_METADATA_KEY]
-    if isinstance(meta, dict):
-        for old_key, new_key in _NBSKILL_CELL_METADATA_ALIASES.items():
-            if old_key in meta: info.setdefault(new_key, meta.pop(old_key))
+def nbskill_cell_metadata(cell, create=False):
+    "Read normalized metadata; migrate legacy keys only when explicitly creating."
+    meta = cell_metadata(cell) if create else cell.get("metadata", {})
+    if not isinstance(meta, dict): return None
+    info = meta.get(_NBSKILL_METADATA_KEY)
+    legacy = {new: meta[old] for old, new in _NBSKILL_CELL_METADATA_ALIASES.items() if old in meta}
+    if not create:
+        if isinstance(info, dict): return {**legacy, **info}
+        return legacy or None
+    if not isinstance(info, dict): info = meta[_NBSKILL_METADATA_KEY] = {}
+    for old, new in _NBSKILL_CELL_METADATA_ALIASES.items():
+        if old in meta: info.setdefault(new, meta.pop(old))
+    for key in ("cell_type", "semantic_types", "source_hash"): info.pop(key, None)
     return info
 
 # %% ../nbs/00_foundation.ipynb #32cd2265
@@ -1512,139 +1356,14 @@ def stamp_export_metadata(nb, py_path):
 
 
 # %% ../nbs/00_foundation.ipynb #4379ff7b
-def _nbdev_project_root(path):
+def nbdev_project_root(path):
+    'Find the owning nbdev project by walking parent directories.'
     path = Path(path).expanduser()
     base = path.parent if path.suffix else path
     candidates = [base, *base.parents]
     for candidate in candidates:
-        if _looks_like_nbdev_project(candidate): return candidate
+        if is_nbdev_project(candidate): return candidate
     return None
-
-# %% ../nbs/00_foundation.ipynb #b075ca01
-def _nbdev_export_lock_path(path):
-    root = Path(path).expanduser().resolve(strict=False)
-    digest = hashlib.sha256(str(root).encode("utf-8")).hexdigest()[:24]
-    base = Path(os.environ.get("NBSKILL_LOCK_DIR") or tempfile.gettempdir()) / "nbskill-export-locks"
-    base.mkdir(parents=True, exist_ok=True)
-    return base / f"{digest}.lock"
-
-# %% ../nbs/00_foundation.ipynb #74e50ddc
-@contextmanager
-def _nbdev_export_lock(path):
-    lock_path = _nbdev_export_lock_path(path)
-    try: import fcntl
-    except ImportError:
-        yield
-        return
-    with lock_path.open("a+", encoding="utf-8") as handle:
-        handle.seek(0)
-        handle.truncate()
-        handle.write(str(Path(path).expanduser().resolve(strict=False)) + "\n")
-        handle.flush()
-        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-        try: yield
-        finally: fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
-
-# %% ../nbs/00_foundation.ipynb #5632903e
-def _nbdev_export_process_worker(path, cwd, result_queue):
-    out, err = StringIO(), StringIO()
-    try:
-        if cwd is not None: os.chdir(cwd)
-        from nbdev.doclinks import nbdev_export
-        with redirect_stdout(out), redirect_stderr(err): nbdev_export(path=path)
-        result_queue.put(dict(ok=True, stdout=out.getvalue(), stderr=err.getvalue()))
-    except BaseException as exc:
-        result_queue.put(dict(
-            ok=False, error_type=type(exc).__name__, error=str(exc),
-            traceback=traceback.format_exc(), stdout=out.getvalue(), stderr=err.getvalue(),
-        ))
-
-# %% ../nbs/00_foundation.ipynb #b1ba8e13
-def _nbdev_export_process(path, cwd=None):
-    from nbskill.foundation import _nbdev_export_process_worker as worker
-    ctx = multiprocessing.get_context("spawn")
-    result_queue = ctx.Queue()
-    proc = ctx.Process(target=worker, args=(str(path), str(cwd) if cwd is not None else None, result_queue))
-    proc.start()
-    proc.join()
-    try: payload = result_queue.get(timeout=1)
-    except queue.Empty:
-        payload = dict(ok=False, error_type="ProcessError", error=f"nbdev export process exited without a result payload; exit code {proc.exitcode}")
-    if proc.exitcode != 0 or not payload.get("ok", True):
-        lines = [f"{payload.get('error_type', 'Error')}: {payload.get('error', '')}".rstrip()]
-        if payload.get("traceback"): lines.append(payload["traceback"].rstrip())
-        captured = "\n".join(item.rstrip() for item in (payload.get("stdout"), payload.get("stderr")) if item)
-        if captured: lines.append("Captured output:\n" + captured)
-        raise RuntimeError("\n\n".join(line for line in lines if line))
-
-# %% ../nbs/00_foundation.ipynb #c144bdd6
-def run_nbdev_export_from_project(nb_path):
-    "Run nbdev export in a project-scoped process without changing server cwd."
-    nb_path = Path(nb_path).expanduser()
-    project_root = _nbdev_project_root(nb_path)
-    if project_root is None:
-        export_path = nb_path.resolve(strict=False)
-        with _nbdev_export_lock(export_path.parent): _nbdev_export_process(export_path, cwd=export_path.parent)
-        return
-
-    resolved = nb_path.resolve(strict=False)
-    try: export_path = resolved.relative_to(project_root)
-    except ValueError: export_path = resolved
-    with _nbdev_export_lock(project_root): _nbdev_export_process(export_path, cwd=project_root)
-
-# %% ../nbs/00_foundation.ipynb #bfbbe4d5
-def export_notebook(nb, nb_path, writer=write_nb):
-    "Export an nbdev notebook and stamp export metadata when possible."
-    nb_path = Path(nb_path)
-    py_path = exported_py_path(nb_path, nb)
-    if py_path is None: return None
-    run_nbdev_export_from_project(nb_path)
-    if py_path.exists():
-        stamp_export_metadata(nb, py_path)
-        writer(nb, nb_path)
-    return py_path
-
-# %% ../nbs/00_foundation.ipynb #86f33aaa
-def _path_inside_cwd(path):
-    try: Path(path).expanduser().resolve(strict=False).relative_to(Path.cwd().resolve())
-    except (OSError, ValueError): return False
-    return True
-
-# %% ../nbs/00_foundation.ipynb #30a45ea3
-def _restore_file_bytes(path, data):
-    path = Path(path)
-    if data is None:
-        path.unlink(missing_ok=True)
-    else:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(data)
-
-# %% ../nbs/00_foundation.ipynb #62b66237
-def _clear_changed_outputs(nb, cell_ids=None):
-    wanted = {cell_id for cell_id in (cell_ids or []) if cell_id}
-    for cell in getattr(nb, "cells", []):
-        if wanted and getattr(cell, "id", "") not in wanted: continue
-        clear_outputs(cell)
-
-# %% ../nbs/00_foundation.ipynb #79b42816
-def _fresh_semantic_metadata(cell):
-    info = nbskill_cell_metadata(cell, create=False)
-    if not info or info.get("cell_type") != getattr(cell, "cell_type", None): return None
-    types = info.get("semantic_types")
-    if not isinstance(types, list): return None
-    stored = tuple(str(item) for item in types)
-    return stored if stored == _computed_cell_class_names(cell) else None
-
-# %% ../nbs/00_foundation.ipynb #8d32aa50
-def parse_one_cell(text, default_type="code"):
-    if isinstance(text, (list, tuple)):
-        if len(text) != 1:
-            api_error("update_cell expects exactly one replacement cell; use write_nb or batch_edit_nb for multi-cell edits")
-        return _coerce_cell(text[0], default_type)
-    blocks = _split_blocks(text)
-    if len(blocks) != 1:
-        api_error("update_cell expects exactly one replacement cell; remove standalone '---' separators or use write_nb/batch_edit_nb for multi-cell edits")
-    return _cell_from_block(blocks[0], default_type)
 
 # %% ../nbs/00_foundation.ipynb #6d6b5350
 def find_cell_by_text(cells, old_str):
@@ -1693,6 +1412,18 @@ def parse_cells(cells, default_type="code"):
     parsed = [_cell_from_block(block, default_type) for block in _split_blocks(cells)]
     return _split_symbol_cells(parsed)
 
+
+# %% ../nbs/00_foundation.ipynb #8d32aa50
+def parse_one_cell(text, default_type="code"):
+    "Normalize one cell block and reject multi-cell replacements."
+    if isinstance(text, (list, tuple)):
+        if len(text) != 1:
+            api_error("parse_one_cell requires one cell; use edit_notebook with structural operations for multiple cells")
+        return _coerce_cell(text[0], default_type)
+    blocks = _split_blocks(text)
+    if len(blocks) != 1:
+        api_error("parse_one_cell requires one block; use parse_cells or edit_notebook for multiple cells")
+    return _cell_from_block(blocks[0], default_type)
 
 # %% ../nbs/00_foundation.ipynb #0cce84e1
 def first_line(source):
@@ -1748,126 +1479,89 @@ def cell_output_text(cell):
     """Return all visible outputs for `cell` as compact plain text."""
     return ''.join(_output_text_function(output) for output in _cell_outputs(cell)).strip()
 
-# %% ../nbs/00_foundation.ipynb #bcf08c27
-def _code_tree(cell):
-    try: return ast.parse(cell_source(cell))
-    except SyntaxError: return None
-
-
-# %% ../nbs/00_foundation.ipynb #9d4d88c7
-def _code_body(cell):
-    tree = _code_tree(cell)
-    return [] if tree is None else list(tree.body)
-
-
-# %% ../nbs/00_foundation.ipynb #820aaed2
-def _is_import_cell(cell):
-    body = _code_body(cell)
-    return getattr(cell, "cell_type", None) == "code" and bool(body) and all(isinstance(node, (ast.Import, ast.ImportFrom)) for node in body)
-
-# %% ../nbs/00_foundation.ipynb #e36cd1c6
-def _is_exported_import_cell(cell): return is_exported_code_cell(cell) and _is_import_cell(cell)
-
-# %% ../nbs/00_foundation.ipynb #b4152791
-def _is_internal_import_cell(cell): return not is_exported_code_cell(cell) and _is_import_cell(cell)
-
-# %% ../nbs/00_foundation.ipynb #b76a6de7
-def _definition_nodes(cell):
-    tree = _code_tree(cell)
-    return [] if tree is None else [node for node in tree.body if is_definition_node(node)]
-
-# %% ../nbs/00_foundation.ipynb #25f5ec85
-def _function_nodes(cell):
-    return [node for node in _definition_nodes(cell) if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))]
-
-# %% ../nbs/00_foundation.ipynb #59be7578
-def _has_test_marker(cell):
-    tree = _code_tree(cell)
-    if tree is None: return re.search(r"\b(assert|test_[A-Za-z0-9_]*)\b", cell_source(cell)) is not None
-    if any(isinstance(node, ast.Assert) for node in ast.walk(tree)): return True
-    return any(
-        (isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("test_"))
-        or (isinstance(node, ast.Call) and isinstance(node.func, (ast.Name, ast.Attribute))
-            and (node.func.id if isinstance(node.func, ast.Name) else node.func.attr).startswith("test_"))
-        for node in ast.walk(tree))
-
-# %% ../nbs/00_foundation.ipynb #c94ee726
-def _is_test_code(cell): return getattr(cell, "cell_type", None) == "code" and not is_exported_code_cell(cell) and _has_test_marker(cell)
-
-# %% ../nbs/00_foundation.ipynb #72618bad
-def _is_example_code(cell): return getattr(cell, "cell_type", None) == "code" and not is_exported_code_cell(cell) and _has_cell_output(cell)
-
-# %% ../nbs/00_foundation.ipynb #d2452926
-def _is_title(cell):
-    return getattr(cell, "cell_type", None) == "markdown" and any(re.match(r"^#+\s+", line.strip()) for line in cell_source(cell).splitlines())
-
-# %% ../nbs/00_foundation.ipynb #4f7b5870
-def _is_documentation(cell): return getattr(cell, "cell_type", None) == "markdown" and not _is_title(cell)
-
-# %% ../nbs/00_foundation.ipynb #52405ac0
-def _is_multicell(cell):
-    return len({node.name for node in _function_nodes(cell)}) > 1
-
-# %% ../nbs/00_foundation.ipynb #25ecba70
-def _is_public_code(cell):
-    symbols = _definition_nodes(cell)
-    return is_exported_code_cell(cell) and not _has_cell_output(cell) and not _has_test_marker(cell) and len(symbols) == 1 and not symbols[0].name.startswith("_")
-
 # %% ../nbs/00_foundation.ipynb #86869843
 def _fallback_cell_class_name(cell):
     cell_type = getattr(cell, "cell_type", None)
     return f"{cell_type}_cell" if cell_type else "unknown_cell"
 
 
-# %% ../nbs/00_foundation.ipynb #ad24a972
-def _is_private_code(cell):
-    symbols = _definition_nodes(cell)
-    return is_exported_code_cell(cell) and not _has_cell_output(cell) and not _has_test_marker(cell) and len(symbols) == 1 and symbols[0].name.startswith("_")
+# %% ../nbs/00_foundation.ipynb #1cd24dd2
+def cell_analysis(cell):
+    "Derive directives, Python structure and semantic roles from one cell snapshot."
+    source, kind = cell_source(cell), cell.get("cell_type")
+    directives = cell_directives(cell)
+    tree = parse_code_cell(cell)
+    body = tree.body if tree is not None else []
+    definitions = [node for node in body if is_definition_node(node)]
+    exported = kind == "code" and bool({"export", "exports", "exporti"} & directives.keys())
+    output = bool(cell.get("outputs"))
+    nodes = list(ast.walk(tree)) if tree is not None else []
+    tests = any(isinstance(node, ast.Assert) or
+        isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("test_") or
+        isinstance(node, ast.Call) and isinstance(node.func, (ast.Name, ast.Attribute)) and
+        (node.func.id if isinstance(node.func, ast.Name) else node.func.attr).startswith("test_") for node in nodes)
+    if kind == "code" and tree is None: tests = re.search(r"\b(assert|test_[A-Za-z0-9_]*)\b", source) is not None
+    roles = []
+    if kind == "code":
+        imports = bool(body) and all(isinstance(node, (ast.Import, ast.ImportFrom)) for node in body)
+        if imports: roles.append("exported_import_cell" if exported else "internal_import_cell")
+        if exported and not output and not tests and len(definitions) == 1:
+            roles.append("private_code" if definitions[0].name.startswith("_") else "public_code")
+        functions = {node.name for node in definitions if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
+        if len(functions) > 1: roles.append("multicell")
+        if not exported and tests: roles.append("test_code")
+        if not exported and output: roles.append("example_code")
+    elif kind == "markdown":
+        roles.append("title" if any(re.match(r"^#+\s+", line.strip()) for line in source.splitlines()) else "documentation")
+    return dict(raw=cell, tree=tree, directives=directives, roles=tuple(roles))
+
+# %% ../nbs/00_foundation.ipynb #4ceda912
+def definition_names(node):
+    "Normalize nbdev definition names, including explicit patch method names."
+    from nbdev.doclinks import patch_name
+    names = patch_name(node)
+    names = [names] if isinstance(names, str) else names
+    for decorator in getattr(node, "decorator_list", []):
+        if not isinstance(decorator, ast.Call) or short_call_name(decorator.func) not in {"patch", "patch_to"}: continue
+        renamed = next((kw.value.value for kw in decorator.keywords if kw.arg == "nm"
+            and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str)), None)
+        if renamed is not None: names = [name.rsplit(".", 1)[0] + "." + renamed if "." in name else renamed for name in names]
+    return names
+
+# %% ../nbs/00_foundation.ipynb #25b8c69a
+def definition_nodes(tree):
+    "Return canonical symbol names and AST nodes, including nbdev patched methods."
+    records = []
+    for node in (tree.body if isinstance(tree, ast.Module) else (tree,)):
+        if not is_definition_node(node): continue
+        for name in definition_names(node):
+            kind = "class" if isinstance(node, ast.ClassDef) else ("method" if "." in name else "function")
+            records.append((name, node, kind))
+        if isinstance(node, ast.ClassDef):
+            records.extend((f"{node.name}.{child.name}", child, "method") for child in node.body
+                if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)))
+    return records
 
 # %% ../nbs/00_foundation.ipynb #452e85f7
-def _cell_base_class_names(cell):
-    names = []
-    if _is_exported_import_cell(cell): names.append("exported_import_cell")
-    if _is_internal_import_cell(cell): names.append("internal_import_cell")
-    if _is_public_code(cell): names.append("public_code")
-    if _is_private_code(cell): names.append("private_code")
-    if _is_multicell(cell): names.append("multicell")
-    if _is_test_code(cell): names.append("test_code")
-    if _is_example_code(cell): names.append("example_code")
-    if _is_documentation(cell): names.append("documentation")
-    if _is_title(cell): names.append("title")
-    return tuple(names)
-
-
-def _computed_cell_class_names(cell):
-    return _cell_base_class_names(cell) or (_fallback_cell_class_name(cell),)
-
-
 def cell_semantic_warnings(cell):
     "Return semantic warning codes for one cell."
-    roles = set(_cell_base_class_names(cell))
+    roles = set(cell_analysis(cell)["roles"])
     warnings = ["multicell"] if "multicell" in roles else []
     if len(roles) > 1 and roles != {"test_code", "example_code"}: warnings.append("multiple-semantic-types")
     return tuple(warnings)
 
-
-def _refresh_cell_metadata(cell):
-    info = nbskill_cell_metadata(cell)
-    info["cell_type"] = getattr(cell, "cell_type", None)
-    info["semantic_types"] = list(_computed_cell_class_names(cell))
-    info.pop("source_hash", None)
-    return cell
-
 # %% ../nbs/00_foundation.ipynb #a65ca453
 def stamp_notebook_metadata(nb, exported_py_path=None):
-    for cell in getattr(nb, "cells", []): _refresh_cell_metadata(cell)
+    "Migrate cell evidence on an owned notebook before writing."
+    for cell in getattr(nb, "cells", []): nbskill_cell_metadata(cell, create=True)
     if exported_py_path is not None: stamp_export_metadata(nb, exported_py_path)
     return nb
 
 
 # %% ../nbs/00_foundation.ipynb #0d74a9ef
-def cell_class_names(cell): return _fresh_semantic_metadata(cell) or _computed_cell_class_names(cell)
-
+def cell_class_names(cell):
+    "Return semantic roles derived from the current cell."
+    return cell_analysis(cell)["roles"] or (_fallback_cell_class_name(cell),)
 
 # %% ../nbs/00_foundation.ipynb #4541deaa
 def _normalize_cell_type_filter(value):
@@ -1966,7 +1660,8 @@ def heading_title(cell, levels=(2,)):
 
 # %% ../nbs/00_foundation.ipynb #60b63eec
 def chapter_index_set(cells, chapter):
+    'Return the cell indices selected by H2 chapter matching.'
     idxs = set()
-    for span in _matching_chapters(cells, chapter):
+    for span in matching_chapters(cells, chapter):
         idxs.update(range(span["start"], span["end"]))
     return idxs

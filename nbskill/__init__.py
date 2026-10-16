@@ -30,7 +30,7 @@ Modules:
 - `nbskill.convert`: Move Python source into numbered nbdev notebooks without losing source order.
 - `nbskill.edit`: Apply and review one atomic plan of notebook cell changes.
 - `nbskill.execute`: Run a notebook scope and inspect execution evidence without losing the source.
-- `nbskill.foundation`: Read, validate, model, and commit notebook data consistently.
+- `nbskill.foundation`: Model notebook data, metadata, chapters and Python structure consistently.
 - `nbskill.graph`: Find notebook definitions, callers, and likely reuse before changing code.
 - `nbskill.knowledge`: Find reusable source and verified problem solutions at the version a workspace uses.
 - `nbskill.nbskill`: Copy the nbskill routing instructions to a chosen agent skills directory.

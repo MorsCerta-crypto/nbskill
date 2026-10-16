@@ -21,23 +21,43 @@ A notebook contains more than Python source. Explanations, examples, outputs, an
 
 ## Learn the problem areas
 
-The numbered notebooks build from shared data and file operations toward complete workflows. Each H2 chapter covers a smaller question within that notebook. The writing facade preserves existing callers while [`edit_notebook`](https://MorsCerta-crypto.github.io/nbskill/edit.html#edit_notebook) is the primary mutation API.
+The numbered notebooks build from shared data and file operations toward complete workflows. Each H2 chapter covers a smaller question within that notebook. Notebook creation and transfers share the editor’s commit contract; [`edit_notebook`](https://MorsCerta-crypto.github.io/nbskill/edit.html#edit_notebook) is the primary mutation API.
 
 | Notebook | Problem it solves | Builds on |
 |----|----|----|
-| `00_foundation` | Cells, notebook data, file round trips, paths, and shared helpers | Notebook file format |
+| `00_foundation` | Read-only models, metadata, chapter rules and Python analysis | Notebook file format |
 | `01_read` | Find chapters, cells, and symbols without reading raw JSON | Foundation |
-| `02_edit` | Validate and commit atomic cell edits | Foundation and context |
-| `02_write` | Adapt compact text and older write operations to notebook edits | Foundation and edit |
+| `02_edit` | Validate and commit coupled notebooks | Foundation; optional execution feedback |
+| `02_write` | Create notebooks and transfer chapters or cells | Foundation and edit |
 | `03_execute` | Run a selected notebook scope with explicit execution policy | Foundation and reading |
 | `04_review` | Review source diffs, diagnostics, and notebook craft | Reading and execution |
 | `05_convert` | Carry notebook content into other source representations | Foundation |
 | `06_skill` | Install the notebook workflow for an agent host | Package resources |
-| `09_parallel` | Execute independent work without sharing mutable worker state | Execution |
-| `10_graph` | Trace definitions and relationships across notebooks | Foundation and reading |
+| `09_parallel` | Own notebook locks and nested execution leases | Filesystem and execution contexts |
+| `10_graph` | Trace definitions and relationships across notebooks | Foundation |
 | `12_knowledge` | Retrieve implementation references and verified problem memories | Notebook structure and graph |
 | `15_state` | Identify stale execution evidence and affected cells | Foundation and reading |
 | `14_pyskill` | Expose a small discovery surface for the complete workflow | The preceding problem areas |
+
+foundation owns the data and derived analysis; edit owns persisted changes. execute owns runtime resources and does not depend on edit. review and knowledge consume the same chapter and symbol rules, and skill exports the eight documented operations directly. Reading and previews leave inputs unchanged; existing cell IDs remain stable and normalized models expose their original data through raw.
+
+A commit locks the project before its notebooks, rejects stale snapshots, validates independent working copies, writes every notebook, and then exports once. Readback and export hashes complete the transaction. Controlled failures restore the notebooks and library outputs; this contract does not cover a machine crash.
+
+## Refactor evidence
+
+The stages remove duplicate ownership rather than add another API layer. These initial-stage counts compare exported Python with the pre-refactor source, excluding comments, docstrings and blank lines; notebook explanations and behavior tests remain outside these counts.
+
+| Stage | Removed duplication and resulting contract | Net code lines |
+|----|----|---:|
+| Shared model and analysis | Derived metadata caches, separate chapter/symbol/call parsers; read-only views and raw data access. Project setup moves to its owner. | -272 |
+| Commit and document operations | Legacy writers, JSON batch adapters and separate rollback paths; one locked transaction with shared export and verified readback. Feedback reports separately. | -404 |
+| Reference knowledge | Eager embedding prerequisites, table replacement for counters and hidden search failures; explicit versions and targeted concurrent updates. | -50 |
+| Pyskill surface | Generic wrappers; eight direct exports retain their real signatures. | -7 |
+| Total |  | -733 |
+
+The later tool-evaluation corrections add 26 exported code lines relative to the evaluated working tree: foundation 0, edit 3, execute 5, review 14 and knowledge 4. They fix source extraction, distinguish skipped feedback from execution, and derive bounded style output and status from the same file-specific diagnostics. Runtime and usage-instrumentation changes are outside the initial-stage counts above.
+
+The notebook tests exercise real temporary nbdev projects and LanceDB databases. They cover immutable previews, stale snapshots, concurrent edits, empty documents, write/export/readback rollback, export side products, failed feedback, explicit versions and concurrent counters. The installed Pyskill is also exercised in a disposable checkout.
 
 ## Choose a tool
 
@@ -77,7 +97,7 @@ notebook_context
 ```
 
     Context filter: .
-    Matches: 50 shown of 1724
+    Matches: 50 shown of 1773
 
     Filters
     scope=.
@@ -127,14 +147,12 @@ notebook_context
     00_foundation.ipynb#28452839 idx=32 type=code test code | with write_demo_notebook("00_foundation_tour.ipynb") as path:
     00_foundation.ipynb#3deac3e2 idx=33 type=code test code | with write_demo_notebook("00_foundation_bad.ipynb") as bad_path:
     00_foundation.ipynb#b411ce35 idx=34 type=markdown title | ## Python API contracts and diagnostics
-    00_foundation.ipynb#7a3beeaf idx=35 type=markdown documentation | The public functions in later notebooks are direct Python APIs. These helpers keep return values and validation errors predictable while recording tool starts or failures in a small local failure map for debugging repeated friction.
+    00_foundation.ipynb#7a3beeaf idx=35 type=markdown documentation | The public functions in later notebooks are direct Python APIs. These helpers keep return values and validation errors predictable while recording completed calls and failures in a small local statistics file.
     00_foundation.ipynb#dbc6a8c7 idx=36 type=code public code | def api_return(value=None):
     00_foundation.ipynb#754aea72 idx=37 type=code public code | def api_error(msg):
     00_foundation.ipynb#b4c433a6 idx=38 type=code public code | def failure_map_path():
-    0
-    ... truncated 1073 chars ...
-
-    Display budget: 6000 chars; omitted 1073 chars. Set max_display_chars=None to show all.
+    00_fou
+    ... truncated ...
 
 ## Load the Pyskill
 

@@ -8,7 +8,7 @@ The registry records where reference code came from. It keeps repository metadat
 
 ### `reference_add`
 
-Register a repository before ingesting it. The stable registry name identifies the source, so registering the same name again updates it without creating a second entry. Registration records provenance; it does not clone or parse the repository. This example writes only to a temporary local directory. Run it manually because initializing the reference database imports sentence-transformers and can take several seconds:
+Register a repository before ingesting it. The stable registry name identifies the source, so registering the same name again updates it without creating a second entry. Registration records provenance; it does not clone or parse the repository. This example writes only to a temporary local directory. Registration opens the database without loading an embedding model:
 
 ```python
 import tempfile
@@ -21,8 +21,8 @@ with tempfile.TemporaryDirectory() as ref_dir:
     ref_source = ref_root / "source"
     ref_source.mkdir()
     ref_home = ref_root / "references"
-    registered = reference_add(str(ref_source), name="demo", path=ref_home)
-    updated = reference_add(str(ref_source), name="demo", path=ref_home)
+    registered = reference_add(ref_source, name="demo", path=ref_home)
+    updated = reference_add(ref_source, name="demo", path=ref_home)
     reference_demo_summary = dict(name=registered["repo"]["name"], source_kind=registered["repo"]["source_kind"], registered=updated["count"])
 reference_demo_summary
 ```
@@ -58,13 +58,13 @@ __all__ = ['reference_home', 'reference_add', 'reference_ingest', 'reference_lis
            'reference_discover']
 
 # %% ../nbs/12_knowledge.ipynb #911ef06b
-import ast,hashlib,importlib.util,json,math,os,re,shutil,subprocess,sys,tempfile,time,urllib.request,tomllib,lancedb
+import ast,hashlib,importlib.util,json,math,os,re,shutil,subprocess,sys,tempfile,time,urllib.request,tomllib
 from packaging.specifiers import SpecifierSet
 from packaging.version import Version
 from pathlib import Path
 from fastcore.nbio import read_nb, write_nb as _write_raw_nb
 from fastcore.nbio import mk_cell, new_nb
-from .foundation import cell_source, demo_path, remove_demo_path
+from .foundation import cell_source, demo_path, remove_demo_path, definition_nodes, call_name, call_sites, file_hash, track_call, notebook_result
 
 # %% ../nbs/12_knowledge.ipynb #9a59dd2b
 _REFERENCE_MAX_TOP_K = 20
@@ -73,7 +73,6 @@ _REFERENCE_MAX_FILES = 2000
 _REFERENCE_MAX_FILE_BYTES = 1000000
 _REFERENCE_MAX_REPOS_PER_INGEST = 10
 _REFERENCE_MAX_ROWS_PER_REPO = 20000
-_REFERENCE_MAX_TABLE_ROWS_FOR_COUNTERS = 100000
 _REFERENCE_MAX_VERSIONS_PER_PACKAGE = 3
 _PYPI_JSON_URL = "https://pypi.org/pypi/{package}/json"
 
@@ -188,17 +187,9 @@ def _reference_table_names():
 # %% ../nbs/12_knowledge.ipynb #eb789ab3
 def _lancedb_path(path=None): return reference_home(path) / "lancedb"
 
-# %% ../nbs/12_knowledge.ipynb #84bf6b2c
-def _require_sentence_transformers():
-    try:
-        import sentence_transformers
-        return sentence_transformers
-    except Exception as exc:
-        raise RuntimeError(f"sentence-transformers is required for reference knowledge: {type(exc).__name__}: {exc}") from exc
-
 # %% ../nbs/12_knowledge.ipynb #56fd6303
 def _reference_db(path=None):
-    _require_sentence_transformers()
+    import lancedb
     home = reference_home(path)
     home.mkdir(parents=True, exist_ok=True)
     return lancedb.connect(str(_lancedb_path(path)))
@@ -207,15 +198,12 @@ def _reference_db(path=None):
 def _reference_table(path, key):
     db = _reference_db(path)
     name = _reference_table_names()[key]
-    try: return db.open_table(name)
-    except Exception: return None
+    return db.open_table(name) if name in db.table_names() else None
 
 # %% ../nbs/12_knowledge.ipynb #89bd5a96
 def _lance_rows(path, key):
     table = _reference_table(path, key)
-    if table is None: return []
-    try: return [dict(row) for row in table.to_arrow().to_pylist()]
-    except Exception: return []
+    return table.to_arrow().to_pylist() if table is not None else []
 
 # %% ../nbs/12_knowledge.ipynb #f7fcdf61
 def _row_has_vector(row):
@@ -286,13 +274,14 @@ def _norm_dist_name(name):
 
 # %% ../nbs/12_knowledge.ipynb #db2da35c
 def reference_add(
-    url: str,  # Repository URL or local repository path
+    url: str | Path,  # Repository URL or local repository path
     name: str | None = None,  # Stable registry name; defaults from URL/path
     version: str = "HEAD",  # Git ref to ingest
     package: str | None = None,  # Import/distribution package name
     path: str | None = None,  # Override reference home
 ):
     "Register or update one reference repository."
+    url = str(url)
     data = _load_reference_registry(path)
     repo_name = name or _repo_name_from_source(url)
     now = time.time()
@@ -580,8 +569,7 @@ def _search_rows(builder, limit, filter_expr=None):
         if filter_expr: builder = builder.where(filter_expr, prefilter=True)
     except TypeError:
         if filter_expr: builder = builder.where(filter_expr)
-    try: return builder.limit(limit).to_list()
-    except Exception: return []
+    return builder.limit(limit).to_list()
 
 # %% ../nbs/12_knowledge.ipynb #241eaa2b
 def _lancedb_search(
@@ -589,21 +577,26 @@ def _lancedb_search(
     versions=None, candidate_k=None, current_repo=None, query_plan=None,
 ):
     table = _reference_table(path, "items")
-    if table is None: return [], None, "lancedb"
+    if table is None: return [], "No reference index exists.", "lancedb", [dict(source="reference_index", status="missing")]
     top_k = _clamp_int(top_k, 3, 1, _REFERENCE_MAX_TOP_K, "top_k")
     candidate_k = _clamp_int(candidate_k, top_k * 25, top_k, _REFERENCE_MAX_CANDIDATE_K, "candidate_k")
     limit = min(max(candidate_k, top_k, 80), _REFERENCE_MAX_CANDIDATE_K)
-    items = _lance_rows(path, "items")
+    items = table.search().limit(1).to_list()
     dims = next((len(row.get("vector") or []) for row in items if row.get("vector")), None)
     vector = _reference_vector(query, dims=dims)
     text_query = " ".join(_query_tokens(query)) or query
     filter_expr = _reference_filter_expr(repos=repos, kind=kind, package=package, module=module, symbol=symbol, versions=versions)
+    diagnostics = []
     try:
         hybrid = _search_rows(table.search(query_type="hybrid").vector(vector).text(text_query), limit, filter_expr)
-    except Exception:
+    except Exception as exc:
         hybrid = []
+        diagnostics.append(dict(source="hybrid", error_type=type(exc).__name__, error=str(exc)))
     vector_rows = _search_rows(table.search(vector).metric("cosine"), limit, filter_expr)
-    fts_rows = _search_rows(table.search(text_query, query_type="fts"), limit, filter_expr)
+    try: fts_rows = _search_rows(table.search(text_query, query_type="fts"), limit, filter_expr)
+    except Exception as exc:
+        fts_rows = []
+        diagnostics.append(dict(source="fts", error_type=type(exc).__name__, error=str(exc)))
     rows = _merge_lancedb_rows(("hybrid", hybrid), ("vector", vector_rows), ("bm25_fts", fts_rows))
     rows = [row for row in rows if _row_matches_reference_filter(row, repos=repos, kind=kind, package=package, module=module, symbol=symbol, versions=versions)]
     plan = query_plan or _query_feature_plan(query, kind=kind, candidate_k=candidate_k)
@@ -612,26 +605,11 @@ def _lancedb_search(
     rows = _dedupe_reference_rows(sorted(rows, key=lambda row: row.get("_reference_score", 0), reverse=True))
     note = _reference_embedding_note()
     backend = "lancedb_hybrid_bm25_vector"
-    return rows[:top_k], note, backend
-
-# %% ../nbs/12_knowledge.ipynb #4847aafa
-def _node_name(node):
-    if isinstance(node, ast.Name): return node.id
-    if isinstance(node, ast.Attribute):
-        base = _node_name(node.value)
-        return f"{base}.{node.attr}" if base else node.attr
-    if isinstance(node, ast.Call): return _node_name(node.func)
-    try: return ast.unparse(node)
-    except Exception: return ""
+    return rows[:top_k], note, backend, diagnostics
 
 # %% ../nbs/12_knowledge.ipynb #dc1512b9
 def _call_names(node):
-    names = []
-    for child in ast.walk(node):
-        if not isinstance(child, ast.Call): continue
-        name = _node_name(child.func)
-        if name: names.append(name)
-    return list(dict.fromkeys(names))
+    return list(dict.fromkeys(site["name"] for site in call_sites(node)))
 
 # %% ../nbs/12_knowledge.ipynb #956ef548
 def _import_names(tree):
@@ -645,7 +623,7 @@ def _import_names(tree):
 
 # %% ../nbs/12_knowledge.ipynb #cdfe3573
 def _decorator_names(node):
-    return [name for item in getattr(node, "decorator_list", []) if (name := _node_name(item))]
+    return [name for item in getattr(node, "decorator_list", []) if (name := call_name(item))]
 
 # %% ../nbs/12_knowledge.ipynb #14e9ba3a
 def _signature(node):
@@ -670,10 +648,6 @@ def _row_tags(repo, package, module, kind, symbol, decorators, imports):
     parts.extend(decorators or [])
     parts.extend(imports or [])
     return sorted({part for part in parts if part})
-
-# %% ../nbs/12_knowledge.ipynb #7c8dc517
-def _file_hash(path):
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 # %% ../nbs/12_knowledge.ipynb #5e7cc066
 def _item_row(repo, version, package, kind, module, symbol, rel_path, source, **extra):
@@ -706,32 +680,13 @@ def _class_block_source(source, node):
 # %% ../nbs/12_knowledge.ipynb #94185698
 def _extract_def_rows(tree, source, repo, version, package, rel_path, module, cell_id="", file_hash=""):
     rows, imports = [], _import_names(tree)
-    for node in tree.body:
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            body = ast.get_source_segment(source, node) or ""
-            rows.append(_item_row(
-                repo, version, package, "function", module, node.name, rel_path, body,
-                cell_id=cell_id, file_hash=file_hash, start_line=node.lineno, end_line=getattr(node, "end_lineno", node.lineno),
-                signature=_signature(node), docstring=ast.get_docstring(node) or "",
-                decorators=_decorator_names(node), imports=imports, calls=_call_names(node),
-            ))
-        elif isinstance(node, ast.ClassDef):
-            body = _class_block_source(source, node)
-            rows.append(_item_row(
-                repo, version, package, "class", module, node.name, rel_path, body,
-                cell_id=cell_id, file_hash=file_hash, start_line=node.lineno, end_line=getattr(node, "end_lineno", node.lineno),
-                signature=_signature(node), docstring=ast.get_docstring(node) or "",
-                decorators=_decorator_names(node), imports=imports, calls=_call_names(node),
-            ))
-            for child in node.body:
-                if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)) and child.name != "__init__":
-                    method_body = ast.get_source_segment(source, child) or ""
-                    rows.append(_item_row(
-                        repo, version, package, "method", module, f"{node.name}.{child.name}", rel_path, method_body,
-                        cell_id=cell_id, file_hash=file_hash, start_line=child.lineno, end_line=getattr(child, "end_lineno", child.lineno),
-                        signature=_signature(child), docstring=ast.get_docstring(child) or "",
-                        decorators=_decorator_names(child), imports=imports, calls=_call_names(child),
-                    ))
+    for symbol, node, kind in definition_nodes(tree):
+        if kind == "method" and node.name == "__init__": continue
+        body = _class_block_source(source, node) if kind == "class" else ast.get_source_segment(source, node) or ""
+        rows.append(_item_row(repo, version, package, kind, module, symbol, rel_path, body,
+            cell_id=cell_id, file_hash=file_hash, start_line=node.lineno, end_line=node.end_lineno,
+            signature=_signature(node), docstring=ast.get_docstring(node) or "",
+            decorators=_decorator_names(node), imports=imports, calls=_call_names(node)))
     return rows
 
 # %% ../nbs/12_knowledge.ipynb #3f5e4bdc
@@ -739,14 +694,14 @@ def _extract_python_rows(path, root, repo, version, package):
     if not _reference_file_within_budget(path): return []
     rel_path = path.relative_to(root)
     source = path.read_text(encoding="utf-8", errors="replace")
-    file_hash = _file_hash(path)
+    digest = file_hash(path)
     try: tree = ast.parse(source)
     except SyntaxError: return []
     rows = []
     module = _module_name_from_path(rel_path)
     if doc := ast.get_docstring(tree):
-        rows.append(_item_row(repo, version, package, "module", module, module, rel_path, doc, docstring=doc, imports=_import_names(tree), file_hash=file_hash))
-    rows.extend(_extract_def_rows(tree, source, repo, version, package, rel_path, module, file_hash=file_hash))
+        rows.append(_item_row(repo, version, package, "module", module, module, rel_path, doc, docstring=doc, imports=_import_names(tree), file_hash=digest))
+    rows.extend(_extract_def_rows(tree, source, repo, version, package, rel_path, module, file_hash=digest))
     return rows
 
 # %% ../nbs/12_knowledge.ipynb #fc2e32e7
@@ -755,17 +710,17 @@ def _extract_notebook_rows(path, root, repo, version, package):
     rel_path = path.relative_to(root)
     try: nb = read_nb(path)
     except Exception: return []
-    file_hash = _file_hash(path)
+    digest = file_hash(path)
     rows, module = [], _module_name_from_path(rel_path)
     for idx, cell in enumerate(nb.cells):
         source = cell_source(cell)
         cell_id = getattr(cell, "id", "") or str(idx)
         if getattr(cell, "cell_type", None) == "markdown" and source.strip():
-            rows.append(_item_row(repo, version, package, "notebook_doc", module, f"{module}#{cell_id}", rel_path, source, cell_id=cell_id, file_hash=file_hash))
+            rows.append(_item_row(repo, version, package, "notebook_doc", module, f"{module}#{cell_id}", rel_path, source, cell_id=cell_id, file_hash=digest))
         if getattr(cell, "cell_type", None) != "code": continue
         try: tree = ast.parse(source)
         except SyntaxError: continue
-        rows.extend(_extract_def_rows(tree, source, repo, version, package, rel_path, module, cell_id=cell_id, file_hash=file_hash))
+        rows.extend(_extract_def_rows(tree, source, repo, version, package, rel_path, module, cell_id=cell_id, file_hash=digest))
     return rows
 
 # %% ../nbs/12_knowledge.ipynb #90a6c090
@@ -818,7 +773,7 @@ def _readme_rows(root, repo, version, package):
         path = Path(root) / name
         if path.exists() and _reference_file_within_budget(path):
             source = path.read_text(encoding="utf-8", errors="replace")
-            rows.append(_item_row(repo, version, package, "readme", "", name, path.relative_to(root), source, file_hash=_file_hash(path)))
+            rows.append(_item_row(repo, version, package, "readme", "", name, path.relative_to(root), source, file_hash=file_hash(path)))
     return rows
 
 # %% ../nbs/12_knowledge.ipynb #38aa179c
@@ -1078,6 +1033,7 @@ def _public_reference_hit(row):
     tags = _reference_list_value(row.get("tags"))
     docstring = row.get("docstring") or ""
     return dict(
+        raw=row,
         repo=row.get("repo"), version=row.get("version"), package=row.get("package") or None,
         repo_kind=row.get("repo_kind") or None, kind=row.get("kind"), module=row.get("module"), symbol=row.get("symbol"),
         path=row.get("path"), file_hash=row.get("file_hash") or None, cell_id=row.get("cell_id") or None,
@@ -1092,30 +1048,20 @@ def _public_reference_hit(row):
 
 # %% ../nbs/12_knowledge.ipynb #9b01b99f
 def _bump_reference_return_counts(rows, path=None):
-    ids = {row.get("item_id") for row in rows if row.get("item_id")}
+    ids = {row["item_id"] for row in rows if row.get("item_id")}
     if not ids: return {}
-    last_exc = None
+    table = _reference_table(path, "items")
+    if table is None: return {}
+    where = "item_id IN (" + ", ".join(_lance_literal(item_id) for item_id in sorted(ids)) + ")"
     for attempt in range(3):
-        updated, counts = [], {}
-        table_rows = _lance_rows(path, "items")
-        if len(table_rows) > _REFERENCE_MAX_TABLE_ROWS_FOR_COUNTERS:
-            return {}
-        for row in table_rows:
-            row = dict(row)
-            if row.get("item_id") in ids:
-                row["returned_count"] = int(row.get("returned_count") or 0) + 1
-                counts[row["item_id"]] = row["returned_count"]
-            updated.append(row)
-        if not counts: return {}
         try:
-            _write_lance_table(path, "items", updated)
-            return counts
+            table.update(where=where, values_sql={"returned_count": "COALESCE(returned_count, 0) + 1"})
+            break
         except RuntimeError as exc:
-            last_exc = exc
-            if "commit conflict" not in str(exc).lower() and "preempted by concurrent transaction" not in str(exc).lower():
-                raise
+            conflict = "commit conflict" in str(exc).lower() or "preempted by concurrent transaction" in str(exc).lower()
+            if not conflict or attempt == 2: raise
             time.sleep(0.05 * (attempt + 1))
-    raise last_exc
+    return {row["item_id"]: int(row["returned_count"]) for row in table.search().where(where).limit(len(ids)).to_list()}
 
 # %% ../nbs/12_knowledge.ipynb #b4a889a0
 def _reference_lookup_hints(hit):
@@ -1129,9 +1075,9 @@ def _reference_lookup_hints(hit):
     version = hit.get("version")
     version_arg = f", version={version!r}" if version else ""
     if hit.get("repo") and symbol:
-        hints.append(f"reference(action='query', repos={hit['repo']!r}, symbol={symbol!r}{version_arg}, include_branch=True)")
+        hints.append(f"reference_query(query={symbol or hit.get('module')!r}, repos={hit['repo']!r}, symbol={symbol!r}{version_arg}, include_branch=True)")
     if hit.get("repo") and hit.get("module"):
-        hints.append(f"reference(action='query', repos={hit['repo']!r}, module={hit['module']!r}{version_arg})")
+        hints.append(f"reference_query(query={symbol or hit.get('module')!r}, repos={hit['repo']!r}, module={hit['module']!r}{version_arg})")
     return hints
 
 # %% ../nbs/12_knowledge.ipynb #0c26a592
@@ -1169,20 +1115,14 @@ def _local_reference_hits(query, current_repo=".", top_k=3, explain=True):
     root = Path(current_repo or ".").expanduser()
     nbs_path = root / "nbs"
     if not nbs_path.exists(): return []
-    try:
-        from nbskill.graph import reuse_advice
-    except Exception:
-        return []
-    try:
-        advice = reuse_advice(query, path=str(nbs_path), top_k=top_k)
-    except Exception:
-        return []
+    from nbskill.graph import reuse_advice
+    advice = reuse_advice(query, path=str(nbs_path), top_k=top_k)
     hits = []
     for match in advice.get("matches", [])[:top_k]:
         try: score = min(30.0, float(match.get("score") or 0) / 3.0)
         except (TypeError, ValueError): score = 0.0
         hit = {
-            "repo": "current_repo", "version": None, "package": None, "repo_kind": "local", "kind": match.get("kind"),
+            "raw": match, "repo": "current_repo", "version": None, "package": None, "repo_kind": "local", "kind": match.get("kind"),
             "module": None, "symbol": match.get("symbol"), "path": match.get("path"), "cell_id": match.get("cell_id"),
             "line": None, "signature": None, "docstring": "", "docstring_first_line": "", "source": "",
             "tags": ["local"], "imports": [], "decorators": [], "calls": [], "returned_count": 0,
@@ -1254,7 +1194,7 @@ def _reference_query_index(
     if version_state: plan["library_version"] = version_state
     if versions: plan["version_filter"] = versions
     if include_local: plan["applied_search_passes"] = [*plan["applied_search_passes"], "local_reuse"]
-    rows, reason, backend = _lancedb_search(
+    rows, reason, backend, diagnostics = _lancedb_search(
         query, top_k=top_k, repos=repo_names, path=path, kind=kind, package=package, module=module, symbol=symbol,
         versions=versions, candidate_k=candidate_k, current_repo=current_repo, query_plan=plan,
     )
@@ -1268,7 +1208,12 @@ def _reference_query_index(
         if include_branch and item_id: hit["branch"] = _branch_for_item(item_id, path=path)
         hit["_item_id"] = item_id
         reference_hits.append(_finish_reference_hit(hit, explain=explain))
-    local_hits = _local_reference_hits(query, current_repo=current_repo, top_k=top_k, explain=explain) if include_local else []
+    local_hits = []
+    if include_local:
+        try: local_hits = _local_reference_hits(query, current_repo=current_repo, top_k=top_k, explain=explain)
+        except Exception as exc:
+            diagnostics.append(dict(source="local_reuse", error_type=type(exc).__name__, error=str(exc)))
+
     hits = sorted([*local_hits, *reference_hits], key=lambda hit: hit.get("score") or 0, reverse=True)[:top_k]
     if len(plan.get("specific_tokens") or []) >= 2 and not plan.get("symbol_like"):
         hits = [
@@ -1277,7 +1222,7 @@ def _reference_query_index(
             or (hit.get("score_breakdown") or {}).get("imports", 0) > 0
             or (hit.get("score_breakdown") or {}).get("calls", 0) > 0
         ]
-        if not hits: reason = "No high-confidence reference hits matched the query's specific terms."
+        if not hits and not reason: reason = "No high-confidence reference hits matched the query's specific terms."
     returned_rows = [row_by_id[hit["_item_id"]] for hit in hits if hit.get("_item_id") in row_by_id]
     counts = _bump_reference_return_counts(returned_rows, path=path)
     for hit in hits:
@@ -1286,7 +1231,7 @@ def _reference_query_index(
     filters = dict(repos=repo_names, kind=kind, package=package, version=version, resolved_versions=versions, module=module, symbol=symbol)
     return dict(
         query=query, backend=backend, note=reason, filters=filters, count=len(hits),
-        context=_reference_context_markdown(hits), query_plan=plan, hits=hits,
+        context=_reference_context_markdown(hits), query_plan=plan, hits=hits, diagnostics=diagnostics,
     )
 
 # %% ../nbs/12_knowledge.ipynb #cd1ddc70
@@ -1624,7 +1569,15 @@ def reference_propose(
         next_step="Review the proposal. Forking, commits, and pull-request creation require explicit approval.",
     )
 
+# %% ../nbs/12_knowledge.ipynb #2f362bc4
+def _resolve_query_version(version, library, allow_download=True):
+    installed = (library or {}).get("installed_version")
+    selected = version if version is not None else installed
+    local = bool((library or {}).get("direct_url")) and selected == installed
+    return selected, allow_download and not local
+
 # %% ../nbs/12_knowledge.ipynb #5dc69de1
+@track_call
 def reference_query(
     query: str, # Natural-language implementation query
     top_k: int=3, # Number of implementation hits to return
@@ -1646,11 +1599,7 @@ def reference_query(
     workspace = _workspace_context(current_repo)
     selected_package = _query_workspace_package(query, package, workspace)
     library = _workspace_package_state(selected_package, workspace) if selected_package else None
-    selected_version = version
-    source_download = allow_download
-    if library and library["installed_version"]:
-        selected_version = library["installed_version"]
-        if library["direct_url"]: source_download = False
+    selected_version, source_download = _resolve_query_version(version, library, allow_download)
     result = _reference_query_index(
         query, top_k=top_k, include_branch=include_branch, current_repo=current_repo, repos=repos, path=path,
         kind=kind, package=selected_package, version=selected_version, module=module, symbol=symbol,
@@ -1660,10 +1609,13 @@ def reference_query(
         library["source_provenance"] = "direct_url" if library["direct_url"] else "pypi"
         for hit in result["hits"]:
             hit["installed_version_match"] = hit.get("version") == library["installed_version"]
-            hit["source_provenance"] = library["source_provenance"]
+            hit["source_provenance"] = hit.get("repo_kind") or ("local_repo" if hit.get("dependency_status") == "local_repo" else "indexed")
     result["workspace"] = _public_workspace_context(workspace)
     result["library"] = library
-    return result
+    lines = [f"References: {result['count']} hit(s)", result.get("note"), result["context"]]
+    if result.get("diagnostics"): lines.append(f"Diagnostics: {result['diagnostics']}")
+    result["text"] = "\n\n".join(line for line in lines if line)
+    return notebook_result(result)
 
 # %% ../nbs/12_knowledge.ipynb #fb15becf
 def _packaging_version(version):

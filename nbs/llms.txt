@@ -32,7 +32,7 @@ doc(skill.context)
 - [nbskill.convert](https://MorsCerta-crypto.github.io/nbskill/convert.html.md): Move Python source into numbered nbdev notebooks without losing source order.
 - [nbskill.edit](https://MorsCerta-crypto.github.io/nbskill/edit.html.md): Apply and review one atomic plan of notebook cell changes.
 - [nbskill.execute](https://MorsCerta-crypto.github.io/nbskill/execute.html.md): Run a notebook scope and inspect execution evidence without losing the source.
-- [nbskill.foundation](https://MorsCerta-crypto.github.io/nbskill/foundation.html.md): Read, validate, model, and commit notebook data consistently.
+- [nbskill.foundation](https://MorsCerta-crypto.github.io/nbskill/foundation.html.md): Model notebook data, metadata, chapters and Python structure consistently.
 - [nbskill.graph](https://MorsCerta-crypto.github.io/nbskill/graph.html.md): Find notebook definitions, callers, and likely reuse before changing code.
 - [nbskill.knowledge](https://MorsCerta-crypto.github.io/nbskill/knowledge.html.md): Find reusable source and verified problem solutions at the version a workspace uses.
 - [nbskill.nbskill](https://MorsCerta-crypto.github.io/nbskill/skill.html.md): Copy the nbskill routing instructions to a chosen agent skills directory.

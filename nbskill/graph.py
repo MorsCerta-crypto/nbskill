@@ -46,8 +46,8 @@ import ast, builtins, copy, json, re
 from pathlib import Path
 
 from fastcore.basics import patch
-from fastcore.nbio import read_nb
-from .foundation import NotebookSymbol, call_name, cell_source, api_error, api_return, is_exported_code_cell, notebook_paths
+from fastcore.nbio import read_nb, mk_cell
+from .foundation import NotebookSymbol, definition_nodes, call_name, call_sites, cell_source, api_error, api_return, is_exported_code_cell, notebook_paths
 from .foundation import parse_code_cell, path_candidates, source_without_directives, symbol_short_name
 from .foundation import xml_attrs, xml_escape
 
@@ -88,45 +88,24 @@ def _graph_scope(path):
 
 # %% ../nbs/10_graph.ipynb #fd22b01f
 def _call_site_records(node, source=""):
-    source_lines = str(source or "").splitlines()
-    records = []
-    for child in ast.walk(node):
-        if not isinstance(child, ast.Call): continue
-        name = call_name(child.func)
-        if not name: continue
-        lineno = getattr(child, "lineno", None)
-        line = source_lines[lineno - 1].strip() if lineno and lineno <= len(source_lines) else ""
-        for called_name in dict.fromkeys([name, name.rsplit(".", 1)[-1]]):
-            records.append({"name": called_name, "lineno": lineno, "line": line})
-    return tuple(records)
+    return tuple(dict(site, name=name) for site in call_sites(node, source)
+        for name in dict.fromkeys((site["name"], site["name"].rsplit(".", 1)[-1])))
 
 # %% ../nbs/10_graph.ipynb #f7f6a22e
 def _call_names(node):
     return tuple(dict.fromkeys(site["name"] for site in _call_site_records(node)))
-
-# %% ../nbs/10_graph.ipynb #e5d965a3
-def _node_definitions(node):
-    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)): return [(node.name, node, "function")]
-    if isinstance(node, ast.ClassDef):
-        items = [(node.name, node, "class")]
-        for child in node.body:
-            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                items.append((f"{node.name}.{child.name}", child, "method"))
-        return items
-    return []
 
 # %% ../nbs/10_graph.ipynb #06bc0d6f
 def _cell_definition_records(path, module, idx, cell):
     tree = parse_code_cell(cell)
     if tree is None: return []
     records = []
-    for node in tree.body:
-        for symbol, symbol_node, kind in _node_definitions(node):
-            records.append(dict(
-                symbol=symbol, kind=kind, module=module, path=str(path),
-                cell_id=getattr(cell, "id", ""), cell_idx=idx,
-                calls=_call_names(symbol_node), exported=is_exported_code_cell(cell),
-            ))
+    for symbol, symbol_node, kind in definition_nodes(tree):
+        records.append(dict(
+            symbol=symbol, kind=kind, module=module, path=str(path),
+            cell_id=getattr(cell, "id", ""), cell_idx=idx,
+            calls=_call_names(symbol_node), exported=is_exported_code_cell(cell),
+        ))
     return records
 
 # %% ../nbs/10_graph.ipynb #9f9de949
@@ -876,7 +855,7 @@ def _notebook_text_profile(path, nb, module):
         if tree is None: continue
         imports.extend(_cell_import_names(tree))
         for node in tree.body:
-            symbols.extend(symbol for symbol, _, _ in _node_definitions(node))
+            symbols.extend(symbol for symbol, _, _ in definition_nodes(node))
     text = " ".join([module, Path(path).stem, *headings, *symbols, *imports])
     return dict(
         path=str(path), module=module, headings=headings,
@@ -918,7 +897,7 @@ def symbol_catalog(path='nbs'):
             heading = _heading_before(nb.cells, idx)
             imports = _cell_import_names(tree)
             for node in tree.body:
-                for symbol, symbol_node, kind in _node_definitions(node):
+                for symbol, symbol_node, kind in definition_nodes(node):
                     symbols.append(
                         _catalog_record(
                             nb_path,
@@ -1285,7 +1264,7 @@ def _source_advice_record(source):
     tree = ast.parse(source_without_directives(source))
     imports = _cell_import_names(tree)
     for node in tree.body:
-        for symbol, symbol_node, kind in _node_definitions(node):
+        for symbol, symbol_node, kind in definition_nodes(node):
             return _source_record_from_node(source, imports, symbol, symbol_node, kind)
     return dict(
         symbol="", kind="source", path="<source>", cell_id="", cell_idx=0,

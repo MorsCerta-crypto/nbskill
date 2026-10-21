@@ -57,9 +57,9 @@ assert call_sites(ast.parse(calls_source), calls_source) == (dict(name="package.
 call_sites(ast.parse(calls_source), calls_source)
 ```
 
-## Cell metadata and semantic classes
+## Cell metadata and source properties
 
-Once cells can be parsed, the tools need names for what they *are doing*. A code cell with output is an example; a code cell with an `assert` is a test; a markdown cell with prose is documentation. Those labels power filters such as `type=tests` and help review tools talk about notebooks in human terms.
+Cells retain their Jupyter kind and nbdev directives. Definitions, imports, checks, and headings are derived from source. Readers combine these independent properties; outputs remain execution evidence.
 
 ## Domain entities
 
@@ -107,9 +107,9 @@ assert replacement.cell_type == "markdown" and cell_source(replacement) == "## R
 replacement.cell_type, cell_source(replacement)
 ```
 
-## Naming cells by behavior
+## Independent source properties
 
-The reading layer presents cells by meaning, not only by `code` or `markdown`. This section detects imports, private helpers, exported code, tests, examples, docs, section headers, and mixed cells so callers can filter notebooks at a useful level. A test that produces a useful output is intentionally both a test and an example; that pairing is not an unclean mixed cell.
+`cell_analysis` describes definitions, imports, scoped checks, and Markdown headings independently. `Cell.properties` gives readers a serializable view. Neither operation uses stored outputs to infer the purpose of a cell.
 
 ```python
 definition_cell = mk_cell("@patch(nm='renamed')\ndef original(self: Thing): return 1")
@@ -122,7 +122,7 @@ names
 ```
 
 ```python
-owned = new_nb([mk_cell("value = 1", metadata={"nbskill_executed_hash": "evidence", "nbskill": {"semantic_types": ["public_code"]}})])
+owned = new_nb([mk_cell("value = 1", metadata={"nbskill_executed_hash": "evidence", "nbskill": {"semantic_types": ["legacy_role"]}})])
 owned_id = owned.cells[0].id
 stamp_notebook_metadata(owned)
 assert owned.cells[0].id == owned_id and owned.cells[0].metadata["nbskill"] == {"executed_hash": "evidence"}
@@ -130,13 +130,11 @@ owned.cells[0].metadata["nbskill"]
 ```
 
 ```python
-analysis_cell = mk_cell("assert 2 + 2 == 4")
+analysis_cell = mk_cell("result = double(3)\nassert result == 6\nresult")
 analysis = cell_analysis(analysis_cell)
-roles = cell_class_names(analysis_cell)
-warnings = cell_semantic_warnings(analysis_cell)
 assert analysis["raw"] is analysis_cell
-assert roles == ("test_code",) and warnings == ()
-roles
+assert [(check["kind"], check["scope"]) for check in analysis["checks"]] == [("assert", ())]
+Cell(analysis_cell).properties()
 ```
 
 `parse_cells` accepts `%%markdown` and `%%code` blocks separated by a dashed line. Exported definitions are split into individual cells while markdown stays intact. The resulting cell types and sources remain available for inspection:
@@ -150,7 +148,7 @@ assert [cell.cell_type for cell in parsed_cells] == ["markdown", "code"]
 
 ## Visible cell output
 
-`output_value_text`, `output_text`, and `cell_output_text` turn Jupyter output payloads into plain text. `Cell.output_text`, `Cell.semantic_type`, and `Cell.context_record` apply the same rules to a cell model used by readers.
+`output_value_text`, `output_text`, and `cell_output_text` turn Jupyter output payloads into plain text. `Cell.output_text` reads output evidence; `Cell.properties` and `Cell.context_record` describe source independently of that evidence.
 
 ## Chapters as editing scopes
 
@@ -196,16 +194,15 @@ __all__ = ['NotebookCell', 'NotebookChapter', 'NotebookDocument', 'output_text',
            'source_without_directives', 'source_hash', 'file_line_count', 'cap_text', 'NotebookResult',
            'notebook_result', 'generated_owner', 'is_nbdev_project', 'parse_literal', 'none_if_string',
            'symbol_short_name', 'call_name', 'call_sites', 'short_call_name', 'is_definition_node', 'node_start_line',
-           'cell_directives', 'is_export_directive', 'cell_source', 'parse_code_cell', 'CellType', 'SemanticType',
-           'Directive', 'directive_lines', 'apply_directives', 'Cell', 'Chapter', 'Notebook', 'NotebookSymbol',
-           'xml_escape', 'xml_attrs', 'find_cell_by_id', 'notebook_hash', 'matches_filter', 'chapter_spans',
-           'matching_chapters', 'one_chapter', 'ensure_cell_ids', 'validate_code_cells', 'notebook_directive',
-           'exported_py_path', 'cell_metadata', 'notebook_metadata', 'nbskill_cell_metadata', 'file_hash',
-           'stamp_export_metadata', 'nbdev_project_root', 'find_cell_by_text', 'replace_cell', 'clear_outputs',
-           'load_cells_text', 'parse_cells', 'parse_one_cell', 'first_line', 'cell_prefix', 'is_exported_code_cell',
-           'output_value_text', 'cell_output_text', 'cell_analysis', 'definition_names', 'definition_nodes',
-           'cell_semantic_warnings', 'stamp_notebook_metadata', 'cell_class_names', 'cell_matches_type', 'with_context',
-           'heading_title', 'chapter_index_set']
+           'cell_directives', 'is_export_directive', 'cell_source', 'parse_code_cell', 'CellType', 'Directive',
+           'directive_lines', 'apply_directives', 'Cell', 'Chapter', 'Notebook', 'NotebookSymbol', 'xml_escape',
+           'xml_attrs', 'find_cell_by_id', 'notebook_hash', 'matches_filter', 'chapter_spans', 'matching_chapters',
+           'one_chapter', 'ensure_cell_ids', 'validate_code_cells', 'notebook_directive', 'exported_py_path',
+           'cell_metadata', 'notebook_metadata', 'nbskill_cell_metadata', 'file_hash', 'stamp_export_metadata',
+           'nbdev_project_root', 'find_cell_by_text', 'replace_cell', 'clear_outputs', 'load_cells_text', 'parse_cells',
+           'parse_one_cell', 'first_line', 'cell_prefix', 'is_exported_code_cell', 'output_value_text',
+           'cell_output_text', 'scoped_nodes', 'cell_analysis', 'definition_names', 'definition_nodes',
+           'stamp_notebook_metadata', 'cell_matches_type', 'with_context', 'heading_title', 'chapter_index_set']
 
 # %% ../nbs/00_foundation.ipynb #2500639f
 import ast,hashlib,json,multiprocessing,os,queue,re,tempfile,tomllib,traceback
@@ -801,12 +798,16 @@ def cell_source(cell):
     if isinstance(source, list): return "".join(source)
     return str(source)
 
+# %% ../nbs/00_foundation.ipynb #b92cef35
+def _parse_cell(cell):
+    if cell.get("cell_type") != "code": return None, None
+    try: return ast.parse(source_without_directives(cell_source(cell))), None
+    except SyntaxError as error: return None, error
+
 # %% ../nbs/00_foundation.ipynb #c3e41205
 def parse_code_cell(cell):
-    """Parse a code cell after removing nbdev directives, or return `None`."""
-    if getattr(cell, 'cell_type', None) != 'code': return None
-    try: return ast.parse(source_without_directives(cell_source(cell)))
-    except SyntaxError: return None
+    "Return the Python tree, or None for non-code and unparseable source."
+    return _parse_cell(cell)[0]
 
 # %% ../nbs/00_foundation.ipynb #350c1838
 class _StrEnum(str, Enum):
@@ -816,27 +817,24 @@ class _StrEnum(str, Enum):
     @classmethod
     def coerce(cls, value): return next((m for m in cls if m.value == value), cls.UNKNOWN)
 
-
+# %% ../nbs/00_foundation.ipynb #3f4d3829
 class CellType(_StrEnum):
     "The notebook cell kinds nbskill understands."
-    CODE = "code"; MARKDOWN = "markdown"; RAW = "raw"; UNKNOWN = "unknown"
+    CODE = "code"
+    MARKDOWN = "markdown"
+    RAW = "raw"
+    UNKNOWN = "unknown"
 
-
-class SemanticType(_StrEnum):
-    "The reader-facing role of a cell, used by context and review tools."
-    MARKDOWN = "markdown"; DOCUMENTATION = "documentation"; TITLE = "title"
-    EXPORTED_IMPORT = "exported import"; INTERNAL_IMPORT = "internal import"
-    PUBLIC = "public code"; PRIVATE = "private code"; MULTICELL = "multicell"
-    TEST = "test code"; EXAMPLE = "example code"; CODE = "code"; RAW = "raw"; UNKNOWN = "unknown"
-
-
+# %% ../nbs/00_foundation.ipynb #5cefee66
 class Directive(_StrEnum):
     "nbdev cell directives an editor can stamp onto a cell."
-    EXPORT = "export"; NO_TEST = "eval: false"; HIDE = "hide"
+    EXPORT = "export"
+    NO_TEST = "eval: false"
+    HIDE = "hide"
     @property
     def line(self): return f"#| {self.value}"
 
-
+# %% ../nbs/00_foundation.ipynb #c95e532a
 def directive_lines(directives):
     "Return `#| ...` lines for `Directive`s given as members, names, or a comma string."
     if not directives: return []
@@ -844,14 +842,16 @@ def directive_lines(directives):
     elif isinstance(directives, str): directives = directives.split(",")
     lines = []
     for d in directives:
-        if isinstance(d, Directive): lines.append(d.line); continue
+        if isinstance(d, Directive):
+            lines.append(d.line)
+            continue
         key = str(d).strip()
         if not key: continue
         match = next((m for m in Directive if key.lower() in (m.name.lower(), m.value)), None)
         lines.append(match.line if match else f"#| {key}")
     return lines
 
-
+# %% ../nbs/00_foundation.ipynb #dc30191a
 def apply_directives(source, directives):
     "Prepend any missing `#| ...` directive lines to `source`."
     lines = directive_lines(directives)
@@ -1002,22 +1002,30 @@ def directive(self: NotebookCell, name=None):
     if name is not None: return cell_directives(self.cell).get(name)
     return next(iter(self.directives()), None)
 
+# %% ../nbs/00_foundation.ipynb #5f71e9c1
+def _markdown_headings(source):
+    headings, fence = [], None
+    for line in source.splitlines():
+        marker = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line)
+        if marker:
+            run, tail = marker.groups()
+            if fence is None: fence = run
+            elif run[0] == fence[0] and len(run) >= len(fence) and not tail.strip(): fence = None
+            continue
+        if fence is not None: continue
+        match = re.match(r"^ {0,3}(#{1,6})[ \t]+(.*)$", line)
+        if match:
+            title = re.sub(r"[ \t]+#+[ \t]*$", "", match.group(2)).strip()
+            headings.append(dict(level=len(match.group(1)), title=title))
+    return tuple(headings)
+
 # %% ../nbs/00_foundation.ipynb #bcb55cee
-@patch
-def class_names(self: NotebookCell):
-    "Return semantic class names for the cell."
-    return cell_class_names(self.cell)
-
-
 @patch
 def heading_title(self: NotebookCell, levels=(2,)):
     "Return the first markdown heading title whose level is allowed."
     if self.cell_type != "markdown": return None
     level_set = {int(level) for level in levels}
-    for line in self.source.splitlines():
-        match = re.match(r"^(#{1,6})\s+(.+?)\s*$", line.strip())
-        if match and len(match.group(1)) in level_set: return match.group(2).strip()
-    return None
+    return next((item["title"] for item in _markdown_headings(self.source) if item["level"] in level_set), None)
 
 # %% ../nbs/00_foundation.ipynb #b57f3d3c
 @patch
@@ -1025,26 +1033,30 @@ def prefix(self: NotebookCell, show_ids=False):
     "Return the compact rendered cell prefix used in context output."
     return f"Cell id={self.id}: {self.cell_type}"
 
+# %% ../nbs/00_foundation.ipynb #39153b0e
+@patch
+def properties(self: Cell):
+    "Return independent source properties without AST objects or execution state."
+    analysis = cell_analysis(self.cell)
+    tree, error = analysis["tree"], analysis["parse_error"]
+    definitions, imports, checks = (analysis[key] for key in ("definitions", "imports", "checks"))
+    return dict(kind=analysis["kind"], directives=analysis["directives"], headings=analysis["headings"],
+        definitions=None if definitions is None else tuple(name for name, node, kind in definitions),
+        imports=None if imports is None else len(imports), imports_only=None if tree is None else bool(tree.body) and len(imports) == len(tree.body),
+        checks=None if checks is None else sum(not check["scope"] for check in checks), parse_error=None if error is None else str(error))
+
 # %% ../nbs/00_foundation.ipynb #8a42e872
 @patch
 def to_record(self: Cell):
     "Return a small structured record for this cell."
-    return {
-        "cell_id": self.id,
-        "cell_idx": self.idx,
-        "cell_type": self.cell_type,
-        "path": self.path,
-        "directives": self.directives(),
-        "class_names": self.class_names(),
-        "source": self.source,
-    }
+    return dict(cell_id=self.id, cell_idx=self.idx, cell_type=self.cell_type, path=self.path,
+        directives=self.directives(), properties=self.properties(), source=self.source)
 
-
+# %% ../nbs/00_foundation.ipynb #7f3f15fc
 @patch
 def to_xml(self: Cell, include_output=False):
-    "Return an XML-shaped cell view for LLM context; directives become the semantic type."
-    attrs = xml_attrs(id=self.id, idx=self.idx, type=self.cell_type, path=self.path,
-                      semantic=self.semantic_type(), classes=" ".join(self.class_names()))
+    "Return a cell view with independent source properties and optional outputs."
+    attrs = xml_attrs(id=self.id, idx=self.idx, type=self.cell_type, path=self.path, properties=json.dumps(self.properties()))
     body = [f"<source>{xml_escape(self.code)}</source>"]
     if include_output and _has_cell_output(self.cell):
         body.append(f"<outputs>{xml_escape(json.dumps(_cell_outputs(self.cell), default=str))}</outputs>")
@@ -1479,41 +1491,38 @@ def cell_output_text(cell):
     """Return all visible outputs for `cell` as compact plain text."""
     return ''.join(_output_text_function(output) for output in _cell_outputs(cell)).strip()
 
-# %% ../nbs/00_foundation.ipynb #86869843
-def _fallback_cell_class_name(cell):
-    cell_type = getattr(cell, "cell_type", None)
-    return f"{cell_type}_cell" if cell_type else "unknown_cell"
+# %% ../nbs/00_foundation.ipynb #e13333cb
+def scoped_nodes(node, scope=()):
+    "Yield AST nodes with lexical scopes; definition headers stay in the outer scope."
+    yield node, scope
+    for field, value in ast.iter_fields(node):
+        child_scope = scope
+        if is_definition_node(node) and field == "body": child_scope = (*scope, node.name)
+        elif isinstance(node, ast.Lambda) and field == "body": child_scope = (*scope, "<lambda>")
+        children = value if isinstance(value, list) else (value,)
+        for child in children:
+            if isinstance(child, ast.AST): yield from scoped_nodes(child, child_scope)
 
+# %% ../nbs/00_foundation.ipynb #dc85c218
+def _cell_checks(tree):
+    checks = []
+    for node, scope in scoped_nodes(tree):
+        kind = "assert" if isinstance(node, ast.Assert) else "test_call" if (
+            isinstance(node, ast.Call) and short_call_name(node.func, default="").startswith("test_")) else None
+        if kind: checks.append(dict(kind=kind, scope=scope, line=node.lineno, raw=node))
+    return tuple(checks)
 
 # %% ../nbs/00_foundation.ipynb #1cd24dd2
 def cell_analysis(cell):
-    "Derive directives, Python structure and semantic roles from one cell snapshot."
-    source, kind = cell_source(cell), cell.get("cell_type")
-    directives = cell_directives(cell)
-    tree = parse_code_cell(cell)
-    body = tree.body if tree is not None else []
-    definitions = [node for node in body if is_definition_node(node)]
-    exported = kind == "code" and bool({"export", "exports", "exporti"} & directives.keys())
-    output = bool(cell.get("outputs"))
-    nodes = list(ast.walk(tree)) if tree is not None else []
-    tests = any(isinstance(node, ast.Assert) or
-        isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("test_") or
-        isinstance(node, ast.Call) and isinstance(node.func, (ast.Name, ast.Attribute)) and
-        (node.func.id if isinstance(node.func, ast.Name) else node.func.attr).startswith("test_") for node in nodes)
-    if kind == "code" and tree is None: tests = re.search(r"\b(assert|test_[A-Za-z0-9_]*)\b", source) is not None
-    roles = []
-    if kind == "code":
-        imports = bool(body) and all(isinstance(node, (ast.Import, ast.ImportFrom)) for node in body)
-        if imports: roles.append("exported_import_cell" if exported else "internal_import_cell")
-        if exported and not output and not tests and len(definitions) == 1:
-            roles.append("private_code" if definitions[0].name.startswith("_") else "public_code")
-        functions = {node.name for node in definitions if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
-        if len(functions) > 1: roles.append("multicell")
-        if not exported and tests: roles.append("test_code")
-        if not exported and output: roles.append("example_code")
-    elif kind == "markdown":
-        roles.append("title" if any(re.match(r"^#+\s+", line.strip()) for line in source.splitlines()) else "documentation")
-    return dict(raw=cell, tree=tree, directives=directives, roles=tuple(roles))
+    "Derive independent source properties while preserving raw data and parse errors."
+    kind = cell.get("cell_type")
+    tree, error = _parse_cell(cell)
+    body = tree.body if tree is not None else None
+    definitions = None if body is None else tuple(record for record in definition_nodes(tree) if record[1] in body)
+    imports = None if body is None else tuple(node for node in body if isinstance(node, (ast.Import, ast.ImportFrom)))
+    return dict(raw=cell, kind=kind, tree=tree, parse_error=error, directives=cell_directives(cell),
+        definitions=definitions, imports=imports, checks=None if tree is None else _cell_checks(tree),
+        headings=_markdown_headings(cell_source(cell)) if kind == "markdown" else ())
 
 # %% ../nbs/00_foundation.ipynb #4ceda912
 def definition_names(node):
@@ -1542,14 +1551,6 @@ def definition_nodes(tree):
                 if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)))
     return records
 
-# %% ../nbs/00_foundation.ipynb #452e85f7
-def cell_semantic_warnings(cell):
-    "Return semantic warning codes for one cell."
-    roles = set(cell_analysis(cell)["roles"])
-    warnings = ["multicell"] if "multicell" in roles else []
-    if len(roles) > 1 and roles != {"test_code", "example_code"}: warnings.append("multiple-semantic-types")
-    return tuple(warnings)
-
 # %% ../nbs/00_foundation.ipynb #a65ca453
 def stamp_notebook_metadata(nb, exported_py_path=None):
     "Migrate cell evidence on an owned notebook before writing."
@@ -1558,41 +1559,23 @@ def stamp_notebook_metadata(nb, exported_py_path=None):
     return nb
 
 
-# %% ../nbs/00_foundation.ipynb #0d74a9ef
-def cell_class_names(cell):
-    "Return semantic roles derived from the current cell."
-    return cell_analysis(cell)["roles"] or (_fallback_cell_class_name(cell),)
-
 # %% ../nbs/00_foundation.ipynb #4541deaa
 def _normalize_cell_type_filter(value):
     if value is None: return None
-    import_roles = ("exported_import_cell", "internal_import_cell")
-    aliases = {
-        "code": "code", "py": "code", "python": "code", "md": "markdown", "markdown": "markdown", "raw": "raw",
-        "import": import_roles, "imports": import_roles, "import_cell": import_roles,
-        "internal_import": "internal_import_cell", "internal_import_cell": "internal_import_cell",
-        "exported_import": "exported_import_cell", "exported_import_cell": "exported_import_cell",
-        "public": "public_code", "public_code": "public_code", "private": "private_code", "private_code": "private_code",
-        "multicell": "multicell", "test": "test_code", "tests": "test_code", "test_code": "test_code",
-        "example": "example_code", "examples": "example_code", "example_code": "example_code",
-        "documentation": "documentation", "doc": "documentation", "docs": "documentation", "title": "title", "titles": "title",
-    }
-    normalized = set()
+    aliases = dict(code="code", py="code", python="code", md="markdown", markdown="markdown", raw="raw")
+    wanted = set()
     for item in str(value).split(","):
         key = item.strip().lower()
         if not key: continue
-        if key not in aliases: raise ValueError(f"Unknown cell_type {item!r}; use one of: {', '.join(sorted(set(aliases)))}")
-        target = aliases[key]
-        normalized.update(target if isinstance(target, tuple) else (target,))
-    return normalized or None
+        if key not in aliases: raise ValueError(f"Unknown cell_type {item!r}; use code, markdown, or raw")
+        wanted.add(aliases[key])
+    return wanted or None
 
 # %% ../nbs/00_foundation.ipynb #414b7ba6
 def cell_matches_type(cell, cell_type):
+    "Match Jupyter cell kinds; source properties are queried separately."
     wanted = _normalize_cell_type_filter(cell_type)
-    if wanted is None: return True
-    if getattr(cell, "cell_type", None) in wanted: return True
-    return bool(set(cell_class_names(cell)) & wanted)
-
+    return wanted is None or cell.get("cell_type") in wanted
 
 # %% ../nbs/00_foundation.ipynb #b6083f50
 @patch
@@ -1600,35 +1583,12 @@ def output_text(self: Cell):
     "Return all visible outputs for this cell as compact plain text."
     return cell_output_text(self.cell)
 
-# %% ../nbs/00_foundation.ipynb #903924f0
-@patch
-def semantic_type(self: Cell):
-    "Return the primary reader-facing semantic type for this cell."
-    if self.cell_type == CellType.MARKDOWN:
-        if cell_matches_type(self.cell, "title"): return SemanticType.TITLE
-        return SemanticType.DOCUMENTATION if cell_matches_type(self.cell, "documentation") else SemanticType.MARKDOWN
-    if self.cell_type != CellType.CODE: return SemanticType.coerce(self.cell_type)
-    if cell_matches_type(self.cell, "multicell"): return SemanticType.MULTICELL
-    if cell_matches_type(self.cell, "test"): return SemanticType.TEST
-    if cell_matches_type(self.cell, "example"): return SemanticType.EXAMPLE
-    if cell_matches_type(self.cell, "public"): return SemanticType.PUBLIC
-    if cell_matches_type(self.cell, "private"): return SemanticType.PRIVATE
-    if cell_matches_type(self.cell, "exported_import"): return SemanticType.EXPORTED_IMPORT
-    if cell_matches_type(self.cell, "import"): return SemanticType.INTERNAL_IMPORT
-    return SemanticType.CODE
-
 # %% ../nbs/00_foundation.ipynb #7ad036b6
 @patch
 def context_record(self: Cell):
-    "Return the context record shape used by read helpers, with directives stripped."
-    return {
-        'cell_id': self.id,
-        'cell_idx': self.idx,
-        'cell_type': self.cell_type,
-        'semantic_type': self.semantic_type(),
-        'source': self.code.strip(),
-        'output': self.output_text(),
-    }
+    "Return a reader record with independent properties and directive-free source."
+    return dict(cell_id=self.id, cell_idx=self.idx, cell_type=self.cell_type, properties=self.properties(),
+        source=self.code.strip(), output=self.output_text())
 
 # %% ../nbs/00_foundation.ipynb #a2ac2f9b
 output_text = _output_text_function

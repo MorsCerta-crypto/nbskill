@@ -4,8 +4,8 @@ Notebook review should follow the source cells that own the behavior. `diff_nb` 
 
 ```python
 from nbskill.review import public_function_literacy_problems, style_report, diff_nb
-from nbskill.foundation import write_demo_notebook, write_tool_notebook
-from fastcore.nbio import mk_cell, new_nb, write_nb as _write_nb
+from nbskill.foundation import stamp_notebook_metadata
+from fastcore.nbio import mk_cell, write_nb as _write_nb
 from contextlib import redirect_stdout
 from io import StringIO
 ```
@@ -78,31 +78,23 @@ Docs: https://MorsCerta-crypto.github.io/nbskill/review.html.md"""
 
 # %% auto #0
 __all__ = ['skip_style_paths', 'public_function_literacy_problems', 'notebook_validation_problems', 'notebook_size_problems',
-           'reset_global_usage_summary', 'notebook_autofix', 'style_report', 'run_style_check', 'style_check',
-           'validate_nbs', 'code_source', 'visible_text_inventory', 'diff_nb']
+           'cell_structure_problems', 'reset_global_usage_summary', 'notebook_autofix', 'style_report',
+           'run_style_check', 'style_check', 'validate_nbs', 'code_source', 'visible_text_inventory', 'diff_nb']
 
 # %% ../nbs/04_review.ipynb #3cff0f46
-import ast, copy
-import json
-import re
-import subprocess
+import ast, copy, json, re, subprocess
 from collections import Counter
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
 
 from fastcore.nbio import mk_cell, read_nb
-from fastcore.nbio import write_nb as _write_nb
 from nbdev.diff import nbs_pair, source_diff
 
-from nbskill.foundation import (
-    track_call, reset_usage,
-    empty_failure_map, failure_map_path, load_failure_map, cell_class_names, cell_semantic_warnings,
-    cell_source, clear_outputs, api_error, api_return, exported_py_path, file_hash, file_line_count,
-    cap_text, notebook_paths, parse_code_cell, short_call_name, source_without_directives,
-    stamp_notebook_metadata, is_exported_code_cell, none_if_string,
-)
-from .parallel import notebook_locks
+from .foundation import (track_call, reset_usage, empty_failure_map, failure_map_path, load_failure_map, cell_analysis, scoped_nodes,
+    cell_source, api_error, api_return, exported_py_path, file_hash, file_line_count, cap_text, notebook_paths, parse_code_cell,
+    short_call_name, source_without_directives, is_exported_code_cell, none_if_string)
+
 
 # %% ../nbs/04_review.ipynb #8077f190
 skip_style_paths = "_proc __pycache__ src assets data examples tests archive manage.ipynb".split(" ")
@@ -146,10 +138,6 @@ def _style_check_argv(path=".", skip_folder_re=None, skip_path=None):
 # %% ../nbs/04_review.ipynb #e67245c1
 def _top_level_function_count(tree):
     return sum(isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) for node in tree.body)
-
-# %% ../nbs/04_review.ipynb #2ce5bab7
-def _assert_count(tree):
-    return sum(isinstance(node, ast.Assert) for node in ast.walk(tree))
 
 # %% ../nbs/04_review.ipynb #1e9b3b0c
 def _test_function_count(tree):
@@ -202,23 +190,18 @@ def _public_names_in_node(node, public_names):
 
 # %% ../nbs/04_review.ipynb #380d3909
 def _called_public_names(tree, public_names):
-    names = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Call):
-            name = short_call_name(node.func)
-            if name in public_names: names.add(name)
-    return names
+    return {short_call_name(node.func) for node, scope in scoped_nodes(tree)
+        if not scope and isinstance(node, ast.Call) and short_call_name(node.func) in public_names}
 
 # %% ../nbs/04_review.ipynb #2b874492
-def _tested_public_names(tree, public_names):
+def _tested_public_names(analysis, public_names):
     names = set()
-    test_call_names = {"test_eq", "test_ne", "test_fail"}
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Assert):
-            names.update(_public_names_in_node(node.test, public_names))
-        elif isinstance(node, ast.Call) and short_call_name(node.func) in test_call_names:
-            for arg in [*node.args, *[kw.value for kw in node.keywords]]:
-                names.update(_public_names_in_node(arg, public_names))
+    for check in analysis["checks"] or ():
+        if check["scope"]: continue
+        node = check["raw"]
+        if isinstance(node, ast.Assert): names.update(_public_names_in_node(node.test, public_names))
+        else:
+            for arg in [*node.args, *[kw.value for kw in node.keywords]]: names.update(_public_names_in_node(arg, public_names))
     return names
 
 # %% ../nbs/04_review.ipynb #942f5874
@@ -228,31 +211,29 @@ def _markdown_explains_function(source, name):
 
 # %% ../nbs/04_review.ipynb #b09c3c00
 def _public_function_reference_sets(nb, public_names):
-    references = {"markdown": set(), "example": set(), "test": set()}
+    references = dict(markdown=set(), example=set(), test=set())
     for cell in nb.cells:
-        source = cell_source(cell)
-        if getattr(cell, "cell_type", None) == "markdown":
-            references["markdown"].update(
-                name for name in public_names if _markdown_explains_function(source, name)
-            )
+        if cell.get("cell_type") == "markdown":
+            references["markdown"].update(name for name in public_names if _markdown_explains_function(cell_source(cell), name))
             continue
-        tree = parse_code_cell(cell)
-        exportd = "exportd" in cell.directives
-        if tree is None or (is_exported_code_cell(cell) and not exportd): continue
-        tested = _tested_public_names(tree, public_names)
-        if exportd:
-            references["example"].update(_called_public_names(tree, public_names))
-            aliases = {}
-            for node in ast.walk(tree):
-                if not isinstance(node, (ast.Assign, ast.AnnAssign)): continue
-                targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-                calls = _called_public_names(node.value, public_names) if node.value else set()
-                for target in targets:
-                    if isinstance(target, ast.Name): aliases[target.id] = calls
-            for alias in _tested_public_names(tree, aliases): tested.update(aliases[alias])
-        if tested: references["test"].update(tested)
-        elif not exportd and "test_code" not in cell_class_names(cell):
-            references["example"].update(_called_public_names(tree, public_names))
+        analysis = cell_analysis(cell)
+        tree, directives = analysis["tree"], analysis["directives"]
+        if tree is None or is_exported_code_cell(cell): continue
+        tested = _tested_public_names(analysis, public_names)
+        aliases = {}
+        for node, scope in scoped_nodes(tree):
+            if scope or not isinstance(node, (ast.Assign, ast.AnnAssign)): continue
+            calls = _called_public_names(node.value, public_names) if node.value else set()
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            for target in targets:
+                if isinstance(target, ast.Name): aliases[target.id] = calls
+        for alias in _tested_public_names(analysis, aliases): tested.update(aliases[alias])
+        references["test"].update(tested)
+        if "hide" in directives: continue
+        checked_nodes = {node for check in analysis["checks"] if not check["scope"] for node in ast.walk(check["raw"])}
+        examples = {short_call_name(node.func) for node, scope in scoped_nodes(tree)
+            if not scope and isinstance(node, ast.Call) and node not in checked_nodes and short_call_name(node.func) in public_names}
+        references["example"].update(_called_public_names(tree, public_names) if "exportd" in directives else examples)
     return references
 
 # %% ../nbs/04_review.ipynb #d1103da4
@@ -368,7 +349,7 @@ def _format_problem(problem):
     line = f" line={problem['line']}" if problem.get("line") else ""
     fields = []
     for key in (
-        "scope", "symbol", "missing", "import_key", "cells", "semantic_types", "confidence", "hint",
+        "scope", "symbol", "missing", "import_key", "cells", "definition_count", "confidence", "hint",
         "exported_py_path", "line_count", "function_count", "docstring_lines",
         "regex", "note", "match", "candidate", "target_path", "target_cell_id",
         "score", "gap", "reason",
@@ -497,6 +478,16 @@ def _style_path_is_skipped(path, skip_paths, skip_folder_re=None):
     if _style_root_is_skipped(path, skip_paths): return True
     return bool(skip_folder_re and re.search(str(skip_folder_re), str(path)))
 
+# %% ../nbs/04_review.ipynb #8f392359
+def cell_structure_problems(cell, path=""):
+    "Return structural writing diagnostics for one cell."
+    definitions = cell_analysis(cell)["definitions"]
+    if definitions is None or not is_exported_code_cell(cell): return []
+    count = len({node for name, node, kind in definitions})
+    if count < 2: return []
+    return [_problem("multiple-exported-definitions", path, cell,
+        f"{count} exported definitions; give each definition its own cell", definition_count=count)]
+
 # %% ../nbs/04_review.ipynb #6871fee3
 def _notebook_style_problems(path=".", skip_folder_re=None, skip_path=None):
     skip_paths = _style_skip_paths(skip_path)
@@ -513,15 +504,13 @@ def _notebook_style_problems(path=".", skip_folder_re=None, skip_path=None):
         problems.extend(_public_function_literacy_problems_for_nb(nb_path, nb))
         imports_by_scope = {"exported": {}, "internal": {}}
         for cell in nb.cells:
-            classes = cell_class_names(cell)
-            for code in cell_semantic_warnings(cell):
-                problems.append(_problem(code, nb_path, cell, semantic_types=list(classes)))
-            tree = parse_code_cell(cell)
+            problems.extend(cell_structure_problems(cell, nb_path))
+            analysis = cell_analysis(cell)
+            tree = analysis["tree"]
             if tree is None: continue
-            if "test_code" in classes:
-                problem_count = _assert_count(tree) + _test_function_count(tree)
-                if problem_count > 3:
-                    problems.append(_problem("multi-problem-test", nb_path, cell, f"{problem_count} asserts/test functions; split into one-problem-at-a-time cells"))
+            problem_count = sum(not check["scope"] for check in analysis["checks"]) + _test_function_count(tree)
+            if problem_count > 3:
+                problems.append(_problem("multi-problem-test", nb_path, cell, f"{problem_count} notebook checks/test functions; split into one-problem-at-a-time cells"))
             scope = "exported" if is_exported_code_cell(cell) else "internal"
             for key in _import_keys(tree):
                 imports_by_scope[scope].setdefault(key, []).append(getattr(cell, "id", ""))
@@ -950,28 +939,28 @@ def style_report(
         chkstyle={"status": chkstyle.get("status", 0), **cap_text(chkstyle.get("output", ""), max_output_chars=max_output_chars)},
         fixes=_fix_suggestions(diagnostics), text=capped["text"])
 
-# %% ../nbs/04_review.ipynb #bc59a7ff
-def _chkstyle_main():
-    try: from chkstyle.core import main
+# %% ../nbs/04_review.ipynb #5f52e75e
+def _run_chkstyle(argv):
+    try: from chkstyle import core
     except ModuleNotFoundError as exc:
-        if exc.name == 'chkstyle':
-            raise RuntimeError('Style checking requires chkstyle; install the style extra.') from exc
+        if exc.name == "chkstyle": raise RuntimeError("Style checking requires chkstyle; install the style extra.") from exc
         raise
-    return main
+    original = core.NB_EXPORT_KEYS
+    core.NB_EXPORT_KEYS = original | {"exporti"}
+    try: return core.main(argv)
+    finally: core.NB_EXPORT_KEYS = original
 
-
+# %% ../nbs/04_review.ipynb #bc59a7ff
 def run_style_check(path=".", skip_folder_re=None, skip_path=None, strict=False, max_output_chars=None):
-    "Run chkstyle with nbskill's default skip paths and capped output."
+    "Run chkstyle with nbskill's export directives, skip paths, and capped output."
     skip_paths = _style_skip_paths(skip_path)
-    if _style_root_is_skipped(path, skip_paths):
-        return {"status": 0, "output": "", "text": "", "truncated": False, "chars": 0, "omitted_chars": 0}
+    if _style_root_is_skipped(path, skip_paths): return dict(status=0, output="", text="", truncated=False, chars=0, omitted_chars=0)
     out, err = StringIO(), StringIO()
-    with redirect_stdout(out), redirect_stderr(err):
-        status = _chkstyle_main()(_style_check_argv(path, skip_folder_re, skip_path))
+    with redirect_stdout(out), redirect_stderr(err): status = _run_chkstyle(_style_check_argv(path, skip_folder_re, skip_path))
     output = "\n".join(chunk.rstrip() for chunk in (out.getvalue(), err.getvalue()) if chunk)
-    capped = cap_text(output, max_output_chars=max_output_chars) if max_output_chars else {"text": output, "truncated": False, "chars": len(output), "omitted_chars": 0}
-    return {"status": status, "output": output, **capped}
-
+    capped = cap_text(output, max_output_chars=max_output_chars) if max_output_chars else dict(
+        text=output, truncated=False, chars=len(output), omitted_chars=0)
+    return dict(status=status, output=output, **capped)
 
 # %% ../nbs/04_review.ipynb #d2f84049
 @track_call

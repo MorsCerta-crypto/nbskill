@@ -24,7 +24,7 @@ These operations add the notebook concerns: stable cell ids, metadata, output cl
 
 ## Import grouping after an edit
 
-An edited cell may contain global imports together with exported code, tests, or examples. Before committing, the editor moves those imports into the notebook's single matching import cell: exported code uses `exported_import_cell`; all runtime-only cells use `internal_import_cell`. Function-local imports stay in place.
+An edited cell may contain imports together with other code. Before committing, the editor moves global imports into one import-only cell with matching export behavior. Function-local imports stay in place. Import grouping reads source properties and ignores stored output.
 
 `commit_notebooks` prepares its own working copies. A preview verifies the plan without creating files; the actual commit returns evidence from the saved notebooks. Both notebooks below belong to one ordinary-file transaction, so export is disabled:
 
@@ -104,7 +104,7 @@ __all__ = ['insert_lines', 'replace_lines', 'delete_lines', 'replace_text', 'rep
            'commit_notebooks', 'commit_notebook', 'edit_notebook', 'NotebookEditor']
 
 # %% ../nbs/02_edit.ipynb #256e7289
-import ast,copy,difflib,re,os,multiprocessing,queue,traceback,tempfile
+import ast,copy,difflib,re,os,multiprocessing,queue,traceback
 from dataclasses import dataclass
 from pathlib import Path
 from fastcore.basics import patch
@@ -113,11 +113,9 @@ from contextlib import redirect_stdout, redirect_stderr
 from io import StringIO
 from fastcore.nbio import nb2dict, new_nb, validate_nb, write_nb as _write_nb
 from fastcore.nbio import Notebook as FastcoreNotebook, mk_cell, read_nb
-from .foundation import (
-    track_call,
-    Notebook,notebook_directive,apply_directives,cap_text,cell_class_names,cell_directives,cell_semantic_warnings,
-    cell_source,clear_outputs,is_exported_code_cell,source_hash,ensure_cell_ids,validate_code_cells,notebook_hash,
-    write_demo_notebook,exported_py_path,nbdev_project_root,stamp_notebook_metadata,stamp_export_metadata,file_hash)
+from .foundation import (track_call, Notebook, notebook_directive, apply_directives, cap_text, Cell, cell_directives, cell_source,
+    clear_outputs, is_exported_code_cell, source_hash, ensure_cell_ids, validate_code_cells, notebook_hash, exported_py_path,
+    nbdev_project_root, stamp_notebook_metadata, stamp_export_metadata, file_hash)
 from .parallel import notebook_locks
 
 # %% ../nbs/02_edit.ipynb #871eb22e
@@ -205,11 +203,10 @@ def _edit_notebook_craft_warnings(path, nb, affected_cell_ids):
             warnings.append(_craft_warning("multi-function-cell",
                 f"This code cell defines {function_count} top-level functions; try op=\"explode_cells\" on cell_id={cell_id!r}.",
                 path,cell_id=cell_id,function_count=function_count))
-        semantic_warnings = cell_semantic_warnings(cell)
-        for code in semantic_warnings:
-            warnings.append(_craft_warning(
-                code, f"Semantic roles {', '.join(cell_class_names(cell))} require splitting this cell.",
-                path, cell_id=cell_id, semantic_types=list(cell_class_names(cell))))
+        from nbskill.review import cell_structure_problems
+        for problem in cell_structure_problems(cell, path):
+            warnings.append(_craft_warning(problem["code"], problem["detail"], path,
+                cell_id=cell_id, definition_count=problem["definition_count"]))
     from nbskill.graph import notebook_order_problems
     for problem in notebook_order_problems(path, nb=nb):
         if problem["code"] != "cell-order" or problem["cell_id"] not in affected: continue
@@ -732,8 +729,9 @@ def _global_import_parts(cell):
 
 # %% ../nbs/02_edit.ipynb #7c4c7c93
 def _import_group_cell(nb, exported):
-    role = "exported_import_cell" if exported else "internal_import_cell"
-    return next((cell for cell in nb.cells if role in cell_class_names(cell)), None)
+    for cell in nb.cells:
+        if is_exported_code_cell(cell) == exported and Cell(cell).properties()["imports_only"]: return cell
+    return None
 
 # %% ../nbs/02_edit.ipynb #bbcd6e8c
 def _append_import_group(nb, target, imports, exported, diffs, affected):

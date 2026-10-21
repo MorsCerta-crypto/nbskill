@@ -96,11 +96,11 @@ assert notebook_context["selection"]["matches"]
 notebook_context
 ```
 
-    Context filter: .
-    Matches: 50 shown of 1773
+    Context filter: nbs/14_pyskill.ipynb
+    Matches: 44 shown of 44
 
     Filters
-    scope=.
+    scope=nbs/14_pyskill.ipynb
     query=None
     chapter=None
     cell_type=None
@@ -112,46 +112,44 @@ notebook_context
     max_matches=50
 
     Matches
-    00_foundation.ipynb#9b64b57f idx=0 type=code code | (empty)
-    00_foundation.ipynb#11e12cb0 idx=1 type=markdown title | # Foundation
-    00_foundation.ipynb#f91ffd39 idx=2 type=markdown documentation | `nbskill.foundation` supplies the notebook vocabulary used by every later module. Cells have stable ids, chapters are spans opened by separate `##` markdown cells, and generated Python files point back to their source notebook.
-    00_foundation.ipynb#contract-foundation idx=3 type=markdown title | ### Production contract
-    00_foundation.ipynb#8cd6c35b idx=4 type=markdown documentation | The helpers here deliberately stay small because every higher-level tool depends on them. For example, `parse_cells` turns friendly cell-block text into notebook cells, the semantic classifiers let readers say "show me tests" or "show me exported code" without parsing raw notebook JSON.
-    00_foundation.ipynb#6973770a idx=5 type=code internal import | from contextlib import redirect_stdout
-    00_foundation.ipynb#2500639f idx=6 type=code exported import | import ast,hashlib,json,multiprocessing,os,queue,re,tempfile,tomllib,traceback
-    00_foundation.ipynb#ca95a132 idx=7 type=code public code | def numbered_notebook_path(nbs_path, name, index=None):
-    00_foundation.ipynb#demohelpers idx=8 type=markdown title | ## Demo scratch files
-    00_foundation.ipynb#c113e1a3 idx=9 type=markdown documentation | Examples and tests in later notebooks need small notebooks they can safely mutate. Scratch helpers create disposable artifacts in the system temporary directory and remove them after use, so notebook test runners never create repository data folders. `tool_notebook` builds the shared reader, executor, reviewer, and example shape in code.
-    00_foundation.ipynb#demohelpcode idx=10 type=code public code | def remove_demo_path(path):
-    00_foundation.ipynb#6cc30f19 idx=11 type=markdown documentation | `demo_path` names a scratch artifact in the system temporary directory by default and optionally removes any previous copy. It only creates the parent folder; helpers that write content decide what belongs at the path. An explicit `base` remains available when an example needs a chosen location.
-    00_foundation.ipynb#b49ce285 idx=12 type=code public code | def demo_path(name, base=None, reset=True):
-    00_foundation.ipynb#a5fc0a19 idx=13 type=markdown documentation | `demo_path` reserves a scratch filename and creates its parent directory. It does not create the file. The path stays available to whichever helper writes the example content:
-    00_foundation.ipynb#4e3de832 idx=14 type=code test code | scratch_path = demo_path("foundation_scratch_example.txt")
-    00_foundation.ipynb#f38b2f86 idx=15 type=code public code | @contextmanager
-    00_foundation.ipynb#067b8cc1 idx=16 type=code test code | with demo_path_context("foundation_demo_path_context") as context_path:
-    00_foundation.ipynb#bd16385a idx=17 type=code public code | def path_candidates(path):
-    00_foundation.ipynb#332d0353 idx=18 type=code test code | _path_candidate_rows = path_candidates("nbs/00_foundation.ipynb")
-    00_foundation.ipynb#26caf310 idx=19 type=markdown documentation | Notebook helpers should fail gently when a path is missing, unreadable, or shaped like ordinary JSON instead of a Jupyter notebook. `is_valid_ipynb` keeps that contract small and dependency-free.
-    00_foundation.ipynb#5023dcb9 idx=20 type=code private code | _VALID_CELL_TYPES = {"code", "markdown", "raw"}
-    00_foundation.ipynb#864b45b0 idx=21 type=code public code | def is_valid_ipynb(path):
-    00_foundation.ipynb#4fed0b0a idx=22 type=markdown documentation | `write_demo_notebook` owns the whole lifetime of a scratch notebook: create it, yield its path to the example, then remove it even if the example fails.
-    00_foundation.ipynb#e7188cd8 idx=23 type=code public code | @contextmanager
-    00_foundation.ipynb#10969238 idx=24 type=markdown documentation | `tool_notebook` keeps the shared reader, executor, reviewer, and test shape in code. Each test writes a fresh notebook and removes it afterwards.
-    00_foundation.ipynb#891ac344 idx=25 type=code public code | def tool_notebook():
-    00_foundation.ipynb#487982b1 idx=26 type=markdown documentation | `write_tool_notebook` gives each example and test an isolated copy of the canonical tool notebook.
-    00_foundation.ipynb#7056ad49 idx=27 type=code public code | @contextmanager
-    00_foundation.ipynb#db1b10d0 idx=28 type=markdown documentation | `write_demo_file` keeps temporary conversion inputs out of the repository.
-    00_foundation.ipynb#05edde5b idx=29 type=code public code | @contextmanager
-    00_foundation.ipynb#c1ecf643 idx=30 type=code test code | tool_ids = [cell.id for cell in tool_notebook().cells]
-    00_foundation.ipynb#da02aaba idx=31 type=markdown documentation | `write_demo_notebook` creates a real temporary `.ipynb` and removes it when the context closes. Examples can check the actual file format and cleanup without leaving repository artifacts:
-    00_foundation.ipynb#28452839 idx=32 type=code test code | with write_demo_notebook("00_foundation_tour.ipynb") as path:
-    00_foundation.ipynb#3deac3e2 idx=33 type=code test code | with write_demo_notebook("00_foundation_bad.ipynb") as bad_path:
-    00_foundation.ipynb#b411ce35 idx=34 type=markdown title | ## Python API contracts and diagnostics
-    00_foundation.ipynb#7a3beeaf idx=35 type=markdown documentation | The public functions in later notebooks are direct Python APIs. These helpers keep return values and validation errors predictable while recording completed calls and failures in a small local statistics file.
-    00_foundation.ipynb#dbc6a8c7 idx=36 type=code public code | def api_return(value=None):
-    00_foundation.ipynb#754aea72 idx=37 type=code public code | def api_error(msg):
-    00_foundation.ipynb#b4c433a6 idx=38 type=code public code | def failure_map_path():
-    00_fou
+    nbs/14_pyskill.ipynb#c9fc44f2 idx=0 type=markdown headings=1 | # Native nbskill Pyskill
+    nbs/14_pyskill.ipynb#6df2357f idx=1 type=markdown export | `nbskill.skill` is the direct API for notebook-owned code. Install `nbskill` in the agent's Python environment, then import it with `from nbskill.skill import *`. Pyskills discovers the registered entry point; its listing does not install the package.
+    nbs/14_pyskill.ipynb#a100cb81 idx=2 type=code default_exp=skill | (empty)
+    nbs/14_pyskill.ipynb#bbe795cc idx=3 type=code export imports=7 | from nbskill.edit import edit_notebook
+    nbs/14_pyskill.ipynb#cffe7604 idx=4 type=markdown  | nbdev excludes imports from its generated `__all__`. Declare the re-exported operations with `_all_` so `from nbskill.skill import *` exposes the documented API.
+    nbs/14_pyskill.ipynb#6741dda4 idx=5 type=code export | _all_ = [context, generated_owner, reference_query, edit_notebook, exec_nb, notebook_state, diff_nb, style_check]
+    nbs/14_pyskill.ipynb#5621fa8f idx=6 type=code exportd imports=8 | from pathlib import Path
+    nbs/14_pyskill.ipynb#8140c1d2 idx=7 type=markdown export headings=2 | ## Notebook contract
+    nbs/14_pyskill.ipynb#9aa1b97d idx=8 type=markdown export | Treat one notebook as one part of a larger problem. Split that part into H2 chapters. Each chapter tells one domain story from the motivating problem through the implementation and its evidence. Put each chapter heading in its own markdown cell so Jupyter can collapse the chapter as a unit.
+    nbs/14_pyskill.ipynb#454bb607 idx=9 type=markdown export headings=2 | ## Read notebooks
+    nbs/14_pyskill.ipynb#ab7a4378 idx=10 type=markdown export | Start with notebook structure, then narrow to the chapter or symbol that owns the work. Call `generated_owner` before touching a Python module. Call `context` to read the relevant notebook cells. Use `chapter=` for one domain story and a qualified `#symbol` target for one definition. Call `reference_query` before adding a nontrivial helper.
+    nbs/14_pyskill.ipynb#35e462e6 idx=11 type=markdown export headings=3 | ### `generated_owner`
+    nbs/14_pyskill.ipynb#b990663d idx=12 type=code exportd checks=1 | owner = generated_owner(skill.__file__)
+    nbs/14_pyskill.ipynb#d329cd15 idx=13 type=markdown export headings=3 | ### `context`
+    nbs/14_pyskill.ipynb#833a3b66 idx=14 type=code exportd checks=2 | summary = context(owner, view="summary", verbose=False)
+    nbs/14_pyskill.ipynb#d2e27253 idx=15 type=markdown export headings=3 | ### `reference_query`
+    nbs/14_pyskill.ipynb#2e60971a idx=16 type=code eval=false | matches = reference_query("find an nbdev notebook export helper", top_k=3)
+    nbs/14_pyskill.ipynb#6ce478da idx=17 type=markdown export headings=2 | ## Write notebooks
+    nbs/14_pyskill.ipynb#47d518a9 idx=18 type=markdown export | Use one `edit_notebook` call for one coherent change. Read stable cell IDs and exact source text first. Submit every related operation together so validation happens before the notebook is written. Never splice notebook JSON or edit a generated Python module.
+    nbs/14_pyskill.ipynb#d873c301 idx=19 type=markdown export headings=3 | ### `edit_notebook`
+    nbs/14_pyskill.ipynb#a0d1a7fc idx=20 type=code exportd eval=false checks=1 | edits = [dict(op="replace_text", cell_id="6df2357f", old="direct API", new="direct notebook API")]
+    nbs/14_pyskill.ipynb#d9ee9b93 idx=21 type=markdown export headings=2 | ## Run notebooks
+    nbs/14_pyskill.ipynb#19b62683 idx=22 type=markdown export | Run the smallest scope that proves the changed story. `exec_nb` accepts a chapter name or an ending cell ID. Use `check_only=True` while iterating so execution does not write outputs or metadata. Use `allow_new=True` only when the new cells are trusted and must execute.
+    nbs/14_pyskill.ipynb#3edc6d9b idx=23 type=markdown export headings=3 | ### `exec_nb`
+    nbs/14_pyskill.ipynb#a6e3c060 idx=24 type=code exportd checks=1 | with write_demo_notebook(
+    nbs/14_pyskill.ipynb#5f93d19d idx=25 type=markdown export headings=3 | ### `notebook_state`
+    nbs/14_pyskill.ipynb#d141dbca idx=26 type=code exportd | state = notebook_state(owner.with_name("15_state.ipynb"))
+    nbs/14_pyskill.ipynb#cdc0e335 idx=27 type=markdown export headings=2 | ## Validate notebooks
+    nbs/14_pyskill.ipynb#973299e8 idx=28 type=markdown export | Validation combines execution evidence, a cell-level diff, and style diagnostics. Run `exec_nb` first. Read `diff_nb` as the source review and fix every relevant `style_check` diagnostic. Then run `nbdev-export` and verify the generated module from a clean interpreter. The notebook remains the source of truth.
+    nbs/14_pyskill.ipynb#93a3f38b idx=29 type=markdown export headings=3 | ### `diff_nb`
+    nbs/14_pyskill.ipynb#de23823c idx=30 type=code exportd eval=false | review = diff_nb(owner, ref_a="HEAD")
+    nbs/14_pyskill.ipynb#cbb5e438 idx=31 type=markdown export headings=3 | ### `style_check`
+    nbs/14_pyskill.ipynb#4146c9e4 idx=32 type=code exportd | diagnostics = style_check(owner, changed_only=True)
+    nbs/14_pyskill.ipynb#987e724c idx=33 type=markdown export headings=2 | ## Prove the complete workflow
+    nbs/14_pyskill.ipynb#2674f039 idx=34 type=markdown export | Use a disposable real notebook to check the whole path without changing the repository. Read its cell IDs, edit one value, execute the assertion, and inspect the diff. `check_only=True` leaves execution outputs in memory, while the edit itself writes the intended source change:
+    nbs/14_pyskill.ipynb#e60e9d6d idx=35 type=code exportd checks=2 | workflow_cells = [mk_cell("## Answer", cell_type="markdown"),
+    nbs/14_pyskill.ipynb#f47f281c idx=36 type=code hide checks=1 | expected = {"context", "generated_owner", "reference_query", "edit_notebook", "exec_nb", "notebook_state", "diff_nb", "style_check"}
+    nbs/14_pyskill.ipynb#8467d82f idx=37 typ
     ... truncated ...
 
 ## Load the Pyskill

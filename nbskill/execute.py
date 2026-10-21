@@ -30,8 +30,6 @@ execution_preview
 
 `run_notebook_test` runs the notebook, writes the resulting outputs, and raises if any code cell failed. Use it when execution results should become part of the saved notebook. For a review that must leave the notebook file untouched, use `exec_nb(check_only=True)` instead.
 
-`should_run_cell_feedback` selects edited examples, assertions, and output expressions. Exported definitions are skipped: their behavior is exercised through a notebook lesson rather than by evaluating a definition alone:
-
 ```python
 feedback_candidates = dict(
     exported=mk_cell("#| export\ndef answer(): return 42"),
@@ -63,16 +61,7 @@ Docs: https://MorsCerta-crypto.github.io/nbskill/execute.html.md"""
 __all__ = ['NBSafeShell', 'verify_notebook', 'exec_nb', 'run_notebook_test', 'should_run_cell_feedback', 'notebook_edit_feedback']
 
 # %% ../nbs/03_execute.ipynb #2a4844d2
-import ast
-import asyncio
-import base64
-import hashlib
-import json
-import re
-import site
-import sys
-import threading
-import traceback
+import ast, asyncio, base64, hashlib, json, re, site, sys, threading, traceback
 from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from contextvars import ContextVar
 from io import StringIO
@@ -86,12 +75,9 @@ from fastcore.basics import str2bool
 from fastcore.nbio import nb_frontmatter, read_nb
 from fastcore.nbio import write_nb as _write_nb
 
-from nbskill.foundation import (
-    track_call,
-    nbskill_cell_metadata, cell_directives, cell_source, api_error, api_return, one_chapter, output_text,
-    output_value_text, parse_literal, source_hash, stamp_notebook_metadata, notebook_result,
-    short_call_name, is_exported_code_cell, cell_class_names,
-)
+from .foundation import (track_call, nbskill_cell_metadata, cell_directives, cell_source, api_error, one_chapter, output_text,
+    output_value_text, parse_literal, source_hash, stamp_notebook_metadata, notebook_result, short_call_name, is_exported_code_cell,
+    cell_analysis, scoped_nodes)
 from .parallel import execution_slot, execution_context, notebook_locks, notebook_key
 
 # %% ../nbs/03_execute.ipynb #9c1fbc27
@@ -1246,30 +1232,28 @@ _FEEDBACK_OUTPUT_CALLS = {"display", "print"}
 
 # %% ../nbs/03_execute.ipynb #845113fc
 def _statement_has_output_call(node):
-    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)): return False
-    return any(isinstance(child, ast.Call) and short_call_name(child.func, default='') in _FEEDBACK_OUTPUT_CALLS for child in ast.walk(node))
+    return any(not scope and isinstance(child, ast.Call) and short_call_name(child.func, default="") in _FEEDBACK_OUTPUT_CALLS
+        for child, scope in scoped_nodes(node))
 
 # %% ../nbs/03_execute.ipynb #31a45f72
-def _source_has_output_feedback(source):
-    stripped = str(source or "").strip()
-    if not stripped: return False
-    if any(line.lstrip().startswith(("%", "!")) for line in stripped.splitlines()): return True
-    try: tree = ast.parse(source)
-    except SyntaxError: return True
+def _source_has_output_feedback(analysis):
+    source = cell_source(analysis["raw"]).strip()
+    if not source: return False
+    if any(line.lstrip().startswith(("%", "!")) for line in source.splitlines()): return True
+    tree = analysis["tree"]
+    if tree is None: return True
     if any(_statement_has_output_call(node) for node in tree.body): return True
     if not tree.body or not isinstance(tree.body[-1], ast.Expr): return False
     value = tree.body[-1].value
-    if isinstance(value, ast.Constant) and isinstance(value.value, str): return False
-    return True
+    return not (isinstance(value, ast.Constant) and isinstance(value.value, str))
 
 # %% ../nbs/03_execute.ipynb #4c424876
 def should_run_cell_feedback(cell):
-    "Return whether an edited cell should be executed for immediate feedback."
-    if getattr(cell, "cell_type", None) != "code": return False
-    if is_exported_code_cell(cell): return False
-    classes = set(cell_class_names(cell))
-    if classes & {"example_code", "test_code"}: return True
-    return _source_has_output_feedback(cell_source(cell))
+    "Select edited code with notebook-level checks or source output expressions."
+    if cell.get("cell_type") != "code" or is_exported_code_cell(cell): return False
+    analysis = cell_analysis(cell)
+    if any(not check["scope"] for check in analysis["checks"] or ()): return True
+    return _source_has_output_feedback(analysis)
 
 # %% ../nbs/03_execute.ipynb #049686ef
 def notebook_edit_feedback(path, cell_ids, auto_feedback=True, timeout=10, safe=True):

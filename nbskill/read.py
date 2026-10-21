@@ -20,7 +20,7 @@ This is the main notebook-facing surface: it combines the smaller readers and re
 
 Notebook work often crosses into generated modules. The AST readers keep that handoff compact and navigable.
 
-`context` combines discovery and reading. Use `context(path, view="summary")` for one compact row per cell, `cell_type="markdown"` or `cell_type="code"` for role-specific slices, `chapter="Name"` for one section, and `query="regex=term"` or `include_re="term"` for targeted search. `context_lines=1` adds neighboring cell summaries without opening the whole notebook.
+`context` combines discovery and reading. Use `context(path, view="summary")` for one compact row per cell, `cell_type="markdown"` or `cell_type="code"` for cell-kind slices, `chapter="Name"` for one section, and `query="regex=term"` or `include_re="term"` for targeted search. `query="checks=true"` selects notebook-level checks; `query="imports_only=true export"` selects exported import cells. `context_lines=1` adds neighboring cell summaries without opening the whole notebook.
 
 ## Exact cell context
 
@@ -58,24 +58,16 @@ Docs: https://MorsCerta-crypto.github.io/nbskill/read.html.md"""
 __all__ = ['project_context', 'chapter_context', 'python_file_context', 'python_symbol_context', 'file_context', 'context']
 
 # %% ../nbs/01_read.ipynb #727ac178
-import ast
-import copy
-import json
-import os
-import re
-import shlex
+import ast, copy, json, os, re, shlex
 from pathlib import Path
 
 from fastcore.nbio import read_nb
 from fastcore.basics import patch
 
-from nbskill.foundation import (
-    track_call,
-    Notebook, NotebookCell, definition_nodes, definition_names, parse_code_cell, call_name, cell_matches_type, cell_output_text, cell_prefix,
-    cell_source, chapter_index_set, chapter_spans, find_cell_by_id, first_line,
-    heading_title, is_exported_code_cell, matches_filter, matching_chapters, notebook_paths, notebook_result, one_chapter,
-    source_hash, source_without_directives, symbol_short_name,
-)
+from nbskill.foundation import (track_call, Notebook, NotebookCell, definition_nodes, definition_names, parse_code_cell, cell_analysis,
+    scoped_nodes, call_name, cell_matches_type, cell_prefix, cell_source, chapter_spans, find_cell_by_id, first_line, is_exported_code_cell,
+    matches_filter, matching_chapters, notebook_paths, notebook_result, one_chapter, source_hash, source_without_directives,
+    symbol_short_name)
 
 # %% ../nbs/01_read.ipynb #3876f40e
 def _format_overview(items, show_ids=False):
@@ -145,34 +137,11 @@ def _format_full(items, show_ids=False, line_numbers=False):
     return "\n\n".join(chunks)
 
 # %% ../nbs/01_read.ipynb #b1526aff
-_QUERY_KEY_ALIASES = {
-    "id": "cell_id",
-    "cell": "cell_id",
-    "cell_id": "cell_id",
-    "chapter": "chapter",
-    "section": "chapter",
-    "type": "cell_type",
-    "class": "cell_type",
-    "cell_type": "cell_type",
-    "symbol_kind": "symbol_kind",
-    "kind": "symbol_kind",
-    "visibility": "visibility",
-    "contains": "contains",
-    "text": "contains",
-    "regex": "regex",
-    "re": "regex",
-    "error": "has_error",
-    "errors": "has_error",
-    "has_error": "has_error",
-    "export": "export",
-    "exports": "export",
-    "exported": "export",
-    "header": "header",
-    "headers": "header",
-    "heading": "header",
-    "headings": "header",
-    "outline": "header",
-}
+_QUERY_KEY_ALIASES = dict(id="cell_id", cell="cell_id", cell_id="cell_id", chapter="chapter", section="chapter", type="cell_type",
+    cell_type="cell_type", symbol_kind="symbol_kind", kind="symbol_kind", visibility="visibility", contains="contains", text="contains",
+    regex="regex", re="regex", error="has_error", errors="has_error", has_error="has_error", checks="has_checks", has_checks="has_checks",
+    imports_only="imports_only", export="export", exports="export", exported="export", header="header", headers="header", heading="header",
+    headings="header", outline="header")
 
 # %% ../nbs/01_read.ipynb #4f3e6dfd
 def _normalize_query_key(key):
@@ -188,15 +157,9 @@ def _normalize_query_dict(spec):
 
 # %% ../nbs/01_read.ipynb #cc7d1f47
 def _cell_symbol_records(cell):
-    try: tree = ast.parse(source_without_directives(cell_source(cell)))
-    except SyntaxError: return []
-    records = []
-    for node in tree.body:
-        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)): continue
-        kind = "class" if isinstance(node, ast.ClassDef) else "function"
-        visibility = "private" if node.name.startswith("_") else "public"
-        records.append(dict(symbol=node.name, kind=kind, visibility=visibility, line=node.lineno))
-    return records
+    definitions = cell_analysis(cell)["definitions"]
+    return [dict(symbol=name, kind=kind, visibility="private" if name.rsplit(".", 1)[-1].startswith("_") else "public",
+        line=node.lineno) for name, node, kind in definitions or ()]
 
 # %% ../nbs/01_read.ipynb #5b09a9e8
 def _parse_query_terms(text):
@@ -205,7 +168,7 @@ def _parse_query_terms(text):
         sep = "=" if "=" in term else ":" if ":" in term else None
         if sep is None:
             key = _QUERY_KEY_ALIASES.get(term.strip().lower())
-            if key in {"has_error", "export", "header"}: spec[key] = "true"
+            if key in {"has_error", "export", "header", "has_checks", "imports_only"}: spec[key] = "true"
             else: bare.append(term)
             continue
         key, value = term.split(sep, 1)
@@ -244,10 +207,8 @@ def _cell_has_error(cell):
 
 # %% ../nbs/01_read.ipynb #e1d82fc4
 def _cell_header_level(cell):
-    if getattr(cell, "cell_type", None) != "markdown": return None
-    line = first_line(cell_source(cell)).strip()
-    if not line.startswith("#"): return None
-    return len(line) - len(line.lstrip("#"))
+    headings = cell_analysis(cell)["headings"]
+    return headings[0]["level"] if headings else None
 
 # %% ../nbs/01_read.ipynb #70a031f9
 def _cell_matches_header(cell, value):
@@ -276,6 +237,14 @@ def _select_query_items(nb, spec):
         )]
     if spec.get("header") is not None: items = [(i, c) for i, c in items if _cell_matches_header(c, spec["header"])]
     if spec.get("export") is not None: items = [(i, c) for i, c in items if is_exported_code_cell(c) == _query_bool(spec["export"])]
+    for key in ("has_checks", "imports_only"):
+        if spec.get(key) is None: continue
+        selected = []
+        for idx, cell in items:
+            props = NotebookCell(cell).properties()
+            value = props["checks"] if key == "has_checks" else props[key]
+            if value is not None and bool(value) == _query_bool(spec[key]): selected.append((idx, cell))
+        items = selected
     if spec.get("has_error") is not None: items = [(i, c) for i, c in items if _cell_has_error(c) == _query_bool(spec["has_error"])]
     if spec.get("contains") is not None: items = [(i, c) for i, c in items if spec["contains"] in cell_source(c)]
     if spec.get("regex") is not None: items = [(i, c) for i, c in items if matches_filter(cell_source(c), spec["regex"])]
@@ -401,11 +370,15 @@ def _call_matches_context_symbol(name, symbol):
 
 # %% ../nbs/01_read.ipynb #c65a6118
 def _cell_calls_symbol(cell, symbol):
-    if getattr(cell, "cell_type", None) != "code": return False
-    try: tree = ast.parse(source_without_directives(cell_source(cell)))
-    except SyntaxError: return False
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Call) and _call_matches_context_symbol(call_name(node.func), symbol): return True
+    analysis = cell_analysis(cell)
+    tree = analysis["tree"]
+    if tree is None: return False
+    for node, scope in scoped_nodes(tree):
+        if not scope and isinstance(node, ast.Call) and _call_matches_context_symbol(call_name(node.func), symbol): return True
+    for check in analysis["checks"]:
+        if check["scope"]: continue
+        if any(isinstance(node, ast.Call) and _call_matches_context_symbol(call_name(node.func), symbol)
+            for node in ast.walk(check["raw"])): return True
     return False
 
 # %% ../nbs/01_read.ipynb #472048bb
@@ -414,14 +387,8 @@ def _example_test_records(nb, symbol, definition_idx=None):
     records = []
     for idx, cell in items:
         if not _cell_calls_symbol(cell, symbol): continue
-        kind = "test" if cell_matches_type(cell, "test") else "example" if cell_matches_type(cell, "example") else "usage"
-        records.append({
-            "cell_id": getattr(cell, "id", ""),
-            "cell_idx": idx,
-            "kind": kind,
-            "source": cell_source(cell).strip(),
-            "output": cell_output_text(cell),
-        })
+        record = NotebookCell(cell, idx=idx).context_record()
+        records.append(record)
     return records
 
 # %% ../nbs/01_read.ipynb #e7a2910d
@@ -600,7 +567,7 @@ def chapter_context(
     any_cell_id: str | None = None,  # Any cell id inside the chapter
     verbose: bool = True,  # Print rendered context; pass False to only return structured data
     overview: bool = False,  # Show only notebook head and chapter intro markdown
-    cell_type: str | None = None,  # Optional cell type or semantic type filter for deep dives
+    cell_type: str | None = None,  # Optional Jupyter cell kind filter
     include_re: str | None = None,  # Optional regex that matched cell source must include
     exclude_re: str | None = None,  # Optional regex that matched cell source must not include
 ):
@@ -885,6 +852,16 @@ def _filter_context_view(view):
         raise ValueError(f"view must be one of {sorted(_FILTER_CONTEXT_VIEWS)}, not {view!r}")
     return view
 
+# %% ../nbs/01_read.ipynb #18b71eb5
+def _source_property_summary(properties):
+    parts = [f"{key}={value}" if value else key for key, value in properties["directives"].items()]
+    if properties["definitions"]: parts.append("defines=" + ",".join(properties["definitions"]))
+    if properties["imports"]: parts.append(f"imports={properties['imports']}")
+    if properties["checks"]: parts.append(f"checks={properties['checks']}")
+    if properties["headings"]: parts.append("headings=" + ",".join(str(item["level"]) for item in properties["headings"]))
+    if properties["parse_error"]: parts.append(f"parse_error={properties['parse_error']}")
+    return " ".join(parts)
+
 # %% ../nbs/01_read.ipynb #a83898f5
 def _filter_cell_summary(path, item):
     source = item.get("source", "")
@@ -892,7 +869,7 @@ def _filter_cell_summary(path, item):
     if not first: first = "(empty)"
     error = item.get("error", "")
     suffix = f" error={error}" if error else ""
-    return f"{path}#{item['cell_id']} idx={item['cell_idx']} type={item['cell_type']} {item['semantic_type']}{suffix} | {first}"
+    return f"{path}#{item['cell_id']} idx={item['cell_idx']} type={item['cell_type']} {_source_property_summary(item['properties'])}{suffix} | {first}"
 
 # %% ../nbs/01_read.ipynb #5b72e24f
 def _filter_cell_error(cell):
@@ -1128,7 +1105,7 @@ def _context_symbol(
         ("Implementation", source),
         ("Docs", [f"Cell id={item['cell_id']}{nl}{item['source']}" for item in markdown]),
         ("Examples/tests", [
-            f"Cell id={item['cell_id']} {item['kind']}{nl}{item['source']}" + (f"{nl}Output:{nl}{item['output']}" if item.get("output") else "")
+            f"Cell id={item['cell_id']} checks={item['properties']['checks']}{nl}{item['source']}" + (f"{nl}Output:{nl}{item['output']}" if item.get("output") else "")
             for item in examples
         ]),
         ("Callers", [
@@ -1156,10 +1133,6 @@ def symbol(self: Notebook, symbol, **kw):
     "Read implementation context through the canonical context reader."
     return _context_symbol(self.path, symbol, **kw)
 
-# %% ../nbs/01_read.ipynb #1ef3e16c
-def _context_cell_semantic_type(cell):
-    return NotebookCell(cell).semantic_type()
-
 # %% ../nbs/01_read.ipynb #66902d14
 def _context_cell_record(idx, cell):
     record = NotebookCell(cell, idx=idx).context_record()
@@ -1170,7 +1143,7 @@ def _context_cell_record(idx, cell):
 # %% ../nbs/01_read.ipynb #8bc08135
 def _render_context_cell(item):
     nl = chr(10)
-    header = f"Cell id={item['cell_id']} idx={item['cell_idx']} [{item['cell_type']}] ({item['semantic_type']})"
+    header = f"Cell id={item['cell_id']} idx={item['cell_idx']} [{item['cell_type']}] {_source_property_summary(item['properties'])}"
     text = f"{header}{nl}{item['source']}".rstrip()
     if item.get("output"): text = f"{text}{nl}Output:{nl}{item['output']}"
     return text
@@ -1200,10 +1173,10 @@ def _source_mentions_symbols(source, symbols):
 def _related_cell_records(nb, symbols, definition_cell_idx=None):
     records = []
     for idx, cell in enumerate(nb.cells):
-        if idx == definition_cell_idx: continue
-        semantic = _context_cell_semantic_type(cell)
-        if semantic not in {"markdown", "example", "test"}: continue
-        if _source_mentions_symbols(cell_source(cell), symbols): records.append(_context_cell_record(idx, cell))
+        if idx == definition_cell_idx or is_exported_code_cell(cell): continue
+        if cell.get("cell_type") == "markdown": related = _source_mentions_symbols(cell_source(cell), symbols)
+        else: related = any(_cell_calls_symbol(cell, symbol) for symbol in symbols)
+        if related: records.append(_context_cell_record(idx, cell))
     return records
 
 # %% ../nbs/01_read.ipynb #bd376346
@@ -1580,7 +1553,7 @@ def _context_edit_result(path, cell_idx, symbol=None, source=None, verbose=True)
     callers, callees = related.get("callers", []), related.get("callees", [])
     title = f"Edit context: {symbol or cell_record['cell_id']}\nPath: {path}\nCell: {cell_prefix(cell_idx, cell, True)}"
     nl = chr(10)
-    example_text = [f"{item['kind']}{nl}{item['source']}" + (f"{nl}Output:{nl}{item['output']}" if item.get("output") else "") for item in examples]
+    example_text = [f"checks={item['properties']['checks']}{nl}{item['source']}" + (f"{nl}Output:{nl}{item['output']}" if item.get("output") else "") for item in examples]
     caller_text = [f"- {item.get('path')} id={item.get('cell_id')} line {item.get('lineno')}: {item.get('line')}" for item in callers]
     blocks = [("Source", source), ("Docs", [item["source"] for item in docs]), ("Examples/tests", example_text), ("Callers", caller_text), ("Callees", _format_callee_items(callees))]
     text = _format_context_blocks(title, blocks)

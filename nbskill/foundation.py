@@ -109,6 +109,8 @@ replacement.cell_type, cell_source(replacement)
 
 ## Independent source properties
 
+Prompt cell magics contain a request rather than Python. They retain their raw source and have no Python AST; they must not produce a syntax-error diagnostic.
+
 `cell_analysis` describes definitions, imports, scoped checks, and Markdown headings independently. `Cell.properties` gives readers a serializable view. Neither operation uses stored outputs to infer the purpose of a cell.
 
 ```python
@@ -190,33 +192,30 @@ __all__ = ['NotebookCell', 'NotebookChapter', 'NotebookDocument', 'output_text',
            'demo_path', 'demo_path_context', 'path_candidates', 'is_valid_ipynb', 'write_demo_notebook',
            'tool_notebook', 'write_tool_notebook', 'write_demo_file', 'api_return', 'api_error', 'failure_map_path',
            'empty_failure_map', 'load_failure_map', 'track_call', 'reset_usage', 'git_run', 'git_root',
-           'git_status_paths', 'git_tracked_paths', 'git_diff_stats', 'load_nbskill_config', 'notebook_paths',
-           'source_without_directives', 'source_hash', 'file_line_count', 'cap_text', 'NotebookResult',
-           'notebook_result', 'generated_owner', 'is_nbdev_project', 'parse_literal', 'none_if_string',
-           'symbol_short_name', 'call_name', 'call_sites', 'short_call_name', 'is_definition_node', 'node_start_line',
-           'cell_directives', 'is_export_directive', 'cell_source', 'parse_code_cell', 'CellType', 'Directive',
-           'directive_lines', 'apply_directives', 'Cell', 'Chapter', 'Notebook', 'NotebookSymbol', 'xml_escape',
-           'xml_attrs', 'find_cell_by_id', 'notebook_hash', 'matches_filter', 'chapter_spans', 'matching_chapters',
-           'one_chapter', 'ensure_cell_ids', 'validate_code_cells', 'notebook_directive', 'exported_py_path',
-           'cell_metadata', 'notebook_metadata', 'nbskill_cell_metadata', 'file_hash', 'stamp_export_metadata',
-           'nbdev_project_root', 'find_cell_by_text', 'replace_cell', 'clear_outputs', 'load_cells_text', 'parse_cells',
-           'parse_one_cell', 'first_line', 'cell_prefix', 'is_exported_code_cell', 'output_value_text',
+           'load_nbskill_config', 'notebook_paths', 'source_without_directives', 'source_hash', 'file_line_count',
+           'cap_text', 'NotebookResult', 'notebook_result', 'generated_owner', 'is_nbdev_project', 'parse_literal',
+           'none_if_string', 'symbol_short_name', 'call_name', 'call_sites', 'short_call_name', 'is_definition_node',
+           'node_start_line', 'cell_directives', 'is_export_directive', 'cell_source', 'parse_code_cell', 'CellType',
+           'Directive', 'directive_lines', 'apply_directives', 'Cell', 'Chapter', 'Notebook', 'NotebookSymbol',
+           'xml_escape', 'xml_attrs', 'find_cell_by_id', 'notebook_hash', 'matches_filter', 'chapter_spans',
+           'matching_chapters', 'one_chapter', 'ensure_cell_ids', 'validate_code_cells', 'notebook_directive',
+           'exported_py_path', 'cell_metadata', 'notebook_metadata', 'nbskill_cell_metadata', 'file_hash',
+           'stamp_export_metadata', 'nbdev_project_root', 'replace_cell', 'clear_outputs', 'load_cells_text',
+           'parse_cells', 'parse_one_cell', 'first_line', 'cell_prefix', 'is_exported_code_cell', 'output_value_text',
            'cell_output_text', 'scoped_nodes', 'cell_analysis', 'definition_names', 'definition_nodes',
-           'stamp_notebook_metadata', 'cell_matches_type', 'with_context', 'heading_title', 'chapter_index_set']
+           'stamp_notebook_metadata', 'cell_matches_type', 'heading_title', 'chapter_index_set']
 
 # %% ../nbs/00_foundation.ipynb #2500639f
-import ast,hashlib,json,multiprocessing,os,queue,re,tempfile,tomllib,traceback
-import logging,shutil,subprocess,sys,time
+import ast, hashlib, json, os, re, tempfile, tomllib
+import logging, shutil, subprocess, time
 from contextvars import ContextVar
 from functools import wraps
-from contextlib import contextmanager, redirect_stderr, redirect_stdout
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass, field
 from enum import Enum
-from importlib.resources import files
-from io import StringIO
 from pathlib import Path
-from fastcore.basics import in_jupyter, patch
-from fastcore.nbio import NbCell, Notebook as FastcoreNotebook, cells2xml, mk_cell, new_nb, read_nb, render_text, write_nb
+from fastcore.basics import AttrDict, in_jupyter, patch
+from fastcore.nbio import NbCell, mk_cell, new_nb, write_nb
 from fastcore.xtras import rtoken_hex
 
 # %% ../nbs/00_foundation.ipynb #ca95a132
@@ -232,6 +231,7 @@ def numbered_notebook_path(nbs_path, name, index=None):
 
 # %% ../nbs/00_foundation.ipynb #demohelpcode
 def remove_demo_path(path):
+    'Remove a disposable file or directory if present and return its path.'
     path = Path(path)
     if path.is_dir(): shutil.rmtree(path)
     elif path.exists(): path.unlink()
@@ -284,10 +284,9 @@ def _is_valid_notebook_cell(cell):
 
 # %% ../nbs/00_foundation.ipynb #864b45b0
 def is_valid_ipynb(path):
-    try:
-        data = json.loads(Path(path).read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-        return False
+    'Return whether a file has the required notebook and cell structure.'
+    try: data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError): return False
     if not isinstance(data, dict): return False
     if not isinstance(data.get("nbformat"), int): return False
     if not isinstance(data.get("nbformat_minor"), int): return False
@@ -298,17 +297,15 @@ def is_valid_ipynb(path):
 # %% ../nbs/00_foundation.ipynb #e7188cd8
 @contextmanager
 def write_demo_notebook(name, cells=None, base=None, reset=True):
-    path = demo_path(name, base=base, reset=reset)
-    cells = cells or [
-        mk_cell("## Demo notebook\nThis tiny notebook gives nbskill tools something real to inspect.", cell_type="markdown"),
-        mk_cell("#| export\ndef demo_answer():\n    return 42"),
-        mk_cell("assert demo_answer() == 42")]
-    nb = new_nb(cells)
-    write_nb(nb, path)
-    try:
+    "Write a disposable notebook with an isolated default directory and clean it up."
+    owner = tempfile.TemporaryDirectory(prefix="nbskill-demo-") if base is None else nullcontext(base)
+    with owner as root, demo_path_context(name, base=root, reset=reset) as path:
+        cells = cells or [
+            mk_cell("## Demo notebook\nThis tiny notebook gives nbskill tools something real to inspect.", cell_type="markdown"),
+            mk_cell("#| export\ndef demo_answer():\n    return 42"),
+            mk_cell("assert demo_answer() == 42")]
+        write_nb(new_nb(cells), path)
         yield path
-    finally:
-        remove_demo_path(path)
 
 # %% ../nbs/00_foundation.ipynb #891ac344
 def tool_notebook():
@@ -320,8 +317,7 @@ def tool_notebook():
         mk_cell("## Arithmetic\n\n`double_answer` gives readers and symbol tools a public function to find.", cell_type="markdown", id="tool-arithmetic-doc"),
         mk_cell("#| export\ndef double_answer(value):\n    \"Return twice the input value.\"\n    return value * 2", id="tool-double-answer"),
         mk_cell("double_answer(answer)", id="tool-example"),
-        mk_cell("test_eq(double_answer(21), 42)", id="tool-test"),
-    ]
+        mk_cell("test_eq(double_answer(21), 42)", id="tool-test")]
     nb = new_nb(cells)
     nb.metadata["nbskill"] = {"demo": "tool", "version": 1}
     return nb
@@ -332,10 +328,8 @@ def write_tool_notebook(name="tool.ipynb", base=None):
     "Write the canonical tool notebook for one example or test."
     path = demo_path(name, base=base)
     write_nb(tool_notebook(), path)
-    try:
-        yield path
-    finally:
-        remove_demo_path(path)
+    try: yield path
+    finally: remove_demo_path(path)
 
 # %% ../nbs/00_foundation.ipynb #05edde5b
 @contextmanager
@@ -343,10 +337,8 @@ def write_demo_file(name, source, base=None):
     "Write one disposable text file for an example or test."
     path = demo_path(name, base=base)
     path.write_text(source, encoding="utf-8")
-    try:
-        yield path
-    finally:
-        remove_demo_path(path)
+    try: yield path
+    finally: remove_demo_path(path)
 
 # %% ../nbs/00_foundation.ipynb #dbc6a8c7
 def api_return(value=None):
@@ -360,14 +352,14 @@ def api_error(msg):
 
 # %% ../nbs/00_foundation.ipynb #b4c433a6
 def failure_map_path():
+    'Resolve the usage-statistics path from the environment or home directory.'
     default = Path.home() / ".nbskill-errors.json"
     return Path(os.environ.get("NBSKILL_FAILURE_MAP", default)).expanduser()
 
-
 # %% ../nbs/00_foundation.ipynb #70d94ccb
 def empty_failure_map():
-    return {"version": 1, "events": [], "counts": {}, "last_call": None}
-
+    'Return a fresh empty usage-statistics record.'
+    return dict(version=1, events=[], counts={}, last_call=None)
 
 # %% ../nbs/00_foundation.ipynb #2f80149c
 def load_failure_map(path, strict=False):
@@ -469,36 +461,10 @@ def git_root(path="."):
     base = path.parent if path.suffix else path
     candidates = [base, *path_candidates(base), Path(".")]
     for candidate in dict.fromkeys(candidates):
-        out = git_run(candidate, "rev-parse", "--show-toplevel").strip()
-        if out: return Path(out)
+        candidate = candidate.resolve()
+        for root in (candidate, *candidate.parents):
+            if (root/".git").is_dir() or (root/".git").is_file(): return root
     return None
-
-# %% ../nbs/00_foundation.ipynb #3bfd5b33
-def git_status_paths(root):
-    "Return paths with working-tree changes relative to `root`."
-    paths = set()
-    for line in git_run(root, "status", "--porcelain").splitlines():
-        raw = line[3:].strip() if len(line) > 3 else line.strip()
-        if " -> " in raw: raw = raw.split(" -> ", 1)[1]
-        if raw: paths.add(raw)
-    return paths
-
-
-def git_tracked_paths(root):
-    "Return git-tracked paths relative to `root`."
-    return set(git_run(root, "ls-files").splitlines())
-
-# %% ../nbs/00_foundation.ipynb #67cf89b1
-def git_diff_stats(root, ref="HEAD"):
-    "Return added/deleted line stats for working-tree changes from `ref`."
-    stats = {}
-    for line in git_run(root, "diff", "--numstat", ref, "--").splitlines():
-        added, deleted, path = line.split("\t", 2)
-        stats[path] = {
-            "added": int(added) if added.isdigit() else 0,
-            "deleted": int(deleted) if deleted.isdigit() else 0,
-        }
-    return stats
 
 # %% ../nbs/00_foundation.ipynb #c592566d
 def _is_notebook_path(path):
@@ -507,12 +473,9 @@ def _is_notebook_path(path):
     return path.suffix == ".ipynb" and not hidden and not path.name.startswith("_")
 
 
-def _has_glob_chars(path):
-    return any(char in str(path) for char in "*?[]")
+def _has_glob_chars(path): return any(char in str(path) for char in "*?[]")
 
 # %% ../nbs/00_foundation.ipynb #f614115f
-from fastcore.basics import AttrDict
-
 _DEFAULT_CONFIG = AttrDict(exclude_dirs=["data", "dev", ".ipynb_checkpoints"])
 
 def load_nbskill_config(path="."):
@@ -537,16 +500,14 @@ def _glob_notebook_paths(path):
             import glob
             return [Path(item) for item in glob.glob(str(path), recursive=True)]
         return [Path(item) for item in globtastic(path, file_glob="*.ipynb", skip_folder_re=skip_re, skip_file_re=r"^[_.]", func=Path)]
-    except Exception:
-        return sorted(Path(path).rglob("*.ipynb")) if Path(path).is_dir() else []
+    except Exception: return sorted(Path(path).rglob("*.ipynb")) if Path(path).is_dir() else []
 
 
 def _nbdev_notebook_paths(path):
     try:
         from nbdev.doclinks import nbglob
         return [Path(item) for item in nbglob(path=path, as_path=True)]
-    except Exception:
-        return []
+    except Exception: return []
 
 # %% ../nbs/00_foundation.ipynb #d5f9ce64
 def notebook_paths(path="nbs"):
@@ -557,8 +518,7 @@ def notebook_paths(path="nbs"):
     base = Path(raw).expanduser().resolve()
     def _excluded(p):
         p = Path(p).expanduser()
-        if not p.is_absolute():
-            p = p.resolve() if p.exists() else (base / p).resolve()
+        if not p.is_absolute(): p = p.resolve() if p.exists() else (base / p).resolve()
         try: rel = p.relative_to(base)
         except ValueError: return False
         return any(part in exclude for part in rel.parts)
@@ -579,7 +539,7 @@ def source_without_directives(source):
 
 # %% ../nbs/00_foundation.ipynb #bb3c3bab
 def source_hash(source, length=12):
-    """Return a SHA-256 source hash, shortened unless `length` is `None`."""
+    'Return a SHA-256 source hash, shortened unless `length` is `None`.'
     digest = hashlib.sha256(str(source).encode('utf-8')).hexdigest()
     return digest if length is None else digest[:int(length)]
 
@@ -596,8 +556,7 @@ def cap_text(text, limit=2000, max_output_chars=...):
     limit = max_output_chars if metadata else limit
     if limit is not None and limit < 0: raise ValueError("text budget must be non-negative or None")
     text = "" if text is None else str(text)
-    if limit is None or len(text) <= limit:
-        capped, omitted = text, 0
+    if limit is None or len(text) <= limit: capped, omitted = text, 0
     else:
         marker = "\n... truncated ..."
         content_limit = limit - len(marker) if limit >= len(marker) else limit
@@ -605,7 +564,7 @@ def cap_text(text, limit=2000, max_output_chars=...):
         capped = prefix + marker if limit >= len(marker) else prefix
         omitted = len(text) - len(prefix)
     if not metadata: return capped
-    return {"text": capped, "truncated": bool(omitted), "chars": len(text), "omitted_chars": omitted}
+    return dict(text=capped, truncated=bool(omitted), chars=len(text), omitted_chars=omitted)
 
 # %% ../nbs/00_foundation.ipynb #6a7068a9
 class NotebookResult(dict):
@@ -642,8 +601,7 @@ def generated_owner(path, notebooks=None):
     for nb_path in notebook_paths(notebooks):
         try: py_path = exported_py_path(nb_path)
         except (FileNotFoundError, OSError): py_path = None
-        if py_path is not None and Path(py_path).exists() and Path(py_path).resolve() == target:
-            return Path(nb_path).resolve()
+        if py_path is not None and Path(py_path).exists() and Path(py_path).resolve() == target: return Path(nb_path).resolve()
     return None
 
 # %% ../nbs/00_foundation.ipynb #035dbb05
@@ -657,6 +615,7 @@ def is_nbdev_project(root):
 
 # %% ../nbs/00_foundation.ipynb #41efc12d
 def parse_literal(value):
+    'Parse literal option text, normalizing empty and null text to None.'
     if value is None: return None
     if isinstance(value, str):
         value = value.strip()
@@ -667,6 +626,7 @@ def parse_literal(value):
 
 # %% ../nbs/00_foundation.ipynb #d7109657
 def none_if_string(value):
+    'Normalize empty and null option strings to None.'
     return None if isinstance(value, str) and value.strip().lower() in {"", "none", "null"} else value
 
 # %% ../nbs/00_foundation.ipynb #da118f0d
@@ -715,16 +675,18 @@ def call_sites(node, source=""):
 
 # %% ../nbs/00_foundation.ipynb #6d14abd0
 def short_call_name(node, default=None):
-    """Return the final dotted component of a call/name node, or `default`."""
+    'Return the final dotted component of a call/name node, or `default`.'
     name = call_name(node)
     return default if name is None else symbol_short_name(name)
 
 # %% ../nbs/00_foundation.ipynb #d4e663d2
 def is_definition_node(node):
+    'Return whether an AST node defines a function or class.'
     return isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
 
 # %% ../nbs/00_foundation.ipynb #d8340fb1
 def node_start_line(node):
+    'Return the zero-based start line including decorators.'
     return min([node.lineno, *[d.lineno for d in getattr(node, "decorator_list", [])]]) - 1
 
 # %% ../nbs/00_foundation.ipynb #b811dfbe
@@ -738,8 +700,7 @@ def is_export_directive(line):
     return bool({"export", "exports", "exporti"} & cell_directives(mk_cell(line)).keys())
 
 # %% ../nbs/00_foundation.ipynb #32ec5258
-def _is_export_gap(lines):
-    return bool(lines) and all((not line.strip()) or is_export_directive(line) for line in lines)
+def _is_export_gap(lines): return bool(lines) and all((not line.strip()) or is_export_directive(line) for line in lines)
 
 # %% ../nbs/00_foundation.ipynb #9d7f8dbe
 def _emit_code_chunk(chunks, lines, export_prefix=None):
@@ -760,8 +721,7 @@ def _split_code_cell_sources(source):
     leading = lines[:first_start]
     shared_export = [line for line in leading if is_export_directive(line)] if _is_export_gap(leading) else []
     chunks = []
-    if shared_export:
-        cursor = first_start
+    if shared_export: cursor = first_start
     else:
         _emit_code_chunk(chunks, leading)
         cursor = first_start
@@ -794,6 +754,7 @@ def _split_symbol_cells(cells):
 
 # %% ../nbs/00_foundation.ipynb #f8af4270
 def cell_source(cell):
+    'Return cell source as one string for mapping and object inputs.'
     source = cell.get("source", "") if isinstance(cell, dict) else getattr(cell, "source", "")
     if isinstance(source, list): return "".join(source)
     return str(source)
@@ -801,7 +762,9 @@ def cell_source(cell):
 # %% ../nbs/00_foundation.ipynb #b92cef35
 def _parse_cell(cell):
     if cell.get("cell_type") != "code": return None, None
-    try: return ast.parse(source_without_directives(cell_source(cell))), None
+    source = source_without_directives(cell_source(cell))
+    if re.match(r"^\s*%%prompt(?:\s|$)", source): return None, None
+    try: return ast.parse(source), None
     except SyntaxError as error: return None, error
 
 # %% ../nbs/00_foundation.ipynb #c3e41205
@@ -941,8 +904,7 @@ def raw(self: NotebookSymbol):
 # %% ../nbs/00_foundation.ipynb #a56bf02d
 def xml_escape(text):
     "Escape text for simple XML-shaped context snippets."
-    return (str(text).replace("&", "&amp;").replace("<", "&lt;")
-            .replace(">", "&gt;").replace('"', "&quot;"))
+    return (str(text).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;'))
 
 
 def xml_attrs(**kwargs):
@@ -1058,8 +1020,7 @@ def to_xml(self: Cell, include_output=False):
     "Return a cell view with independent source properties and optional outputs."
     attrs = xml_attrs(id=self.id, idx=self.idx, type=self.cell_type, path=self.path, properties=json.dumps(self.properties()))
     body = [f"<source>{xml_escape(self.code)}</source>"]
-    if include_output and _has_cell_output(self.cell):
-        body.append(f"<outputs>{xml_escape(json.dumps(_cell_outputs(self.cell), default=str))}</outputs>")
+    if include_output and _has_cell_output(self.cell): body.append(f"<outputs>{xml_escape(json.dumps(_cell_outputs(self.cell), default=str))}</outputs>")
     return f"<cell {attrs}>\n" + "\n".join(body) + "\n</cell>"
 
 # %% ../nbs/00_foundation.ipynb #f2702634
@@ -1091,7 +1052,7 @@ def body(self: NotebookChapter):
 @patch
 def to_span(self: NotebookChapter):
     "Return the dictionary span shape used by existing APIs."
-    return {"title": self.title, "start": self.start, "end": self.end}
+    return dict(title=self.title, start=self.start, end=self.end)
 
 # %% ../nbs/00_foundation.ipynb #eb00455f
 @patch
@@ -1123,6 +1084,7 @@ def cells(self: NotebookDocument):
 
 # %% ../nbs/00_foundation.ipynb #3836550d
 def find_cell_by_id(cells, cell_id):
+    'Return one indexed cell by stable ID, rejecting missing or duplicate IDs.'
     matches = [(idx, cell) for idx, cell in enumerate(cells) if getattr(cell, "id", None) == cell_id]
     if len(matches) == 1: return matches[0]
     if not matches: api_error(f"No cell has id {cell_id!r}")
@@ -1143,6 +1105,7 @@ def notebook_hash(nb):
 
 # %% ../nbs/00_foundation.ipynb #ec2f7679
 def matches_filter(source, pattern):
+    'Match literal text first, then a multiline regex.'
     pattern = str(pattern)
     if pattern in source: return True
     try: return re.search(pattern, source, flags=re.MULTILINE) is not None
@@ -1212,6 +1175,7 @@ def _format_syntax_error(source, err, cell_idx):
 
 # %% ../nbs/00_foundation.ipynb #bf00a9f5
 def validate_code_cells(cells):
+    'Reject invalid Python code cells while preserving syntax error details.'
     for idx, cell in enumerate(cells):
         cell_type = cell.get("cell_type") if isinstance(cell, dict) else getattr(cell, "cell_type", None)
         if cell_type != "code": continue
@@ -1242,8 +1206,7 @@ def exported_py_path(nb_path, nb=None):
     try:
         from nbdev.config import get_config
         lib_path = Path(get_config(nb_path.parent).lib_path)
-    except Exception:
-        lib_path = nb_path.parent.parent / default_exp.split(".", 1)[0]
+    except Exception: lib_path = nb_path.parent.parent / default_exp.split(".", 1)[0]
     return lib_path / (default_exp.replace(".", "/") + ".py")
 
 # %% ../nbs/00_foundation.ipynb #f49dab47
@@ -1264,47 +1227,30 @@ def to_xml(self: NotebookDocument, levels=(2,), include_cells=True):
 @patch(cls_method=True)
 def from_record(cls: NotebookSymbol, record, data=None):
     "Build a symbol model from a graph or definition record."
-    return cls(
-        record.get("symbol") or record.get("name", ""),
-        path=record.get("path"),
-        cell_id=record.get("cell_id", ""),
-        cell_idx=record.get("cell_idx"),
-        module=record.get("module", ""),
-        kind=record.get("kind", ""),
-        data=data,
-    )
+    return cls(record.get('symbol') or record.get('name', ''), path=record.get('path'), cell_id=record.get('cell_id', ''),
+        cell_idx=record.get('cell_idx'), module=record.get('module', ''), kind=record.get('kind', ''), data=data)
 
 # %% ../nbs/00_foundation.ipynb #93afeb43
 @patch
 def to_record(self: NotebookSymbol):
     "Return a small structured record for this symbol."
-    return {
-        "symbol": self.name,
-        "path": self.path,
-        "cell_id": self.cell_id,
-        "cell_idx": self.cell_idx,
-        "module": self.module,
-        "kind": self.kind,
-    }
+    return dict(symbol=self.name, path=self.path, cell_id=self.cell_id, cell_idx=self.cell_idx, module=self.module, kind=self.kind)
 
 # %% ../nbs/00_foundation.ipynb #364758c5
 @patch
 def to_xml(self: NotebookSymbol):
     "Return an XML-shaped symbol view for LLM context."
     attrs = xml_attrs(symbol=self.name, path=self.path, cell_id=self.cell_id,
-                       cell_idx=self.cell_idx, module=self.module, kind=self.kind)
+        cell_idx=self.cell_idx, module=self.module, kind=self.kind)
     return f"<symbol {attrs} />"
 
 # %% ../nbs/00_foundation.ipynb #c41f3416
 _NBSKILL_METADATA_KEY = "nbskill"
-_NBSKILL_CELL_METADATA_ALIASES = {
-    "nbskill_executed_hash": "executed_hash",
-    "nbskill_timeout_hash": "timeout_hash",
-    "nbskill_timeout_seconds": "timeout_seconds",
-}
+_NBSKILL_CELL_METADATA_ALIASES = dict(nbskill_executed_hash='executed_hash', nbskill_timeout_hash='timeout_hash', nbskill_timeout_seconds='timeout_seconds')
 
 # %% ../nbs/00_foundation.ipynb #b7ccbc8a
 def cell_metadata(cell):
+    'Return mutable metadata, creating it on the input when absent.'
     meta = cell.get("metadata", None) if isinstance(cell, dict) else getattr(cell, "metadata", None)
     if meta is None:
         meta = {}
@@ -1314,13 +1260,8 @@ def cell_metadata(cell):
 
 # %% ../nbs/00_foundation.ipynb #7a0fb55d
 def notebook_metadata(nb):
-    meta = nb.get("metadata", None) if isinstance(nb, dict) else getattr(nb, "metadata", None)
-    if meta is None:
-        meta = {}
-        if isinstance(nb, dict): nb["metadata"] = meta
-        else: nb.metadata = meta
-    return meta
-
+    'Return mutable notebook metadata through the shared metadata accessor.'
+    return cell_metadata(nb)
 
 # %% ../nbs/00_foundation.ipynb #5b39bc0b
 def nbskill_cell_metadata(cell, create=False):
@@ -1349,8 +1290,8 @@ def _nbskill_notebook_metadata(nb, create=True):
 
 # %% ../nbs/00_foundation.ipynb #1f2cf6ab
 def file_hash(path):
+    'Return the SHA-256 hash of a file as hexadecimal text.'
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
-
 
 # %% ../nbs/00_foundation.ipynb #bbc398e6
 def _metadata_path(path):
@@ -1361,11 +1302,11 @@ def _metadata_path(path):
 
 # %% ../nbs/00_foundation.ipynb #2cdea176
 def stamp_export_metadata(nb, py_path):
+    'Record the exported path and byte hash on a notebook.'
     info = _nbskill_notebook_metadata(nb)
     info["exported_py_path"] = _metadata_path(py_path)
     info["exported_py_hash"] = file_hash(py_path)
     return nb
-
 
 # %% ../nbs/00_foundation.ipynb #4379ff7b
 def nbdev_project_root(path):
@@ -1377,22 +1318,16 @@ def nbdev_project_root(path):
         if is_nbdev_project(candidate): return candidate
     return None
 
-# %% ../nbs/00_foundation.ipynb #6d6b5350
-def find_cell_by_text(cells, old_str):
-    matches = [(idx, cell) for idx, cell in enumerate(cells) if old_str in cell_source(cell)]
-    if len(matches) == 1: return matches[0]
-    if not matches: api_error("old_str did not match any cell")
-    idxs = ", ".join(str(idx) for idx, _ in matches)
-    api_error(f"old_str matched multiple cells: {idxs}. Use cell_id or a more specific old_str.")
-
 # %% ../nbs/00_foundation.ipynb #b3365e7b
 def replace_cell(nb, idx, new_cell):
+    'Replace an indexed cell while preserving its existing ID.'
     old_id = getattr(nb.cells[idx], "id", None)
     if old_id is not None: new_cell.id = old_id
     nb.cells[idx] = new_cell
 
 # %% ../nbs/00_foundation.ipynb #7f45ec2a
 def clear_outputs(cell):
+    'Clear code-cell outputs and execution count, returning the cell.'
     if getattr(cell, "cell_type", None) == "code":
         cell.outputs = []
         cell.execution_count = None
@@ -1419,33 +1354,34 @@ def _cell_from_block(block, default_type="code"):
 
 # %% ../nbs/00_foundation.ipynb #b4c65eba
 def parse_cells(cells, default_type="code"):
+    'Normalize cell structures or marked text blocks into notebook cells.'
     if isinstance(cells, (list, tuple)): return _split_symbol_cells([_coerce_cell(o, default_type) for o in cells])
 
     parsed = [_cell_from_block(block, default_type) for block in _split_blocks(cells)]
     return _split_symbol_cells(parsed)
 
-
 # %% ../nbs/00_foundation.ipynb #8d32aa50
 def parse_one_cell(text, default_type="code"):
     "Normalize one cell block and reject multi-cell replacements."
     if isinstance(text, (list, tuple)):
-        if len(text) != 1:
-            api_error("parse_one_cell requires one cell; use edit_notebook with structural operations for multiple cells")
+        if len(text) != 1: api_error("parse_one_cell requires one cell; use edit_notebook with structural operations for multiple cells")
         return _coerce_cell(text[0], default_type)
     blocks = _split_blocks(text)
-    if len(blocks) != 1:
-        api_error("parse_one_cell requires one block; use parse_cells or edit_notebook for multiple cells")
+    if len(blocks) != 1: api_error("parse_one_cell requires one block; use parse_cells or edit_notebook for multiple cells")
     return _cell_from_block(blocks[0], default_type)
 
 # %% ../nbs/00_foundation.ipynb #0cce84e1
 def first_line(source):
+    'Return the first nonempty stripped line, or empty text.'
     for line in source.splitlines():
         line = line.strip()
         if line: return line
     return ""
 
 # %% ../nbs/00_foundation.ipynb #f4e29752
-def cell_prefix(idx, cell, show_ids=False): return NotebookCell(cell, idx=idx).prefix(show_ids=show_ids)
+def cell_prefix(idx, cell, show_ids=False):
+    'Return a cell location label with an optional stable ID.'
+    return NotebookCell(cell, idx=idx).prefix(show_ids=show_ids)
 
 # %% ../nbs/00_foundation.ipynb #ca503024
 def is_exported_code_cell(cell):
@@ -1464,14 +1400,14 @@ def _has_cell_output(cell): return bool(_cell_outputs(cell))
 
 # %% ../nbs/00_foundation.ipynb #b0921254
 def output_value_text(value):
-    """Return a notebook output value as plain text."""
+    'Return a notebook output value as plain text.'
     if isinstance(value, list): return ''.join(map(str, value))
     if value is None: return ''
     return str(value)
 
 # %% ../nbs/00_foundation.ipynb #88915817
 def output_text(output):
-    """Return a notebook output object as plain text."""
+    'Return a notebook output object as plain text.'
     output_type = output.get('output_type', '')
     if output_type == 'stream': return output_value_text(output.get('text', ''))
     if output_type == 'error':
@@ -1488,7 +1424,7 @@ _output_text_function = output_text
 
 # %% ../nbs/00_foundation.ipynb #d5940981
 def cell_output_text(cell):
-    """Return all visible outputs for `cell` as compact plain text."""
+    'Return all visible outputs for `cell` as compact plain text.'
     return ''.join(_output_text_function(output) for output in _cell_outputs(cell)).strip()
 
 # %% ../nbs/00_foundation.ipynb #e13333cb
@@ -1593,26 +1529,6 @@ def context_record(self: Cell):
 # %% ../nbs/00_foundation.ipynb #a2ac2f9b
 output_text = _output_text_function
 
-# %% ../nbs/00_foundation.ipynb #ca412834
-def with_context(cells, items, include=False):
-    if not include: return items
-
-    idxs = {idx for idx, _ in items}
-    for idx in list(idxs):
-        prev = idx - 1
-        while prev >= 0 and cells[prev].cell_type == "markdown":
-            idxs.add(prev)
-            prev -= 1
-
-        nxt = idx + 1
-        while nxt < len(cells):
-            cell = cells[nxt]
-            if cell.cell_type != "code" or is_exported_code_cell(cell): break
-            idxs.add(nxt)
-            nxt += 1
-    return [(idx, cells[idx]) for idx in sorted(idxs)]
-
-
 # %% ../nbs/00_foundation.ipynb #dd511845
 def heading_title(cell, levels=(2,)):
     "Return the first markdown heading title whose level is allowed."
@@ -1622,6 +1538,5 @@ def heading_title(cell, levels=(2,)):
 def chapter_index_set(cells, chapter):
     'Return the cell indices selected by H2 chapter matching.'
     idxs = set()
-    for span in matching_chapters(cells, chapter):
-        idxs.update(range(span["start"], span["end"]))
+    for span in matching_chapters(cells, chapter): idxs.update(range(span["start"], span["end"]))
     return idxs

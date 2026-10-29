@@ -2,9 +2,7 @@ r"""Use for nbdev notebooks and their generated Python modules.
 
 `nbskill.skill` is the direct API for notebook-owned code. Install `nbskill` in the agent's Python environment, then import it with `from nbskill.skill import *`. Pyskills discovers the registered entry point; its listing does not install the package.
 
-Read `doc(skill)` for the shared workflow and `doc()` for the selected callable before using it. Read/edit/execute operations need cell identities and execution policy, so a function listing alone is not enough. The domain modules explain their own functions through executable notebook lessons. The direct exports preserve domain signatures; optional dependencies load only for the operation that needs them; inspect `nbskill.review` or `nbskill.knowledge` for their full options.
-
-Reference queries use the machine-level `~/.nbskill/reference_knowledge` directory across workspaces. Set `NBSKILL_REFERENCE_HOME` for a separate index. Basic context, editing, execution, and state inspection do not require an embedding model.
+Read `doc(skill)` for the shared workflow and `doc()` for the selected callable before using it. Read/edit/execute operations need cell identities and execution policy, so a function listing alone is not enough. The domain modules explain their own functions through executable notebook lessons. The direct exports preserve domain signatures; optional dependencies load only for the operation that needs them; inspect `nbskill.review` for their full options.
 
 ```python
 from pathlib import Path
@@ -27,7 +25,7 @@ Keep imports in import-only cells. Use `#| export` on the short markdown summari
 
 ## Read notebooks
 
-Start with notebook structure, then narrow to the chapter or symbol that owns the work. Call `generated_owner` before touching a Python module. Call `context` to read the relevant notebook cells. Use `chapter=` for one domain story and a qualified `#symbol` target for one definition. Call `reference_query` before adding a nontrivial helper.
+Start with notebook structure, then narrow to the chapter or symbol that owns the work. Call `generated_owner` before touching a Python module. Call `context` to read the relevant notebook cells. Use `chapter=` for one domain story and a qualified `#symbol` target for one definition. Search the current project before adding a helper.
 
 ### `generated_owner`
 
@@ -43,6 +41,8 @@ owner
 
 `context` reads notebooks as cells rather than raw JSON. Start with `view="summary"`. Then request `view="full"` only for the chapter or symbol that matters:
 
+Use `connection=("start", "end")` to find the shortest static call chain within the target notebook or scope. The result includes structured connection evidence and reports a missing chain explicitly.
+
 ```python
 summary = context(owner, view="summary", verbose=False)
 chapter = context(owner, chapter="Read notebooks", view="full", verbose=False)
@@ -51,10 +51,6 @@ assert chapter["selection"]["matches"]
 chapter["selection"]["matches"]
 ```
 
-### `reference_query`
-
-`reference_query` finds prior implementations before adding nontrivial parsing, notebook, abstract syntax tree, filesystem, or formatting behavior. Reference queries require `sentence-transformers`; install it with `pip install sentence-transformers` or use `uv sync --dev` in this checkout. Basic notebook operations do not import it. This example requires a populated local index and may load an embedding model. Run it after following the knowledge notebook's ingestion lesson:
-
 ## Write notebooks
 
 Use one `edit_notebook` call for one coherent change. Read stable cell IDs and exact source text first. Submit every related operation together so validation happens before the notebook is written. Never splice notebook JSON or edit a generated Python module.
@@ -62,6 +58,8 @@ Use one `edit_notebook` call for one coherent change. Read stable cell IDs and e
 ### `edit_notebook`
 
 `edit_notebook` applies text and structural cell edits atomically. `replace_text` is the smallest edit when the old text is known. Structural operations add, move, replace, or remove whole cells:
+
+Document operations use one edit per transaction: `create_notebook`, `split_nb_chapter`, or `transfer_cells`. Their fields follow the corresponding document function signatures; the outer `dry_run` controls previews.
 
 ```python
 edits = [dict(op="replace_text", cell_id="6df2357f", old="direct API", new="direct notebook API")]
@@ -73,6 +71,8 @@ change["diffs"]
 ## Run notebooks
 
 Run the smallest scope that proves the changed story. `exec_nb` accepts a chapter name or an ending cell ID. Use `check_only=True` while iterating so execution does not write outputs or metadata. Use `allow_new=True` only when the new cells are trusted and must execute.
+
+Execution results include the prior cell-state counts, suggested dirty or stale cells, and dependency-analysis limits. These describe the state before execution and remain useful for in-memory runs.
 
 ### `exec_nb`
 
@@ -115,6 +115,8 @@ review
 
 `style_check` reports notebook hygiene and source diagnostics. Restrict it to changed cells while iterating, then check the whole notebook before export:
 
+`fix=True` previews deterministic repairs; add `dry_run=False` to apply them before rechecking. Private helper imports across notebooks are checked routinely. `include_unused=True` adds advisory static candidates without making them failures; external callers remain unknown.
+
 ```python
 diagnostics = style_check(owner, changed_only=True)
 diagnostics
@@ -143,8 +145,7 @@ Docs: https://MorsCerta-crypto.github.io/nbskill/pyskill.html.md"""
 # AUTOGENERATED! DO NOT EDIT! File to edit: ../nbs/14_pyskill.ipynb.
 
 # %% auto #0
-__all__ = ['context', 'generated_owner', 'reference_query', 'edit_notebook', 'exec_nb', 'notebook_state', 'diff_nb',
-           'style_check']
+__all__ = ['context', 'generated_owner', 'edit_notebook', 'exec_nb', 'notebook_state', 'diff_nb', 'style_check']
 
 # %% ../nbs/14_pyskill.ipynb #bbe795cc
 from .edit import edit_notebook
@@ -152,8 +153,7 @@ from .execute import exec_nb
 from .foundation import generated_owner
 from .read import context
 from .state import notebook_state
-from .knowledge import reference_query
 from .review import diff_nb, style_check
 
 # %% ../nbs/14_pyskill.ipynb #6741dda4
-_all_ = [context, generated_owner, reference_query, edit_notebook, exec_nb, notebook_state, diff_nb, style_check]
+_all_ = [context, generated_owner, edit_notebook, exec_nb, notebook_state, diff_nb, style_check]

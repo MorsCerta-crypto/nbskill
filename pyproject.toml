@@ -16,17 +16,13 @@ classifiers = [
     "Programming Language :: Python :: 3 :: Only",
 ]
 dependencies = [
-    "botocore>=1.43.42",
     "execnb>=0.2.2",
     "fastaistyle>=0.0.15",
     "fastcore>=2.2.31,<2.3",
-    "lancedb>=0.25.0",
-    "lisette>=0.1.33",
     "nbdev>=3.3.25",
-    "packaging>=24",
     "pyskills>=0.0.33",
     "remold>=0.1.0",
-    "safepyrun>=0.2.3",
+    "safepyrun>=0.2.10",
     "httpx2>=2.13.1",
 ]
 
@@ -50,7 +46,7 @@ version = {attr = "nbskill.__version__"}
 include = ["nbskill", "nbskill.references"]
 
 [tool.setuptools.package-data]
-nbskill = ["AGENTS.md", "SKILL.md", "SKILL.archive.md", "references/*.md"]
+nbskill = ["AGENTS.md", "SKILL.md", "references/*.md"]
 
 [tool.nbdev]
 allowed_metadata_keys = ["nbskill"]
@@ -68,5 +64,4 @@ dev = [
     "nbdev>=3.3.25",
     "pytest>=9.0.3",
     "remold>=0.1.0",
-    "sentence-transformers>=5.5.1",
 ]

@@ -12,6 +12,5 @@ website:
       - 06_skill.ipynb
       - 09_parallel.ipynb
       - 10_graph.ipynb
-      - 12_knowledge.ipynb
       - 14_pyskill.ipynb
       - 15_state.ipynb

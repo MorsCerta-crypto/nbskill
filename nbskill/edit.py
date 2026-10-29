@@ -4,6 +4,8 @@ r"""Apply and review one atomic plan of notebook cell changes.
 
 All operations are validated before committing. Python validation or nbdev export failure rolls the notebook back, and `expected_hash` rejects a stale source selection. Those guarantees matter when an agent or another editor may change a notebook between reading and writing; they are separate from the underlying text replacement mechanics.
 
+Document creation, chapter splitting and cell transfers are available through `edit_notebook` as `create_notebook`, `split_nb_chapter` and `transfer_cells` operations. A document operation is submitted alone because it owns its multi-file transaction; mixed batches are rejected before writing.
+
 ## Text and line transforms
 
 The first layer edits plain text. Keeping it independent from notebook I/O makes the same operations useful in direct Python calls and structured notebook edits.
@@ -38,8 +40,7 @@ with tempfile.TemporaryDirectory(prefix="commit-lesson-") as folder:
     receipts = commit_notebooks(plans, export=False)
     assert all(receipt["after_hash"] == notebook_hash(read_nb(path)) for path, receipt in zip(paths, receipts))
     assert all("nbskill" not in trial.metadata for trial in trials)
-    commit_summary = {path.name: dict(changed=receipt["changed"], readback_verified=True)
-        for path, receipt in zip(paths, receipts)}
+    commit_summary = {path.name: dict(changed=receipt['changed'], readback_verified=True) for path, receipt in zip(paths, receipts)}
 commit_summary
 ```
 
@@ -137,11 +138,9 @@ def _edit_text_budget(value):
 
 # %% ../nbs/02_edit.ipynb #e3beccd9
 def _validate_edit_budget(edits):
-    if len(edits) > _EDIT_MAX_OPERATIONS:
-        raise ValueError(f"edit_notebook budget exceeded: {len(edits)} operations exceeds limit {_EDIT_MAX_OPERATIONS}")
+    if len(edits) > _EDIT_MAX_OPERATIONS: raise ValueError(f"edit_notebook budget exceeded: {len(edits)} operations exceeds limit {_EDIT_MAX_OPERATIONS}")
     chars = _edit_text_budget(edits)
-    if chars > _EDIT_MAX_SOURCE_CHARS:
-        raise ValueError(f"edit_notebook budget exceeded: {chars} text chars exceeds limit {_EDIT_MAX_SOURCE_CHARS}")
+    if chars > _EDIT_MAX_SOURCE_CHARS: raise ValueError(f"edit_notebook budget exceeded: {chars} text chars exceeds limit {_EDIT_MAX_SOURCE_CHARS}")
 
 # %% ../nbs/02_edit.ipynb #6793c9e4
 def _cell_directive_body_lines(source):
@@ -154,8 +153,7 @@ def _cell_directive_body_lines(source):
             body_start = idx
             break
         directive = stripped[2:].strip()
-        if not directive.startswith("default_exp"):
-            directives.append(stripped)
+        if not directive.startswith("default_exp"): directives.append(stripped)
     return directives, lines[body_start:]
 
 # %% ../nbs/02_edit.ipynb #36c97823
@@ -184,10 +182,8 @@ def _is_function_def(node): return isinstance(node, (ast.FunctionDef, ast.AsyncF
 def _edit_notebook_craft_warnings(path, nb, affected_cell_ids):
     warnings, affected = [], set(affected_cell_ids)
     if len(affected_cell_ids) > _EDIT_WARN_AFFECTED_CELLS:
-        warnings.append(_craft_warning(
-            "many-affected-cells",
-            f"This edit touched {len(affected_cell_ids)} cells; split it into smaller edit_notebook calls and run a focused check after each one.",
-            path,
+        warnings.append(_craft_warning('many-affected-cells',
+            f'This edit touched {len(affected_cell_ids)} cells; split it into smaller edit_notebook calls and run a focused check after each one.', path,
             affected_cells=len(affected_cell_ids)))
     for cell in nb.cells:
         cell_id = getattr(cell, "id", "")
@@ -195,13 +191,11 @@ def _edit_notebook_craft_warnings(path, nb, affected_cell_ids):
         source = cell_source(cell)
         line_count = len(_code_content_lines(source))
         if line_count > _EDIT_WARN_CODE_LINES:
-            warnings.append(_craft_warning("large-code-cell",
-                "This code cell is large; split this into markdown + implementation + example + test cells.",
-                path,cell_id=cell_id,line_count=line_count))
+            warnings.append(_craft_warning('large-code-cell', 'This code cell is large; split this into markdown + implementation + example + test cells.',
+                path, cell_id=cell_id, line_count=line_count))
         function_count = _top_level_function_count(source)
         if function_count > _EDIT_WARN_TOP_LEVEL_FUNCTIONS:
-            warnings.append(_craft_warning("multi-function-cell",
-                f"This code cell defines {function_count} top-level functions; try op=\"explode_cells\" on cell_id={cell_id!r}.",
+            warnings.append(_craft_warning("multi-function-cell", f"This code cell defines {function_count} top-level functions; try op=\"explode_cells\" on cell_id={cell_id!r}.",
                 path,cell_id=cell_id,function_count=function_count))
         from nbskill.review import cell_structure_problems
         for problem in cell_structure_problems(cell, path):
@@ -210,10 +204,8 @@ def _edit_notebook_craft_warnings(path, nb, affected_cell_ids):
     from nbskill.graph import notebook_order_problems
     for problem in notebook_order_problems(path, nb=nb):
         if problem["code"] != "cell-order" or problem["cell_id"] not in affected: continue
-        warnings.append(_craft_warning(
-            "cell-order", f"{problem['symbol']!r} {problem['detail']}; move it above this cell.", path,
-            cell_id=problem["cell_id"], symbol=problem["symbol"], line=problem["line"]
-        ))
+        warnings.append(_craft_warning('cell-order', f"{problem['symbol']!r} {problem['detail']}; move it above this cell.", path,
+            cell_id=problem['cell_id'], symbol=problem['symbol'], line=problem['line']))
     return warnings
 
 # %% ../nbs/02_edit.ipynb #a0cf2e32
@@ -246,28 +238,25 @@ def _line_no(value, n_lines, name):
 
 # %% ../nbs/02_edit.ipynb #1c1dc6f2
 def _norm_lines(text, start_line, end_line=None):
-    """Return zero-based inclusive-exclusive indexes for 1-based line bounds."""
+    'Return zero-based inclusive-exclusive indexes for 1-based line bounds.'
     lines = str(text).splitlines()
     n_lines = len(lines)
     if n_lines == 0: raise ValueError("cannot edit line ranges in an empty cell")
     start = _line_no(start_line, n_lines, "start_line")
     end = _line_no(start_line if end_line is None else end_line, n_lines, "end_line")
-    if start < 1 or end < start or end > n_lines:
-        raise ValueError(f"line bounds must be within 1:{n_lines}; got {start_line!r}:{end_line!r}")
+    if start < 1 or end < start or end > n_lines: raise ValueError(f"line bounds must be within 1:{n_lines}; got {start_line!r}:{end_line!r}")
     return start - 1, end
 
 # %% ../nbs/02_edit.ipynb #ca95c7cb
 def _unified_diff(before, after, fromfile="before", tofile="after", context=2):
-    """Return a compact unified diff, or an empty string when text is unchanged."""
+    'Return a compact unified diff, or an empty string when text is unchanged.'
     if before == after: return ""
-    lines = difflib.unified_diff(
-        str(before).splitlines(),str(after).splitlines(),
-        fromfile=fromfile,tofile=tofile,lineterm="",n=context)
+    lines = difflib.unified_diff(str(before).splitlines(), str(after).splitlines(), fromfile=fromfile, tofile=tofile, lineterm='', n=context)
     return chr(10).join(lines)
 
 # %% ../nbs/02_edit.ipynb #d1fe5c51
 def insert_lines(text, insert_line, new_lines):
-    """Insert `new_lines` before a 1-based line boundary in `text`; use n+1 to append."""
+    'Insert `new_lines` before a 1-based line boundary in `text`; use n+1 to append.'
     lines = str(text).splitlines()
     try: idx = int(insert_line)
     except (TypeError, ValueError) as err: raise ValueError("insert_line must be an integer") from err
@@ -277,14 +266,14 @@ def insert_lines(text, insert_line, new_lines):
 
 # %% ../nbs/02_edit.ipynb #eeed410e
 def replace_lines(text, start_line, end_line=None, replacement_lines=None):
-    """Replace a 1-based inclusive line range in `text`."""
+    'Replace a 1-based inclusive line range in `text`.'
     lines = str(text).splitlines()
     start, end = _norm_lines(text, start_line, end_line)
     return _join_lines([*lines[:start], *_coerce_lines(replacement_lines), *lines[end:]])
 
 # %% ../nbs/02_edit.ipynb #d971fe90
 def delete_lines(text, start_line=None, end_line=None, re_filter=None, invert_filter=False):
-    """Delete a 1-based inclusive line range, or lines matching `re_filter`."""
+    'Delete a 1-based inclusive line range, or lines matching `re_filter`.'
     lines = str(text).splitlines()
     if re_filter is not None:
         pattern = re.compile(re_filter)
@@ -300,7 +289,7 @@ def delete_lines(text, start_line=None, end_line=None, re_filter=None, invert_fi
 
 # %% ../nbs/02_edit.ipynb #01f7c099
 def replace_text(text, old, new, start_line=None, end_line=None):
-    """Replace literal `old` with `new`, optionally inside a line range."""
+    'Replace literal `old` with `new`, optionally inside a line range.'
     if old in {None, ""}: raise ValueError("replace_text needs a non-empty old value")
     source = str(text)
     if start_line is None and end_line is None: return source.replace(str(old), str(new))
@@ -319,7 +308,7 @@ def _replacement_items(replacements=None, olds=None, news=None):
 
 # %% ../nbs/02_edit.ipynb #2e377048
 def replace_texts(text, replacements=None, olds=None, news=None, start_line=None, end_line=None):
-    """Apply several literal text replacements in order."""
+    'Apply several literal text replacements in order.'
     result = str(text)
     for item in _replacement_items(replacements, olds, news):
         result = replace_text(result, item.get("old"), item.get("new", ""), start_line=start_line, end_line=end_line)
@@ -345,10 +334,7 @@ def _replacement_statuses(source, edit):
         old, new = item.get("old"), item.get("new", "")
         matched = _replacement_match_count(current, old, edit.get("start_line"), edit.get("end_line"))
         updated = replace_text(current, old, new, edit.get("start_line"), edit.get("end_line"))
-        statuses.append({
-            "old": str(old), "new": str(new), "matched": matched,
-            "changed": updated != current, "not_found": matched == 0,
-        })
+        statuses.append(dict(old=str(old), new=str(new), matched=matched, changed=updated != current, not_found=matched == 0))
         current = updated
     return statuses
 
@@ -356,10 +342,10 @@ def _replacement_statuses(source, edit):
 _TEXT_OPS = {"replace_lines", "insert_lines", "delete_lines", "replace_text", "replace_texts"}
 _STRUCTURAL_OPS = {"replace_cell", "insert_cells", "delete_cells", "move_cells", "explode_cells"}
 _EDIT_OPS = _TEXT_OPS | _STRUCTURAL_OPS
+_DOCUMENT_OPS = dict(create_notebook="create_notebook", split_nb_chapter="split_nb_chapter", transfer_cells="move_cells")
 
 # %% ../nbs/02_edit.ipynb #9ea66beb
-def _cell_by_id_map(nb):
-    return {getattr(cell, "id", None): (idx, cell) for idx, cell in enumerate(nb.cells)}
+def _cell_by_id_map(nb): return {getattr(cell, "id", None): (idx, cell) for idx, cell in enumerate(nb.cells)}
 
 # %% ../nbs/02_edit.ipynb #5d075f59
 def _require_op(edit):
@@ -421,12 +407,9 @@ def _explode_function_sources(source):
     directive_lines, body_lines = _cell_directive_body_lines(raw)
     body = "\n".join(body_lines).strip("\n")
     if not body: return [raw]
-    try:
-        tree = ast.parse(body)
-    except SyntaxError:
-        return [raw]
-    if sum(1 for node in tree.body if _is_function_def(node)) <= 1:
-        return [raw]
+    try: tree = ast.parse(body)
+    except SyntaxError: return [raw]
+    if sum(1 for node in tree.body if _is_function_def(node)) <= 1: return [raw]
 
     chunks, pending, cursor = [], [], 0
     for node in tree.body:
@@ -438,8 +421,7 @@ def _explode_function_sources(source):
             _append_exploded_source(chunks, pending, directive_lines)
             pending = []
             _append_exploded_source(chunks, [*gap, *node_lines], directive_lines)
-        else:
-            pending.extend([*gap, *node_lines])
+        else: pending.extend([*gap, *node_lines])
         cursor = end
     pending.extend(body_lines[cursor:])
     _append_exploded_source(chunks, pending, directive_lines)
@@ -463,13 +445,11 @@ def _check_expected_hash(nb, edit, indices):
             cell = nb.cells[idx]
             cell_id = getattr(cell, "id", "")
             want = expected.get(cell_id)
-            if want is not None and want != source_hash(cell_source(cell)):
-                raise ValueError(f"expected_hash mismatch for cell {cell_id}")
+            if want is not None and want != source_hash(cell_source(cell)): raise ValueError(f"expected_hash mismatch for cell {cell_id}")
         return
     if len(indices) != 1: raise ValueError("single expected_hash only works with one selected cell")
     cell = nb.cells[indices[0]]
-    if str(expected) != source_hash(cell_source(cell)):
-        raise ValueError(f"expected_hash mismatch for cell {getattr(cell, 'id', '')}")
+    if str(expected) != source_hash(cell_source(cell)): raise ValueError(f"expected_hash mismatch for cell {getattr(cell, 'id', '')}")
 
 # %% ../nbs/02_edit.ipynb #d26c837b
 def _cell_content_match(cell, edit):
@@ -486,10 +466,8 @@ def _selected_indices(nb, edit):
     ids = []
     if edit.get("cell_id") is not None: ids = [edit["cell_id"]]
     elif edit.get("cell_ids") is not None: ids = list(edit["cell_ids"])
-    elif edit.get("target") == "all":
-        return [idx for idx, cell in enumerate(nb.cells) if _cell_content_match(cell, edit)]
-    else:
-        raise ValueError(f"{edit.get('op')} needs cell_id, cell_ids, or target='all'")
+    elif edit.get("target") == "all": return [idx for idx, cell in enumerate(nb.cells) if _cell_content_match(cell, edit)]
+    else: raise ValueError(f"{edit.get('op')} needs cell_id, cell_ids, or target='all'")
     seen = _cell_by_id_map(nb)
     missing = [cell_id for cell_id in ids if cell_id not in seen]
     if missing: raise ValueError(f"unknown cell id(s): {missing}")
@@ -509,22 +487,10 @@ def _apply_explode_edit(nb, edit, diffs, affected):
         after = "\n---\n".join(cell_source(item) for item in new_cells)
         changed = len(new_cells) > 1
         exploded_ids = [getattr(item, "id", "") for item in new_cells]
-        diffs.append({
-            "op": "explode_cells",
-            "cell_id": getattr(cell, "id", ""),
-            "cell_type": getattr(cell, "cell_type", ""),
-            "changed": changed,
-            "matches": 1 if changed else 0,
-            "exploded_cell_ids": exploded_ids if changed else [],
-            "before_hash": source_hash(before),
-            "after_hash": source_hash(after),
-            "diff": _unified_diff(
-                before,
-                after,
-                fromfile=f"{getattr(cell, 'id', '')}:before",
-                tofile=f"{getattr(cell, 'id', '')}:after",
-            ),
-        })
+        diffs.append(dict(op='explode_cells', cell_id=getattr(cell, 'id', ''), cell_type=getattr(cell, 'cell_type', ''), changed=changed,
+            matches=1 if changed else 0, exploded_cell_ids=exploded_ids if changed else [], before_hash=source_hash(before),
+            after_hash=source_hash(after),
+            diff=_unified_diff(before, after, fromfile=f"{getattr(cell, 'id', '')}:before", tofile=f"{getattr(cell, 'id', '')}:after")))
         if not changed: continue
         nb.cells[idx:idx + 1] = new_cells
         affected.extend(exploded_ids)
@@ -533,14 +499,10 @@ def _apply_explode_edit(nb, edit, diffs, affected):
 # %% ../nbs/02_edit.ipynb #dbb9f898
 def _edit_cell_source(source, edit):
     op = edit["op"]
-    if op == "replace_lines":
-        return replace_lines(source, edit.get("start_line"), edit.get("end_line"), edit.get("replacement_lines", []))
-    if op == "insert_lines":
-        return insert_lines(source, edit.get("insert_line", edit.get("start_line")), edit.get("new_lines", edit.get("source_lines", [])))
-    if op == "delete_lines":
-        return delete_lines(source, edit.get("start_line"), edit.get("end_line"), edit.get("line_filter"), bool(edit.get("invert_filter")))
-    if op == "replace_text":
-        return replace_text(source, edit.get("old"), edit.get("new", ""), edit.get("start_line"), edit.get("end_line"))
+    if op == "replace_lines": return replace_lines(source, edit.get("start_line"), edit.get("end_line"), edit.get("replacement_lines", []))
+    if op == "insert_lines": return insert_lines(source, edit.get("insert_line", edit.get("start_line")), edit.get("new_lines", edit.get("source_lines", [])))
+    if op == "delete_lines": return delete_lines(source, edit.get("start_line"), edit.get("end_line"), edit.get("line_filter"), bool(edit.get("invert_filter")))
+    if op == "replace_text": return replace_text(source, edit.get("old"), edit.get("new", ""), edit.get("start_line"), edit.get("end_line"))
     if op == "replace_texts":
         return replace_texts(source, edit.get("replacements"), edit.get("olds"), edit.get("news"), edit.get("start_line"), edit.get("end_line"))
     raise ValueError(f"{op!r} is not a text operation")
@@ -548,16 +510,8 @@ def _edit_cell_source(source, edit):
 # %% ../nbs/02_edit.ipynb #c5ac4b3a
 def _append_cell_diff(diffs, cell, before, after, op, replacements=None):
     diff = _unified_diff(before, after, fromfile=f"{getattr(cell, 'id', '')}:before", tofile=f"{getattr(cell, 'id', '')}:after")
-    record = {
-        "op": op,
-        "cell_id": getattr(cell, "id", ""),
-        "cell_type": getattr(cell, "cell_type", ""),
-        "changed": before != after,
-        "matches": 0 if before == after else 1,
-        "before_hash": source_hash(before),
-        "after_hash": source_hash(after),
-        "diff": diff,
-    }
+    record = dict(op=op, cell_id=getattr(cell, 'id', ''), cell_type=getattr(cell, 'cell_type', ''), changed=before != after,
+        matches=0 if before == after else 1, before_hash=source_hash(before), after_hash=source_hash(after), diff=diff)
     if replacements is not None: record["replacements"] = replacements
     diffs.append(record)
 
@@ -572,10 +526,7 @@ def _aggregate_replacement_summary(diffs):
     for diff in diffs:
         for item in diff.get("replacements") or []:
             key = (item.get("old", ""), item.get("new", ""))
-            row = rows.setdefault(key, {
-                "old": key[0], "new": key[1], "matched": 0,
-                "changed": 0, "not_found": 0,
-            })
+            row = rows.setdefault(key, dict(old=key[0], new=key[1], matched=0, changed=0, not_found=0))
             row["matched"] += int(item.get("matched") or 0)
             row["changed"] += int(bool(item.get("changed")))
             row["not_found"] += int(bool(item.get("not_found")))
@@ -586,10 +537,8 @@ def _format_replacement_summary(summary):
     if not summary: return ""
     lines = ["Replacement summary:", "old | new | matched | changed | not_found"]
     for row in summary:
-        lines.append(
-            f"{_short_replacement_value(row['old'])} | {_short_replacement_value(row['new'])} | "
-            f"{row['matched']} | {row['changed']} | {row['not_found']}"
-        )
+        lines.append(f"{_short_replacement_value(row['old'])} | {_short_replacement_value(row['new'])} | "
+            f"{row['matched']} | {row['changed']} | {row['not_found']}")
     return "\n".join(lines)
 
 # %% ../nbs/02_edit.ipynb #d6308428
@@ -622,12 +571,9 @@ def _insert_at(nb, anchor_id, where, new_cells):
     inserted, last_id = [], None
     for cell in new_cells:
         kwargs = {"cell_type": getattr(cell, "cell_type", "code")}
-        if last_id is not None:
-            kwargs["after"] = last_id
-        elif anchor_id is not None:
-            kwargs[where] = anchor_id
-        elif where == "before" and len(model):
-            kwargs["before"] = model[0].id
+        if last_id is not None: kwargs["after"] = last_id
+        elif anchor_id is not None: kwargs[where] = anchor_id
+        elif where == "before" and len(model): kwargs["before"] = model[0].id
         added = model.add(cell_source(cell), **kwargs)
         added.id = getattr(cell, "id", added.id)
         clear_outputs(added)
@@ -635,78 +581,81 @@ def _insert_at(nb, anchor_id, where, new_cells):
         last_id = getattr(added, "id", "")
     return inserted
 
+# %% ../nbs/02_edit.ipynb #c13049ef
+def _replace_cell_edit(nb, edit, diffs, affected, default_cell_type):
+    op = edit["op"]
+    indices = _selected_indices(nb, edit)
+    if len(indices) != 1: raise ValueError("replace_cell needs exactly one selected cell")
+    _check_expected_hash(nb, edit, indices)
+    cell = nb.cells[indices[0]]
+    before = cell_source(cell)
+    after = _replacement_source(edit)
+    cell_type = edit.get("cell_type", getattr(cell, "cell_type", default_cell_type))
+    if cell_type == "code": after = apply_directives(after, edit.get("directive"))
+    new_cell = _cell_from_source(after, cell_type=cell_type, metadata=cell.get("metadata", {}))
+    new_cell.id = getattr(cell, "id", new_cell.id)
+    _append_cell_diff(diffs, cell, before, after, op)
+    if after != before or getattr(cell, "cell_type", None) != cell_type:
+        nb.cells[indices[0]] = new_cell
+        affected.append(getattr(new_cell, "id", ""))
+    return
+
+# %% ../nbs/02_edit.ipynb #cb35805b
+def _insert_cells_edit(nb, edit, diffs, affected, default_cell_type):
+    op = edit["op"]
+    new_cells = _cells_from_structs(edit.get("cells"), default_cell_type=default_cell_type, directive=edit.get("directive"))
+    inserted = _insert_at(nb, edit.get("anchor_id"), edit.get("where", "after"), new_cells)
+    affected.extend(inserted)
+    inserted_source = "\n---\n".join(cell_source(cell) for cell in new_cells)
+    diffs.append(dict(op=op, cell_id='', changed=True, inserted_cell_ids=inserted, before_hash='', after_hash=source_hash(inserted_source),
+        diff=_unified_diff('', inserted_source, fromfile='insert:before', tofile='insert:after')))
+    return
+
+# %% ../nbs/02_edit.ipynb #331bd843
+def _delete_cells_edit(nb, edit, diffs, affected):
+    op = edit["op"]
+    indices = _selected_indices(nb, edit)
+    if not indices: raise ValueError("delete_cells matched no cells")
+    _check_expected_hash(nb, edit, indices)
+    for idx in sorted(indices, reverse=True):
+        cell = nb.cells[idx]
+        affected.append(getattr(cell, "id", ""))
+        diffs.append(dict(op=op, cell_id=getattr(cell, "id", ""), changed=True, before_hash=source_hash(cell_source(cell)),
+            after_hash="", diff=_unified_diff(cell_source(cell), "")))
+        del nb.cells[idx]
+    return
+
+# %% ../nbs/02_edit.ipynb #cd5a984f
+def _move_cells_edit(nb, edit, diffs, affected):
+    op = edit["op"]
+    indices = _selected_indices(nb, edit)
+    if not indices: raise ValueError("move_cells matched no cells")
+    before_order = [getattr(cell, "id", "") for cell in nb.cells]
+    moving = [nb.cells[idx] for idx in indices]
+    moving_ids = [getattr(cell, "id", "") for cell in moving]
+    anchor_id = edit.get("anchor_id")
+    where = edit.get("where", "after")
+    if where not in {"before", "after"}: raise ValueError("where must be 'before' or 'after'")
+    try: FastcoreNotebook(nb).move(moving_ids, **{where: anchor_id})
+    except KeyError as err: raise ValueError(f"unknown anchor_id {anchor_id!r}") from err
+    after_order = [getattr(cell, "id", "") for cell in nb.cells]
+    affected.extend(moving_ids)
+    diff = "\n".join([
+        f"moved cells: {', '.join(moving_ids)}",
+        f"anchor: {where} {anchor_id}",
+    ])
+    diffs.append(dict(op=op, cell_id='', changed=True, moved_cell_ids=moving_ids, anchor_id=anchor_id, where=where,
+        before_order=before_order, after_order=after_order, diff=diff))
+    return
+
 # %% ../nbs/02_edit.ipynb #1745202e
 def _apply_structural_edit(nb, edit, diffs, affected, default_cell_type):
     op = edit["op"]
-    if op == "replace_cell":
-        indices = _selected_indices(nb, edit)
-        if len(indices) != 1: raise ValueError("replace_cell needs exactly one selected cell")
-        _check_expected_hash(nb, edit, indices)
-        cell = nb.cells[indices[0]]
-        before = cell_source(cell)
-        after = _replacement_source(edit)
-        cell_type = edit.get("cell_type", getattr(cell, "cell_type", default_cell_type))
-        if cell_type == "code": after = apply_directives(after, edit.get("directive"))
-        new_cell = _cell_from_source(after, cell_type=cell_type, metadata=cell.get("metadata", {}))
-        new_cell.id = getattr(cell, "id", new_cell.id)
-        _append_cell_diff(diffs, cell, before, after, op)
-        if after != before or getattr(cell, "cell_type", None) != cell_type:
-            nb.cells[indices[0]] = new_cell
-            affected.append(getattr(new_cell, "id", ""))
-        return
-    if op == "insert_cells":
-        new_cells = _cells_from_structs(edit.get("cells"), default_cell_type=default_cell_type, directive=edit.get("directive"))
-        inserted = _insert_at(nb, edit.get("anchor_id"), edit.get("where", "after"), new_cells)
-        affected.extend(inserted)
-        inserted_source = "\n---\n".join(cell_source(cell) for cell in new_cells)
-        diffs.append({
-            "op": op,
-            "cell_id": "",
-            "changed": True,
-            "inserted_cell_ids": inserted,
-            "before_hash": "",
-            "after_hash": source_hash(inserted_source),
-            "diff": _unified_diff("", inserted_source, fromfile="insert:before", tofile="insert:after"),
-        })
-        return
-    if op == "delete_cells":
-        indices = _selected_indices(nb, edit)
-        if not indices: raise ValueError("delete_cells matched no cells")
-        _check_expected_hash(nb, edit, indices)
-        for idx in sorted(indices, reverse=True):
-            cell = nb.cells[idx]
-            affected.append(getattr(cell, "id", ""))
-            diffs.append({"op": op, "cell_id": getattr(cell, "id", ""), "changed": True, "before_hash": source_hash(cell_source(cell)), "after_hash": "", "diff": _unified_diff(cell_source(cell), "")})
-            del nb.cells[idx]
-        return
-    if op == "explode_cells":
-        _apply_explode_edit(nb, edit, diffs, affected)
-        return
-    if op == "move_cells":
-        indices = _selected_indices(nb, edit)
-        if not indices: raise ValueError("move_cells matched no cells")
-        before_order = [getattr(cell, "id", "") for cell in nb.cells]
-        moving = [nb.cells[idx] for idx in indices]
-        moving_ids = [getattr(cell, "id", "") for cell in moving]
-        anchor_id = edit.get("anchor_id")
-        where = edit.get("where", "after")
-        if where not in {"before", "after"}: raise ValueError("where must be 'before' or 'after'")
-        try:
-            FastcoreNotebook(nb).move(moving_ids, **{where: anchor_id})
-        except KeyError as err:
-            raise ValueError(f"unknown anchor_id {anchor_id!r}") from err
-        after_order = [getattr(cell, "id", "") for cell in nb.cells]
-        affected.extend(moving_ids)
-        diff = "\n".join([
-            f"moved cells: {', '.join(moving_ids)}",
-            f"anchor: {where} {anchor_id}",
-        ])
-        diffs.append({
-            "op": op, "cell_id": "", "changed": True, "moved_cell_ids": moving_ids,
-            "anchor_id": anchor_id, "where": where, "before_order": before_order,
-            "after_order": after_order, "diff": diff,
-        })
-        return
+    if op == "replace_cell": return _replace_cell_edit(nb, edit, diffs, affected, default_cell_type)
+    if op == "insert_cells": return _insert_cells_edit(nb, edit, diffs, affected, default_cell_type)
+    if op == "delete_cells": return _delete_cells_edit(nb, edit, diffs, affected)
+    if op == "move_cells": return _move_cells_edit(nb, edit, diffs, affected)
+    if op == "explode_cells": return _apply_explode_edit(nb, edit, diffs, affected)
     raise ValueError(f"unsupported structural op {op!r}")
 
 # %% ../nbs/02_edit.ipynb #345ab75d
@@ -716,10 +665,7 @@ def _global_import_parts(cell):
     except SyntaxError: return [], source
     imports = [node for node in tree.body if isinstance(node, (ast.Import, ast.ImportFrom))]
     if not imports or len(imports) == len(tree.body): return [], source
-    other_lines = {
-        line for node in tree.body if node not in imports
-        for line in range(node.lineno, node.end_lineno + 1)
-    }
+    other_lines = {line for node in tree.body if node not in imports for line in range(node.lineno, node.end_lineno + 1)}
     imports = [node for node in imports if not other_lines.intersection(range(node.lineno, node.end_lineno + 1))]
     if not imports: return [], source
     lines, removed = source.splitlines(), set()
@@ -778,8 +724,7 @@ def _notebook_export_paths(nb, library):
         for directive in ("export", "exports", "exporti"):
             if directive not in directives: continue
             name = directives[directive] or default
-            if not name or not re.fullmatch(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*", name):
-                raise ValueError(f"Invalid or missing export module: {name!r}")
+            if not name or not re.fullmatch(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*", name): raise ValueError(f"Invalid or missing export module: {name!r}")
             names.append(name)
     return [library/(name.replace(".", "/") + ".py") for name in dict.fromkeys(names)]
 
@@ -798,8 +743,7 @@ def _export_worker(paths, root, results):
                 raise ValueError("Selected notebooks are excluded by the nbdev export filter")
             nbdev_export(**options)
         results.put(dict(ok=True, stdout=out.getvalue(), stderr=err.getvalue()))
-    except BaseException:
-        results.put(dict(ok=False, error=traceback.format_exc(), stdout=out.getvalue(), stderr=err.getvalue()))
+    except BaseException: results.put(dict(ok=False, error=traceback.format_exc(), stdout=out.getvalue(), stderr=err.getvalue()))
 
 # %% ../nbs/02_edit.ipynb #4ad797ea
 def run_nbdev_export_from_project(paths):
@@ -822,8 +766,7 @@ def run_nbdev_export_from_project(paths):
                 except queue.Empty:
                     if not proc.is_alive(): raise RuntimeError(f"Export exited without a result: {proc.exitcode}")
             proc.join()
-            if not payload["ok"]:
-                raise RuntimeError("\n".join(payload.get(key, "") for key in ("error", "stdout", "stderr")))
+            if not payload["ok"]: raise RuntimeError("\n".join(payload.get(key, "") for key in ("error", "stdout", "stderr")))
         finally:
             if proc.pid is not None:
                 if proc.is_alive(): proc.terminate()
@@ -864,8 +807,7 @@ def _restore_commit(snapshot, directories, library):
     return errors
 
 # %% ../nbs/02_edit.ipynb #fdf26a87
-def _same_notebook(left, right):
-    return nb2dict(left) == nb2dict(right)
+def _same_notebook(left, right): return nb2dict(left) == nb2dict(right)
 
 # %% ../nbs/02_edit.ipynb #f6afb582
 def _prepare_commits(plans, paths, library, validate_code, export):
@@ -873,17 +815,15 @@ def _prepare_commits(plans, paths, library, validate_code, export):
     for path, item in zip(paths, plans):
         before = read_nb(path) if path.exists() else new_nb([])
         expected = item.get("before")
-        if expected is not None and not _same_notebook(expected, before):
-            raise ValueError(f"Stale notebook snapshot: {path}")
+        if expected is not None and not _same_notebook(expected, before): raise ValueError(f"Stale notebook snapshot: {path}")
         trial = ensure_cell_ids(copy.deepcopy(item["trial"]))
         validate_nb(trial)
         changed = not path.exists() or not _same_notebook(before, trial)
         if validate_code and changed: validate_code_cells(trial.cells)
         affected = list(dict.fromkeys(item.get("affected_cell_ids") or []))
         py_path = exported_py_path(path, trial) if library is not None else None
-        prepared.append(dict(path=path, before=before, trial=trial, changed=changed,
-            affected=affected, py_path=py_path, before_hash=notebook_hash(before),
-            planned_hash=notebook_hash(trial), exported=False,
+        prepared.append(dict(path=path, before=before, trial=trial, changed=changed, affected=affected, py_path=py_path,
+            before_hash=notebook_hash(before), planned_hash=notebook_hash(trial), exported=False,
             export_paths=_notebook_export_paths(trial, library) if export and library is not None else []))
     return prepared
 
@@ -891,20 +831,16 @@ def _prepare_commits(plans, paths, library, validate_code, export):
 def _commit_receipt(item, dry_run):
     after = item["before"] if dry_run else read_nb(item["path"])
     validate_nb(after)
-    if not dry_run and not _same_notebook(after, item["trial"]):
-        raise RuntimeError(f"Readback differs from planned source: {item['path']}")
+    if not dry_run and not _same_notebook(after, item["trial"]): raise RuntimeError(f"Readback differs from planned source: {item['path']}")
     hashes = {cell.id: source_hash(cell_source(cell)) for cell in after.cells
         if not item["affected"] or cell.id in item["affected"]}
     py_path = item["py_path"]
     export_hashes = after.metadata.get("nbskill", {}).get("exported_py_hashes", {})
-    no_drift = item["exported"] and all(
-        export_hashes.get(str(target)) == file_hash(target) for target in item["export_paths"])
+    no_drift = item['exported'] and all((export_hashes.get(str(target)) == file_hash(target) for target in item['export_paths']))
     if item["exported"] and not no_drift: raise RuntimeError(f"Export hash mismatch: {py_path}")
-    return dict(changed=item["changed"], dry_run=dry_run,
-        affected_cell_ids=item["affected"], before_hash=item["before_hash"],
-        planned_hash=item["planned_hash"], after_hash=notebook_hash(after), readback_hashes=hashes,
-        exported=item["exported"], exported_py_path=str(py_path) if py_path else "",
-        exported_py_paths=[str(target) for target in item["export_paths"]],
+    return dict(changed=item['changed'], dry_run=dry_run, affected_cell_ids=item['affected'], before_hash=item['before_hash'],
+        planned_hash=item['planned_hash'], after_hash=notebook_hash(after), readback_hashes=hashes, exported=item['exported'],
+        exported_py_path=str(py_path) if py_path else '', exported_py_paths=[str(target) for target in item['export_paths']],
         export_no_drift=bool(no_drift))
 
 # %% ../nbs/02_edit.ipynb #894737f6
@@ -952,8 +888,7 @@ def commit_notebooks(
                         if not item["export_paths"]: continue
                         py_path = item["py_path"]
                         if py_path is not None and py_path.exists(): stamp_export_metadata(item["trial"], py_path)
-                        item["trial"].metadata.setdefault("nbskill", {})["exported_py_hashes"] = {
-                            str(target): file_hash(target) for target in item["export_paths"]}
+                        item["trial"].metadata.setdefault("nbskill", {})["exported_py_hashes"] = {str(target): file_hash(target) for target in item['export_paths']}
                         writer(item["trial"], item["path"])
                         item["exported"] = True
             return [_commit_receipt(item, dry_run) for item in prepared]
@@ -978,19 +913,20 @@ def commit(self: Notebook, **kwargs):
 
 # %% ../nbs/02_edit.ipynb #72e3cfc8
 @track_call
-def edit_notebook(
-    path,
-    edits,
-    validate_code=True,
-    default_cell_type="code",
-    directive=None,
-    auto_feedback=True,
-    feedback_timeout=10,
-    feedback_safe=True,
-    dry_run=False,
-):
-    """Apply structured notebook edits atomically and return structured details."""
+def edit_notebook(path, edits, validate_code=True, default_cell_type='code', directive=None, auto_feedback=True, feedback_timeout=10,
+    feedback_safe=True, dry_run=False):
+    'Apply structured notebook edits atomically and return structured details.'
     if not edits: raise ValueError("edits must be a non-empty list")
+    _validate_edit_budget(edits)
+    if not all(isinstance(edit, dict) for edit in edits): raise ValueError("each edit must be a dict")
+    if any(edit.get("op") in _DOCUMENT_OPS for edit in edits):
+        if len(edits) != 1: raise ValueError("A document operation must be the only edit in its transaction")
+        from nbskill import write
+        edit = dict(edits[0])
+        op = edit.pop("op")
+        if "dry_run" in edit: raise ValueError("Pass dry_run to edit_notebook, not inside an operation")
+        result = getattr(write, _DOCUMENT_OPS[op])(path, **edit, dry_run=dry_run)
+        return dict(ok=True, operation=op, **result)
     path = Path(path)
     normalized = [dict(edit) for edit in edits]
     _validate_edit_budget(normalized)
@@ -1010,17 +946,9 @@ def edit_notebook(
         affected = [cell_id for cell_id in dict.fromkeys(affected) if cell_id]
         if len(affected) > _EDIT_MAX_AFFECTED_CELLS:
             raise ValueError(
-                f"edit_notebook budget exceeded: {len(affected)} affected cells exceeds limit {_EDIT_MAX_AFFECTED_CELLS}"
-            )
+                f"edit_notebook budget exceeded: {len(affected)} affected cells exceeds limit {_EDIT_MAX_AFFECTED_CELLS}")
         warnings = _edit_notebook_craft_warnings(path, trial, affected)
-        commit = commit_notebook(
-            path,
-            trial,
-            before=before,
-            affected_cell_ids=affected,
-            validate_code=validate_code,
-            dry_run=dry_run,
-        )
+        commit = commit_notebook(path, trial, before=before, affected_cell_ids=affected, validate_code=validate_code, dry_run=dry_run)
 
     changed = commit["changed"]
     diffs = _cap_edit_diffs(diffs)
@@ -1043,33 +971,15 @@ def edit_notebook(
         try:
             from nbskill.execute import notebook_edit_feedback
             feedback = notebook_edit_feedback(path, affected, timeout=feedback_timeout, safe=feedback_safe)
-        except Exception:
-            feedback = dict(ok=False, status="failed", skip_reason=None, executed_cell_ids=[], errors=[traceback.format_exc()], text="")
+        except Exception: feedback = dict(ok=False, status="failed", skip_reason=None, executed_cell_ids=[], errors=[traceback.format_exc()], text="")
         if feedback["text"]: text += "\n\nAuto feedback:\n" + feedback["text"]
         if not feedback["ok"]: text += "\n\nAuto feedback failed: " + str(feedback["errors"])
-    if feedback["status"] == "skipped":
-        text += f"\n\nAuto feedback skipped: {feedback['skip_reason']}"
-    return {
-        "ok": True,
-        "feedback": feedback,
-        "changed": changed,
-        "no_change": not changed,
-        "dry_run": dry_run,
-        "affected_cell_ids": affected,
-        "diffs": diffs,
-        "before_hash": commit["before_hash"],
-        "after_hash": commit["after_hash"],
-        "planned_hash": commit["planned_hash"],
-        "readback_hashes": commit["readback_hashes"],
-        "exported": commit["exported"],
-        "exported_py_path": commit.get("exported_py_path", ""),
-        "export_no_drift": commit.get("export_no_drift", False),
-        "exported_py_paths": commit.get("exported_py_paths", []),
-        "export_confirmation": export_confirmation,
-        "replacement_summary": replacement_summary,
-        "warnings": warnings,
-        "text": text,
-    }
+    if feedback["status"] == "skipped": text += f"\n\nAuto feedback skipped: {feedback['skip_reason']}"
+    return dict(ok=True, feedback=feedback, changed=changed, no_change=not changed, dry_run=dry_run, affected_cell_ids=affected,
+        diffs=diffs, before_hash=commit['before_hash'], after_hash=commit['after_hash'], planned_hash=commit['planned_hash'],
+        readback_hashes=commit['readback_hashes'], exported=commit['exported'], exported_py_path=commit.get('exported_py_path', ''),
+        export_no_drift=commit.get('export_no_drift', False), exported_py_paths=commit.get('exported_py_paths', []),
+        export_confirmation=export_confirmation, replacement_summary=replacement_summary, warnings=warnings, text=text)
 
 # %% ../nbs/02_edit.ipynb #167ffb52
 @dataclass
@@ -1092,7 +1002,7 @@ class NotebookEditor:
 @delegates(edit_notebook, but=["path", "edits"])
 def replace_cell(self:NotebookEditor, cell_id, source, directive=None, cell_type=None, **kwargs):
     'Replace one cell source, optionally stamping directives onto code.'
-    edit = {'op': 'replace_cell', 'cell_id': cell_id, 'source': source}
+    edit = dict(op='replace_cell', cell_id=cell_id, source=source)
     if directive is not None: edit['directive'] = directive
     if cell_type is not None: edit['cell_type'] = cell_type
     return self.apply(edit, **kwargs)
@@ -1104,7 +1014,7 @@ def insert(self:NotebookEditor, anchor_id, source, where='after', directive=None
     'Insert one cell relative to anchor_id; pass None to append.'
     cell = {'source': source, 'cell_type': cell_type}
     if directive is not None: cell['directive'] = directive
-    return self.apply({'op': 'insert_cells', 'anchor_id': anchor_id, 'where': where, 'cells': [cell]}, **kwargs)
+    return self.apply(dict(op='insert_cells', anchor_id=anchor_id, where=where, cells=[cell]), **kwargs)
 
 # %% ../nbs/02_edit.ipynb #0822f836
 @patch
@@ -1128,7 +1038,7 @@ def delete(self:NotebookEditor, cell_id, **kwargs):
 @delegates(edit_notebook, but=["path", "edits"])
 def replace_text(self:NotebookEditor, old, new='', cell_id=None, **kwargs):
     'Replace literal text in one cell, or across the notebook when cell_id is omitted.'
-    edit = {'op': 'replace_text', 'old': old, 'new': new}
+    edit = dict(op='replace_text', old=old, new=new)
     if cell_id is None: edit['target'] = 'all'
     else: edit['cell_id'] = cell_id
     return self.apply(edit, **kwargs)

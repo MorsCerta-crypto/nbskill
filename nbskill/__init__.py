@@ -32,7 +32,6 @@ Modules:
 - `nbskill.execute`: Run a notebook scope and inspect execution evidence without losing the source.
 - `nbskill.foundation`: Model notebook data, metadata, chapters and Python structure consistently.
 - `nbskill.graph`: Find notebook definitions, callers, and likely reuse before changing code.
-- `nbskill.knowledge`: Find reusable source and verified problem solutions at the version a workspace uses.
 - `nbskill.nbskill`: Copy the nbskill routing instructions to a chosen agent skills directory.
 - `nbskill.parallel`: Serialize writes to the same notebook while allowing unrelated notebooks to proceed.
 - `nbskill.read`: Find notebook implementations with their explanations, examples, and edit guards.

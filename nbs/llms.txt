@@ -34,7 +34,6 @@ doc(skill.context)
 - [nbskill.execute](https://MorsCerta-crypto.github.io/nbskill/execute.html.md): Run a notebook scope and inspect execution evidence without losing the source.
 - [nbskill.foundation](https://MorsCerta-crypto.github.io/nbskill/foundation.html.md): Model notebook data, metadata, chapters and Python structure consistently.
 - [nbskill.graph](https://MorsCerta-crypto.github.io/nbskill/graph.html.md): Find notebook definitions, callers, and likely reuse before changing code.
-- [nbskill.knowledge](https://MorsCerta-crypto.github.io/nbskill/knowledge.html.md): Find reusable source and verified problem solutions at the version a workspace uses.
 - [nbskill.nbskill](https://MorsCerta-crypto.github.io/nbskill/skill.html.md): Copy the nbskill routing instructions to a chosen agent skills directory.
 - [nbskill.parallel](https://MorsCerta-crypto.github.io/nbskill/parallel.html.md): Serialize writes to the same notebook while allowing unrelated notebooks to proceed.
 - [nbskill.read](https://MorsCerta-crypto.github.io/nbskill/read.html.md): Find notebook implementations with their explanations, examples, and edit guards.

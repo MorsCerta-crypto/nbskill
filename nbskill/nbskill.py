@@ -1,6 +1,6 @@
 r"""Copy the nbskill routing instructions to a chosen agent skills directory.
 
-`install_nbskill` copies the package-owned routing skill and its references into a Codex or Claude skills directory. The routing file points to the Pyskill API in `nbskill.skill`; executable guidance stays with the Python package and its installed version. Discovery of local reference repositories and pre-commit hooks are separate options.
+`install_nbskill` copies the package-owned routing skill and its references into a Codex or Claude skills directory. The routing file points to the Pyskill API in `nbskill.skill`; executable guidance stays with the Python package and its installed version. Pre-commit hooks are an optional installation step.
 
 ```python
 from nbskill.nbskill import install_nbskill
@@ -32,13 +32,12 @@ hook_summary
 
 ### `install_nbskill`
 
-`install_nbskill` returns the paths it changed and the paths already current. Set `skills_dir` to choose a destination, and `overwrite=False` to protect a locally edited routing file. The example copies real package files into a temporary directory; only reference discovery is mocked to keep this lesson independent of the machine's repository index:
+`install_nbskill` returns the paths it changed and the paths already current. Set `skills_dir` to choose a destination, and `overwrite=False` to protect a locally edited routing file. The example copies real package files into a temporary directory:
 
 ```python
 install_root = demo_path("06_skill_usage")
 try:
-    with patch("nbskill.knowledge.reference_discover", return_value={}):
-        installation = install_nbskill(skills_dir=install_root, index_references=False)
+    installation = install_nbskill(skills_dir=install_root)
     assert (install_root / "jupyter-notebooks" / "SKILL.md").exists()
     install_preview = dict(changed=len(installation["installed"]), hooks=installation["hooks"]["reason"])
 finally: remove_demo_path(install_root)
@@ -53,7 +52,7 @@ Docs: https://MorsCerta-crypto.github.io/nbskill/skill.html.md"""
 __all__ = ['install_nbdev_pre_commit_hooks', 'bootstrap_nbskill_project', 'install_nbskill', 'install_nbskill_cli']
 
 # %% ../nbs/06_skill.ipynb #a23594cd
-import json, subprocess, tomllib, shutil, os, re
+import subprocess, tomllib, shutil, os, re
 from importlib.resources import files
 from pathlib import Path
 
@@ -128,10 +127,10 @@ def install_nbdev_pre_commit_hooks(path=".", run_nbdev_install_hooks=True):
     "Install nbdev-clean and nbdev-test pre-commit hooks in a git-backed nbdev project."
     root = git_root(path)
     if root is None: return {"installed": False, "reason": "not-a-git-repo"}
-    if not is_nbdev_project(root): return {"installed": False, "reason": "not-an-nbdev-project", "root": str(root)}
+    if not is_nbdev_project(root): return dict(installed=False, reason="not-an-nbdev-project", root=str(root))
     hooks = root / ".git" / "hooks"
     pre_commit = hooks / "pre-commit"
-    if _hooks_removed_by_user(root, pre_commit): return {"installed": False, "reason": "hooks-removed-by-user", "root": str(root)}
+    if _hooks_removed_by_user(root, pre_commit): return dict(installed=False, reason="hooks-removed-by-user", root=str(root))
     if run_nbdev_install_hooks:
         cmd = ["nbdev-install-hooks"] if shutil.which("nbdev-install-hooks") else None
         if cmd is None and shutil.which("uv"): cmd = ["uv", "run", "nbdev-install-hooks"]
@@ -143,17 +142,13 @@ def install_nbdev_pre_commit_hooks(path=".", run_nbdev_install_hooks=True):
     installed, _ = _hook_state_paths(root)
     installed.parent.mkdir(parents=True, exist_ok=True)
     installed.write_text("nbskill hooks installed once\n", encoding="utf-8")
-    return {"installed": True, "root": str(root), "hook": str(pre_commit)}
+    return dict(installed=True, root=str(root), hook=str(pre_commit))
 
 # %% ../nbs/06_skill.ipynb #7379cbc3
 _NBSKILL_PROJECT_BOOTSTRAP_ENV = "NBSKILL_NO_PROJECT_BOOTSTRAP"
 _NBSKILL_AGENTS_TEMPLATE = "AGENTS.md"
 _NBSKILL_CI_PAUSE = "1"
-_NBSKILL_NBDEV_CONFIG = {
-    "allowed_metadata_keys": '["nbskill"]',
-    "jupyter_hooks": "true",
-    "allowed_cell_metadata_keys": '["nbskill"]',
-}
+_NBSKILL_NBDEV_CONFIG = dict(allowed_metadata_keys='["nbskill"]', jupyter_hooks='true', allowed_cell_metadata_keys='["nbskill"]')
 
 # %% ../nbs/06_skill.ipynb #e61fe605
 def _project_root_path(path):
@@ -163,42 +158,33 @@ def _project_root_path(path):
 
 # %% ../nbs/06_skill.ipynb #0380d5e0
 def _read_nbskill_agents_template():
-    try:
-        return files("nbskill").joinpath(_NBSKILL_AGENTS_TEMPLATE).read_text(encoding="utf-8")
-    except (FileNotFoundError, ModuleNotFoundError, OSError):
-        pass
+    try: return files("nbskill").joinpath(_NBSKILL_AGENTS_TEMPLATE).read_text(encoding="utf-8")
+    except (FileNotFoundError, ModuleNotFoundError, OSError): pass
     fallback = Path(__file__).with_name(_NBSKILL_AGENTS_TEMPLATE) if "__file__" in globals() else None
     for path in (fallback, Path(_NBSKILL_AGENTS_TEMPLATE)):
         if path is None: continue
         try:
             if path.exists(): return path.read_text(encoding="utf-8")
-        except OSError:
-            continue
+        except OSError: continue
     return None
 
 # %% ../nbs/06_skill.ipynb #4ef91b8b
 def _install_agents_md(root, overwrite=False):
     path = root / "AGENTS.md"
-    if path.exists() and not overwrite:
-        return {"changed": False, "path": str(path), "reason": "exists"}
+    if path.exists() and not overwrite: return dict(changed=False, path=str(path), reason="exists")
     text = _read_nbskill_agents_template()
-    if text is None:
-        return {"changed": False, "path": str(path), "reason": "missing-template"}
-    try:
-        current = path.read_text(encoding="utf-8") if path.exists() else None
-    except OSError:
-        current = None
-    if current == text:
-        return {"changed": False, "path": str(path), "reason": "current"}
+    if text is None: return dict(changed=False, path=str(path), reason="missing-template")
+    try: current = path.read_text(encoding="utf-8") if path.exists() else None
+    except OSError: current = None
+    if current == text: return dict(changed=False, path=str(path), reason="current")
     path.write_text(text, encoding="utf-8")
     reason = "installed" if current is None else "updated"
-    return {"changed": True, "path": str(path), "reason": reason}
+    return dict(changed=True, path=str(path), reason=reason)
 
 # %% ../nbs/06_skill.ipynb #606c9ff3
 def _set_cli_option(args, name, value):
     pattern = re.compile(rf"(^|\s){re.escape(name)}(?:=|\s+)\S+")
-    if pattern.search(args):
-        return pattern.sub(lambda match: f"{match.group(1)}{name} {value}", args, count=1)
+    if pattern.search(args): return pattern.sub(lambda match: f"{match.group(1)}{name} {value}", args, count=1)
     return f"{args} {name} {value}"
 
 # %% ../nbs/06_skill.ipynb #20e1a559
@@ -226,7 +212,7 @@ def _patch_github_actions(root, pause=_NBSKILL_CI_PAUSE):
         changed = updated != text
         if changed: path.write_text(updated, encoding="utf-8")
         reason = "patched" if changed else "current"
-        results.append({"changed": changed, "path": str(path), "reason": reason})
+        results.append(dict(changed=changed, path=str(path), reason=reason))
     return results
 
 # %% ../nbs/06_skill.ipynb #1f11db07
@@ -257,48 +243,35 @@ def _set_toml_section_keys(text, section, values):
         if found is None:
             lines.insert(end, line)
             end += 1
-        elif lines[found] != line:
-            lines[found] = line
+        elif lines[found] != line: lines[found] = line
     return "\n".join(lines) + "\n"
 
 # %% ../nbs/06_skill.ipynb #a6297e94
 def _patch_pyproject_nbdev(root):
     path = root / "pyproject.toml"
-    if not path.exists():
-        return {"changed": False, "path": str(path), "reason": "missing"}
+    if not path.exists(): return dict(changed=False, path=str(path), reason="missing")
     text = path.read_text(encoding="utf-8")
     updated = _set_toml_section_keys(text, "tool.nbdev", _NBSKILL_NBDEV_CONFIG)
-    try:
-        tomllib.loads(updated)
-    except tomllib.TOMLDecodeError as exc:
-        return {"changed": False, "path": str(path), "reason": f"invalid-toml: {exc}"}
+    try: tomllib.loads(updated)
+    except tomllib.TOMLDecodeError as exc: return dict(changed=False, path=str(path), reason=f"invalid-toml: {exc}")
     changed = updated != text
     if changed: path.write_text(updated, encoding="utf-8")
     reason = "patched" if changed else "current"
-    return {"changed": changed, "path": str(path), "reason": reason}
+    return dict(changed=changed, path=str(path), reason=reason)
 
 # %% ../nbs/06_skill.ipynb #bb245a0e
 def bootstrap_nbskill_project(path=".", overwrite_agents=False, pause=_NBSKILL_CI_PAUSE):
     "Install nbskill project guardrails once a workspace root is known."
-    if os.environ.get(_NBSKILL_PROJECT_BOOTSTRAP_ENV):
-        return {"changed": False, "root": str(path), "reason": "disabled"}
+    if os.environ.get(_NBSKILL_PROJECT_BOOTSTRAP_ENV): return dict(changed=False, root=str(path), reason="disabled")
     root = _project_root_path(path)
-    if not root.exists():
-        return {"changed": False, "root": str(root), "reason": "missing-root"}
-    if not is_nbdev_project(root):
-        return {"changed": False, "root": str(root), "reason": "not-an-nbdev-project"}
+    if not root.exists(): return dict(changed=False, root=str(root), reason="missing-root")
+    if not is_nbdev_project(root): return dict(changed=False, root=str(root), reason="not-an-nbdev-project")
     agents = _install_agents_md(root, overwrite=overwrite_agents)
     pyproject = _patch_pyproject_nbdev(root)
     workflows = _patch_github_actions(root, pause=pause)
     changed = agents.get("changed", False) or pyproject.get("changed", False)
     changed = changed or any(item.get("changed", False) for item in workflows)
-    return {
-        "changed": changed,
-        "root": str(root),
-        "agents": agents,
-        "pyproject": pyproject,
-        "workflows": workflows,
-    }
+    return dict(changed=changed, root=str(root), agents=agents, pyproject=pyproject, workflows=workflows)
 
 # %% ../nbs/06_skill.ipynb #aaccbabb
 def _write_if_changed(path, text):
@@ -310,18 +283,15 @@ def _write_if_changed(path, text):
 
 # %% ../nbs/06_skill.ipynb #45e4c0e8
 def _install_skill_tree(root, skill_name, skill_text, references, overwrite=True):
-    """Copy changed skill files and leave byte-identical files untouched."""
+    "Copy changed skill files and leave byte-identical files untouched."
     dst_dir = root / skill_name
     files_to_install = [(dst_dir / "SKILL.md", skill_text)]
     if references.is_dir():
-        files_to_install += [
-            (dst_dir / "references" / ref.name, ref.read_text(encoding="utf-8"))
-            for ref in references.iterdir() if ref.is_file()
-        ]
+        files_to_install.extend((dst_dir / "references" / ref.name, ref.read_text(encoding="utf-8"))
+            for ref in references.iterdir() if ref.is_file())
     changed, unchanged = [], []
     for path,text in files_to_install:
-        if path.exists() and path.read_text(encoding="utf-8") != text and not overwrite:
-            raise FileExistsError(path)
+        if path.exists() and path.read_text(encoding="utf-8") != text and not overwrite: raise FileExistsError(path)
         if _write_if_changed(path, text): changed.append(path)
         else: unchanged.append(path)
     return changed, unchanged
@@ -355,18 +325,14 @@ def install_nbskill(
     skill_name: str = "jupyter-notebooks",  # Skill folder name
     overwrite: bool = True,  # Update stale managed files
     install_hooks: bool = False,  # Install nbdev-clean/nbdev-test pre-commit hooks in the current repo
-    reference_roots: str = "~/projects",  # Local Git repositories to add to the reference index
-    index_references: bool = True,  # Index references during installation
 ):
-    """Install current Python workflow instructions."""
+    'Install current Python workflow instructions.'
     target, roots = _skill_roots(target, skills_dir)
     installed, unchanged = _install_skill_files(roots, skill_name, overwrite)
     hooks = install_nbdev_pre_commit_hooks(Path.cwd()) if install_hooks else {"installed": False, "reason": "disabled"}
-    from nbskill.knowledge import reference_discover
-    reference_index = reference_discover(roots=reference_roots, ingest=index_references)
     for path in installed: print(f"Installed {path}")
     if hooks.get("installed"): print(f"Installed nbdev pre-commit hook at {hooks['hook']}")
-    return {"installed": installed, "unchanged": unchanged, "hooks": hooks, "references": reference_index}
+    return dict(installed=installed, unchanged=unchanged, hooks=hooks)
 
 # %% ../nbs/06_skill.ipynb #f50fbb2c
 def install_nbskill_cli():
@@ -378,6 +344,4 @@ def install_nbskill_cli():
     parser.add_argument("--skill-name", default="jupyter-notebooks")
     parser.add_argument("--no-overwrite", dest="overwrite", action="store_false")
     parser.add_argument("--install-hooks", action="store_true")
-    parser.add_argument("--reference-roots", default="~/projects")
-    parser.add_argument("--no-index-references", dest="index_references", action="store_false")
     install_nbskill(**vars(parser.parse_args()))

@@ -69,8 +69,7 @@ def _state_dynamic_reasons(tree):
         targets = []
         if isinstance(node, (ast.Assign, ast.Delete)): targets = node.targets
         elif isinstance(node, (ast.AnnAssign, ast.AugAssign)): targets = [node.target]
-        if any(isinstance(part, (ast.Attribute, ast.Subscript)) for target in targets for part in ast.walk(target)):
-            reasons.add("in-place-mutation")
+        if any(isinstance(part, (ast.Attribute, ast.Subscript)) for target in targets for part in ast.walk(target)): reasons.add("in-place-mutation")
     return sorted(reasons)
 
 # %% ../nbs/15_state.ipynb #2ecc9086

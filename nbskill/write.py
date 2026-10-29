@@ -83,10 +83,8 @@ __all__ = ['split_nb_chapter', 'create_notebook', 'move_cells']
 import ast,builtins,copy,re
 from pathlib import Path
 from fastcore.nbio import mk_cell, new_nb, read_nb
-from .foundation import (
-    cell_directives, cell_source, clear_outputs, api_error, api_return,
-    numbered_notebook_path, one_chapter, nbdev_project_root, notebook_directive,
-    parse_code_cell, is_definition_node, ensure_cell_ids)
+from .foundation import (cell_directives, cell_source, clear_outputs, api_error, api_return, numbered_notebook_path, one_chapter,
+    nbdev_project_root, notebook_directive, parse_code_cell, is_definition_node, ensure_cell_ids)
 from .parallel import notebook_locks
 from .edit import commit_notebook, commit_notebooks
 
@@ -99,8 +97,7 @@ def _default_exp_for_dest(dest):
         nbs_path = Path(cfg.config_path) / cfg.nbs_path
         rel = dest.resolve().relative_to(nbs_path.resolve()).with_suffix("")
         return ".".join(rel.parts)
-    except Exception:
-        return dest.stem
+    except Exception: return dest.stem
 
 
 # %% ../nbs/02_write.ipynb #0456933c
@@ -110,10 +107,8 @@ def _module_for_default_exp(default_exp, path=None):
         from nbdev.config import get_config
         cfg = get_config(Path(path).parent if path else None)
         lib_name = str(cfg.lib_name)
-    except Exception:
-        lib_name = None
-    if lib_name and not str(default_exp).startswith(f"{lib_name}."):
-        return f"{lib_name}.{default_exp}"
+    except Exception: lib_name = None
+    if lib_name and not str(default_exp).startswith(f"{lib_name}."): return f"{lib_name}.{default_exp}"
     return str(default_exp)
 
 
@@ -123,18 +118,9 @@ def _is_default_exp_cell(cell): return "default_exp" in cell_directives(cell)
 
 # %% ../nbs/02_write.ipynb #99b9c8be
 def _import_bound_names(node):
-    if isinstance(node, ast.Import):
-        return [alias.asname or alias.name.split(".", 1)[0] for alias in node.names]
-    if isinstance(node, ast.ImportFrom):
-        return [alias.asname or alias.name for alias in node.names if alias.name != "*"]
+    if isinstance(node, ast.Import): return [alias.asname or alias.name.split(".", 1)[0] for alias in node.names]
+    if isinstance(node, ast.ImportFrom): return [alias.asname or alias.name for alias in node.names if alias.name != "*"]
     return []
-
-
-# %% ../nbs/02_write.ipynb #217953fe
-def _node_source_from_cell(cell, node):
-    lines = cell_source(cell).splitlines()
-    start = min([node.lineno, *[d.lineno for d in getattr(node, "decorator_list", [])]]) - 1
-    return "\n".join(lines[start:node.end_lineno]).strip("\n")
 
 
 # %% ../nbs/02_write.ipynb #8dcb822b
@@ -144,8 +130,7 @@ def _definition_names(cells):
         tree = parse_code_cell(cell)
         if tree is None: continue
         for node in tree.body:
-            if is_definition_node(node):
-                names[node.name] = idx
+            if is_definition_node(node): names[node.name] = idx
     return names
 
 
@@ -157,8 +142,7 @@ def _bound_names(cells):
         if tree is None: continue
         for node in tree.body:
             names.update(_import_bound_names(node))
-            if is_definition_node(node):
-                names.add(node.name)
+            if is_definition_node(node): names.add(node.name)
         for node in ast.walk(tree):
             if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store): names.add(node.id)
     return names
@@ -192,14 +176,12 @@ def _import_lines_for_names(cells, names):
 
 
 # %% ../nbs/02_write.ipynb #e7e30caf
-def _symbol_replacements(promotions):
-    return {old: new for old, new in promotions}
+def _symbol_replacements(promotions): return {old: new for old, new in promotions}
 
 
 # %% ../nbs/02_write.ipynb #55070d8c
 def _replace_symbol_refs(source, promotions):
-    for old, new in _symbol_replacements(promotions).items():
-        source = re.sub(rf"(?<![\w.]){re.escape(old)}(?![\w])", new, source)
+    for old, new in _symbol_replacements(promotions).items(): source = re.sub(rf"(?<![\w.]){re.escape(old)}(?![\w])", new, source)
     return source
 
 
@@ -241,8 +223,7 @@ def _split_chapter_plan(nb, chapter, dest, default_exp=None, promote_private=Tru
     for name in source_deps:
         if name.startswith("_") and promote_private:
             public = name.lstrip("_")
-            if public in outside_defs or public in moved_uses:
-                api_error(f"Cannot promote {name!r}: {public!r} already exists or is referenced")
+            if public in outside_defs or public in moved_uses: api_error(f"Cannot promote {name!r}: {public!r} already exists or is referenced")
             promotions.append((name, public))
     _apply_promotions(remaining, promotions)
 
@@ -259,22 +240,11 @@ def _split_chapter_plan(nb, chapter, dest, default_exp=None, promote_private=Tru
     source_imports = []
     if moved_deps:
         if not dest_module: api_error("Destination notebook needs #| default_exp before source dependencies can be imported")
-        for name in moved_deps:
-            source_imports.append(f"from {dest_module} import {name}")
+        for name in moved_deps: source_imports.append(f"from {dest_module} import {name}")
     _insert_import_cell(remaining, source_imports)
-    return dict(
-        span=span,
-        source_default_exp=source_default_exp,
-        dest_default_exp=dest_default_exp,
-        source_module=source_module,
-        dest_module=dest_module,
-        source_dependencies=source_deps,
-        moved_dependencies=moved_deps,
-        copied_imports=import_lines,
-        source_imports=source_imports,
-        promotions=promotions,
-        source_cells=remaining,
-        dest_cells=dest_cells)
+    return dict(span=span, source_default_exp=source_default_exp, dest_default_exp=dest_default_exp, source_module=source_module,
+        dest_module=dest_module, source_dependencies=source_deps, moved_dependencies=moved_deps, copied_imports=import_lines,
+        source_imports=source_imports, promotions=promotions, source_cells=remaining, dest_cells=dest_cells)
 
 
 # %% ../nbs/02_write.ipynb #0b146597
@@ -328,6 +298,7 @@ def split_nb_chapter(
 def create_notebook(path, name=None, template="nbdev", default_exp=None, dry_run=False):
     "Create a minimal flat numbered nbdev notebook without overwriting one."
     path = Path(path)
+    if path.suffix == ".ipynb" and path.exists(): raise ValueError(f"Notebook already exists: {path}")
     if template != "nbdev": raise ValueError("template must be 'nbdev'")
     root = path.parent if path.suffix else path
     name = name or path.stem
@@ -374,7 +345,8 @@ def _move_anchor(cells, anchor, where):
     raise ValueError(f"Unknown destination anchor: {anchor}")
 
 # %% ../nbs/02_write.ipynb #9c231058
-def move_cells(source_path, destination_path=None, cell_ids=None, query=None, chapter=None, name=None, mode="move", destination_anchor=None, destination_where="after", default_exp=None, promote_private=True, dry_run=False):
+def move_cells(source_path, destination_path=None, cell_ids=None, query=None, chapter=None, name=None, mode="move", destination_anchor=None,
+    destination_where="after", default_exp=None, promote_private=True, dry_run=False):
     "Move or copy selected cells, preserving full cell payloads and inferred imports."
     if mode not in {"move", "copy"}: raise ValueError("mode must be 'move' or 'copy'")
     source_path = Path(source_path).resolve()
@@ -386,7 +358,8 @@ def move_cells(source_path, destination_path=None, cell_ids=None, query=None, ch
         new_destination = not destination_path.exists()
         destination_before = None if new_destination else read_nb(destination_path)
         source_trial = copy.deepcopy(source_before)
-        destination_trial = source_trial if destination_path == source_path else (copy.deepcopy(destination_before) if destination_before is not None else new_nb([]))
+        destination_trial = (source_trial if destination_path == source_path else
+            (copy.deepcopy(destination_before) if destination_before is not None else new_nb([])))
         indices = _move_selection(source_trial, cell_ids=cell_ids, query=query, chapter=chapter)
         moving = [copy.deepcopy(source_trial.cells[idx]) for idx in indices]
         if mode == "copy" and destination_path == source_path:
@@ -414,10 +387,10 @@ def move_cells(source_path, destination_path=None, cell_ids=None, query=None, ch
         ensure_cell_ids(destination_trial)
         if destination_path == source_path:
             commit = commit_notebook(source_path, source_trial, before=source_before, affected_cell_ids=[cell.id for cell in moving], dry_run=dry_run)
-            return dict(changed=commit["changed"], dry_run=dry_run, source_path=str(source_path), destination_path=str(destination_path), cell_ids=[cell.id for cell in moving])
-        source_commit, dest_commit = commit_notebooks([
-            dict(path=source_path, trial=source_trial, before=source_before, affected_cell_ids=[cell.id for cell in moving]),
-            dict(path=destination_path, trial=destination_trial, before=destination_before, affected_cell_ids=[cell.id for cell in moving])],
-            dry_run=dry_run)
+            return dict(changed=commit["changed"], dry_run=dry_run, source_path=str(source_path), destination_path=str(destination_path),
+                cell_ids=[cell.id for cell in moving])
+        plans = [dict(path=source_path, trial=source_trial, before=source_before, affected_cell_ids=[cell.id for cell in moving]),
+            dict(path=destination_path, trial=destination_trial, before=destination_before, affected_cell_ids=[cell.id for cell in moving])]
+        source_commit, dest_commit = commit_notebooks(plans, dry_run=dry_run)
     return dict(changed=source_commit["changed"] or dest_commit["changed"], dry_run=dry_run, source_path=str(source_path),
         destination_path=str(destination_path), cell_ids=[cell.id for cell in moving])

@@ -69,14 +69,6 @@ from nbskill.foundation import (track_call, Notebook, NotebookCell, definition_n
     matches_filter, matching_chapters, notebook_paths, notebook_result, one_chapter, source_hash, source_without_directives,
     symbol_short_name)
 
-# %% ../nbs/01_read.ipynb #3876f40e
-def _format_overview(items, show_ids=False):
-    lines = []
-    for idx, cell in items:
-        summary = first_line(cell.source)
-        lines.append(f"{cell_prefix(idx, cell, show_ids)} | {summary}")
-    return "\n".join(lines)
-
 # %% ../nbs/01_read.ipynb #2bf5140a
 def _definition_lines(node, indent=""):
     tmp = copy.deepcopy(node)
@@ -98,8 +90,7 @@ def _docstring_lines(node, indent="    "):
     return [indent + quote, *[f"{indent}{line}" for line in lines], indent + quote]
 
 # %% ../nbs/01_read.ipynb #1479f1ce
-def _function_overview(node, indent=""):
-    return [*_definition_lines(node, indent=indent), *_docstring_lines(node, indent=indent + "    ")]
+def _function_overview(node, indent=""): return [*_definition_lines(node, indent=indent), *_docstring_lines(node, indent=indent + "    ")]
 
 # %% ../nbs/01_read.ipynb #0bf698d9
 def _class_overview(node):
@@ -132,8 +123,7 @@ def _format_source(source, line_numbers=False):
 # %% ../nbs/01_read.ipynb #ba1a2456
 def _format_full(items, show_ids=False, line_numbers=False):
     chunks = []
-    for idx, cell in items:
-        chunks.append(f"{cell_prefix(idx, cell, show_ids)}\n{_format_source(cell_source(cell), line_numbers=line_numbers)}")
+    for idx, cell in items: chunks.append(f"{cell_prefix(idx, cell, show_ids)}\n{_format_source(cell_source(cell), line_numbers=line_numbers)}")
     return "\n\n".join(chunks)
 
 # %% ../nbs/01_read.ipynb #b1526aff
@@ -152,8 +142,7 @@ def _normalize_query_key(key):
     return name
 
 # %% ../nbs/01_read.ipynb #e3f7da55
-def _normalize_query_dict(spec):
-    return {_normalize_query_key(key): None if value is None else str(value) for key, value in dict(spec).items()}
+def _normalize_query_dict(spec): return {_normalize_query_key(key): None if value is None else str(value) for key, value in dict(spec).items()}
 
 # %% ../nbs/01_read.ipynb #cc7d1f47
 def _cell_symbol_records(cell):
@@ -188,8 +177,7 @@ def _parse_query(query):
     text = str(query).strip()
     if not text: return [{}]
     try: parsed = json.loads(text)
-    except json.JSONDecodeError:
-        return [_parse_query_terms(part) for part in text.split(";") if part.strip()]
+    except json.JSONDecodeError: return [_parse_query_terms(part) for part in text.split(";") if part.strip()]
     return _parse_query(parsed)
 
 # %% ../nbs/01_read.ipynb #643079c0
@@ -198,12 +186,10 @@ def _query_bool(value, default=True):
     return str(value).strip().lower() not in {"0", "false", "no", "off", "none"}
 
 # %% ../nbs/01_read.ipynb #f1cb3b56
-def _output_get(output, key, default=None):
-    return output.get(key, default) if isinstance(output, dict) else getattr(output, key, default)
+def _output_get(output, key, default=None): return output.get(key, default) if isinstance(output, dict) else getattr(output, key, default)
 
 # %% ../nbs/01_read.ipynb #efe04c52
-def _cell_has_error(cell):
-    return any(_output_get(output, "output_type") == "error" for output in (getattr(cell, "outputs", []) or []))
+def _cell_has_error(cell): return any(_output_get(output, "output_type") == "error" for output in (getattr(cell, "outputs", []) or []))
 
 # %% ../nbs/01_read.ipynb #e1d82fc4
 def _cell_header_level(cell):
@@ -230,11 +216,8 @@ def _select_query_items(nb, spec):
         items = [(i, c) for i, c in items if i in chapter_idxs]
     if spec.get("cell_type") is not None: items = [(i, c) for i, c in items if cell_matches_type(c, spec["cell_type"])]
     if spec.get("symbol_kind") is not None or spec.get("visibility") is not None:
-        items = [(i, c) for i, c in items if any(
-            (spec.get("symbol_kind") is None or item["kind"] == spec["symbol_kind"])
-            and (spec.get("visibility") is None or item["visibility"] == spec["visibility"])
-            for item in _cell_symbol_records(c)
-        )]
+        items = [(i, c) for i, c in items if any((spec.get("symbol_kind") is None or item["kind"] == spec["symbol_kind"])
+            and (spec.get("visibility") is None or item["visibility"] == spec["visibility"]) for item in _cell_symbol_records(c))]
     if spec.get("header") is not None: items = [(i, c) for i, c in items if _cell_matches_header(c, spec["header"])]
     if spec.get("export") is not None: items = [(i, c) for i, c in items if is_exported_code_cell(c) == _query_bool(spec["export"])]
     for key in ("has_checks", "imports_only"):
@@ -251,8 +234,7 @@ def _select_query_items(nb, spec):
     return items
 
 # %% ../nbs/01_read.ipynb #contextbase
-def _context_result(kind, text, verbose=True, **data):
-    return notebook_result({"kind": kind, "text": text, **data})
+def _context_result(kind, text, verbose=True, **data): return notebook_result({"kind": kind, "text": text, **data})
 
 # %% ../nbs/01_read.ipynb #8d0e4bde
 def _context_root(path):
@@ -296,13 +278,7 @@ def _notebook_header_items(cells):
 def _notebook_docstring(path):
     nb = read_nb(path)
     items = _notebook_header_items(nb.cells)
-    return {
-        "path": str(path),
-        "cells": [
-            {"cell_id": getattr(cell, "id", ""), "source": cell_source(cell).strip()}
-            for _, cell in items if cell_source(cell).strip()
-        ],
-    }
+    return {'path': str(path), 'cells': [{'cell_id': getattr(cell, 'id', ''), 'source': cell_source(cell).strip()} for _, cell in items if cell_source(cell).strip()]}
 
 # %% ../nbs/01_read.ipynb #68e77a75
 def _context_match(text, include_re=None, exclude_re=None):
@@ -333,14 +309,7 @@ def _definition_record(path, idx, cell, node, symbol=None, kind=None):
     symbol = symbol or _definition_symbol(node)
     kind = kind or ("class" if isinstance(node, ast.ClassDef) else "function")
     lines = _class_overview(node) if isinstance(node, ast.ClassDef) else _function_overview(node)
-    return {
-        "path": str(path),
-        "cell_id": getattr(cell, "id", ""),
-        "cell_idx": idx,
-        "symbol": symbol,
-        "kind": kind,
-        "text": "\n".join(lines),
-    }
+    return dict(path=str(path), cell_id=getattr(cell, "id", ""), cell_idx=idx, symbol=symbol, kind=kind, text="\n".join(lines))
 
 # %% ../nbs/01_read.ipynb #0126343d
 def _definition_records(path, nb):
@@ -377,8 +346,7 @@ def _cell_calls_symbol(cell, symbol):
         if not scope and isinstance(node, ast.Call) and _call_matches_context_symbol(call_name(node.func), symbol): return True
     for check in analysis["checks"]:
         if check["scope"]: continue
-        if any(isinstance(node, ast.Call) and _call_matches_context_symbol(call_name(node.func), symbol)
-            for node in ast.walk(check["raw"])): return True
+        if any(isinstance(node, ast.Call) and _call_matches_context_symbol(call_name(node.func), symbol) for node in ast.walk(check["raw"])): return True
     return False
 
 # %% ../nbs/01_read.ipynb #472048bb
@@ -407,8 +375,7 @@ def _callee_summary(path, symbol, depth, seen=None, graph_data=None):
     try:
         from nbskill.graph import symbol_graph_data
         data = graph_data or symbol_graph_data(path, symbol)
-    except Exception:
-        return []
+    except Exception: return []
     items = []
     for callee in data.get("callees", []):
         if callee in seen: continue
@@ -420,15 +387,9 @@ def _callee_summary(path, symbol, depth, seen=None, graph_data=None):
                 callee_nb = read_nb(definition["path"])
                 callee_cell = callee_nb.cells[definition["cell_idx"]]
                 summary = "\n".join(_symbol_signature_text(callee_cell, callee))
-            except Exception:
-                summary = ""
-        item = {
-            "symbol": callee,
-            "path": definition.get("path") if definition else "",
-            "cell_id": definition.get("cell_id") if definition else "",
-            "summary": summary,
-            "callees": _callee_summary(path, callee, depth - 1, seen),
-        }
+            except Exception: summary = ""
+        item = dict(symbol=callee, path=definition.get('path') if definition else '', cell_id=definition.get('cell_id') if definition else '', summary=summary,
+            callees=_callee_summary(path, callee, depth - 1, seen))
         items.append(item)
     return items
 
@@ -438,8 +399,7 @@ def _format_callee_items(items, indent=""):
     for item in items:
         loc = f" {item['path']} id={item['cell_id']}" if item.get("path") else ""
         lines.append(f"{indent}- {item['symbol']}:{loc}".rstrip())
-        if item.get("summary"):
-            lines.extend(f"{indent}  {line}" for line in item["summary"].splitlines())
+        if item.get("summary"): lines.extend(f"{indent}  {line}" for line in item["summary"].splitlines())
         lines.extend(_format_callee_items(item.get("callees", []), indent=indent + "  "))
     return lines
 
@@ -455,15 +415,13 @@ def _notebook_head_items(cells):
 # %% ../nbs/01_read.ipynb #c8ed9b2e
 def _chapter_span_for_index(cells, idx):
     spans = _chapter_spans_for_nb(cells)
-    if spans and idx < spans[0]["start"]:
-        return dict(title="Notebook head", start=0, end=spans[0]["start"])
+    if spans and idx < spans[0]["start"]: return dict(title="Notebook head", start=0, end=spans[0]["start"])
     for span in spans:
         if span["start"] <= idx < span["end"]: return span
     raise ValueError(f"Cell index {idx} is outside the notebook")
 
 # %% ../nbs/01_read.ipynb #8cbbb8bd
-def _one_chapter_span(cells, name):
-    return one_chapter(cells, name)
+def _one_chapter_span(cells, name): return one_chapter(cells, name)
 
 # %% ../nbs/01_read.ipynb #c605990b
 def _query_items(nb, query):
@@ -549,15 +507,10 @@ def project_context(
         name = Path(item["path"]).name
         return f"- {name}: {title}" + (f" — {tagline}" if tagline else "")
     summaries = [s for item in docstrings for s in [_nb_summary(item)] if s]
-    blocks = [
-        ("Notebooks", summaries),
-        ("README", (nl * 2).join(readme_sections)),
-    ]
+    blocks = [('Notebooks', summaries), ('README', (nl * 2).join(readme_sections))]
     text = _format_context_blocks(f"Project context: {root}{nl}Requested path: {path}", blocks)
-    return _context_result(
-        "project_context", text, verbose=verbose, root=str(root), requested_path=str(path),
-        readme_sections=readme_sections, notebooks=notebooks, docstrings=docstrings,
-    )
+    return _context_result('project_context', text, verbose=verbose, root=str(root), requested_path=str(path),
+        readme_sections=readme_sections, notebooks=notebooks, docstrings=docstrings)
 
 # %% ../nbs/01_read.ipynb #e17a74d9
 def chapter_context(
@@ -577,12 +530,9 @@ def chapter_context(
     items = _chapter_intro_items(nb, span) if overview else _chapter_items(nb, span)
     items = _filter_chapter_items(items, cell_type=cell_type, include_re=include_re, exclude_re=exclude_re)
     text = _format_full(items, show_ids=True, line_numbers=False)
-    cells = [{"cell_id": getattr(cell, "id", ""), "cell_idx": idx, "cell_type": cell.cell_type, "source": cell_source(cell)} for idx, cell in items]
-    return _context_result(
-        "chapter_context", text, verbose=verbose, path=str(path), query=query,
-        name=name, any_cell_id=any_cell_id, overview=overview, cell_type=cell_type,
-        include_re=include_re, exclude_re=exclude_re, chapter=span, cells=cells,
-    )
+    cells = [dict(cell_id=getattr(cell, "id", ""), cell_idx=idx, cell_type=cell.cell_type, source=cell_source(cell)) for idx, cell in items]
+    return _context_result('chapter_context', text, verbose=verbose, path=str(path), query=query, name=name, any_cell_id=any_cell_id,
+        overview=overview, cell_type=cell_type, include_re=include_re, exclude_re=exclude_re, chapter=span, cells=cells)
 
 # %% ../nbs/01_read.ipynb #8b9e0b1e
 def _python_ast(path):
@@ -596,8 +546,7 @@ def _python_doc_first_line(node):
     return doc.strip().splitlines()[0].strip() if doc.strip() else ""
 
 # %% ../nbs/01_read.ipynb #fc04c094
-def _python_source_segment(source, node):
-    return (ast.get_source_segment(source, node) or "").strip()
+def _python_source_segment(source, node): return (ast.get_source_segment(source, node) or "").strip()
 
 # %% ../nbs/01_read.ipynb #b774e692
 def _python_signature(source, node):
@@ -615,8 +564,7 @@ def _python_call_name(node):
     return ""
 
 # %% ../nbs/01_read.ipynb #e8618628
-def _python_calls(node):
-    return sorted({name for name in (_python_call_name(item.func) for item in ast.walk(node) if isinstance(item, ast.Call)) if name})
+def _python_calls(node): return sorted({name for name in (_python_call_name(item.func) for item in ast.walk(node) if isinstance(item, ast.Call)) if name})
 
 # %% ../nbs/01_read.ipynb #39129562
 def _python_assign_names(node):
@@ -630,12 +578,9 @@ def _python_definition_records(path):
 
     def add_record(node, symbol, kind):
         public = not any(part.startswith("_") for part in symbol.split("."))
-        records.append(dict(
-            path=str(path), symbol=symbol, kind=kind, public=public,
-            line=getattr(node, "lineno", 1), end_line=getattr(node, "end_lineno", getattr(node, "lineno", 1)),
-            signature=_python_signature(source, node), docstring=_python_doc_first_line(node),
-            source=_python_source_segment(source, node), calls=_python_calls(node),
-        ))
+        records.append(dict(path=str(path), symbol=symbol, kind=kind, public=public, line=getattr(node, 'lineno', 1),
+            end_line=getattr(node, 'end_lineno', getattr(node, 'lineno', 1)), signature=_python_signature(source, node),
+            docstring=_python_doc_first_line(node), source=_python_source_segment(source, node), calls=_python_calls(node)))
 
     for node in tree.body:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -643,21 +588,17 @@ def _python_definition_records(path):
         elif isinstance(node, ast.ClassDef):
             add_record(node, node.name, "class")
             for child in node.body:
-                if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                    add_record(child, f"{node.name}.{child.name}", "method")
+                if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)): add_record(child, f"{node.name}.{child.name}", "method")
         elif isinstance(node, (ast.Assign, ast.AnnAssign)):
             for name in _python_assign_names(node):
                 if not name.startswith("_"):
-                    records.append(dict(
-                        path=str(path), symbol=name, kind="assignment", public=True,
-                        line=getattr(node, "lineno", 1), end_line=getattr(node, "end_lineno", getattr(node, "lineno", 1)),
-                        signature=_python_signature(source, node), docstring="", source=_python_source_segment(source, node), calls=_python_calls(node),
-                    ))
+                    records.append(dict(path=str(path), symbol=name, kind='assignment', public=True, line=getattr(node, 'lineno', 1),
+                        end_line=getattr(node, 'end_lineno', getattr(node, 'lineno', 1)), signature=_python_signature(source, node),
+                        docstring='', source=_python_source_segment(source, node), calls=_python_calls(node)))
     return records
 
 # %% ../nbs/01_read.ipynb #2675dce6
-def _python_public_symbols(records):
-    return [item for item in records if item.get("public")]
+def _python_public_symbols(records): return [item for item in records if item.get("public")]
 
 # %% ../nbs/01_read.ipynb #d0ce00e9
 def _python_symbol_record(path, symbol):
@@ -689,8 +630,7 @@ def _format_python_summary(records):
     return lines
 
 # %% ../nbs/01_read.ipynb #0dbb0b73
-def _format_python_symbols(records):
-    return [f"- {item['symbol']} ({item['kind']}, line {item['line']})" for item in _python_public_symbols(records)]
+def _format_python_symbols(records): return [f"- {item['symbol']} ({item['kind']}, line {item['line']})" for item in _python_public_symbols(records)]
 
 # %% ../nbs/01_read.ipynb #80edfdf9
 def python_file_context(
@@ -701,10 +641,8 @@ def python_file_context(
     "Show a compact AST summary for one Python file."
     records = _python_definition_records(path)
     shown = records if include_private else _python_public_symbols(records)
-    text = _format_context_blocks(
-        f"Python file context: {path}",
-        [("Summary", _format_python_summary(shown)), ("Public symbols", _format_python_symbols(records))],
-    )
+    text = _format_context_blocks(f'Python file context: {path}',
+        [('Summary', _format_python_summary(shown)), ('Public symbols', _format_python_symbols(records))])
     return _context_result("python_file_context", text, verbose=verbose, path=str(path), definitions=records, public_symbols=_python_public_symbols(records))
 
 # %% ../nbs/01_read.ipynb #d9d702a5
@@ -733,13 +671,10 @@ def python_symbol_context(
             ("Implementation", _python_trim_source(item.get("source", ""))),
             ("Callers", [f"- {caller['symbol']} ({caller['kind']}, line {caller['line']})" for caller in callers]),
             ("Callees", [f"- {callee}" for callee in callees]),
-        ],
-    )
-    return _context_result(
-        "python_symbol_context", text, verbose=verbose, path=str(path), symbol=item["symbol"],
-        location=dict(line=item["line"], end_line=item["end_line"]), source=item.get("source", ""),
-        callers=callers, callees=callees, symbols=[item["symbol"]], definitions=records,
-    )
+        ])
+    return _context_result('python_symbol_context', text, verbose=verbose, path=str(path), symbol=item['symbol'],
+        location=dict(line=item['line'], end_line=item['end_line']), source=item.get('source', ''), callers=callers, callees=callees,
+        symbols=[item['symbol']], definitions=records)
 
 # %% ../nbs/01_read.ipynb #3dafb27a
 def _context_existing_python(target):
@@ -778,30 +713,23 @@ def file_context(
     verbose: bool = True,  # Print rendered context; pass False to only return structured data
 ):
     "Show compact context for one notebook or Python file; notebook cells stay in source order."
-    if str(path).endswith(".py"):
-        return python_file_context(path, verbose=verbose)
+    if str(path).endswith(".py"): return python_file_context(path, verbose=verbose)
     nb = read_nb(path)
     imports = []
     for _, cell in enumerate(nb.cells): imports.extend(_import_lines(cell))
     imports = list(dict.fromkeys(imports))
-    header = [{"cell_id": getattr(cell, "id", ""), "cell_idx": idx, "source": cell_source(cell).strip()} for idx, cell in _notebook_header_items(nb.cells)]
-    markdown = [
-        {"cell_id": getattr(cell, "id", ""), "cell_idx": idx, "source": cell_source(cell).strip()}
-        for idx, cell in enumerate(nb.cells)
-        if getattr(cell, "cell_type", None) == "markdown" and _context_match(cell_source(cell), include_re, exclude_re)
-    ]
+    header = [dict(cell_id=getattr(cell, "id", ""), cell_idx=idx, source=cell_source(cell).strip()) for idx, cell in _notebook_header_items(nb.cells)]
+    markdown = [dict(cell_id=getattr(cell, 'id', ''), cell_idx=idx, source=cell_source(cell).strip()) for idx,
+        cell in enumerate(nb.cells) if getattr(cell, 'cell_type', None) == 'markdown' and _context_match(cell_source(cell), include_re, exclude_re)]
     definitions = [item for item in _definition_records(path, nb) if _context_match(f"{item['symbol']}\n{item['text']}", include_re, exclude_re)]
     blocks = [
         ("Header", [item["source"] for item in header]),
         ("Imports", imports),
         ("Markdown", [f"Cell id={item['cell_id']}\n{item['source']}" for item in markdown]),
-        ("Definitions", [f"Cell id={item['cell_id']} {item['kind']} {item['symbol']}\n{item['text']}" for item in definitions]),
-    ]
+        ("Definitions", [f"Cell id={item['cell_id']} {item['kind']} {item['symbol']}\n{item['text']}" for item in definitions])]
     text = _format_context_blocks(f"File context: {path}", blocks)
-    return _context_result(
-        "file_context", text, verbose=verbose, path=str(path), include_re=include_re,
-        exclude_re=exclude_re, imports=imports, header=header, markdown=markdown, definitions=definitions,
-    )
+    return _context_result('file_context', text, verbose=verbose, path=str(path), include_re=include_re, exclude_re=exclude_re,
+        imports=imports, header=header, markdown=markdown, definitions=definitions)
 
 
 # %% ../nbs/01_read.ipynb #74f9370a
@@ -848,8 +776,7 @@ _FILTER_CONTEXT_VIEWS = {"source", "summary", "cell"}
 # %% ../nbs/01_read.ipynb #b5bde869
 def _filter_context_view(view):
     view = "source" if view in (None, "", "cells") else str(view).lower()
-    if view not in _FILTER_CONTEXT_VIEWS:
-        raise ValueError(f"view must be one of {sorted(_FILTER_CONTEXT_VIEWS)}, not {view!r}")
+    if view not in _FILTER_CONTEXT_VIEWS: raise ValueError(f"view must be one of {sorted(_FILTER_CONTEXT_VIEWS)}, not {view!r}")
     return view
 
 # %% ../nbs/01_read.ipynb #18b71eb5
@@ -917,22 +844,9 @@ def _render_filter_match(item, view="source", line_numbers=False):
     return text
 
 # %% ../nbs/01_read.ipynb #c7fc16d9
-def _context_filtered(
-    scope: str = ".",
-    query=None,
-    include_re: str | None = None,
-    exclude_re: str | None = None,
-    max_matches: int = 50,
-    max_chars_per_cell: int = 1200,
-    view: str = "source",
-    line_numbers: bool = False,
-    before: int = 0,
-    after: int = 0,
-    chapter: str | None = None,
-    cell_type: str | None = None,
-    include_output: bool = False,
-    verbose: bool = True,
-):
+def _context_filtered(scope: str='.', query=None, include_re: str | None=None, exclude_re: str | None=None, max_matches: int=50,
+    max_chars_per_cell: int=1200, view: str='source', line_numbers: bool=False, before: int=0, after: int=0, chapter: str | None=None,
+    cell_type: str | None=None, include_output: bool=False, verbose: bool=True):
     "Return the selected notebook cells in source order."
     view = _filter_context_view(view)
     max_matches = max(1, int(max_matches or 50))
@@ -960,28 +874,14 @@ def _context_filtered(
                 item["after"] = [n for n in neighbors if n["cell_idx"] > idx]
             matches.append(item)
     nl = chr(10)
-    filter_lines = [
-        f"scope={scope}",
-        f"query={query!r}",
-        f"chapter={chapter!r}",
-        f"cell_type={cell_type!r}",
-        f"include_re={include_re!r}",
-        f"exclude_re={exclude_re!r}",
-        f"view={view!r}",
-        f"before={before}",
-        f"after={after}",
-        f"max_matches={max_matches}",
-    ]
+    filter_lines = [f'scope={scope}', f'query={query!r}', f'chapter={chapter!r}', f'cell_type={cell_type!r}', f'include_re={include_re!r}',
+        f'exclude_re={exclude_re!r}', f'view={view!r}', f'before={before}', f'after={after}', f'max_matches={max_matches}']
     match_lines = [_render_filter_match(item, view=view, line_numbers=line_numbers) for item in matches]
     title = f"Context filter: {scope}{nl}Matches: {len(matches)} shown of {total}"
     text = _format_context_blocks(title, [("Filters", filter_lines), ("Matches", match_lines)])
-    return _context_result(
-        "context_filter", text, verbose=verbose, scope=str(scope), query=query,
-        chapter=chapter, cell_type=cell_type, include_re=include_re, exclude_re=exclude_re,
-        max_matches=max_matches, max_chars_per_cell=max_chars_per_cell, view=view,
-        line_numbers=line_numbers, before=before, after=after, include_output=include_output,
-        total_matches=total, matches=matches,
-    )
+    return _context_result('context_filter', text, verbose=verbose, scope=str(scope), query=query, chapter=chapter, cell_type=cell_type,
+        include_re=include_re, exclude_re=exclude_re, max_matches=max_matches, max_chars_per_cell=max_chars_per_cell, view=view,
+        line_numbers=line_numbers, before=before, after=after, include_output=include_output, total_matches=total, matches=matches)
 
 # %% ../nbs/01_read.ipynb #a16d35a9
 def _assignment_target_names(node):
@@ -991,22 +891,15 @@ def _assignment_target_names(node):
     names = []
     for target in raw_targets:
         if isinstance(target, ast.Name): names.append(target.id)
-        elif isinstance(target, (ast.Tuple, ast.List)):
-            names.extend(elt.id for elt in target.elts if isinstance(elt, ast.Name))
+        elif isinstance(target, (ast.Tuple, ast.List)): names.extend(elt.id for elt in target.elts if isinstance(elt, ast.Name))
     return names
 
 # %% ../nbs/01_read.ipynb #2bed43f2
 def _definition_symbol(node):
     return definition_names(node)[0] if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) else getattr(node, "name", "")
 
-# %% ../nbs/01_read.ipynb #d68ec5ca
-def _node_defines_symbol(node, symbol):
-    if symbol in _assignment_target_names(node): return True
-    return any(name == symbol for name, _, _ in definition_nodes(node)) if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) else False
-
 # %% ../nbs/01_read.ipynb #de0add17
-def _cell_defines_symbol(cell, symbol):
-    return _find_symbol_node(cell, symbol) is not None
+def _cell_defines_symbol(cell, symbol): return _find_symbol_node(cell, symbol) is not None
 
 # %% ../nbs/01_read.ipynb #085c92b6
 def _find_symbol_cell(nb, symbol):
@@ -1052,44 +945,17 @@ def _symbol_signature_text(cell, symbol):
     if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)): return _function_overview(node)
     return [_source_for_node(cell, node)]
 
-# %% ../nbs/01_read.ipynb #9d424218
-def _format_symbol_usage(path, symbol):
-    try:
-        from nbskill.graph import symbol_graph_data
-        data = symbol_graph_data(path, symbol)
-    except Exception as exc:
-        return [f"Usage unavailable: {type(exc).__name__}: {exc}"]
-    callers = data.get("callers", [])
-    lines = ["Callers: " + (", ".join(f"{item['path']}#{item['cell_id']}" for item in callers) or "none")]
-    usages = [site["line"] for item in callers for site in item.get("call_sites", []) if site.get("line")]
-    if usages: lines.extend(["Caller usages:", *dict.fromkeys(usages)])
-    callees = [item.get("symbol", item.get("name", "")) for item in data.get("callees", [])]
-    lines.append("Callees: " + (", ".join(dict.fromkeys(callees)) or "none"))
-    return lines
-
 # %% ../nbs/01_read.ipynb #1584953f
-def _context_symbol(
-    path: str,
-    symbol: str,
-    depth: int = 1,
-    verbose: bool = True,
-):
+def _context_symbol(path: str, symbol: str, depth: int=1, verbose: bool=True):
     "Return implementation, local docs, examples/tests, callers, and callees for one symbol."
     nb = read_nb(path)
     idx, cell, node = _symbol_location(path, nb, symbol)
     source = _source_for_node(cell, node) if node is not None else cell_source(cell).strip()
-    markdown = [
-        {"cell_id": getattr(item, "id", ""), "cell_idx": pos, "source": cell_source(item).strip()}
-        for pos, item in _following_markdown(nb.cells, idx, len(nb.cells))
-    ]
-    examples = [
-        {
-            **item,
-            "source": _trim_context_source(item.get("source", ""), _CONTEXT_CELL_SOURCE_CHARS),
-            "output": _trim_context_source(item.get("output", ""), _CONTEXT_CELL_OUTPUT_CHARS),
-        }
-        for item in _example_test_records(nb, symbol, definition_idx=idx)
-    ]
+    markdown = [dict(cell_id=getattr(item, 'id', ''), cell_idx=pos, source=cell_source(item).strip()) for pos,
+        item in _following_markdown(nb.cells, idx, len(nb.cells))]
+    examples = [{**item, 'source': _trim_context_source(item.get('source', ''), _CONTEXT_CELL_SOURCE_CHARS),
+        'output': _trim_context_source(item.get('output', ''), _CONTEXT_CELL_OUTPUT_CHARS)} for item in _example_test_records(nb, symbol,
+            definition_idx=idx)]
     callers, callees = [], []
     if depth > 0:
         try:
@@ -1101,25 +967,16 @@ def _context_symbol(
             callers = []
         callees = _callee_summary(path, symbol, depth, graph_data=graph_data)
     nl = chr(10)
-    blocks = [
-        ("Implementation", source),
-        ("Docs", [f"Cell id={item['cell_id']}{nl}{item['source']}" for item in markdown]),
-        ("Examples/tests", [
-            f"Cell id={item['cell_id']} checks={item['properties']['checks']}{nl}{item['source']}" + (f"{nl}Output:{nl}{item['output']}" if item.get("output") else "")
-            for item in examples
-        ]),
-        ("Callers", [
-            f"- {item.get('path')} id={item.get('cell_id')} line {item.get('lineno')}: {item.get('line')}"
-            for item in callers
-        ]),
-        (f"Callees depth {depth}", _format_callee_items(callees)),
-    ]
+    doc_blocks = [f"Cell id={item['cell_id']}{nl}{item['source']}" for item in markdown]
+    example_blocks = [f"Cell id={item['cell_id']} checks={item['properties']['checks']}{nl}{item['source']}"
+        + (f"{nl}Output:{nl}{item['output']}" if item.get("output") else "") for item in examples]
+    caller_blocks = [f"- {item.get('path')} id={item.get('cell_id')} line {item.get('lineno')}: {item.get('line')}" for item in callers]
+    blocks = [("Implementation", source), ("Docs", doc_blocks), ("Examples/tests", example_blocks),
+        ("Callers", caller_blocks), (f"Callees depth {depth}", _format_callee_items(callees))]
     text = _format_context_blocks(f"Symbol context: {symbol}{nl}Location: {path} {cell_prefix(idx, cell, True)}", blocks)
-    return _context_result(
-        "context_symbol", text, verbose=verbose, path=str(path), symbol=symbol,
-        depth=depth, location={"cell_id": getattr(cell, "id", ""), "cell_idx": idx},
-        source=source, markdown=markdown, examples=examples, callers=callers, callees=callees, symbols=[symbol],
-    )
+    return _context_result('context_symbol', text, verbose=verbose, path=str(path), symbol=symbol, depth=depth,
+        location={'cell_id': getattr(cell, 'id', ''), 'cell_idx': idx}, source=source, markdown=markdown, examples=examples,
+        callers=callers, callees=callees, symbols=[symbol])
 
 # %% ../nbs/01_read.ipynb #b4ef8123
 @patch
@@ -1149,35 +1006,16 @@ def _render_context_cell(item):
     return text
 
 # %% ../nbs/01_read.ipynb #e0e1f163
-def _exported_definition_records(path, nb):
-    return [item for item in _definition_records(path, nb) if is_exported_code_cell(nb.cells[item["cell_idx"]])]
+def _exported_definition_records(path, nb): return [item for item in _definition_records(path, nb) if is_exported_code_cell(nb.cells[item["cell_idx"]])]
 
 # %% ../nbs/01_read.ipynb #32c9f1e2
-def _definition_records_for_cell(path, nb, cell_idx):
-    return [item for item in _definition_records(path, nb) if item.get("cell_idx") == cell_idx]
+def _definition_records_for_cell(path, nb, cell_idx): return [item for item in _definition_records(path, nb) if item.get("cell_idx") == cell_idx]
 
 # %% ../nbs/01_read.ipynb #ab52fb0a
 def _symbol_source(path, nb, symbol):
     idx, cell, node = _symbol_location(path, nb, symbol)
     source = _source_for_node(cell, node) if node is not None else cell_source(cell).strip()
     return idx, cell, node, source
-
-# %% ../nbs/01_read.ipynb #330cf125
-def _source_mentions_symbols(source, symbols):
-    for symbol in symbols:
-        short = symbol_short_name(symbol)
-        if symbol in source or re.search(rf"\b{re.escape(short)}\b", source): return True
-    return False
-
-# %% ../nbs/01_read.ipynb #11f4acf9
-def _related_cell_records(nb, symbols, definition_cell_idx=None):
-    records = []
-    for idx, cell in enumerate(nb.cells):
-        if idx == definition_cell_idx or is_exported_code_cell(cell): continue
-        if cell.get("cell_type") == "markdown": related = _source_mentions_symbols(cell_source(cell), symbols)
-        else: related = any(_cell_calls_symbol(cell, symbol) for symbol in symbols)
-        if related: records.append(_context_cell_record(idx, cell))
-    return records
 
 # %% ../nbs/01_read.ipynb #bd376346
 def _single_definition_for_cell(path, nb, cell_idx):
@@ -1190,26 +1028,10 @@ def _single_definition_for_cell(path, nb, cell_idx):
 # %% ../nbs/01_read.ipynb #8cf4dba4
 def _implementation_context(path, idx, cell, symbol, source, verbose=True):
     nl = chr(10)
-    text = _format_context_blocks(
-        f"Implementation context: {symbol}{nl}Location: {path} {cell_prefix(idx, cell, True)}",
-        [("Implementation", source)],
-    )
-    return _context_result(
-        "implementation_context", text, verbose=verbose, path=str(path), symbol=symbol,
-        location={"cell_id": getattr(cell, "id", ""), "cell_idx": idx}, source=source, symbols=[symbol],
-    )
-
-# %% ../nbs/01_read.ipynb #25a20b07
-def _mentions_context(path, nb, symbols, definition_cell_idx=None, verbose=True):
-    records = _related_cell_records(nb, symbols, definition_cell_idx=definition_cell_idx)
-    label = ", ".join(symbols)
-    body = [_render_context_cell(item) for item in records] or [f"No markdown, example, or test cells mention {label}."]
-    nl = chr(10)
-    text = _format_context_blocks(f"Related context: {label}{nl}Path: {path}", [("Related cells", body)])
-    return _context_result(
-        "mentions_context", text, verbose=verbose, path=str(path), symbols=symbols,
-        definition_cell_idx=definition_cell_idx, mentions=records,
-    )
+    text = _format_context_blocks(f'Implementation context: {symbol}{nl}Location: {path} {cell_prefix(idx, cell, True)}',
+        [('Implementation', source)])
+    return _context_result('implementation_context', text, verbose=verbose, path=str(path), symbol=symbol,
+        location={'cell_id': getattr(cell, 'id', ''), 'cell_idx': idx}, source=source, symbols=[symbol])
 
 # %% ../nbs/01_read.ipynb #ae2a548b
 def _cell_context(path, cell_idx, overview=False, verbose=True):
@@ -1242,16 +1064,9 @@ def _markdown_heading_level(source):
 
 # %% ../nbs/01_read.ipynb #27651d9d
 def _notebook_markdown_records(cells):
-    return [
-        {
-            "cell_id": getattr(cell, "id", ""),
-            "cell_idx": idx,
-            "source": cell_source(cell).strip(),
-            "heading_level": _markdown_heading_level(cell_source(cell)),
-        }
-        for idx, cell in enumerate(cells)
-        if getattr(cell, "cell_type", None) == "markdown" and cell_source(cell).strip()
-    ]
+    return [dict(cell_id=getattr(cell, "id", ""), cell_idx=idx, source=cell_source(cell).strip(),
+        heading_level=_markdown_heading_level(cell_source(cell)))
+        for idx, cell in enumerate(cells) if getattr(cell, "cell_type", None) == "markdown" and cell_source(cell).strip()]
 
 # %% ../nbs/01_read.ipynb #b7116962
 def _notebook_overview_markdown_records(cells):
@@ -1263,8 +1078,7 @@ def _notebook_overview_markdown_records(cells):
     return [item for item in records if item["cell_idx"] in wanted]
 
 # %% ../nbs/01_read.ipynb #dc32fbb9
-def _render_markdown_record(item):
-    return f"Cell id={item['cell_id']}\n{item['source']}"
+def _render_markdown_record(item): return f"Cell id={item['cell_id']}\n{item['source']}"
 
 # %% ../nbs/01_read.ipynb #3922f9de
 def _render_definition_record(item):
@@ -1272,13 +1086,7 @@ def _render_definition_record(item):
     return f"Cell id={item['cell_id']} {item['kind']} {item['symbol']}{nl}{item['text']}"
 
 # %% ../nbs/01_read.ipynb #bbdbbafb
-def _notebook_context(
-    path: str,
-    scope: str = ".",
-    overview: bool = False,
-    verbose: bool = True,
-    readme_sections: int = 2,
-):
+def _notebook_context(path: str, scope: str='.', overview: bool=False, verbose: bool=True, readme_sections: int=2):
     "Show one notebook; overview gives headings and counts, while default output includes every cell."
     nb = read_nb(path)
     root = _context_root(scope if scope not in (None, "") else path)
@@ -1290,26 +1098,18 @@ def _notebook_context(
     title = f"Notebook context: {Path(path).name}{nl}Path: {path}{nl}Project: {root}"
     if overview:
         overview_markdown = _notebook_overview_markdown_records(nb.cells)
-        blocks = [
-            ("Markdown overview", [_render_markdown_record(item) for item in overview_markdown]),
-            ("Contents", [f"cells={len(cells)}", f"definitions={len(definitions)}", f"exported_definitions={len(exported_definitions)}"]),
-        ]
+        blocks = [('Markdown overview', [_render_markdown_record(item) for item in overview_markdown]),
+            ('Contents', [f'cells={len(cells)}', f'definitions={len(definitions)}', f'exported_definitions={len(exported_definitions)}'])]
         text = _format_context_blocks(title, blocks)
-        return _context_result(
-            "notebook_context", text, verbose=verbose, path=str(path), scope=str(scope), root=str(root),
-            overview=True, cell_count=len(cells), definition_count=len(definitions),
-            exported_definition_count=len(exported_definitions), cells=[], readme_sections=[], imports=[],
-            markdown=overview_markdown, next_action="Pass an explicit symbol target or resolution='full' for definitions.",
-        )
-    blocks = [
-        ("Full cells", [_render_context_cell(item) for item in cells]),
-        ("Function signatures", [_render_definition_record(item) for item in definitions]),
-    ]
+        return _context_result('notebook_context', text, verbose=verbose, path=str(path), scope=str(scope), root=str(root), overview=True,
+            cell_count=len(cells), definition_count=len(definitions), exported_definition_count=len(exported_definitions), cells=[],
+            readme_sections=[], imports=[], markdown=overview_markdown,
+            next_action="Pass an explicit symbol target or resolution='full' for definitions.")
+    blocks = [('Full cells', [_render_context_cell(item) for item in cells]),
+        ('Function signatures', [_render_definition_record(item) for item in definitions])]
     text = _format_context_blocks(title, blocks)
-    return _context_result(
-        "notebook_context", text, verbose=verbose, path=str(path), scope=str(scope), root=str(root),
-        overview=False, definitions=definitions, cells=cells, readme_sections=[], imports=[], markdown=markdown,
-    )
+    return _context_result('notebook_context', text, verbose=verbose, path=str(path), scope=str(scope), root=str(root), overview=False,
+        definitions=definitions, cells=cells, readme_sections=[], imports=[], markdown=markdown)
 
 # %% ../nbs/01_read.ipynb #7c0cb5ca
 def _context_cell_matches(target, notebooks):
@@ -1317,8 +1117,7 @@ def _context_cell_matches(target, notebooks):
     for path in notebooks:
         nb = read_nb(path)
         for idx, cell in enumerate(nb.cells):
-            if getattr(cell, "id", None) == target:
-                matches.append(dict(path=str(path), cell_idx=idx, cell_id=target))
+            if getattr(cell, "id", None) == target: matches.append(dict(path=str(path), cell_idx=idx, cell_id=target))
     return matches
 
 # %% ../nbs/01_read.ipynb #076d6f9b
@@ -1328,8 +1127,7 @@ def _context_symbol_matches(target, notebooks):
         nb = read_nb(path)
         try: idx = _find_symbol_cell(nb, target)
         except ValueError: continue
-        if idx is not None:
-            matches.append(dict(path=str(path), cell_idx=idx, symbol=str(target)))
+        if idx is not None: matches.append(dict(path=str(path), cell_idx=idx, symbol=str(target)))
     return matches
 
 # %% ../nbs/01_read.ipynb #e254cfd2
@@ -1362,8 +1160,7 @@ def _context_one_match(kind, target, matches):
     message = (
         f"Target {target!r} matched multiple {kind} contexts. "
         "Use a qualified target like path.ipynb#cell_id or path.ipynb#symbol.\n"
-        + "\n".join(shown)
-    )
+        + "\n".join(shown))
     exc = ValueError(message)
     exc.candidates = [item for item in candidates if item]
     raise exc
@@ -1430,7 +1227,8 @@ def _context_notebook_text_matches(target, notebooks, max_matches):
             if target not in source: continue
             total += 1
             if len(matches) >= max_matches: continue
-            matches.append(dict(path=str(path), cell_id=getattr(cell, "id", ""), cell_idx=idx, cell_type=getattr(cell, "cell_type", ""), source=_trim_context_source(source, _CONTEXT_CELL_SOURCE_CHARS)))
+            matches.append(dict(path=str(path), cell_id=getattr(cell, "id", ""), cell_idx=idx, cell_type=getattr(cell, "cell_type", ""),
+                source=_trim_context_source(source, _CONTEXT_CELL_SOURCE_CHARS)))
     return matches, total
 
 # %% ../nbs/01_read.ipynb #1ba187bf
@@ -1458,31 +1256,26 @@ _CONTEXT_MODES = {"auto", "edit", "exact", "review", "overview"}
 # %% ../nbs/01_read.ipynb #89896fe6
 def _context_mode(mode):
     mode = "auto" if mode in (None, "") else str(mode).lower()
-    if mode not in _CONTEXT_MODES:
-        raise ValueError(f"mode must be one of {sorted(_CONTEXT_MODES)}, not {mode!r}")
+    if mode not in _CONTEXT_MODES: raise ValueError(f"mode must be one of {sorted(_CONTEXT_MODES)}, not {mode!r}")
     return mode
 
 # %% ../nbs/01_read.ipynb #8424016f
 def _context_around(around):
     try: return max(0, int(around or 0))
-    except (TypeError, ValueError) as exc:
-        raise ValueError("around must be an integer") from exc
+    except (TypeError, ValueError) as exc: raise ValueError("around must be an integer") from exc
 
 # %% ../nbs/01_read.ipynb #b43e4e82
 def _context_target_items(targets):
     if targets is None: return None
-    if isinstance(targets, str):
-        return [targets] if targets else []
+    if isinstance(targets, str): return [targets] if targets else []
     return [str(item) for item in targets if str(item)]
 
 # %% ../nbs/01_read.ipynb #8f5d77f5
 def _context_symbol_graphs(path, symbols):
     symbols = [str(item) for item in dict.fromkeys(symbols or []) if item]
     if not symbols: return []
-    try:
-        from nbskill.graph import symbol_graph_data, symbol_graph_public_data
-    except Exception:
-        return []
+    try: from nbskill.graph import symbol_graph_data, symbol_graph_public_data
+    except Exception: return []
     graphs = []
     for symbol in symbols:
         try: graphs.append(symbol_graph_public_data(symbol_graph_data(path, symbol)))
@@ -1575,17 +1368,14 @@ def _context_exact_result(path, cell_idx, verbose=True):
     item = dict(
         id=str(cell.id), index=cell_idx, cell_type=cell.cell_type, metadata=copy.deepcopy(cell.metadata),
         directives=[f"#| {value}" for value in NotebookCell(cell).directives()],
-        defined_symbols=defined, used_symbols=used, source=source, expected_hash=source_hash(source),
-    )
+        defined_symbols=defined, used_symbols=used, source=source, expected_hash=source_hash(source))
     text = _format_context_blocks(f"Exact cell: {path} {cell_prefix(cell_idx, cell, True)}", [("Cell", source)])
     return _context_result("exact_context", text, verbose=verbose, path=str(path), cell=item, source=source)
 
 # %% ../nbs/01_read.ipynb #f08896aa
 def _context_cell_payload(path, cell_idx, mode, around):
-    if mode == "exact":
-        result, graphs = _context_exact_result(path, cell_idx, verbose=False), []
-    elif mode == "edit":
-        result, graphs = _context_edit_result(path, cell_idx, verbose=False), []
+    if mode == "exact": result, graphs = _context_exact_result(path, cell_idx, verbose=False), []
+    elif mode == "edit": result, graphs = _context_edit_result(path, cell_idx, verbose=False), []
     else:
         result = _cell_context(path, cell_idx, overview=(mode == "overview"), verbose=False)
         graphs = [] if mode == "overview" else _context_symbol_graphs(path, result.get("symbols", []))
@@ -1596,10 +1386,8 @@ def _context_cell_payload(path, cell_idx, mode, around):
 def _context_symbol_payload(path, symbol, mode, around):
     nb = read_nb(path)
     idx, cell, node, source = _symbol_source(path, nb, symbol)
-    if mode == "exact":
-        result, graphs = _context_exact_result(path, idx, verbose=False), []
-    elif mode == "edit":
-        result, graphs = _context_edit_result(path, idx, symbol=symbol, source=source, verbose=False), []
+    if mode == "exact": result, graphs = _context_exact_result(path, idx, verbose=False), []
+    elif mode == "edit": result, graphs = _context_edit_result(path, idx, symbol=symbol, source=source, verbose=False), []
     else:
         result = _symbol_focus_context(path, symbol, overview=(mode == "overview"), verbose=False)
         graphs = [] if mode == "overview" else _context_symbol_graphs(path, result.get("symbols", [symbol]))
@@ -1608,10 +1396,8 @@ def _context_symbol_payload(path, symbol, mode, around):
 
 # %% ../nbs/01_read.ipynb #bf571c42
 def _context_as_single(result, target, scope, resolved_kind, mode="auto", around=0, **extra):
-    return _context_result(
-        "context", result["text"], verbose=True, ok=True, target=str(target), scope=str(scope),
-        mode=mode, around=around, resolved_kind=resolved_kind, selection=result, **extra,
-    )
+    return _context_result('context', result['text'], verbose=True, ok=True, target=str(target), scope=str(scope), mode=mode, around=around,
+        resolved_kind=resolved_kind, selection=result, **extra)
 
 # %% ../nbs/01_read.ipynb #acea6e74
 def _context_parse_qualified_target(target):
@@ -1659,8 +1445,7 @@ def _context_qualified_payload(target, mode, around):
     try:
         result, graphs = _context_symbol_payload(path, ref, mode, around)
         return result, "symbol", {"symbol_graphs": graphs} if graphs else {}
-    except ValueError:
-        _context_unknown_qualified(path, ref, nb)
+    except ValueError: _context_unknown_qualified(path, ref, nb)
 
 # %% ../nbs/01_read.ipynb #0d83b36e
 def _context_filter_scope(target, scope):
@@ -1671,53 +1456,22 @@ def _context_filter_scope(target, scope):
         if path is not None: return str(path)
     return scope
 
-
-def _context_single(
-    target="project",
-    scope=".",
-    mode="auto",
-    around=0,
-    view=None,
-    query=None,
-    include_re=None,
-    exclude_re=None,
-    max_matches=50,
-    max_chars_per_cell=1200,
-    context_lines=0,
-    chapter=None,
-    cell_type=None,
-    include_output=False,
-    line_numbers=False,
-    verbose=True,
-):
+# %% ../nbs/01_read.ipynb #943a038f
+def _context_single(target='project', scope='.', mode='auto', around=0, view=None, query=None, include_re=None, exclude_re=None,
+    max_matches=50, max_chars_per_cell=1200, context_lines=0, chapter=None, cell_type=None, include_output=False, line_numbers=False,
+    verbose=True):
     target = "project" if target in (None, "") else str(target)
     scope = "." if scope in (None, "") else str(scope)
     mode, around = _context_mode(mode), _context_around(around)
     filter_view = None if view in (None, "", "full") else str(view).lower()
     filtering = any(item is not None for item in (query, include_re, exclude_re, chapter, cell_type)) or filter_view in {"summary", "source", "cell"}
     if filtering and "#" not in target:
-        if filter_view == "summary":
-            selected_view = "summary"
-        elif filter_view == "cell":
-            selected_view = "cell"
-        else:
-            selected_view = "source"
-        result = _context_filtered(
-            scope=_context_filter_scope(target, scope),
-            query=query,
-            include_re=include_re,
-            exclude_re=exclude_re,
-            max_matches=max_matches,
-            max_chars_per_cell=max_chars_per_cell,
-            view=selected_view,
-            line_numbers=line_numbers,
-            before=context_lines,
-            after=context_lines,
-            chapter=chapter,
-            cell_type=cell_type,
-            include_output=include_output,
-            verbose=False,
-        )
+        if filter_view == "summary": selected_view = "summary"
+        elif filter_view == "cell": selected_view = "cell"
+        else: selected_view = "source"
+        result = _context_filtered(scope=_context_filter_scope(target, scope), query=query, include_re=include_re, exclude_re=exclude_re,
+            max_matches=max_matches, max_chars_per_cell=max_chars_per_cell, view=selected_view, line_numbers=line_numbers,
+            before=context_lines, after=context_lines, chapter=chapter, cell_type=cell_type, include_output=include_output, verbose=False)
         return _context_as_single(result, target, scope, "filter", mode=mode, around=around)
     if target == "project":
         result = project_context(scope, verbose=False)
@@ -1762,54 +1516,27 @@ def _context_single(
 
 # %% ../nbs/01_read.ipynb #03022f32
 def _context_error_entry(target, exc):
-    return {
-        "kind": "context_error", "ok": False, "target": str(target),
-        "error": {"type": type(exc).__name__, "message": str(exc)},
-        "candidates": list(getattr(exc, "candidates", []) or []),
-        "text": f"Context error: {target}\n{type(exc).__name__}: {exc}",
-    }
+    return dict(kind="context_error", ok=False, target=str(target), error={"type": type(exc).__name__, "message": str(exc)},
+        candidates=list(getattr(exc, "candidates", []) or []), text=f"Context error: {target}\n{type(exc).__name__}: {exc}")
 
 # %% ../nbs/01_read.ipynb #75254862
-def _context_batch(
-    targets,
-    scope=".",
-    mode="auto",
-    around=0,
-    view=None,
-    query=None,
-    include_re=None,
-    exclude_re=None,
-    max_matches=50,
-    max_chars_per_cell=1200,
-    context_lines=0,
-    chapter=None,
-    cell_type=None,
-    include_output=False,
-    line_numbers=False,
-    verbose=True,
-):
+def _context_batch(targets, scope='.', mode='auto', around=0, view=None, query=None, include_re=None, exclude_re=None, max_matches=50,
+    max_chars_per_cell=1200, context_lines=0, chapter=None, cell_type=None, include_output=False, line_numbers=False, verbose=True):
     scope = "." if scope in (None, "") else str(scope)
     items = _context_target_items(targets) or []
     results, rendered = [], []
     for item in items:
         try:
-            result = _context_single(
-                item, scope=scope, mode=mode, around=around, view=view, query=query,
-                include_re=include_re, exclude_re=exclude_re, max_matches=max_matches,
-                max_chars_per_cell=max_chars_per_cell, context_lines=context_lines,
-                chapter=chapter, cell_type=cell_type, include_output=include_output,
-                line_numbers=line_numbers, verbose=False,
-            )
+            result = _context_single(item, scope=scope, mode=mode, around=around, view=view, query=query, include_re=include_re,
+                exclude_re=exclude_re, max_matches=max_matches, max_chars_per_cell=max_chars_per_cell, context_lines=context_lines,
+                chapter=chapter, cell_type=cell_type, include_output=include_output, line_numbers=line_numbers, verbose=False)
             result = {**result, "ok": True}
-        except Exception as exc:
-            result = _context_error_entry(item, exc)
+        except Exception as exc: result = _context_error_entry(item, exc)
         results.append(result)
         rendered.append(result.get("text", ""))
     text = _format_context_blocks(f"Context batch\nTargets: {len(items)}", [("Results", "\n\n".join(rendered))])
-    return _context_result(
-        "context_batch", text, verbose=verbose, ok=all(item.get("ok") for item in results),
-        targets=items, scope=scope, mode=mode, around=around, results=results,
-    )
+    return _context_result('context_batch', text, verbose=verbose, ok=all((item.get('ok') for item in results)), targets=items, scope=scope,
+        mode=mode, around=around, results=results)
 
 # %% ../nbs/01_read.ipynb #faa6d792
 @track_call
@@ -1831,26 +1558,28 @@ def context(
     include_output: bool = False,
     line_numbers: bool = False,
     verbose: bool = True,
+    connection: tuple[str, str] | None = None,  # Follow calls from one symbol to another
+    max_depth: int = 6,  # Maximum number of call edges for a connection
 ):
     "Read one notebook-aware target, optionally narrowed by notebook filters."
+    if connection is not None:
+        if isinstance(connection, str) or len(connection) != 2 or not all(isinstance(name, str) and name for name in connection):
+            raise ValueError("connection needs two non-empty symbol names")
+        if targets is not None or any(value is not None for value in (query, chapter, cell_type, include_re, exclude_re)):
+            raise ValueError("A connection query cannot be combined with targets or cell filters")
+        from nbskill.graph import symbol_connection_data
+        data = symbol_connection_data(scope if target == "project" else target, *connection, max_depth=max_depth)
+        text = "Symbols: " + " -> ".join(data["symbols"]) if data["found"] else data["reason"]
+        return _context_result("context", text, verbose=verbose, resolved_kind="connection", connection=data)
     mode = _context_mode(mode)
     around = _context_around(around)
     context_lines = _context_around(context_lines)
     view = None if view in (None, "") else str(view).lower()
-    if view not in {None, "summary", "full", "source", "cell"}:
-        raise ValueError("view must be one of ['cell', 'full', 'source', 'summary']")
+    if view not in {None, "summary", "full", "source", "cell"}: raise ValueError("view must be one of ['cell', 'full', 'source', 'summary']")
     if targets is not None:
-        return _context_batch(
-            targets, scope=scope, mode=mode, around=around, view=view, query=query,
-            include_re=include_re, exclude_re=exclude_re, max_matches=max_matches,
-            max_chars_per_cell=max_chars_per_cell, context_lines=context_lines,
-            chapter=chapter, cell_type=cell_type, include_output=include_output,
-            line_numbers=line_numbers, verbose=verbose,
-        )
-    return _context_single(
-        target=target, scope=scope, mode=mode, around=around, view=view, query=query,
-        include_re=include_re, exclude_re=exclude_re, max_matches=max_matches,
-        max_chars_per_cell=max_chars_per_cell, context_lines=context_lines,
-        chapter=chapter, cell_type=cell_type, include_output=include_output,
-        line_numbers=line_numbers, verbose=verbose,
-    )
+        return _context_batch(targets, scope=scope, mode=mode, around=around, view=view, query=query, include_re=include_re,
+            exclude_re=exclude_re, max_matches=max_matches, max_chars_per_cell=max_chars_per_cell, context_lines=context_lines,
+            chapter=chapter, cell_type=cell_type, include_output=include_output, line_numbers=line_numbers, verbose=verbose)
+    return _context_single(target=target, scope=scope, mode=mode, around=around, view=view, query=query, include_re=include_re,
+        exclude_re=exclude_re, max_matches=max_matches, max_chars_per_cell=max_chars_per_cell, context_lines=context_lines, chapter=chapter,
+        cell_type=cell_type, include_output=include_output, line_numbers=line_numbers, verbose=verbose)

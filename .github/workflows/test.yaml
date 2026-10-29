@@ -1,17 +1,36 @@
-name: CI
-on: [workflow_dispatch, pull_request, push]
-
+# Generated from ease-ws/scripts/project_policy.py
+name: Tests
+'on':
+  push:
+    branches:
+    - main
+permissions:
+  contents: read
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: nbskill
+    env:
+      GH_TOKEN: ${{ secrets.EASE_REPOSITORY_READ_TOKEN || secrets.GHTOKEN || secrets.EASE_SDK_READ_TOKEN || github.token }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - run: uv sync --dev
-      - run: uv run python -m compileall -q nbskill
-      # - run: uv run nbskill_validate nbs
-      - run: uv run nbdev-test --n-workers 0 --pause 1
-      # - run: uv run style_check nbs --changed_only --max_diagnostics 80
+    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      with:
+        path: nbskill
+        persist-credentials: false
+        token: ${{ secrets.EASE_REPOSITORY_READ_TOKEN || secrets.GHTOKEN || secrets.EASE_SDK_READ_TOKEN || github.token }}
+    - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+      with:
+        python-version: '3.12'
+        enable-cache: true
+    - name: Configure dependency access
+      run: gh auth setup-git
+    - name: pytest
+      run: uv run --locked --with pytest pytest -q
+    - name: nbdev-test
+      run: uv run --locked --with nbdev nbdev-test

@@ -35,29 +35,14 @@ The numbered notebooks build from shared data and file operations toward complet
 | `06_skill` | Install the notebook workflow for an agent host | Package resources |
 | `09_parallel` | Own notebook locks and nested execution leases | Filesystem and execution contexts |
 | `10_graph` | Trace definitions and relationships across notebooks | Foundation |
-| `12_knowledge` | Retrieve implementation references and verified problem memories | Notebook structure and graph |
 | `15_state` | Identify stale execution evidence and affected cells | Foundation and reading |
 | `14_pyskill` | Expose a small discovery surface for the complete workflow | The preceding problem areas |
 
-foundation owns the data and derived analysis; edit owns persisted changes. execute owns runtime resources and does not depend on edit. review and knowledge consume the same chapter and symbol rules, and skill exports the eight documented operations directly. Reading and previews leave inputs unchanged; existing cell IDs remain stable and normalized models expose their original data through raw.
+foundation owns the data and derived analysis; edit owns persisted changes. execute owns runtime resources and does not depend on edit. review consumes the same chapter and symbol rules, and skill exports the documented operations directly. Reading and previews leave inputs unchanged; existing cell IDs remain stable and normalized models expose their original data through raw.
 
 A commit locks the project before its notebooks, rejects stale snapshots, validates independent working copies, writes every notebook, and then exports once. Readback and export hashes complete the transaction. Controlled failures restore the notebooks and library outputs; this contract does not cover a machine crash.
 
 ## Refactor evidence
-
-The stages remove duplicate ownership rather than add another API layer. These initial-stage counts compare exported Python with the pre-refactor source, excluding comments, docstrings and blank lines; notebook explanations and behavior tests remain outside these counts.
-
-| Stage | Removed duplication and resulting contract | Net code lines |
-|----|----|---:|
-| Shared model and analysis | Derived metadata caches, separate chapter/symbol/call parsers; read-only views and raw data access. Project setup moves to its owner. | -272 |
-| Commit and document operations | Legacy writers, JSON batch adapters and separate rollback paths; one locked transaction with shared export and verified readback. Feedback reports separately. | -404 |
-| Reference knowledge | Eager embedding prerequisites, table replacement for counters and hidden search failures; explicit versions and targeted concurrent updates. | -50 |
-| Pyskill surface | Generic wrappers; eight direct exports retain their real signatures. | -7 |
-| Total |  | -733 |
-
-The later tool-evaluation corrections add 26 exported code lines relative to the evaluated working tree: foundation 0, edit 3, execute 5, review 14 and knowledge 4. They fix source extraction, distinguish skipped feedback from execution, and derive bounded style output and status from the same file-specific diagnostics. Runtime and usage-instrumentation changes are outside the initial-stage counts above.
-
-The notebook tests exercise real temporary nbdev projects and LanceDB databases. They cover immutable previews, stale snapshots, concurrent edits, empty documents, write/export/readback rollback, export side products, failed feedback, explicit versions and concurrent counters. The installed Pyskill is also exercised in a disposable checkout.
 
 ## Choose a tool
 
@@ -69,7 +54,6 @@ The notebook tests exercise real temporary nbdev projects and LanceDB databases.
 | Run focused checks in the project environment | [`exec_nb`](https://MorsCerta-crypto.github.io/nbskill/execute.html#exec_nb) |
 | Review changed cell source and notebook style | [`diff_nb`](https://MorsCerta-crypto.github.io/nbskill/review.html#diff_nb), [`style_check`](https://MorsCerta-crypto.github.io/nbskill/review.html#style_check) |
 | Assess execution evidence after a change | [`notebook_state`](https://MorsCerta-crypto.github.io/nbskill/state.html#notebook_state) |
-| Search prior implementations before adding a helper | [`reference_query`](https://MorsCerta-crypto.github.io/nbskill/knowledge.html#reference_query) |
 
 Load `nbskill.skill` through Pyskills, then read `doc()` for the callable you intend to use. Its signature and parameter documentation are the operation’s contract.
 
@@ -96,11 +80,11 @@ assert notebook_context["selection"]["matches"]
 notebook_context
 ```
 
-    Context filter: nbs/14_pyskill.ipynb
-    Matches: 44 shown of 44
+    Context filter: .
+    Matches: 50 shown of 1538
 
     Filters
-    scope=nbs/14_pyskill.ipynb
+    scope=.
     query=None
     chapter=None
     cell_type=None
@@ -112,44 +96,44 @@ notebook_context
     max_matches=50
 
     Matches
-    nbs/14_pyskill.ipynb#c9fc44f2 idx=0 type=markdown headings=1 | # Native nbskill Pyskill
-    nbs/14_pyskill.ipynb#6df2357f idx=1 type=markdown export | `nbskill.skill` is the direct API for notebook-owned code. Install `nbskill` in the agent's Python environment, then import it with `from nbskill.skill import *`. Pyskills discovers the registered entry point; its listing does not install the package.
-    nbs/14_pyskill.ipynb#a100cb81 idx=2 type=code default_exp=skill | (empty)
-    nbs/14_pyskill.ipynb#bbe795cc idx=3 type=code export imports=7 | from nbskill.edit import edit_notebook
-    nbs/14_pyskill.ipynb#cffe7604 idx=4 type=markdown  | nbdev excludes imports from its generated `__all__`. Declare the re-exported operations with `_all_` so `from nbskill.skill import *` exposes the documented API.
-    nbs/14_pyskill.ipynb#6741dda4 idx=5 type=code export | _all_ = [context, generated_owner, reference_query, edit_notebook, exec_nb, notebook_state, diff_nb, style_check]
-    nbs/14_pyskill.ipynb#5621fa8f idx=6 type=code exportd imports=8 | from pathlib import Path
-    nbs/14_pyskill.ipynb#8140c1d2 idx=7 type=markdown export headings=2 | ## Notebook contract
-    nbs/14_pyskill.ipynb#9aa1b97d idx=8 type=markdown export | Treat one notebook as one part of a larger problem. Split that part into H2 chapters. Each chapter tells one domain story from the motivating problem through the implementation and its evidence. Put each chapter heading in its own markdown cell so Jupyter can collapse the chapter as a unit.
-    nbs/14_pyskill.ipynb#454bb607 idx=9 type=markdown export headings=2 | ## Read notebooks
-    nbs/14_pyskill.ipynb#ab7a4378 idx=10 type=markdown export | Start with notebook structure, then narrow to the chapter or symbol that owns the work. Call `generated_owner` before touching a Python module. Call `context` to read the relevant notebook cells. Use `chapter=` for one domain story and a qualified `#symbol` target for one definition. Call `reference_query` before adding a nontrivial helper.
-    nbs/14_pyskill.ipynb#35e462e6 idx=11 type=markdown export headings=3 | ### `generated_owner`
-    nbs/14_pyskill.ipynb#b990663d idx=12 type=code exportd checks=1 | owner = generated_owner(skill.__file__)
-    nbs/14_pyskill.ipynb#d329cd15 idx=13 type=markdown export headings=3 | ### `context`
-    nbs/14_pyskill.ipynb#833a3b66 idx=14 type=code exportd checks=2 | summary = context(owner, view="summary", verbose=False)
-    nbs/14_pyskill.ipynb#d2e27253 idx=15 type=markdown export headings=3 | ### `reference_query`
-    nbs/14_pyskill.ipynb#2e60971a idx=16 type=code eval=false | matches = reference_query("find an nbdev notebook export helper", top_k=3)
-    nbs/14_pyskill.ipynb#6ce478da idx=17 type=markdown export headings=2 | ## Write notebooks
-    nbs/14_pyskill.ipynb#47d518a9 idx=18 type=markdown export | Use one `edit_notebook` call for one coherent change. Read stable cell IDs and exact source text first. Submit every related operation together so validation happens before the notebook is written. Never splice notebook JSON or edit a generated Python module.
-    nbs/14_pyskill.ipynb#d873c301 idx=19 type=markdown export headings=3 | ### `edit_notebook`
-    nbs/14_pyskill.ipynb#a0d1a7fc idx=20 type=code exportd eval=false checks=1 | edits = [dict(op="replace_text", cell_id="6df2357f", old="direct API", new="direct notebook API")]
-    nbs/14_pyskill.ipynb#d9ee9b93 idx=21 type=markdown export headings=2 | ## Run notebooks
-    nbs/14_pyskill.ipynb#19b62683 idx=22 type=markdown export | Run the smallest scope that proves the changed story. `exec_nb` accepts a chapter name or an ending cell ID. Use `check_only=True` while iterating so execution does not write outputs or metadata. Use `allow_new=True` only when the new cells are trusted and must execute.
-    nbs/14_pyskill.ipynb#3edc6d9b idx=23 type=markdown export headings=3 | ### `exec_nb`
-    nbs/14_pyskill.ipynb#a6e3c060 idx=24 type=code exportd checks=1 | with write_demo_notebook(
-    nbs/14_pyskill.ipynb#5f93d19d idx=25 type=markdown export headings=3 | ### `notebook_state`
-    nbs/14_pyskill.ipynb#d141dbca idx=26 type=code exportd | state = notebook_state(owner.with_name("15_state.ipynb"))
-    nbs/14_pyskill.ipynb#cdc0e335 idx=27 type=markdown export headings=2 | ## Validate notebooks
-    nbs/14_pyskill.ipynb#973299e8 idx=28 type=markdown export | Validation combines execution evidence, a cell-level diff, and style diagnostics. Run `exec_nb` first. Read `diff_nb` as the source review and fix every relevant `style_check` diagnostic. Then run `nbdev-export` and verify the generated module from a clean interpreter. The notebook remains the source of truth.
-    nbs/14_pyskill.ipynb#93a3f38b idx=29 type=markdown export headings=3 | ### `diff_nb`
-    nbs/14_pyskill.ipynb#de23823c idx=30 type=code exportd eval=false | review = diff_nb(owner, ref_a="HEAD")
-    nbs/14_pyskill.ipynb#cbb5e438 idx=31 type=markdown export headings=3 | ### `style_check`
-    nbs/14_pyskill.ipynb#4146c9e4 idx=32 type=code exportd | diagnostics = style_check(owner, changed_only=True)
-    nbs/14_pyskill.ipynb#987e724c idx=33 type=markdown export headings=2 | ## Prove the complete workflow
-    nbs/14_pyskill.ipynb#2674f039 idx=34 type=markdown export | Use a disposable real notebook to check the whole path without changing the repository. Read its cell IDs, edit one value, execute the assertion, and inspect the diff. `check_only=True` leaves execution outputs in memory, while the edit itself writes the intended source change:
-    nbs/14_pyskill.ipynb#e60e9d6d idx=35 type=code exportd checks=2 | workflow_cells = [mk_cell("## Answer", cell_type="markdown"),
-    nbs/14_pyskill.ipynb#f47f281c idx=36 type=code hide checks=1 | expected = {"context", "generated_owner", "reference_query", "edit_notebook", "exec_nb", "notebook_state", "diff_nb", "style_check"}
-    nbs/14_pyskill.ipynb#8467d82f idx=37 typ
+    00_foundation.ipynb#9b64b57f idx=0 type=code default_exp=foundation | (empty)
+    00_foundation.ipynb#11e12cb0 idx=1 type=markdown headings=1 | # Foundation
+    00_foundation.ipynb#f91ffd39 idx=2 type=markdown export | `nbskill.foundation` supplies the notebook vocabulary used by every later module. Cells have stable ids, chapters are spans opened by separate `##` markdown cells, and generated Python files point back to their source notebook.
+    00_foundation.ipynb#contract-foundation idx=3 type=markdown headings=3 | ### Production contract
+    00_foundation.ipynb#8cd6c35b idx=4 type=markdown  | `parse_cells` turns cell blocks into notebook cells. `cell_analysis` exposes independent properties so readers can select exported code, imports, or notebook-level checks without assigning one role to the whole cell.
+    00_foundation.ipynb#6973770a idx=5 type=code imports=5 | from contextlib import redirect_stdout
+    00_foundation.ipynb#2500639f idx=6 type=code export imports=13 | import ast,hashlib,json,multiprocessing,os,queue,re,tempfile,tomllib,traceback
+    00_foundation.ipynb#ca95a132 idx=7 type=code export defines=numbered_notebook_path | def numbered_notebook_path(nbs_path, name, index=None):
+    00_foundation.ipynb#demohelpers idx=8 type=markdown export headings=2 | ## Demo scratch files
+    00_foundation.ipynb#c113e1a3 idx=9 type=markdown export | Examples and tests in later notebooks need small notebooks they can safely mutate. Scratch helpers create disposable artifacts in the system temporary directory and remove them after use, so notebook test runners never create repository data folders. `tool_notebook` builds the shared reader, executor, reviewer, and example shape in code.
+    00_foundation.ipynb#demohelpcode idx=10 type=code export defines=remove_demo_path | def remove_demo_path(path):
+    00_foundation.ipynb#6cc30f19 idx=11 type=markdown  | `demo_path` names a scratch artifact in the system temporary directory by default and optionally removes any previous copy. It only creates the parent folder; helpers that write content decide what belongs at the path. An explicit `base` remains available when an example needs a chosen location.
+    00_foundation.ipynb#b49ce285 idx=12 type=code export defines=demo_path | def demo_path(name, base=None, reset=True):
+    00_foundation.ipynb#a5fc0a19 idx=13 type=markdown export | `demo_path` reserves a scratch filename and creates its parent directory. It does not create the file. The path stays available to whichever helper writes the example content:
+    00_foundation.ipynb#4e3de832 idx=14 type=code exportd checks=1 | scratch_path = demo_path("foundation_scratch_example.txt")
+    00_foundation.ipynb#f38b2f86 idx=15 type=code export defines=demo_path_context | @contextmanager
+    00_foundation.ipynb#067b8cc1 idx=16 type=code exportd hide=false checks=2 | with demo_path_context("foundation_demo_path_context") as context_path:
+    00_foundation.ipynb#bd16385a idx=17 type=code export defines=path_candidates | def path_candidates(path):
+    00_foundation.ipynb#332d0353 idx=18 type=code checks=4 | _path_candidate_rows = path_candidates("nbs/00_foundation.ipynb")
+    00_foundation.ipynb#26caf310 idx=19 type=markdown  | Notebook helpers should fail gently when a path is missing, unreadable, or shaped like ordinary JSON instead of a Jupyter notebook. `is_valid_ipynb` keeps that contract small and dependency-free.
+    00_foundation.ipynb#5023dcb9 idx=20 type=code export defines=_is_valid_notebook_cell | _VALID_CELL_TYPES = {"code", "markdown", "raw"}
+    00_foundation.ipynb#864b45b0 idx=21 type=code export defines=is_valid_ipynb | def is_valid_ipynb(path):
+    00_foundation.ipynb#4fed0b0a idx=22 type=markdown  | `write_demo_notebook` owns the whole lifetime of a scratch notebook: create it, yield its path to the example, then remove it even if the example fails.
+    00_foundation.ipynb#e7188cd8 idx=23 type=code export defines=write_demo_notebook | @contextmanager
+    00_foundation.ipynb#10969238 idx=24 type=markdown  | `tool_notebook` keeps the shared reader, executor, reviewer, and test shape in code. Each test writes a fresh notebook and removes it afterwards.
+    00_foundation.ipynb#891ac344 idx=25 type=code export defines=tool_notebook | def tool_notebook():
+    00_foundation.ipynb#487982b1 idx=26 type=markdown  | `write_tool_notebook` gives each example and test an isolated copy of the canonical tool notebook.
+    00_foundation.ipynb#7056ad49 idx=27 type=code export defines=write_tool_notebook | @contextmanager
+    00_foundation.ipynb#db1b10d0 idx=28 type=markdown  | `write_demo_file` keeps temporary conversion inputs out of the repository.
+    00_foundation.ipynb#05edde5b idx=29 type=code export defines=write_demo_file | @contextmanager
+    00_foundation.ipynb#c1ecf643 idx=30 type=code hide checks=7 | tool_ids = [cell.id for cell in tool_notebook().cells]
+    00_foundation.ipynb#da02aaba idx=31 type=markdown export | `write_demo_notebook` creates a real temporary `.ipynb` and removes it when the context closes. Examples can check the actual file format and cleanup without leaving repository artifacts:
+    00_foundation.ipynb#28452839 idx=32 type=code exportd checks=2 | with write_demo_notebook("00_foundation_tour.ipynb") as path:
+    00_foundation.ipynb#3deac3e2 idx=33 type=code checks=2 | with write_demo_notebook("00_foundation_bad.ipynb") as bad_path:
+    00_foundation.ipynb#b411ce35 idx=34 type=markdown export headings=2 | ## Python API contracts and diagnostics
+    00_foundation.ipynb#7a3beeaf idx=35 type=markdown export | The public functions in later notebooks are direct Python APIs. These helpers keep return values and validation errors predictable while recording completed calls and failures in a small local statistics file.
+    00_foundation.ipynb#dbc6a8c7 idx=36 type=code export defines=api_return | def api_return(value=None):
+    00_foundation.ipynb#754aea72 idx=37 type=code
     ... truncated ...
 
 ## Load the Pyskill
@@ -165,7 +149,9 @@ doc(skill.context)
         target:str='project', scope:str='.', targets:list[str] | None=None, mode:str='auto', around:int=0,
         view:str | None=None, query:NoneType=None, include_re:str | None=None, exclude_re:str | None=None,
         max_matches:int=50, max_chars_per_cell:int=1200, context_lines:int=0, chapter:str | None=None,
-        cell_type:str | None=None, include_output:bool=False, line_numbers:bool=False, verbose:bool=True
+        cell_type:str | None=None, include_output:bool=False, line_numbers:bool=False, verbose:bool=True,
+        connection:tuple[str, str] | None=None, # Follow calls from one symbol to another
+        max_depth:int=6, # Maximum number of call edges for a connection
     ):"""Read one notebook-aware target, optionally narrowed by notebook filters."""
 
 ## Use with aai-coding
@@ -176,10 +162,6 @@ doc(skill.context)
 
 ## Search before implementing
 
-[`reference_query`](https://MorsCerta-crypto.github.io/nbskill/knowledge.html#reference_query) searches local implementation references before a nontrivial helper is written. The knowledge notebook explains ingestion, dependency filters, and evidence. Query results depend on the local index and can load an embedding model, so the basic read/edit workflow does not require that optional path.
-
-Problem memories store a problem, a verified solution, and tags for later reuse. Search them before choosing an approach; record new lessons after verification.
-
 ## Trace notebook relationships
 
 The local graph links notebooks, cells, headings, symbols, and imports. Definition and call evidence helps a maintainer find related source before changing a symbol. Similarity edges are hints rather than runtime dependency guarantees. This example displays a small summary of the real source tree. Run it manually because building the graph scans all source notebooks:
@@ -188,3 +170,7 @@ The local graph links notebooks, cells, headings, symbols, and imports. Definiti
 graph = notebook_knowledge_graph_data("nbs")
 dict(nodes=len(graph["nodes"]), edges=len(graph["edges"]), node_types=sorted({node["type"] for node in graph["nodes"]}), edge_types=sorted({edge["type"] for edge in graph["edges"]}))
 ```
+
+## Entwicklung und Releases
+
+`origin/main` bezeichnet den aktiven Produktionsstand, `origin/development` den deployten Dev-Stand. Entwickelt wird lokal auf `dev` oder einem Featurebranch. Releasebranches werden erst nach bestandenem lokalem Integrationstest und erfolgreichem Deployment auf den tatsächlich deployten Commit gesetzt. GitHub Actions führen ausschließlich Tests bei Push auf `main` aus.

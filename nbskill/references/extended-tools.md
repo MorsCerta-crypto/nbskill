@@ -11,9 +11,9 @@ The main `SKILL.md` intentionally stays focused on the core loop: `context`, str
 
 - `diff_nb` prints code-cell diffs without notebook output and metadata noise.
 - `style_report(path)` returns structured notebook hygiene and global usage/problem data.
-- `doctor(scopes="style")` reports chkstyle hints together with notebook hygiene warnings and private-symbol diagnostics.
-- `doctor(scopes="warning")` includes cross-notebook calls to private helpers.
+- `style_check(path)` reports style, metadata, and private-boundary diagnostics. Use `fix=True, dry_run=False` to apply deterministic repairs.
+- `style_report(path, include_unused=True)` returns advisory candidates without claiming that external callers are absent.
 
 ## Coordinated Editing
 
-`edit_notebook(edits=[...])` applies deterministic edit plans with diffs and expected-hash guards. Use it when the target cells and operations are known and several changes should land together.
+`edit_notebook(edits=[...])` applies deterministic edit plans with diffs and expected-hash guards. Use it when the target cells and operations are known and several changes should be committed together.

@@ -9,11 +9,11 @@ authoritative notebook workflow here.
 
 Route each file separately. A notebook goes to `nbskill.skill` directly. For a Python module, call `generated_owner(path)`: edit the returned notebook when it exists, and keep the file on the ordinary aai-coding path when it does not. A repository-level nbdev marker never routes every Python file through notebook tooling.
 
-For notebook-owned work, use `context` to read the relevant cells and `reference_query` before a nontrivial implementation choice. Make one structured `edit_notebook` mutation using stable cell ids, then prove it with `exec_nb`, `diff_nb`, and `style_check`. For a behavior change, add or revise a focused notebook test before implementation when a useful reproducer exists. Run it before and after the edit; assert promised behavior rather than formatting or incidental order.
+For notebook-owned work, use `context` to read the relevant cells and search the current package before a nontrivial implementation choice. Make one structured `edit_notebook` mutation using stable cell ids, then prove it with `exec_nb`, `diff_nb`, and `style_check`. For a behavior change, add or revise a focused notebook test before implementation when a useful reproducer exists. Run it before and after the edit; assert promised behavior rather than formatting or incidental order.
 
 Do not edit raw notebook JSON or generated Python for normal notebook source changes. If a generated Python file needs work, inspect and edit the owning notebook unless the user explicitly asks otherwise.
 
-Functions beginning with `_` are local to their notebook. If `doctor` reports a cross-notebook private-symbol call, promote the helper deliberately or remove the call before completing the task.
+Functions beginning with `_` are local to their notebook. If `style_check` reports a cross-notebook private-symbol call, promote the helper deliberately or remove the call before completing the task.
 
 ## Notebook Workflow
 
@@ -117,35 +117,14 @@ verification functions from `nbskill.skill`, unless a notebook already follows t
 
 ## Search Before Writing
 
-Before implementing a helper, first search for the behavior in this
-package and then in indexed reference implementations. Do not write a
-second near-copy just because the existing helper is private or lives in
-another notebook; decide whether to reuse it, promote it, import it, or
-intentionally keep a local variant.
+Before implementing a helper, search this package and its direct dependencies. Reuse or promote an existing operation when its contract fits.
 
 Same-package searches:
 
-- Use `context` for the relevant source and `reference_query` for local prior
-  art before a nontrivial notebook task.
+- Use `context` for relevant source and search this package before a nontrivial notebook task.
 - When only behavior is known, first locate the likely source with ordinary
   project search, then switch to the Pyskill before inspecting or changing
   notebook-owned code.
-
-Reference searches:
-
-- Use the native prior-art lookup when it is available from the Pyskill
-  before building nontrivial parsing, notebook, AST, filesystem, or
-  formatting behavior.
-- If a reference hit is from an already-direct dependency, prefer
-  importing or adapting its pattern. If it would add a new dependency,
-  treat it as prior art unless the dependency is explicitly acceptable.
-
-Problem-solving searches:
-
-- Use `problem_memory --action query --query "<concrete problem>" --tags "<comma-separated tags>"` before implementing a nontrivial task, just as `reference` is used for code prior art.
-- Store reusable pairs with at least four tags. Prefer a rich set such as
-  `topic`, `sub-topic`, `library`, `problem-category`, `solution-category`,
-  runtime, and deployment surface so later agents can narrow the search.
 
 Examples found in this repo:
 
@@ -162,7 +141,7 @@ Examples found in this repo:
 
 Prefer a tight loop:
 
-1. Read with `context` and query `reference_query` when the task needs prior art.
+1. Read with `context` and search the current package for prior implementations.
 2. Make the smallest notebook-aware edit with `edit_notebook`.
 3. Run `exec_nb`, `diff_nb`, and `style_check` for the behavior check, code diff,
    and changed-source diagnostics.

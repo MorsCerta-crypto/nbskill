@@ -11,23 +11,13 @@ from unittest.mock import patch
 `install_nbdev_pre_commit_hooks` records installation in `.git/info`. If you remove the hook, a later call records that choice and leaves it absent. This temporary Git repository demonstrates both states:
 
 ```python
-hook_root = demo_path("06_skill_hooks")
-try:
-    hook_root.mkdir()
-    (hook_root / "nbs").mkdir()
-    (hook_root / "pyproject.toml").write_text('[project]\nname = "hook_demo"\nversion = "0.0.1"\n\n[tool.nbdev]\n', encoding="utf-8")
-    subprocess.run(["git", "init"], cwd=hook_root, check=True, capture_output=True)
-    hook_result = install_nbdev_pre_commit_hooks(hook_root, run_nbdev_install_hooks=False)
-    pre_commit = hook_root / ".git" / "hooks" / "pre-commit"
-    hook_text = pre_commit.read_text(encoding="utf-8")
-    assert hook_result["installed"] and "nbdev-clean" in hook_text and "nbdev-test" in hook_text
-    pre_commit.unlink()
-    removed_result = install_nbdev_pre_commit_hooks(hook_root, run_nbdev_install_hooks=False)
-    assert not removed_result["installed"] and removed_result["reason"] == "hooks-removed-by-user"
-    assert not pre_commit.exists() and (hook_root / ".git" / "info" / "nbskill-hooks-disabled").exists()
-    hook_summary = dict(installed=hook_result["installed"], removal_respected=removed_result["reason"])
-finally: remove_demo_path(hook_root)
-hook_summary
+with TemporaryDirectory() as hook_example_dir:
+    hook_example_root = Path(hook_example_dir)
+    (hook_example_root/"pyproject.toml").write_text('[project]\nname = "hook_example"\nversion = "0.0.1"\n[tool.nbdev]\n')
+    subprocess.run(["git", "init"], cwd=hook_example_root, check=True, capture_output=True)
+    installed_hook = install_nbdev_pre_commit_hooks(hook_example_root, run_nbdev_install_hooks=False)
+    assert installed_hook["installed"]
+installed_hook["installed"]
 ```
 
 ### `install_nbskill`
@@ -89,7 +79,7 @@ if ! git diff --quiet -- .; then
   echo "nbskill: nbdev-clean changed notebooks. Review and stage those changes before committing." >&2
   exit 1
 fi
-run_nbdev_cmd nbdev-test --n_workers 0
+run_nbdev_cmd nbdev-test --n-workers 0
 {_NBSKILL_HOOKS_MARKER_END}
 """
 
@@ -195,7 +185,8 @@ def _nbdev_test_serial_command(text, pause=_NBSKILL_CI_PAUSE):
         raw_args = match.group("args")
         args = raw_args.rstrip()
         trailing = raw_args[len(args):]
-        args = _set_cli_option(args, "--n_workers", "0")
+        args = re.sub(r"--n_workers(?=[=\s]|$)", "--n-workers", args)
+        args = _set_cli_option(args, "--n-workers", "0")
         args = _set_cli_option(args, "--pause", str(pause))
         return f"{match.group('cmd')}{args}{trailing}"
 

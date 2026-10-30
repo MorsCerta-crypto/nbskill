@@ -59,7 +59,7 @@ Load `nbskill.skill` through Pyskills, then read `doc()` for the callable you in
 
 ## Parse notebook cells
 
-[`parse_cells`](https://MorsCerta-crypto.github.io/nbskill/foundation.html#parse_cells) accepts a compact text format with `%%markdown`, `%%code`, and `---` boundaries. This is useful when proposing several cells without notebook JSON. The result retains the two different cell types:
+[`parse_cells`](https://MorsCerta-crypto.github.io/nbskill/parser.html#parse_cells) accepts a compact text format with `%%markdown`, `%%code`, and `---` boundaries. This is useful when proposing several cells without notebook JSON. The result retains the two different cell types:
 
 ``` python
 cell_text = "\n".join(["%%markdown", "## Demo", "---", "%%code", "value = 42"])
@@ -171,6 +171,6 @@ graph = notebook_knowledge_graph_data("nbs")
 dict(nodes=len(graph["nodes"]), edges=len(graph["edges"]), node_types=sorted({node["type"] for node in graph["nodes"]}), edge_types=sorted({edge["type"] for edge in graph["edges"]}))
 ```
 
-## Entwicklung und Releases
+## Entwicklung
 
-`origin/main` bezeichnet den aktiven Produktionsstand, `origin/development` den deployten Dev-Stand. Entwickelt wird lokal auf `dev` oder einem Featurebranch. Releasebranches werden erst nach bestandenem lokalem Integrationstest und erfolgreichem Deployment auf den tatsächlich deployten Commit gesetzt. GitHub Actions führen ausschließlich Tests bei Push auf `main` aus.
+`nbskill` ist eine Python-Bibliothek ohne Deployments. `main` enthält den geprüften Entwicklungsstand; Änderungen können direkt auf `main` oder in Featurebranches entstehen. Vor Commit und Push werden die betroffenen Notebooks ausgeführt, Exporte regeneriert und die Tests sowie [`style_check`](https://MorsCerta-crypto.github.io/nbskill/review.html#style_check) geprüft. Deployment-Sperren für Commits oder Pushes gelten hier nicht.

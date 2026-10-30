@@ -30,12 +30,15 @@ doc(skill.context)
 ## Modules
 
 - [nbskill.convert](https://MorsCerta-crypto.github.io/nbskill/convert.html.md): Move Python source into numbered nbdev notebooks without losing source order.
+- [nbskill.diagnostics](https://MorsCerta-crypto.github.io/nbskill/diagnostics.html.md): Record tool usage, resolve project inputs and bound diagnostic output.
 - [nbskill.edit](https://MorsCerta-crypto.github.io/nbskill/edit.html.md): Apply and review one atomic plan of notebook cell changes.
 - [nbskill.execute](https://MorsCerta-crypto.github.io/nbskill/execute.html.md): Run a notebook scope and inspect execution evidence without losing the source.
+- [nbskill.fixtures](https://MorsCerta-crypto.github.io/nbskill/fixtures.html.md): Own scratch paths and test notebooks for one example or test lifetime.
 - [nbskill.foundation](https://MorsCerta-crypto.github.io/nbskill/foundation.html.md): Model notebook data, metadata, chapters and Python structure consistently.
 - [nbskill.graph](https://MorsCerta-crypto.github.io/nbskill/graph.html.md): Find notebook definitions, callers, and likely reuse before changing code.
 - [nbskill.nbskill](https://MorsCerta-crypto.github.io/nbskill/skill.html.md): Copy the nbskill routing instructions to a chosen agent skills directory.
 - [nbskill.parallel](https://MorsCerta-crypto.github.io/nbskill/parallel.html.md): Serialize writes to the same notebook while allowing unrelated notebooks to proceed.
+- [nbskill.parser](https://MorsCerta-crypto.github.io/nbskill/parser.html.md): Normalize notebook text, directives and Python syntax without a notebook model.
 - [nbskill.read](https://MorsCerta-crypto.github.io/nbskill/read.html.md): Find notebook implementations with their explanations, examples, and edit guards.
 - [nbskill.review](https://MorsCerta-crypto.github.io/nbskill/review.html.md): Review code changes and notebook contracts without output or metadata noise.
 - [nbskill.skill](https://MorsCerta-crypto.github.io/nbskill/pyskill.html.md): Use for nbdev notebooks and their generated Python modules.

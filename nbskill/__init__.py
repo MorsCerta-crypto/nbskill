@@ -28,12 +28,15 @@ doc(skill.context)
 Modules:
 
 - `nbskill.convert`: Move Python source into numbered nbdev notebooks without losing source order.
+- `nbskill.diagnostics`: Record tool usage, resolve project inputs and bound diagnostic output.
 - `nbskill.edit`: Apply and review one atomic plan of notebook cell changes.
 - `nbskill.execute`: Run a notebook scope and inspect execution evidence without losing the source.
+- `nbskill.fixtures`: Own scratch paths and test notebooks for one example or test lifetime.
 - `nbskill.foundation`: Model notebook data, metadata, chapters and Python structure consistently.
 - `nbskill.graph`: Find notebook definitions, callers, and likely reuse before changing code.
 - `nbskill.nbskill`: Copy the nbskill routing instructions to a chosen agent skills directory.
 - `nbskill.parallel`: Serialize writes to the same notebook while allowing unrelated notebooks to proceed.
+- `nbskill.parser`: Normalize notebook text, directives and Python syntax without a notebook model.
 - `nbskill.read`: Find notebook implementations with their explanations, examples, and edit guards.
 - `nbskill.review`: Review code changes and notebook contracts without output or metadata noise.
 - `nbskill.skill`: Use for nbdev notebooks and their generated Python modules.

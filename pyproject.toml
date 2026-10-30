@@ -53,6 +53,9 @@ allowed_metadata_keys = ["nbskill"]
 jupyter_hooks = true
 allowed_cell_metadata_keys = ["nbskill"]
 
+[tool.ease]
+deployments = false
+
 [tool.fastship]
 branch = "main"
 
@@ -65,3 +68,7 @@ dev = [
     "pytest>=9.0.3",
     "remold>=0.1.0",
 ]
+
+[tool.chkstyle]
+# nbdev regenerates this symbol index; its formatting is not maintained by hand.
+skip_paths = ["nbskill/_modidx.py"]

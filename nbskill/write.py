@@ -19,15 +19,22 @@ change["changed"]
 `split_nb_chapter` previews by default. H2 titles use normalized exact matching before regex fallback. Applying the split preserves moved cell IDs and commits both documents together. These ordinary temporary notebooks demonstrate the transfer without exporting a project:
 
 ```python
-with TemporaryDirectory(prefix="chapter-split-") as folder:
-    source, destination = Path(folder)/"core.ipynb", Path(folder)/"chapter.ipynb"
-    draft = new_nb([mk_cell("#| default_exp core"),
-        mk_cell("## Answer", cell_type="markdown"), mk_cell("#| export\nanswer = 42")])
-    commit_notebook(source, draft, export=False)
-    answer_id = read_nb(source).cells[-1].id
-    saved = source.read_bytes()
+split_lesson_cells = [mk_cell("#| default_exp core"), mk_cell("## Answer", cell_type="markdown"), mk_cell("#| export\nanswer = 42")]
+```
+
+```python
+with write_demo_notebook("split_preview.ipynb", cells=split_lesson_cells) as source:
+    destination = source.with_name("chapter.ipynb")
+    saved_source = source.read_bytes()
     preview = split_nb_chapter(source, " answer ", destination)
-    assert source.read_bytes() == saved and not destination.exists()
+    assert source.read_bytes() == saved_source and not destination.exists()
+preview["dest_default_exp"]
+```
+
+```python
+with write_demo_notebook("split_write.ipynb", cells=split_lesson_cells) as source:
+    destination = source.with_name("chapter.ipynb")
+    answer_id = read_nb(source).cells[-1].id
     split_nb_chapter(source, "Answer", destination, dry_run=False)
     moved = read_nb(destination)
     assert any(cell.id == answer_id and "answer = 42" in cell.source for cell in moved.cells)
@@ -80,11 +87,11 @@ Docs: https://MorsCerta-crypto.github.io/nbskill/write.html.md"""
 __all__ = ['split_nb_chapter', 'create_notebook', 'move_cells']
 
 # %% ../nbs/02_write.ipynb #04dbc0fe
-import ast,builtins,copy,re
+import ast,builtins,copy,re,symtable
 from pathlib import Path
 from fastcore.nbio import mk_cell, new_nb, read_nb
 from .foundation import (cell_directives, cell_source, clear_outputs, api_error, api_return, numbered_notebook_path, one_chapter,
-    nbdev_project_root, notebook_directive, parse_code_cell, is_definition_node, ensure_cell_ids)
+    nbdev_project_root, notebook_directive, parse_code_cell, is_definition_node, ensure_cell_ids, scoped_nodes)
 from .parallel import notebook_locks
 from .edit import commit_notebook, commit_notebooks
 
@@ -99,7 +106,6 @@ def _default_exp_for_dest(dest):
         return ".".join(rel.parts)
     except Exception: return dest.stem
 
-
 # %% ../nbs/02_write.ipynb #0456933c
 def _module_for_default_exp(default_exp, path=None):
     if not default_exp: return None
@@ -111,17 +117,14 @@ def _module_for_default_exp(default_exp, path=None):
     if lib_name and not str(default_exp).startswith(f"{lib_name}."): return f"{lib_name}.{default_exp}"
     return str(default_exp)
 
-
 # %% ../nbs/02_write.ipynb #7f55becc
 def _is_default_exp_cell(cell): return "default_exp" in cell_directives(cell)
-
 
 # %% ../nbs/02_write.ipynb #99b9c8be
 def _import_bound_names(node):
     if isinstance(node, ast.Import): return [alias.asname or alias.name.split(".", 1)[0] for alias in node.names]
     if isinstance(node, ast.ImportFrom): return [alias.asname or alias.name for alias in node.names if alias.name != "*"]
     return []
-
 
 # %% ../nbs/02_write.ipynb #8dcb822b
 def _definition_names(cells):
@@ -133,31 +136,32 @@ def _definition_names(cells):
             if is_definition_node(node): names[node.name] = idx
     return names
 
-
 # %% ../nbs/02_write.ipynb #8430f3e8
 def _bound_names(cells):
     names = set()
     for cell in cells:
         tree = parse_code_cell(cell)
         if tree is None: continue
-        for node in tree.body:
+        for node, scope in scoped_nodes(tree):
+            if scope: continue
             names.update(_import_bound_names(node))
             if is_definition_node(node): names.add(node.name)
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store): names.add(node.id)
+            elif isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store): names.add(node.id)
     return names
 
+# %% ../nbs/02_write.ipynb #c9920fee
+def _global_reads(table):
+    names = {symbol.get_name() for symbol in table.get_symbols() if symbol.is_global() and symbol.is_referenced()}
+    for child in table.get_children(): names.update(_global_reads(child))
+    return names
 
 # %% ../nbs/02_write.ipynb #49693e0b
 def _loaded_names(cells):
     names = set()
     for cell in cells:
-        tree = parse_code_cell(cell)
-        if tree is None: continue
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load): names.add(node.id)
+        if parse_code_cell(cell) is None: continue
+        names.update(_global_reads(symtable.symtable(cell_source(cell), "<notebook cell>", "exec")))
     return names - _bound_names(cells) - set(dir(builtins))
-
 
 # %% ../nbs/02_write.ipynb #2d66f9ac
 def _import_lines_for_names(cells, names):
@@ -174,16 +178,13 @@ def _import_lines_for_names(cells, names):
                 lines.append(line)
     return lines
 
-
 # %% ../nbs/02_write.ipynb #e7e30caf
 def _symbol_replacements(promotions): return {old: new for old, new in promotions}
-
 
 # %% ../nbs/02_write.ipynb #55070d8c
 def _replace_symbol_refs(source, promotions):
     for old, new in _symbol_replacements(promotions).items(): source = re.sub(rf"(?<![\w.]){re.escape(old)}(?![\w])", new, source)
     return source
-
 
 # %% ../nbs/02_write.ipynb #0b580bca
 def _apply_promotions(cells, promotions):
@@ -193,7 +194,6 @@ def _apply_promotions(cells, promotions):
             cell.source = _replace_symbol_refs(cell_source(cell), promotions)
             clear_outputs(cell)
 
-
 # %% ../nbs/02_write.ipynb #7669c85b
 def _insert_import_cell(cells, lines):
     lines = [line for line in lines if line]
@@ -201,7 +201,6 @@ def _insert_import_cell(cells, lines):
     source = "#| export\n" + "\n".join(dict.fromkeys(lines))
     insert_at = 1 if cells and _is_default_exp_cell(cells[0]) else 0
     cells.insert(insert_at, mk_cell(source, cell_type="code"))
-
 
 # %% ../nbs/02_write.ipynb #9a8e680f
 def _split_chapter_plan(nb, chapter, dest, default_exp=None, promote_private=True):
@@ -246,7 +245,6 @@ def _split_chapter_plan(nb, chapter, dest, default_exp=None, promote_private=Tru
         dest_module=dest_module, source_dependencies=source_deps, moved_dependencies=moved_deps, copied_imports=import_lines,
         source_imports=source_imports, promotions=promotions, source_cells=remaining, dest_cells=dest_cells)
 
-
 # %% ../nbs/02_write.ipynb #0b146597
 def _format_split_plan(path, dest, chapter, plan, dry_run=False):
     prefix = "Dry run: would split" if dry_run else "Split"
@@ -262,7 +260,6 @@ def _format_split_plan(path, dest, chapter, plan, dry_run=False):
         lines.append("promoted source helpers:")
         lines.extend(f"- {old} -> {new}" for old, new in plan["promotions"])
     return "\n".join(lines)
-
 
 # %% ../nbs/02_write.ipynb #948a5600
 def split_nb_chapter(

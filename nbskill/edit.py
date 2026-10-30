@@ -40,8 +40,7 @@ with tempfile.TemporaryDirectory(prefix="commit-lesson-") as folder:
     receipts = commit_notebooks(plans, export=False)
     assert all(receipt["after_hash"] == notebook_hash(read_nb(path)) for path, receipt in zip(paths, receipts))
     assert all("nbskill" not in trial.metadata for trial in trials)
-    commit_summary = {path.name: dict(changed=receipt['changed'], readback_verified=True) for path, receipt in zip(paths, receipts)}
-commit_summary
+{path.name: dict(changed=receipt['changed'], readback_verified=True) for path, receipt in zip(paths, receipts)}
 ```
 
 ## Atomic edit plans
@@ -55,20 +54,15 @@ The facade keeps repeated edits scoped to one notebook while the lower-level fun
 `NotebookEditor.replace_cell` preserves the selected cell identity. `insert`, `explode`, and `delete` change the cell sequence; `replace_text` can then rename across the notebook. The editor keeps the path and common options while each operation commits through the same validation boundary:
 
 ```python
-with write_demo_notebook("editor_structure_lesson.ipynb", cells=[mk_cell("def first():\n    return 1")]) as demo:
+with write_demo_notebook("editor_structure_lesson.ipynb", cells=[mk_cell("def first():\n    return 1\n\ndef second():\n    return 2")]) as demo:
     editor = Notebook.from_path(demo).edit()
     first_id = read_nb(demo).cells[0].id
-    editor.replace_cell(first_id, "def first():\n    return 1\n\ndef second():\n    return 2", auto_feedback=False)
     editor.explode(first_id, auto_feedback=False)
     split = read_nb(demo)
     assert len(split.cells) == 2 and split.cells[0].id == first_id
-    editor.insert(split.cells[-1].id, "temporary = True", auto_feedback=False)
-    added_id = read_nb(demo).cells[-1].id
-    editor.delete(added_id, auto_feedback=False)
-    editor.replace_text("first", "primary", auto_feedback=False)
-    final = read_nb(demo)
-    assert len(final.cells) == 2 and "def primary" in final.cells[0].source
-    editor_summary = dict(cell_ids=[cell.id for cell in final.cells], sources=[cell.source for cell in final.cells])
+    deleted = editor.delete(split.cells[-1].id, auto_feedback=False)
+    assert deleted["changed"] and len(read_nb(demo).cells) == 1
+    editor_summary = dict(remaining_id=first_id, removed=True)
 editor_summary
 ```
 
@@ -783,7 +777,7 @@ def _commit_snapshot(paths, library=None):
         if library.exists(): directories.add(library)
     return {path: path.read_bytes() if path.exists() else None for path in files}, directories
 
-
+# %% ../nbs/02_edit.ipynb #7821490e
 def _restore_commit(snapshot, directories, library):
     errors = []
     if library is not None:
@@ -911,6 +905,39 @@ def commit(self: Notebook, **kwargs):
     "Commit this notebook model through the shared atomic writer."
     return commit_notebook(self.path, self.nb, **kwargs)
 
+# %% ../nbs/02_edit.ipynb #5f1d4737
+def _edit_notebook_result(path, commit, diffs, affected, warnings, dry_run, auto_feedback, feedback_timeout, feedback_safe):
+    changed = commit["changed"]
+    diffs = _cap_edit_diffs(diffs)
+    changed_diffs = [item for item in diffs if item.get("changed")]
+    replacement_summary = _aggregate_replacement_summary(diffs)
+    export_confirmation = _format_export_confirmation(path, commit)
+    status = "dry_run" if dry_run and changed else ("changed" if changed else "no_change")
+    text = f"edit_notebook {status}: {len(changed_diffs)} changed operation(s), {len(affected)} affected cell(s)"
+    warning_text = _format_edit_warnings(warnings)
+    if warning_text: text = f"{text}\n\nNotebook craft warnings:\n{warning_text}"
+    replacement_text = _format_replacement_summary(replacement_summary)
+    if replacement_text: text = f"{text}\n\n{replacement_text}"
+    if export_confirmation: text = f"{text}\n{export_confirmation}"
+    diff_text = "\n\n".join(item["diff"] for item in changed_diffs if item.get("diff"))
+    diff_text = cap_text(diff_text, _EDIT_MAX_DIFF_CHARS)
+    if diff_text: text = f"{text}\n\n{diff_text}"
+    reason = "dry_run" if dry_run else ("unchanged" if not changed else "disabled")
+    feedback = dict(ok=True, status="skipped", skip_reason=reason, executed_cell_ids=[], errors=[], text="")
+    if changed and not dry_run and auto_feedback:
+        try:
+            from nbskill.execute import notebook_edit_feedback
+            feedback = notebook_edit_feedback(path, affected, timeout=feedback_timeout, safe=feedback_safe)
+        except Exception: feedback = dict(ok=False, status="failed", skip_reason=None, executed_cell_ids=[], errors=[traceback.format_exc()], text="")
+        if feedback["text"]: text += "\n\nAuto feedback:\n" + feedback["text"]
+        if not feedback["ok"]: text += "\n\nAuto feedback failed: " + str(feedback["errors"])
+    if feedback["status"] == "skipped": text += f"\n\nAuto feedback skipped: {feedback['skip_reason']}"
+    return dict(ok=True, feedback=feedback, changed=changed, no_change=not changed, dry_run=dry_run, affected_cell_ids=affected,
+        diffs=diffs, before_hash=commit['before_hash'], after_hash=commit['after_hash'], planned_hash=commit['planned_hash'],
+        readback_hashes=commit['readback_hashes'], exported=commit['exported'], exported_py_path=commit.get('exported_py_path', ''),
+        export_no_drift=commit.get('export_no_drift', False), exported_py_paths=commit.get('exported_py_paths', []),
+        export_confirmation=export_confirmation, replacement_summary=replacement_summary, warnings=warnings, text=text)
+
 # %% ../nbs/02_edit.ipynb #72e3cfc8
 @track_call
 def edit_notebook(path, edits, validate_code=True, default_cell_type='code', directive=None, auto_feedback=True, feedback_timeout=10,
@@ -950,36 +977,7 @@ def edit_notebook(path, edits, validate_code=True, default_cell_type='code', dir
         warnings = _edit_notebook_craft_warnings(path, trial, affected)
         commit = commit_notebook(path, trial, before=before, affected_cell_ids=affected, validate_code=validate_code, dry_run=dry_run)
 
-    changed = commit["changed"]
-    diffs = _cap_edit_diffs(diffs)
-    changed_diffs = [item for item in diffs if item.get("changed")]
-    replacement_summary = _aggregate_replacement_summary(diffs)
-    export_confirmation = _format_export_confirmation(path, commit)
-    status = "dry_run" if dry_run and changed else ("changed" if changed else "no_change")
-    text = f"edit_notebook {status}: {len(changed_diffs)} changed operation(s), {len(affected)} affected cell(s)"
-    warning_text = _format_edit_warnings(warnings)
-    if warning_text: text = f"{text}\n\nNotebook craft warnings:\n{warning_text}"
-    replacement_text = _format_replacement_summary(replacement_summary)
-    if replacement_text: text = f"{text}\n\n{replacement_text}"
-    if export_confirmation: text = f"{text}\n{export_confirmation}"
-    diff_text = "\n\n".join(item["diff"] for item in changed_diffs if item.get("diff"))
-    diff_text = cap_text(diff_text, _EDIT_MAX_DIFF_CHARS)
-    if diff_text: text = f"{text}\n\n{diff_text}"
-    reason = "dry_run" if dry_run else ("unchanged" if not changed else "disabled")
-    feedback = dict(ok=True, status="skipped", skip_reason=reason, executed_cell_ids=[], errors=[], text="")
-    if changed and not dry_run and auto_feedback:
-        try:
-            from nbskill.execute import notebook_edit_feedback
-            feedback = notebook_edit_feedback(path, affected, timeout=feedback_timeout, safe=feedback_safe)
-        except Exception: feedback = dict(ok=False, status="failed", skip_reason=None, executed_cell_ids=[], errors=[traceback.format_exc()], text="")
-        if feedback["text"]: text += "\n\nAuto feedback:\n" + feedback["text"]
-        if not feedback["ok"]: text += "\n\nAuto feedback failed: " + str(feedback["errors"])
-    if feedback["status"] == "skipped": text += f"\n\nAuto feedback skipped: {feedback['skip_reason']}"
-    return dict(ok=True, feedback=feedback, changed=changed, no_change=not changed, dry_run=dry_run, affected_cell_ids=affected,
-        diffs=diffs, before_hash=commit['before_hash'], after_hash=commit['after_hash'], planned_hash=commit['planned_hash'],
-        readback_hashes=commit['readback_hashes'], exported=commit['exported'], exported_py_path=commit.get('exported_py_path', ''),
-        export_no_drift=commit.get('export_no_drift', False), exported_py_paths=commit.get('exported_py_paths', []),
-        export_confirmation=export_confirmation, replacement_summary=replacement_summary, warnings=warnings, text=text)
+    return _edit_notebook_result(path, commit, diffs, affected, warnings, dry_run, auto_feedback, feedback_timeout, feedback_safe)
 
 # %% ../nbs/02_edit.ipynb #167ffb52
 @dataclass

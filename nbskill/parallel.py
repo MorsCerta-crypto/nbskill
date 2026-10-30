@@ -30,19 +30,16 @@ lock_status
 ```
 
 ```python
-def _nested_execution_example():
-    with execution_slot(): execution_done.set()
-
 execution_done = threading.Event()
 with execution_slot():
     captured = execution_context()
     worker = threading.Thread(target=captured.run, args=(_nested_execution_example,), daemon=True)
     worker.start()
     finished = execution_done.wait(1)
+    assert finished
 worker.join(timeout=1)
 assert finished and not worker.is_alive()
-execution_status = dict(nested_thread_completed=finished)
-execution_status
+dict(nested_thread_completed=finished)
 ```
 
 Docs: https://MorsCerta-crypto.github.io/nbskill/parallel.html.md"""

@@ -50,7 +50,7 @@ try:
     package.mkdir(parents=True)
     (package / "core.py").write_text("def answer():\n    return 42\n", encoding="utf-8")
     scaffold = py2nbdev(package, root / "nbdev_calc")
-    assert not (root / "nbdev_calc").exists()
+    assert scaffold["dry_run"] and not (root / "nbdev_calc").exists()
     scaffold_preview = dict(dry_run=scaffold["dry_run"], package=scaffold["package"])
 finally: remove_demo_path(root)
 scaffold_preview
@@ -127,16 +127,13 @@ def _stable_cell_id(default_exp, idx, source):
     raw = f"{default_exp}:{idx}:{source}".encode("utf-8")
     return f"py2nb-{hashlib.sha1(raw).hexdigest()[:8]}"
 
-
 # %% ../nbs/05_convert.ipynb #5084a272
 def _stabilize_cells(cells, default_exp):
     for idx, cell in enumerate(cells): cell.id = _stable_cell_id(default_exp, idx, getattr(cell, "source", ""))
     return cells
 
-
 # %% ../nbs/05_convert.ipynb #81965703
 def _is_module_docstring(node): return isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str)
-
 
 # %% ../nbs/05_convert.ipynb #3f76d7df
 def _py2nb_cells(source, default_exp, class_lines=100, method_lines=10):
@@ -191,14 +188,11 @@ def _py2nb_file(path, nbs_path="nbs", dest=None, class_lines=100, method_lines=1
 _DEFAULT_IGNORE_DIRS = {'__pycache__', '.git', '.hg', '.mypy_cache', '.pytest_cache', '.ruff_cache', '.tox', '.venv', 'venv', 'env',
     'build', 'dist', '.ipynb_checkpoints', 'node_modules'}
 
-
 # %% ../nbs/05_convert.ipynb #4a43a8d7
 _DEFAULT_IGNORE_FILES = {"__init__.py"}
 
-
 # %% ../nbs/05_convert.ipynb #7f45b67f
 _TEST_DIRS = {"test", "tests", "testing"}
-
 
 # %% ../nbs/05_convert.ipynb #69a53c8f
 def _patterns(value):
@@ -206,17 +200,14 @@ def _patterns(value):
     if isinstance(value, (list, tuple, set)): return [str(item) for item in value if str(item)]
     return [item.strip() for item in str(value).split(",") if item.strip()]
 
-
 # %% ../nbs/05_convert.ipynb #c5b04416
 def _matches_any(path, patterns):
     text = path.as_posix()
     return any(fnmatch.fnmatch(text, pat) or fnmatch.fnmatch(path.name, pat) for pat in patterns)
 
-
 # %% ../nbs/05_convert.ipynb #c4012c0c
 def _package_dirs(root):
     return sorted((path for path in root.iterdir() if path.is_dir() and (path / '__init__.py').exists() and (path.name not in _DEFAULT_IGNORE_DIRS)))
-
 
 # %% ../nbs/05_convert.ipynb #2cfe0312
 def _resolve_source_tree(path, package=None):
@@ -236,7 +227,6 @@ def _resolve_source_tree(path, package=None):
     if len(pkgs) == 1: return pkgs[0], root, root
     return root, root, root
 
-
 # %% ../nbs/05_convert.ipynb #5615073d
 def _is_ignored_py(path, rel, include=None, exclude=None, skip_init=True, include_tests=False):
     if any(part in _DEFAULT_IGNORE_DIRS or part.startswith(".") for part in rel.parts[:-1]): return True
@@ -246,7 +236,6 @@ def _is_ignored_py(path, rel, include=None, exclude=None, skip_init=True, includ
     if exclude and _matches_any(rel, exclude): return True
     return False
 
-
 # %% ../nbs/05_convert.ipynb #634578df
 def _python_files(scan_root, recursive=True, maxdepth=None):
     files = scan_root.rglob("*.py") if recursive else scan_root.glob("*.py")
@@ -254,7 +243,6 @@ def _python_files(scan_root, recursive=True, maxdepth=None):
         rel = path.relative_to(scan_root)
         if maxdepth is not None and len(rel.parts) - 1 > maxdepth: continue
         yield path
-
 
 # %% ../nbs/05_convert.ipynb #b61029df
 def _py2nbs_folder(path, nbs_path='nbs', recursive=True, maxdepth=None, preserve_tree=False, class_lines=100, method_lines=10, package=None,

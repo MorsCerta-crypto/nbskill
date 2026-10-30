@@ -43,4 +43,4 @@ Modules:
 - `nbskill.state`: Explain which notebook work is current, changed, or likely affected by an upstream change.
 - `nbskill.write`: Create and revise notebook cells while preserving their identities and evidence."""
 
-__version__ = "0.0.16"
+__version__ = "0.0.17"

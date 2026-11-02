@@ -13,4 +13,3 @@ Environment preparation was excluded from discovery measurements. The exposed MC
 Discovery counts include logical source/context/search/read API invocations, excluding tool documentation and environment setup. Each agent must freeze its count with EVIDENCE_FOUND before implementation and supply an ordered ledger. Counts are agent-reported and the ledgers are retained for review. Feature correctness and red/green verification are assessed separately from discovery counts.
 
 Main-checkout additions were verified independently with exec_nb(check_only=True, allow_new=True) on the entire nbs/04_review.ipynb: ok=True, errors=[]. style_check on changed cells and on the whole notebook both returned 0 with zero diagnostics. The existing unrelated nbskill/SKILL.md change was left untouched.
-

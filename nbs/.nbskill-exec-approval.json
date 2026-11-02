@@ -4879,6 +4879,15 @@
       "reasons": [],
       "source_hash": "624b118b18ef"
     },
+    "_working_tree_sources": {
+      "allowed": true,
+      "cell_id": "e69d0ca1",
+      "external_effects": false,
+      "line": 3,
+      "notebook": "04_review.ipynb",
+      "reasons": [],
+      "source_hash": "df9a68c0cc5e"
+    },
     "_write_execution_policy": {
       "allowed": false,
       "cell_id": "3172e5ae",
@@ -5291,7 +5300,7 @@
       "source_hash": "d026bb1d3178"
     },
     "diff_nb": {
-      "allowed": true,
+      "allowed": false,
       "cell_id": "fe9b3c86",
       "external_effects": true,
       "line": 3,
@@ -5305,7 +5314,7 @@
         "_nbskill_metadata_change_count->_notebook_json_at_ref->call:subprocess.run",
         "call:replace"
       ],
-      "source_hash": "6e450dd95a7d"
+      "source_hash": "2f47a10bfcc9"
     },
     "directive": {
       "allowed": true,

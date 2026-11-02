@@ -1,6 +1,6 @@
 r"""Review code changes and notebook contracts without output or metadata noise.
 
-Notebook review should follow the source cells that own the behavior. `diff_nb` compares code cells by stable identity and omits output churn. `style_report` returns notebook diagnostics as data, while `style_check` adds fast.ai style hints and prints the report. Literacy checks connect each public definition with its explanation, example, and behavioral assertion, which a plain text diff cannot establish.
+Notebook review should follow the source cells that own the behavior. `diff_nb` compares code cells by stable identity and omits output churn. Pass `include_markdown=True` to include Markdown source in the review. `style_report` returns notebook diagnostics as data, while `style_check` adds fast.ai style hints and prints the report. Literacy checks connect each public definition with its explanation, example, and behavioral assertion, which a plain text diff cannot establish.
 
 ```python
 from nbskill.review import style_report, diff_nb
@@ -82,7 +82,8 @@ with write_demo_notebook("review_diff_lesson.ipynb", cells=[mk_cell("value = 1\n
     mk_cell("Original note", cell_type="markdown")]) as diff_path:
     code_diff = diff_nb(diff_path, ref_a=None, ref_b=None)
     assert "value = 1" in code_diff and "Original note" not in code_diff
-code_diff
+    narrative_diff = diff_nb(diff_path, ref_a=None, ref_b=None, include_markdown=True)
+narrative_diff
 ```
 
 Docs: https://MorsCerta-crypto.github.io/nbskill/review.html.md"""
@@ -987,9 +988,9 @@ def code_source(cell):
     return cell.source if cell.cell_type == "code" else None
 
 # %% ../nbs/04_review.ipynb #e69d0ca1
-def _working_tree_code_sources(path):
+def _working_tree_sources(path, f=code_source):
     nb = read_nb(path)
-    return {getattr(cell, 'id', str(idx)): source for idx, cell in enumerate(nb.cells) if (source := code_source(cell)) is not None}
+    return {getattr(cell, 'id', str(idx)): source for idx, cell in enumerate(nb.cells) if (source := f(cell)) is not None}
 
 # %% ../nbs/04_review.ipynb #e672839a
 def _git_ref_path_error(path, ref):
@@ -1182,15 +1183,18 @@ def diff_nb(
     cell_id: str | None = None,  # Limit output to comma/space-separated cell ids
     after_id: str | None = None,  # Limit output to cells after this id in ref_b/the working tree
     surface: str = "code",  # Review surface: "code" or "public-ui"
+    include_markdown: bool = False,  # Include Markdown source alongside code; code surface only
 ):
-    "Print nbdev-style diffs for code cells, or a public UI text surface."
+    "Print notebook source diffs or a public UI text surface."
     ref_a, ref_b = none_if_string(ref_a), none_if_string(ref_b)
     surface = (surface or "code").replace("_", "-").lower()
     if surface not in {"code", "public-ui"}: raise ValueError("surface must be 'code' or 'public-ui'")
-    if ref_a is None and ref_b is None: old, new = {}, _working_tree_code_sources(path)
+    if include_markdown and surface != "code": raise ValueError("include_markdown requires the code surface")
+    def source(cell): return cell.source if include_markdown and cell.cell_type == "markdown" else code_source(cell)
+    if ref_a is None and ref_b is None: old, new = {}, _working_tree_sources(path, f=source)
     else:
         if msg := (_git_ref_path_error(path, ref_a) or _git_ref_path_error(path, ref_b)): api_error(msg)
-        try: old, new = nbs_pair(path, ref_a=ref_a, ref_b=ref_b, f=code_source)
+        try: old, new = nbs_pair(path, ref_a=ref_a, ref_b=ref_b, f=source)
         except Exception as exc:
             detail = str(exc)
             hint = (
@@ -1214,12 +1218,13 @@ def diff_nb(
     if changes: blocks += [(cid, source_diff(old[cid], new[cid])) for cid in new if cid in old and new[cid] != old[cid]]
     if dels:    blocks += [(cid, source_diff(old[cid], "")) for cid in old if cid not in new]
     if selected is not None: blocks = [(cid, diff) for cid, diff in blocks if cid in selected]
-    text = "\n\n".join(f"--- code cell {cid} ---\n{diff}" for cid, diff in blocks if diff.strip())
+    label = "source" if include_markdown else "code"
+    text = "\n\n".join(f"--- {label} cell {cid} ---\n{diff}" for cid, diff in blocks if diff.strip())
     metadata_summary = _metadata_summary(_nbskill_metadata_change_count(path, ref_a, ref_b))
     if text and metadata_summary: report = f"{text}\n\n{metadata_summary}"
     elif text: report = text
-    elif metadata_summary: report = f"No code cell changes\n{metadata_summary}"
-    else: report = "No code cell changes"
+    elif metadata_summary: report = f"No {label} cell changes\n{metadata_summary}"
+    else: report = f"No {label} cell changes"
     print(report)
     api_return(report)
     return report

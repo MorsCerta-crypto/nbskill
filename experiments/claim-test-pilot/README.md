@@ -34,4 +34,3 @@ Repository-wide export also exposed unrelated duplicated output in `nbskill/read
 The main checkout contains the claim links, rationale, and shared example enhancement. Its independent `exec_nb` verification passed all 170 code cells with `safe=True`, no errors, no warnings, and no skipped cells. Changed-source and whole-notebook style checks returned 0. The [verification record](main-verification.json) retains the executed cell IDs. The two feature implementations remain separate [original](baseline.patch) and [enriched](enriched.patch) patches against the common repository revision.
 
 One unblinded run per variant is initial evidence. Different navigation choices can affect the count. No elapsed-time or token-cost advantage was measured. Repeat the comparison on another real task, with the order reversed, before automating relationship lookup or introducing a general schema.
-

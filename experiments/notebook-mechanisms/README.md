@@ -28,3 +28,9 @@ Task: determine whether two planned cell edits may be combined in either order. 
 The surrounding Markdown names the independence condition and points to the exact cell. Existing dry-run, stale-hash, and controlled rollback assertions received explicit references; they were reused instead of adding a property-testing framework or duplicating their fixtures. A dry-run on the actual `nbs/02_edit.ipynb` returned the proposed wording diff and left its bytes unchanged.
 
 The isolated new lesson passed safe `exec_nb` using the installed public editing functions. Full safe execution of `02_edit.ipynb` reported `1ab147c1: AssertionError` in the existing feedback example and an audit denial of `_thread.start_joinable_thread` in existing concurrent-edits cell `a4d98276`. The ordinary clean-process `nbdev-test nbs/02_edit.ipynb` passed, as did whole-notebook style checking. These runner limitations were recorded, not hidden or repaired as part of a documentation change.
+
+## Examples at the routing boundary: retained
+
+Task: choose the source to edit when starting from a Python file in this repository. The existing generated-file example in `00_foundation.ipynb#031a8dfd` now puts a generated module and a hand-written module in the same real scratch nbdev project. Its assertion checks the two different ownership results together. Nearby Markdown explains why a repository marker is insufficient and links the separate multiline-header regression test.
+
+Direct use on this checkout resolved `nbskill/foundation.py` to `nbs/00_foundation.ipynb` and returned `None` for `tests/test_exported_api.py`. All 203 code cells passed safe `exec_nb`; the normal notebook test also passed. The routing implementation and public API needed no change. The useful addition is the paired executable example, not another routing layer.

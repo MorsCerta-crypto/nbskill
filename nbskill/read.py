@@ -30,6 +30,8 @@ Use `context("notebook.ipynb#cell-id", mode="exact")` when an edit needs the com
 
 Use `mode="overview"` for notebook identity and headings, `mode="exact"` for a complete cell, and `mode="edit"` for one implementation. `mode="review"` also includes surrounding evidence and usage.
 
+Example and test records in review and edit views include `execution`: the state, changed upstream cell ids, uncertainty, and source/execution hashes from `notebook_state`. Saved output stays visible beside its state because an old result can otherwise look like current evidence. `clean` means that the recorded execution matches the source under the static dependency model; it does not prove a claim or exclude dynamic side effects. The focused test in cell `b0694a61` checks that a changed dependency marks the saved example as stale in both views.
+
 The edit view contains the stable `cell_id`, source `expected_hash`, trailing documentation, examples, and tests. Pass that hash into `edit_notebook` so an edit fails if another caller has already changed the selected source:
 
 ```python
@@ -622,12 +624,15 @@ def _symbol_signature_text(cell, symbol):
 # %% ../nbs/01_read.ipynb #1584953f
 def _context_symbol(path: str, symbol: str, depth: int=1, verbose: bool=True):
     "Return implementation, local docs, examples/tests, callers, and callees for one symbol."
+    from nbskill.state import notebook_state
     nb = read_nb(path)
+    states = {item["cell_idx"]: item for item in notebook_state(path)["cells"]}
     idx, cell, node = _symbol_location(path, nb, symbol)
     source = _source_for_node(cell, node) if node is not None else cell_source(cell).strip()
     markdown = [dict(cell_id=getattr(item, 'id', ''), cell_idx=pos, source=cell_source(item).strip()) for pos,
         item in _following_markdown(nb.cells, idx, len(nb.cells))]
-    examples = [{**item, 'source': _trim_context_source(item.get('source', ''), _CONTEXT_CELL_SOURCE_CHARS),
+    examples = [{**item, 'execution': {key: states[item['cell_idx']][key]
+        for key in ('state', 'stale_from', 'uncertainty', 'source_hash', 'executed_hash')}, 'source': _trim_context_source(item.get('source', ''), _CONTEXT_CELL_SOURCE_CHARS),
         'output': _trim_context_source(item.get('output', ''), _CONTEXT_CELL_OUTPUT_CHARS)} for item in _example_test_records(nb, symbol,
             definition_idx=idx)]
     callers, callees = [], []
@@ -642,7 +647,7 @@ def _context_symbol(path: str, symbol: str, depth: int=1, verbose: bool=True):
         callees = _callee_summary(path, symbol, depth, graph_data=graph_data)
     nl = chr(10)
     doc_blocks = [f"Cell id={item['cell_id']}{nl}{item['source']}" for item in markdown]
-    example_blocks = [f"Cell id={item['cell_id']} checks={item['properties']['checks']}{nl}{item['source']}"
+    example_blocks = [f"Cell id={item['cell_id']} checks={item['properties']['checks']} execution={item['execution']['state']} stale_from={item['execution']['stale_from']}{nl}{item['source']}"
         + (f"{nl}Output:{nl}{item['output']}" if item.get("output") else "") for item in examples]
     caller_blocks = [f"- {item.get('path')} id={item.get('cell_id')} line {item.get('lineno')}: {item.get('line')}" for item in callers]
     blocks = [("Implementation", source), ("Docs", doc_blocks), ("Examples/tests", example_blocks),
@@ -1020,7 +1025,7 @@ def _context_edit_result(path, cell_idx, symbol=None, source=None, verbose=True)
     callers, callees = related.get("callers", []), related.get("callees", [])
     title = f"Edit context: {symbol or cell_record['cell_id']}\nPath: {path}\nCell: {cell_prefix(cell_idx, cell, True)}"
     nl = chr(10)
-    example_text = [f"checks={item['properties']['checks']}{nl}{item['source']}" + (f"{nl}Output:{nl}{item['output']}" if item.get("output") else "") for item in examples]
+    example_text = [f"checks={item['properties']['checks']} execution={item['execution']['state']} stale_from={item['execution']['stale_from']}{nl}{item['source']}" + (f"{nl}Output:{nl}{item['output']}" if item.get("output") else "") for item in examples]
     caller_text = [f"- {item.get('path')} id={item.get('cell_id')} line {item.get('lineno')}: {item.get('line')}" for item in callers]
     blocks = [("Source", source), ("Docs", [item["source"] for item in docs]), ("Examples/tests", example_text), ("Callers", caller_text), ("Callees", _format_callee_items(callees))]
     text = _format_context_blocks(title, blocks)

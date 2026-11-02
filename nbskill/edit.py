@@ -78,7 +78,7 @@ renamed_source
 
 ### Hash-guarded dry runs
 
-An `expected_hash` protects the exact cell source selected by `context(..., mode="edit")`. A dry run returns the one-cell diff and replacement count without writing the notebook. `auto_feedback=False` keeps an edit from automatically executing example cells:
+An `expected_hash` protects the exact cell source selected by `context(..., mode="edit")`. A dry run returns the one-cell diff and replacement count without writing the notebook. `auto_feedback=False` keeps an edit from automatically executing example cells. Cells `5c113ff0`, `ddd32f12`, and `604d34f9` check preview preservation and stale-hash rejection:
 
 ```python
 with write_demo_notebook("02_edit_hash_example.ipynb", cells=[mk_cell("value = 1")]) as path:
@@ -88,6 +88,25 @@ with write_demo_notebook("02_edit_hash_example.ipynb", cells=[mk_cell("value = 1
     assert read_nb(path).cells[0].source == "value = 1"
     preview_summary = dict(dry_run=preview["dry_run"], replacements=preview["replacement_summary"])
 preview_summary
+```
+
+### Independent edits and their limit
+
+Edits to separate stable cell ids can be reordered when neither operation changes the other target or its selection. Cell `a1ea6a4b` checks this law and its boundary. The result below compares persisted cell ids and sources, rather than order-dependent receipts. This lets an agent combine independent changes into one transaction. It does not justify reordering dependent text replacements, structural moves, or overlapping selectors: the second assertion supplies a counterexample.
+
+```python
+independent = [dict(op="replace_text", cell_id="law-left", old="1", new="10"),
+    dict(op="replace_text", cell_id="law-right", old="2", new="20")]
+law_results = []
+for order in (independent, independent[::-1]):
+    with write_demo_notebook("02_edit_independent.ipynb", cells=[
+        mk_cell("left = 1", id="law-left"), mk_cell("right = 2", id="law-right")]) as path:
+        edit_notebook(path, order, auto_feedback=False)
+        law_results.append([(cell.id, cell.source) for cell in read_nb(path).cells])
+assert law_results[0] == law_results[1] == [("law-left", "left = 10"), ("law-right", "right = 20")]
+dependent = [dict(old="alpha", new="beta"), dict(old="beta", new="gamma")]
+assert replace_texts("alpha", replacements=dependent) != replace_texts("alpha", replacements=dependent[::-1])
+dict(independent_edits_commute=True, stable_ids_preserved=True, dependent_edits_commute=False)
 ```
 
 Docs: https://MorsCerta-crypto.github.io/nbskill/edit.html.md"""

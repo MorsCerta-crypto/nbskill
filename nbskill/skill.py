@@ -51,6 +51,22 @@ assert chapter["selection"]["matches"]
 chapter["selection"]["matches"]
 ```
 
+### Questions and their evidence
+
+For a decision reason, use `context("notebook.ipynb#symbol", mode="review")` and read the nearby Markdown. Follow an explicit claim-to-test cell id with `mode="exact"` to inspect the assertion. If no rationale or explicit link is recorded, say so.
+
+To find candidate tests, use `query="checks=true"` with `include_re="symbol"`. This is a source-text filter: a call or matching word does not establish what an assertion proves, and a test through another helper may not match. Keep those candidates distinct from explicit claim links. Review and edit examples also carry `execution` state; saved output can be stale even when it looks convincing.
+
+For possible impact, inspect callers in the review result or use `connection=("caller", "callee")` for a specific static chain. A missing chain does not rule out dynamic calls or effects outside the selected scope. The following repository-specific example was exercised against `diff_nb`; it is skipped during general notebook execution.
+
+```python
+review_path = owner.with_name("04_review.ipynb")
+reason = context(f"{review_path}#diff_nb", mode="review", verbose=False)
+checks = context(review_path, query="checks=true", include_re="diff_nb", view="summary", verbose=False)
+assertion = context(f"{review_path}#c4dfad92", mode="exact", verbose=False)
+chain = context(review_path, connection=("diff_nb", "_working_tree_sources"), verbose=False)
+```
+
 ## Write notebooks
 
 Use one `edit_notebook` call for one coherent change. Read stable cell IDs and exact source text first. Submit every related operation together so validation happens before the notebook is written. Never splice notebook JSON or edit a generated Python module.
@@ -104,7 +120,7 @@ Validation combines execution evidence, a cell-level diff, and style diagnostics
 
 ### `diff_nb`
 
-`diff_nb` shows changed cell sources without raw notebook JSON, output noise, or unrelated metadata:
+`diff_nb` shows changed cell sources without raw notebook JSON, output noise, or unrelated metadata. Add `include_markdown=True` when an edit changes a claim, example explanation, or decision rationale so the review includes that prose. The default stays code-only:
 
 ```python
 review = diff_nb(owner, ref_a="HEAD")

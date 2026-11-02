@@ -48,6 +48,22 @@ The pilot succeeds if the prepared run finds the correct evidence with fewer con
 
 **First pilot:** The [recorded comparison](experiments/claim-test-pilot/README.md) needed 10 notebook/source read or search calls without the added links and rationale, and 3 with them. Both agents completed the feature and passed notebook tests and style checks. This is one run per variant; repeat on another task before automating the convention.
 
+## 5. Try further notebook mechanisms in small steps
+
+The [trial journal](experiments/notebook-mechanisms/README.md) records direct use, verification, and discarded alternatives. Each retained change was committed before starting the next. These are self-use trials on this repository; the first claim-link pilot remains the only controlled comparison between two agents.
+
+| Proposal | Result and evidence |
+| --- | --- |
+| Review explanations with code | Retained `diff_nb(..., include_markdown=True)`; the default and stored-output exclusions remain protected. |
+| Show whether example evidence is current | Review/edit context now includes `execution` from `notebook_state`; `01_read.ipynb#b0694a61` checks stale output after a dependency changes. |
+| Make laws executable | `02_edit.ipynb#a1ea6a4b` checks independent edits in both orders and an order-dependent counterexample; existing preview, hash, and rollback tests have explicit references. |
+| Show decision boundaries | `00_foundation.ipynb#031a8dfd` contrasts generated and hand-written Python in the same nbdev project; the routing API stays unchanged. |
+| Retrieve reasons, tests, and connections | The Pyskill teaches concrete `context` recipes, with explicit links distinguished from text-match candidates and static analysis limits. |
+| Check explanation and evidence together | Markdown-aware diffs support human review, while context exposes recorded execution freshness. Automatic claims of semantic agreement were rejected. |
+
+Do not add a query language, duplicate dependency analysis, routing abstraction, or general property-testing framework unless a concrete task demonstrates what the current tools cannot answer. Repeat the controlled comparison on another real change before claiming a general agent-efficiency gain.
+
+
 ## Guardrails
 
 - Do not create a generic artifact-backend framework until a second specialized backend needs the same abstraction.

@@ -1,0 +1,245 @@
+diff --git a/nbs/04_review.ipynb b/nbs/04_review.ipynb
+index 84c945c..4032742 100644
+--- a/nbs/04_review.ipynb
++++ b/nbs/04_review.ipynb
+@@ -3043,9 +3043,9 @@
+    "source": [
+     "#| exporti\n",
+     "#| hide\n",
+-    "def _working_tree_code_sources(path):\n",
++    "def _working_tree_sources(path, f=code_source):\n",
+     "    nb = read_nb(path)\n",
+-    "    return {getattr(cell, 'id', str(idx)): source for idx, cell in enumerate(nb.cells) if (source := code_source(cell)) is not None}"
++    "    return {getattr(cell, 'id', str(idx)): source for idx, cell in enumerate(nb.cells) if (source := f(cell)) is not None}"
+    ]
+   },
+   {
+@@ -3730,7 +3730,7 @@
+     "#| export\n",
+     "### `diff_nb`\n",
+     "\n",
+-    "`diff_nb` compares code cells against a Git revision, retaining stable cell IDs for follow-up edits. For a disposable notebook outside Git, `ref_a=None, ref_b=None` treats current code as additions. Markdown and stored outputs do not enter the code diff:"
++    "`diff_nb` compares code cells against a Git revision, retaining stable cell IDs for follow-up edits. For a disposable notebook outside Git, `ref_a=None, ref_b=None` treats current code as additions. Pass `include_markdown=True` to review changed explanations alongside code. The default excludes Markdown so executable changes remain easy to inspect. Stored outputs and raw cells stay excluded in both modes:"
+    ]
+   },
+   {
+@@ -3756,15 +3756,20 @@
+     "    cell_id: str | None = None,  # Limit output to comma/space-separated cell ids\n",
+     "    after_id: str | None = None,  # Limit output to cells after this id in ref_b/the working tree\n",
+     "    surface: str = \"code\",  # Review surface: \"code\" or \"public-ui\"\n",
++    "    include_markdown: bool = False,  # Include Markdown source alongside code (code surface only)\n",
+     "):\n",
+-    "    \"Print nbdev-style diffs for code cells, or a public UI text surface.\"\n",
++    "    \"Print source diffs for code, optional Markdown, or public UI text.\"\n",
+     "    ref_a, ref_b = none_if_string(ref_a), none_if_string(ref_b)\n",
+     "    surface = (surface or \"code\").replace(\"_\", \"-\").lower()\n",
+     "    if surface not in {\"code\", \"public-ui\"}: raise ValueError(\"surface must be 'code' or 'public-ui'\")\n",
+-    "    if ref_a is None and ref_b is None: old, new = {}, _working_tree_code_sources(path)\n",
++    "    if include_markdown and surface != \"code\": raise ValueError(\"include_markdown requires surface='code'\")\n",
++    "    def review_source(cell):\n",
++    "        if include_markdown and cell.cell_type == \"markdown\": return cell.source\n",
++    "        return code_source(cell)\n",
++    "    if ref_a is None and ref_b is None: old, new = {}, _working_tree_sources(path, f=review_source)\n",
+     "    else:\n",
+     "        if msg := (_git_ref_path_error(path, ref_a) or _git_ref_path_error(path, ref_b)): api_error(msg)\n",
+-    "        try: old, new = nbs_pair(path, ref_a=ref_a, ref_b=ref_b, f=code_source)\n",
++    "        try: old, new = nbs_pair(path, ref_a=ref_a, ref_b=ref_b, f=review_source)\n",
+     "        except Exception as exc:\n",
+     "            detail = str(exc)\n",
+     "            hint = (\n",
+@@ -3788,12 +3793,13 @@
+     "    if changes: blocks += [(cid, source_diff(old[cid], new[cid])) for cid in new if cid in old and new[cid] != old[cid]]\n",
+     "    if dels:    blocks += [(cid, source_diff(old[cid], \"\")) for cid in old if cid not in new]\n",
+     "    if selected is not None: blocks = [(cid, diff) for cid, diff in blocks if cid in selected]\n",
+-    "    text = \"\\n\\n\".join(f\"--- code cell {cid} ---\\n{diff}\" for cid, diff in blocks if diff.strip())\n",
++    "    kind = \"source\" if include_markdown else \"code\"\n",
++    "    text = \"\\n\\n\".join(f\"--- {kind} cell {cid} ---\\n{diff}\" for cid, diff in blocks if diff.strip())\n",
+     "    metadata_summary = _metadata_summary(_nbskill_metadata_change_count(path, ref_a, ref_b))\n",
+     "    if text and metadata_summary: report = f\"{text}\\n\\n{metadata_summary}\"\n",
+     "    elif text: report = text\n",
+-    "    elif metadata_summary: report = f\"No code cell changes\\n{metadata_summary}\"\n",
+-    "    else: report = \"No code cell changes\"\n",
++    "    elif metadata_summary: report = f\"No {kind} cell changes\\n{metadata_summary}\"\n",
++    "    else: report = f\"No {kind} cell changes\"\n",
+     "    print(report)\n",
+     "    api_return(report)\n",
+     "    return report"
+@@ -3808,25 +3814,16 @@
+      "executed_hash": "c71ffb90ccb0760af88926599fa880b5248f7ca49869585f3fec05d80031de2e"
+     }
+    },
+-   "outputs": [
+-    {
+-     "data": {
+-      "text/plain": [
+-       "'--- code cell 59564ae9 ---\\n--- \\n+++ \\n@@ -0,0 +1 @@\\n+answer = 42'"
+-      ]
+-     },
+-     "execution_count": null,
+-     "metadata": {},
+-     "output_type": "execute_result"
+-    }
+-   ],
++   "outputs": [],
+    "source": [
+     "#| exportd\n",
+     "with write_demo_notebook(\"04_review_diff_usage.ipynb\") as path:\n",
+-    "    _write_nb(new_nb([mk_cell(\"answer = 42\"), mk_cell(\"A prose explanation\", cell_type=\"markdown\")]), path)\n",
++    "    code = mk_cell(\"answer = 42\", outputs=[dict(output_type=\"stream\", name=\"stdout\", text=\"stored-only output\")])\n",
++    "    _write_nb(new_nb([code, mk_cell(\"A prose explanation\", cell_type=\"markdown\")]), path)\n",
+     "    captured = StringIO()\n",
+     "    with redirect_stdout(captured): code_diff = diff_nb(path, ref_a=None, ref_b=None)\n",
+     "    assert \"answer = 42\" in code_diff and \"A prose explanation\" not in code_diff\n",
++    "    assert \"stored-only output\" not in code_diff\n",
+     "code_diff"
+    ]
+   },
+@@ -4015,6 +4012,37 @@
+     "finally: remove_demo_path(root)"
+    ]
+   },
++  {
++   "cell_type": "code",
++   "execution_count": null,
++   "id": "7bfde57f",
++   "metadata": {
++    "nbskill": {}
++   },
++   "outputs": [],
++   "source": [
++    "#| hide\n",
++    "root = demo_path(\"04_review_markdown_diff\")\n",
++    "try:\n",
++    "    code = mk_cell(\"answer = 41\", outputs=[dict(output_type=\"stream\", name=\"stdout\", text=\"stored-only output\")])\n",
++    "    path = _committed_review_notebook(root, [code, mk_cell(\"Original explanation\", cell_type=\"markdown\"),\n",
++    "        mk_cell(\"Raw source\", cell_type=\"raw\")])\n",
++    "    nb = read_nb(path)\n",
++    "    nb.cells[0].source = \"answer = 42\"\n",
++    "    nb.cells[1].source = \"Revised explanation\"\n",
++    "    nb.cells[2].source = \"Revised raw source\"\n",
++    "    _write_nb(nb, path)\n",
++    "    with redirect_stdout(StringIO()):\n",
++    "        default_diff = diff_nb(path)\n",
++    "        markdown_diff = diff_nb(path, include_markdown=True)\n",
++    "        additions_diff = diff_nb(path, ref_a=None, ref_b=None, include_markdown=True)\n",
++    "    assert \"+answer = 42\" in default_diff and \"explanation\" not in default_diff\n",
++    "    assert \"+answer = 42\" in markdown_diff and \"-Original explanation\" in markdown_diff and \"+Revised explanation\" in markdown_diff\n",
++    "    assert \"+answer = 42\" in additions_diff and \"+Revised explanation\" in additions_diff\n",
++    "    assert all(\"stored-only output\" not in report and \"raw source\" not in report for report in (default_diff, markdown_diff, additions_diff))\n",
++    "finally: remove_demo_path(root)"
++   ]
++  },
+   {
+    "cell_type": "code",
+    "execution_count": null,
+@@ -4597,7 +4625,7 @@
+     "nbskill": {}
+    },
+    "source": [
+-    "`diff_nb` deliberately compares code-cell source only. Markdown edits and notebook metadata churn stay out of the main diff so reviewers can see the executable behavior that changed."
++    "`diff_nb` keeps its code-only default so reviewers can focus on executable behavior without prose or metadata churn. Use `include_markdown=True` when explanations are part of the review. Both modes compare cell source and exclude stored outputs; the option applies to the code surface because public UI text is extracted from Python calls. The [focused Markdown source test](04_review.ipynb#7bfde57f) checks the opt-in claim for Git changes and current additions; [the default example](04_review.ipynb#c4dfad92) checks the code-only and output-exclusion promises."
+    ]
+   },
+   {
+@@ -4868,9 +4896,9 @@
+    "name": "python3"
+   },
+   "nbskill": {
+-   "exported_py_hash": "144496127646e152ce50afe96c1aad50cce11f1f9736b7aebba2455419b374cf",
++   "exported_py_hash": "3e81db03657cd508a03adebf0df477c60c9df81d43936642483b160246644adb",
+    "exported_py_hashes": {
+-    "/Users/macbook/Projects/nbskill/nbskill/review.py": "144496127646e152ce50afe96c1aad50cce11f1f9736b7aebba2455419b374cf"
++    "/private/tmp/nbskill-claim-pilot-deao5n6a/baseline/nbskill/review.py": "3e81db03657cd508a03adebf0df477c60c9df81d43936642483b160246644adb"
+    },
+    "exported_py_path": "nbskill/review.py"
+   }
+diff --git a/nbskill/_modidx.py b/nbskill/_modidx.py
+index 4b4b97b..f03f2a7 100644
+--- a/nbskill/_modidx.py
++++ b/nbskill/_modidx.py
+@@ -865,8 +865,7 @@ d = { 'settings': { 'branch': 'main',
+                                 'nbskill.review._validation_problem': ('review.html#_validation_problem', 'nbskill/review.py'),
+                                 'nbskill.review._visible_text_records_from_source': ( 'review.html#_visible_text_records_from_source',
+                                                                                       'nbskill/review.py'),
+-                                'nbskill.review._working_tree_code_sources': ( 'review.html#_working_tree_code_sources',
+-                                                                               'nbskill/review.py'),
++                                'nbskill.review._working_tree_sources': ('review.html#_working_tree_sources', 'nbskill/review.py'),
+                                 'nbskill.review.cell_structure_problems': ('review.html#cell_structure_problems', 'nbskill/review.py'),
+                                 'nbskill.review.code_source': ('review.html#code_source', 'nbskill/review.py'),
+                                 'nbskill.review.diff_nb': ('review.html#diff_nb', 'nbskill/review.py'),
+diff --git a/nbskill/review.py b/nbskill/review.py
+index c69e84d..bfcafc3 100644
+--- a/nbskill/review.py
++++ b/nbskill/review.py
+@@ -64,14 +64,16 @@ review_preview
+ 
+ ### `diff_nb`
+ 
+-`diff_nb` compares code cells against a Git revision, retaining stable cell IDs for follow-up edits. For a disposable notebook outside Git, `ref_a=None, ref_b=None` treats current code as additions. Markdown and stored outputs do not enter the code diff:
++`diff_nb` compares code cells against a Git revision, retaining stable cell IDs for follow-up edits. For a disposable notebook outside Git, `ref_a=None, ref_b=None` treats current code as additions. Pass `include_markdown=True` to review changed explanations alongside code. The default excludes Markdown so executable changes remain easy to inspect. Stored outputs and raw cells stay excluded in both modes:
+ 
+ ```python
+ with write_demo_notebook("04_review_diff_usage.ipynb") as path:
+-    _write_nb(new_nb([mk_cell("answer = 42"), mk_cell("A prose explanation", cell_type="markdown")]), path)
++    code = mk_cell("answer = 42", outputs=[dict(output_type="stream", name="stdout", text="stored-only output")])
++    _write_nb(new_nb([code, mk_cell("A prose explanation", cell_type="markdown")]), path)
+     captured = StringIO()
+     with redirect_stdout(captured): code_diff = diff_nb(path, ref_a=None, ref_b=None)
+     assert "answer = 42" in code_diff and "A prose explanation" not in code_diff
++    assert "stored-only output" not in code_diff
+ code_diff
+ ```
+ 
+@@ -985,9 +987,9 @@ def code_source(cell):
+     return cell.source if cell.cell_type == "code" else None
+ 
+ # %% ../nbs/04_review.ipynb #e69d0ca1
+-def _working_tree_code_sources(path):
++def _working_tree_sources(path, f=code_source):
+     nb = read_nb(path)
+-    return {getattr(cell, 'id', str(idx)): source for idx, cell in enumerate(nb.cells) if (source := code_source(cell)) is not None}
++    return {getattr(cell, 'id', str(idx)): source for idx, cell in enumerate(nb.cells) if (source := f(cell)) is not None}
+ 
+ # %% ../nbs/04_review.ipynb #e672839a
+ def _git_ref_path_error(path, ref):
+@@ -1180,15 +1182,20 @@ def diff_nb(
+     cell_id: str | None = None,  # Limit output to comma/space-separated cell ids
+     after_id: str | None = None,  # Limit output to cells after this id in ref_b/the working tree
+     surface: str = "code",  # Review surface: "code" or "public-ui"
++    include_markdown: bool = False,  # Include Markdown source alongside code (code surface only)
+ ):
+-    "Print nbdev-style diffs for code cells, or a public UI text surface."
++    "Print source diffs for code, optional Markdown, or public UI text."
+     ref_a, ref_b = none_if_string(ref_a), none_if_string(ref_b)
+     surface = (surface or "code").replace("_", "-").lower()
+     if surface not in {"code", "public-ui"}: raise ValueError("surface must be 'code' or 'public-ui'")
+-    if ref_a is None and ref_b is None: old, new = {}, _working_tree_code_sources(path)
++    if include_markdown and surface != "code": raise ValueError("include_markdown requires surface='code'")
++    def review_source(cell):
++        if include_markdown and cell.cell_type == "markdown": return cell.source
++        return code_source(cell)
++    if ref_a is None and ref_b is None: old, new = {}, _working_tree_sources(path, f=review_source)
+     else:
+         if msg := (_git_ref_path_error(path, ref_a) or _git_ref_path_error(path, ref_b)): api_error(msg)
+-        try: old, new = nbs_pair(path, ref_a=ref_a, ref_b=ref_b, f=code_source)
++        try: old, new = nbs_pair(path, ref_a=ref_a, ref_b=ref_b, f=review_source)
+         except Exception as exc:
+             detail = str(exc)
+             hint = (
+@@ -1212,12 +1219,13 @@ def diff_nb(
+     if changes: blocks += [(cid, source_diff(old[cid], new[cid])) for cid in new if cid in old and new[cid] != old[cid]]
+     if dels:    blocks += [(cid, source_diff(old[cid], "")) for cid in old if cid not in new]
+     if selected is not None: blocks = [(cid, diff) for cid, diff in blocks if cid in selected]
+-    text = "\n\n".join(f"--- code cell {cid} ---\n{diff}" for cid, diff in blocks if diff.strip())
++    kind = "source" if include_markdown else "code"
++    text = "\n\n".join(f"--- {kind} cell {cid} ---\n{diff}" for cid, diff in blocks if diff.strip())
+     metadata_summary = _metadata_summary(_nbskill_metadata_change_count(path, ref_a, ref_b))
+     if text and metadata_summary: report = f"{text}\n\n{metadata_summary}"
+     elif text: report = text
+-    elif metadata_summary: report = f"No code cell changes\n{metadata_summary}"
+-    else: report = "No code cell changes"
++    elif metadata_summary: report = f"No {kind} cell changes\n{metadata_summary}"
++    else: report = f"No {kind} cell changes"
+     print(report)
+     api_return(report)
+     return report

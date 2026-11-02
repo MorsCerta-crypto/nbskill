@@ -68,10 +68,12 @@ review_preview
 
 ```python
 with write_demo_notebook("04_review_diff_usage.ipynb") as path:
-    _write_nb(new_nb([mk_cell("answer = 42"), mk_cell("A prose explanation", cell_type="markdown")]), path)
+    code = mk_cell("answer = 42", outputs=[dict(output_type="stream", name="stdout", text="stored-only output")])
+    _write_nb(new_nb([code, mk_cell("A prose explanation", cell_type="markdown")]), path)
     captured = StringIO()
     with redirect_stdout(captured): code_diff = diff_nb(path, ref_a=None, ref_b=None)
     assert "answer = 42" in code_diff and "A prose explanation" not in code_diff
+    assert "stored-only output" not in code_diff
 code_diff
 ```
 

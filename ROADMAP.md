@@ -32,6 +32,22 @@ Run each real-world test in a disposable worktree or clone of this repository. T
 
 **Refactor:** Keep only the operations that the successful run needed as top-level Pyskill concepts. Fold overlapping diagnostics into clear roles such as environment diagnosis and changed-source verification. Re-run the same task from a clean session.
 
+## 4. Connect behavioral claims, tests, and decisions
+
+**Build:** Let an agent identify which exact test checks a notebook's behavioral claim and why a non-obvious decision still applies. Start with one function bundle in `nbs/04_review.ipynb`, around `diff_nb`. In nearby Markdown, state two existing promises: the default diff excludes Markdown and stored outputs. Link each promise to the actual test cell by stable cell ID. Keep the explanation in Markdown rather than duplicating it in metadata. Record the reason for the code-only default, the tradeoff, and the condition under which that decision should be revisited in two or three sentences. Inspect the implementation and tests before stating those reasons; distinguish a proposed rationale from an established constraint.
+
+**First step:** Prepare only this bundle and use the existing `context` workflow to retrieve it. A human reviewer must confirm that each linked assertion checks the stated promise. A call to the function alone is not a behavioral test. Do not add a general annotation schema, graph layer, or public API for this experiment.
+
+**Validate:** Give an agent this real feature task in a clean session and disposable checkout:
+
+> Extend `diff_nb` with an opt-in Markdown source diff so a reviewer can inspect changed explanations alongside code. Preserve the current default behavior and keep stored outputs excluded. Find the existing tests that protect these promises, explain the reason for retaining the default, add a focused failing notebook test for the new option, implement it in the source notebook, and complete notebook-aware verification. Add a claim-to-test link and a short decision rationale for the new behavior.
+
+Run the same prompt from the same starting revision in two fresh sessions, first with the original notebook and then with only the prepared claim links and rationale added. Both runs use the installed package and normal Pyskill discovery. Record context/search calls before the agent identifies the relevant tests and rationale, wrong turns, and the final verification results. Review the changed explanation as well as the code diff. Preserve the red-before/green-after evidence for the new test.
+
+The pilot succeeds if the prepared run finds the correct evidence with fewer context/search calls and completes the feature without weakening either existing promise. Record a tie or regression as such; two runs provide initial evidence, not a general speed claim. If successful, simplify the convention and repeat the enriched task from a fresh session before automating any relationship lookup.
+
+**First pilot:** The [recorded comparison](experiments/claim-test-pilot/README.md) needed 10 notebook/source read or search calls without the added links and rationale, and 3 with them. Both agents completed the feature and passed notebook tests and style checks. This is one run per variant; repeat on another task before automating the convention.
+
 ## Guardrails
 
 - Do not create a generic artifact-backend framework until a second specialized backend needs the same abstraction.

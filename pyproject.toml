@@ -55,6 +55,7 @@ allowed_cell_metadata_keys = ["nbskill"]
 
 [tool.ease]
 deployments = false
+workflow = "native"
 
 [tool.fastship]
 branch = "main"

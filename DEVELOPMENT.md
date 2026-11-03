@@ -22,7 +22,7 @@ uv run --locked pytest -q
 uv run --locked nbdev-test --n-workers 0 --pause 1
 ```
 
-GitHub Actions only builds and deploys the documentation on pushes to `main` or manual dispatch. The deployment runs `nbdev-docs` and publishes `_docs` to the `gh-pages` branch, which is the repository's existing Pages source. It does not run either test suite.
+GitHub Actions runs only a short Python 3.13 syntax check on `main`, `development`, and pull requests. It installs no project dependencies and needs no private-library token. Full Python tests, notebook execution and documentation builds run locally. Automatic Pages builds and deployments are removed; `gh-pages` is archived during branch cleanup. Only `main` and `development` remain as long-lived branches.
 
 ## GitHub releases with Fastship
 

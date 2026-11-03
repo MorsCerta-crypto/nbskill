@@ -66,6 +66,23 @@ The [trial journal](experiments/notebook-mechanisms/README.md) records direct us
 
 Do not add a query language, duplicate dependency analysis, routing abstraction, or general property-testing framework unless a concrete task demonstrates what the current tools cannot answer. The second task supports small nearby proofs and source navigation; it does not establish a general agent-efficiency gain.
 
+### Direct proofs for the public tools
+
+All seven Pyskill operations now have nearby executable repository examples or disposable write examples. Read examples assert that the real source notebook's bytes stay unchanged. Write and repair examples use temporary notebooks. Existing focused boundary tests remain in place instead of being copied into a second fixture.
+
+| Tool | Direct proof in its source notebook | Boundary to inspect |
+| --- | --- | --- |
+| `generated_owner` | `00_foundation.ipynb#6a8f43bd` reads the real state module's owner and checks a real hand-written test. | `031a8dfd` contrasts generated and hand-written files inside one nbdev project. |
+| `context` | `01_read.ipynb#99b1b1e6` opens the real state definition without changing its notebook. | Exact source is not execution evidence; `ce8a18bd` tests separated assertion attribution and its exclusions. |
+| `edit_notebook` | `02_edit.ipynb#0081c5ed` reports a missing text match on a temporary notebook. | `ok=True` does not mean a replacement matched. Inspect `replacement_summary`; `5c113ff0` checks byte-preserving preview and `ddd32f12` checks stale-hash rejection. |
+| `exec_nb` | `03_execute.ipynb#347b2af2` executes a temporary notebook with an explicitly permitted scratch-file write. | `check_only=True` keeps notebook bytes unchanged but preserves permitted Python side effects. `624cb8c8` checks failure evidence. |
+| `notebook_state` | `15_state.ipynb#ccb26554` reports the real foundation notebook; the next two cells check coverage, limits, and unchanged bytes. | `93b0e3f6` and `e6c567a9` distinguish saved fingerprints, dynamic uncertainty, and downstream staleness. |
+| `diff_nb` | `04_review.ipynb#86f418a7` compares code-only and Markdown-inclusive source on the real state notebook. | Both refs `None` show current source as additions, not a Git delta. `c4dfad92` excludes stored outputs; `23ca95b1` checks a real disposable Git baseline. |
+| `style_check` | `04_review.ipynb#0d78d174` checks a real notebook without writing; `e176f419` previews and applies repairs to a temporary notebook. | `fix=True` remains a preview until `dry_run=False`. Style status and successful repair do not establish execution correctness. |
+
+The missing-match example addresses a failure encountered during this rollout: a spacing mismatch left an import unchanged although the transaction returned `ok=True`. Checking replacement counts identified the omission. No API change or additional annotation format was needed. These direct runs verify the documented contracts; they are not another controlled agent-speed comparison.
+
+Verification: all six changed notebooks passed `exec_nb(check_only=True)` and a clean-process `nbdev-test` run. The edit, execution, and review notebooks ran with `safe=False` for their existing nested-runner and subprocess tests; the new scratch-write example itself uses the default safe runner with an explicit destination. Five notebooks have zero style diagnostics. The read notebook retains its existing `large-generated-py` warning at 1,010 code lines. The final notebook diffs include the explanations and examples.
 
 ## Guardrails
 

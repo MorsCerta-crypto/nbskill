@@ -9,6 +9,8 @@ from fastcore.nbio import mk_cell, write_nb as _write_nb
 from contextlib import redirect_stdout
 from io import StringIO
 from tempfile import gettempdir
+from nbskill.foundation import generated_owner
+import nbskill.state as repository_state
 ```
 
 ### `style_report`

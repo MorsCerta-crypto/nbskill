@@ -6,6 +6,8 @@ Execution closes the loop after a notebook edit. `exec_nb` runs through a select
 from nbskill.execute import exec_nb
 from nbskill.foundation import write_tool_notebook
 from fastcore.test import test_eq
+from pathlib import Path
+from tempfile import TemporaryDirectory
 ```
 
 ### `exec_nb`

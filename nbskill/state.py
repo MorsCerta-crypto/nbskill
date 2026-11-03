@@ -5,7 +5,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from fastcore.nbio import mk_cell, new_nb, read_nb, write_nb
 from fastcore.test import test_eq
-from nbskill.foundation import nbskill_cell_metadata, cell_source, source_hash
+from nbskill.foundation import nbskill_cell_metadata, cell_source, source_hash, generated_owner
+import nbskill.foundation as repository_foundation
 ```
 
 `notebook_state(path)` reports `clean`, `dirty`, `stale`, `error`, and `unknown` cells with source fingerprints and the root cells behind downstream impact. Use it after editing and before choosing what to rerun. It reads the notebook without executing code. A saved temporary notebook makes the distinction visible below:

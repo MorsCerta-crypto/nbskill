@@ -82,10 +82,11 @@ An `expected_hash` protects the exact cell source selected by `context(..., mode
 
 ```python
 with write_demo_notebook("02_edit_hash_example.ipynb", cells=[mk_cell("value = 1")]) as path:
+    before = path.read_bytes()
     cell = read_nb(path).cells[0]
     preview = edit_notebook(path, [dict(op="replace_text", cell_id=cell.id, old="1", new="2", expected_hash=source_hash(cell_source(cell)))], auto_feedback=False, dry_run=True)
     assert preview["changed"] and preview["dry_run"]
-    assert read_nb(path).cells[0].source == "value = 1"
+    assert path.read_bytes() == before
     preview_summary = dict(dry_run=preview["dry_run"], replacements=preview["replacement_summary"])
 preview_summary
 ```

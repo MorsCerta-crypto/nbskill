@@ -61,7 +61,7 @@ branch = "main"
 
 [dependency-groups]
 dev = [
-    "fastship>=0.1.0",
+    "fastship>=0.1.10",
     "ipykernel>=7.2.0",
     "jupyter>=1.1.1",
     "nbdev>=3.3.25",

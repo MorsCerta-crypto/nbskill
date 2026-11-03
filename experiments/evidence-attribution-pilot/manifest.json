@@ -1,0 +1,8 @@
+{
+  "original_revision": "5e01c575579b04f2bc593c463572525ae717016f",
+  "enriched_revision": "53d49c8",
+  "oracle_sha256": "477315110b32eaac52ef3b5223bb196fadbdc90b9b2781712de537f9584b8b29",
+  "task_sha256": "6a97d91d066d22d69117b775478f832b1648b3515ffcd9f3862c6aea5c8be678",
+  "shared_dependency_entries": 60,
+  "dependency_manifests_match": true
+}

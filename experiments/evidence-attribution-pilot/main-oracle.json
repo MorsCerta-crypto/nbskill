@@ -1,0 +1,42 @@
+[
+  {
+    "mode": "review",
+    "checks": {
+      "direct_example": true,
+      "separated_assertion": true,
+      "unrelated_excluded": true,
+      "rebound_excluded": true,
+      "nested_excluded": true,
+      "boundary_respected": true,
+      "read_only_no_execution": true
+    },
+    "passed": 7,
+    "total": 7,
+    "selected_ids": [
+      "oracle-direct-check",
+      "oracle-example",
+      "oracle-result-check"
+    ],
+    "execution_metadata": true
+  },
+  {
+    "mode": "edit",
+    "checks": {
+      "direct_example": true,
+      "separated_assertion": true,
+      "unrelated_excluded": true,
+      "rebound_excluded": true,
+      "nested_excluded": true,
+      "boundary_respected": true,
+      "read_only_no_execution": true
+    },
+    "passed": 7,
+    "total": 7,
+    "selected_ids": [
+      "oracle-direct-check",
+      "oracle-example",
+      "oracle-result-check"
+    ],
+    "execution_metadata": true
+  }
+]

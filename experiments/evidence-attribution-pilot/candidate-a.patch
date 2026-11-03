@@ -1,0 +1,143 @@
+diff --git a/nbs/01_read.ipynb b/nbs/01_read.ipynb
+index 4d95a89..b749ef8 100644
+--- a/nbs/01_read.ipynb
++++ b/nbs/01_read.ipynb
+@@ -1110,6 +1110,54 @@
+     "    return False"
+    ]
+   },
++  {
++   "cell_type": "code",
++   "execution_count": null,
++   "id": "fb96764a",
++   "metadata": {
++    "nbskill": {}
++   },
++   "outputs": [],
++   "source": [
++    "#| exporti\n",
++    "#| hide\n",
++    "def _result_value(node, symbol, results=()):\n",
++    "    for item, scope in scoped_nodes(node):\n",
++    "        if scope: continue\n",
++    "        if isinstance(item, ast.Call) and _call_matches_context_symbol(call_name(item.func), symbol): return True\n",
++    "        if isinstance(item, ast.Name) and isinstance(item.ctx, ast.Load) and item.id in results: return True\n",
++    "    return False"
++   ]
++  },
++  {
++   "cell_type": "code",
++   "execution_count": null,
++   "id": "709085ae",
++   "metadata": {
++    "nbskill": {}
++   },
++   "outputs": [],
++   "source": [
++    "#| exporti\n",
++    "#| hide\n",
++    "def _cell_result_evidence(cell, symbol, results):\n",
++    "    tree = parse_code_cell(cell)\n",
++    "    if tree is None: results.clear()\n",
++    "    found = False\n",
++    "    for node in tree.body if tree else ():\n",
++    "        if any(isinstance(item, ast.NamedExpr) for item in ast.walk(node)): results.clear()\n",
++    "        elif isinstance(node, ast.Assert): found |= _result_value(node.test, symbol, results)\n",
++    "        elif isinstance(node, (ast.Assign, ast.AnnAssign)):\n",
++    "            related = node.value is not None and _result_value(node.value, symbol)\n",
++    "            targets = node.targets if isinstance(node, ast.Assign) else [node.target]\n",
++    "            if any(not isinstance(target, ast.Name) for target in targets): results.clear()\n",
++    "            else:\n",
++    "                results.difference_update(_assignment_target_names(node))\n",
++    "                if related: results.update(target.id for target in targets)\n",
++    "        elif not isinstance(node, ast.Expr): results.clear()\n",
++    "    return found"
++   ]
++  },
+   {
+    "cell_type": "code",
+    "execution_count": null,
+@@ -1125,9 +1173,10 @@
+     "#| hide\n",
+     "def _example_test_records(nb, symbol, definition_idx=None):\n",
+     "    items = _following_examples(nb.cells, definition_idx, len(nb.cells)) if definition_idx is not None else list(enumerate(nb.cells))\n",
+-    "    records = []\n",
++    "    records, results = [], set()\n",
+     "    for idx, cell in items:\n",
+-    "        if not _cell_calls_symbol(cell, symbol): continue\n",
++    "        result_check = _cell_result_evidence(cell, symbol, results)\n",
++    "        if not (_cell_calls_symbol(cell, symbol) or result_check): continue\n",
+     "        record = Cell(cell, idx=idx).context_record()\n",
+     "        records.append(record)\n",
+     "    return records"
+@@ -1140,7 +1189,55 @@
+     "nbskill": {}
+    },
+    "source": [
+-    "Examples and tests are attributed to the symbol they call. Symbol location resolves the definition before those nearby records are rendered."
++    "A separate assertion on an example result belongs in the symbol evidence even when it does not repeat the call. `context` follows simple result names through straight-line module-level assignments and assertions within the existing local symbol bundle. Each assignment needs its own call to the symbol; rebinding a name, including `result = result + 1`, invalidates its earlier attribution. Unsupported statements and assignment targets clear tracked names. Function and class bodies, control flow, aliases, mutation, and dynamic execution are outside this analysis. Direct-call examples and tests retain their existing behavior."
++   ]
++  },
++  {
++   "cell_type": "code",
++   "execution_count": null,
++   "id": "7f8943ac",
++   "metadata": {
++    "nbskill": {}
++   },
++   "outputs": [],
++   "source": [
++    "result_cells = [\n",
++    "    mk_cell(\"#| export\\ndef twice(x):\\n    return x * 2\", id=\"twice-definition\"),\n",
++    "    mk_cell(\"result = twice(3)\", id=\"example\"),\n",
++    "    mk_cell(\"assert result == 6\", id=\"result-check\"),\n",
++    "    mk_cell(\"assert 2 + 2 == 4\", id=\"unrelated\"),\n",
++    "    mk_cell(\"def local_check():\\n    assert result == 6\", id=\"function-check\"),\n",
++    "    mk_cell(\"class LocalCheck:\\n    assert result == 6\", id=\"class-check\"),\n",
++    "    mk_cell(\"result = twice(3)\\nresult = result + 1\", id=\"self-rebound\"),\n",
++    "    mk_cell(\"assert result == 7\", id=\"self-rebound-check\"),\n",
++    "    mk_cell(\"result = twice(3)\\nresult = 99\", id=\"rebound\"),\n",
++    "    mk_cell(\"assert result == 99\", id=\"rebound-check\"),\n",
++    "    mk_cell(\"assert twice(4) == 8\", id=\"direct-check\"),\n",
++    "    mk_cell(\"raise RuntimeError('context must not execute this notebook')\", id=\"no-execution\"),\n",
++    "    mk_cell(\"#| export\\ndef other():\\n    return 1\", id=\"next-bundle\"),\n",
++    "    mk_cell(\"result = twice(5)\\nassert result == 10\", id=\"outside-bundle\")]\n",
++    "attributed = {}"
++   ]
++  },
++  {
++   "cell_type": "code",
++   "execution_count": null,
++   "id": "bd83cd2b",
++   "metadata": {
++    "nbskill": {}
++   },
++   "outputs": [],
++   "source": [
++    "with write_demo_notebook(\"01_read_result_evidence.ipynb\", cells=result_cells) as path:\n",
++    "    before = path.read_bytes()\n",
++    "    for mode in (\"review\", \"edit\"):\n",
++    "        evidence = _example_context(f\"{path}#twice\", mode=mode, verbose=False)[\"selection\"][\"examples\"]\n",
++    "        ids = {item[\"cell_id\"] for item in evidence}\n",
++    "        assert {\"example\", \"result-check\", \"direct-check\"} <= ids, (mode, ids)\n",
++    "        assert not ids & {\"unrelated\", \"function-check\", \"class-check\", \"rebound-check\", \"self-rebound-check\", \"outside-bundle\"}, (mode, ids)\n",
++    "        attributed[mode] = sorted(ids)\n",
++    "    assert path.read_bytes() == before\n",
++    "attributed"
+    ]
+   },
+   {
+@@ -5696,10 +5793,10 @@
+  ],
+  "metadata": {
+   "nbskill": {
+-   "exported_py_hash": "4811deeab386d93102247f3ee34eb6874ed80391b4181e8f36ed023ef0b70a62",
++   "exported_py_hash": "9abc59d005d6ae82880c502ac2143fd67392fe01394dd686855fc46056bb9786",
+    "exported_py_hashes": {
+-    "/Users/macbook/Projects/nbskill/nbskill/read.py": "4811deeab386d93102247f3ee34eb6874ed80391b4181e8f36ed023ef0b70a62",
+-    "/Users/macbook/Projects/nbskill/nbskill/read_core.py": "f26758e91145aa8a5af4b6325a812f14d5c2161302b7fb8dedb12f634ec3b2eb"
++    "/private/var/folders/6_/45pyyxdd7hz3wz33p813bx_c0000gn/T/nbskill-evidence-pilot-t465_4_g/a/nbskill/read.py": "9abc59d005d6ae82880c502ac2143fd67392fe01394dd686855fc46056bb9786",
++    "/private/var/folders/6_/45pyyxdd7hz3wz33p813bx_c0000gn/T/nbskill-evidence-pilot-t465_4_g/a/nbskill/read_core.py": "0685d3bdddd57e4be19fdbd479eab982a0f5b5024025c96f954a1f05cd083117"
+    },
+    "exported_py_path": "nbskill/read.py"
+   }

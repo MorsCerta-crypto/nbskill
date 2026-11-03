@@ -1,0 +1,24 @@
+{
+  "proof_cell": "ce8a18bd",
+  "red": {
+    "ok": false,
+    "errors": [
+      "ce8a18bd: AssertionError: {'result-example', 'direct-check'}"
+    ]
+  },
+  "old_kernel_after_export": {
+    "ok": false,
+    "errors": [
+      "ce8a18bd: AssertionError: {'result-example', 'direct-check'}"
+    ]
+  },
+  "fresh_kernel": {
+    "ok": true,
+    "errors": [],
+    "executed_cells": 237
+  },
+  "normal_notebook_test": "Success.",
+  "style_status": 1,
+  "style_diagnostic": "large-generated-py: 1010 generated Python code lines",
+  "integration": "candidate b; notebook-aware edits; unrelated secondary export and approval cache churn removed"
+}

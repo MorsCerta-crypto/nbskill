@@ -30,6 +30,8 @@ Use `context("notebook.ipynb#cell-id", mode="exact")` when an edit needs the com
 
 Use `mode="overview"` for notebook identity and headings, `mode="exact"` for a complete cell, and `mode="edit"` for one implementation. `mode="review"` also includes surrounding evidence and usage.
 
+For a result assigned by a direct symbol call, `examples` also includes a later module-level assertion using that result name. Rebinding ends the association. The selector is `_example_test_records` in cell `472048bb`; its executable proof is in cell `ce8a18bd`. This is a static association, not a claim that the assertion passed.
+
 Example and test records in review and edit views include `execution`: the state, changed upstream cell ids, uncertainty, and source/execution hashes from `notebook_state`. Saved output stays visible beside its state because an old result can otherwise look like current evidence. `clean` means that the recorded execution matches the source under the static dependency model; it does not prove a claim or exclude dynamic side effects. The focused test in cell `b0694a61` checks that a changed dependency marks the saved example as stale in both views.
 
 The edit view contains the stable `cell_id`, source `expected_hash`, trailing documentation, examples, and tests. Pass that hash into `edit_notebook` so an edit fails if another caller has already changed the selected source:
@@ -169,14 +171,38 @@ def _cell_calls_symbol(cell, symbol):
         if any(isinstance(node, ast.Call) and _call_matches_context_symbol(call_name(node.func), symbol) for node in ast.walk(check["raw"])): return True
     return False
 
+# %% ../nbs/01_read.ipynb #95dc78c5
+def _assigned_result_check(tree, symbol, results):
+    related = False
+    for node in tree.body:
+        value = node.value if isinstance(node, (ast.Assign, ast.AnnAssign)) else None
+        called = isinstance(value, ast.Call) and _call_matches_context_symbol(call_name(value.func), symbol)
+        for part, scope in scoped_nodes(node):
+            if scope: continue
+            if isinstance(part, ast.Name) and isinstance(part.ctx, (ast.Store, ast.Del)): results.discard(part.id)
+            elif isinstance(part, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)): results.discard(part.name)
+            elif isinstance(part, (ast.Import, ast.ImportFrom)):
+                for alias in part.names:
+                    if alias.name == "*": results.clear()
+                    else: results.discard(alias.asname or alias.name.split(".")[0])
+        if isinstance(node, ast.Assert):
+            related |= any(isinstance(part, ast.Name) and part.id in results for part, scope in scoped_nodes(node.test) if not scope)
+        elif called:
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            results.update(target.id for target in targets if isinstance(target, ast.Name))
+        elif not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and hasattr(node, "body"): results.clear()
+    return related
+
 # %% ../nbs/01_read.ipynb #472048bb
 def _example_test_records(nb, symbol, definition_idx=None):
     items = _following_examples(nb.cells, definition_idx, len(nb.cells)) if definition_idx is not None else list(enumerate(nb.cells))
-    records = []
+    records, results = [], set()
     for idx, cell in items:
-        if not _cell_calls_symbol(cell, symbol): continue
-        record = Cell(cell, idx=idx).context_record()
-        records.append(record)
+        related = _cell_calls_symbol(cell, symbol)
+        tree = parse_code_cell(cell)
+        if tree is None: results.clear()
+        elif _assigned_result_check(tree, symbol, results): related = True
+        if related: records.append(Cell(cell, idx=idx).context_record())
     return records
 
 # %% ../nbs/01_read.ipynb #e7a2910d

@@ -1,0 +1,129 @@
+diff --git a/nbs/01_read.ipynb b/nbs/01_read.ipynb
+index d89f76d..8298e52 100644
+--- a/nbs/01_read.ipynb
++++ b/nbs/01_read.ipynb
+@@ -1110,6 +1110,39 @@
+     "    return False"
+    ]
+   },
++  {
++   "cell_type": "code",
++   "execution_count": null,
++   "id": "45b9ae61",
++   "metadata": {
++    "nbskill": {}
++   },
++   "outputs": [],
++   "source": [
++    "#| exporti\n",
++    "#| hide\n",
++    "def _assigned_result_check(tree, symbol, results):\n",
++    "    related = False\n",
++    "    for node in tree.body:\n",
++    "        value = node.value if isinstance(node, (ast.Assign, ast.AnnAssign)) else None\n",
++    "        called = isinstance(value, ast.Call) and _call_matches_context_symbol(call_name(value.func), symbol)\n",
++    "        for part, scope in scoped_nodes(node):\n",
++    "            if scope: continue\n",
++    "            if isinstance(part, ast.Name) and isinstance(part.ctx, (ast.Store, ast.Del)): results.discard(part.id)\n",
++    "            elif isinstance(part, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)): results.discard(part.name)\n",
++    "            elif isinstance(part, (ast.Import, ast.ImportFrom)):\n",
++    "                for alias in part.names:\n",
++    "                    if alias.name == \"*\": results.clear()\n",
++    "                    else: results.discard(alias.asname or alias.name.split(\".\")[0])\n",
++    "        if isinstance(node, ast.Assert):\n",
++    "            related |= any(isinstance(part, ast.Name) and part.id in results for part, scope in scoped_nodes(node.test) if not scope)\n",
++    "        elif called:\n",
++    "            targets = node.targets if isinstance(node, ast.Assign) else [node.target]\n",
++    "            results.update(target.id for target in targets if isinstance(target, ast.Name))\n",
++    "        elif not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and hasattr(node, \"body\"): results.clear()\n",
++    "    return related"
++   ]
++  },
+   {
+    "cell_type": "code",
+    "execution_count": null,
+@@ -1125,14 +1158,57 @@
+     "#| hide\n",
+     "def _example_test_records(nb, symbol, definition_idx=None):\n",
+     "    items = _following_examples(nb.cells, definition_idx, len(nb.cells)) if definition_idx is not None else list(enumerate(nb.cells))\n",
+-    "    records = []\n",
++    "    records, results = [], set()\n",
+     "    for idx, cell in items:\n",
+-    "        if not _cell_calls_symbol(cell, symbol): continue\n",
+-    "        record = Cell(cell, idx=idx).context_record()\n",
+-    "        records.append(record)\n",
++    "        related = _cell_calls_symbol(cell, symbol)\n",
++    "        tree = parse_code_cell(cell)\n",
++    "        if tree is None: results.clear()\n",
++    "        elif _assigned_result_check(tree, symbol, results): related = True\n",
++    "        if related: records.append(Cell(cell, idx=idx).context_record())\n",
+     "    return records"
+    ]
+   },
++  {
++   "cell_type": "markdown",
++   "id": "6f72982c",
++   "metadata": {
++    "nbskill": {}
++   },
++   "source": [
++    "An example can assign `result = twice(3)` and check `result` in a later cell. `context` follows simple module-level call assignments and assertions in source order within the existing symbol bundle. Rebinding a name ends its attribution. This is static source evidence: function and class bodies, control-flow result assignments, aliases, and dynamic effects are outside this lookup. The disposable notebook below contains an execution trap and verifies that reading leaves its bytes unchanged."
++   ]
++  },
++  {
++   "cell_type": "code",
++   "execution_count": null,
++   "id": "771dab13",
++   "metadata": {
++    "nbskill": {}
++   },
++   "outputs": [],
++   "source": [
++    "with write_demo_notebook(\"01_read_result_assertions.ipynb\", cells=[\n",
++    "    mk_cell(\"#| export\\ndef twice(value):\\n    return value * 2\", id=\"result-symbol\"),\n",
++    "    mk_cell(\"result = twice(3)\", id=\"result-example\"),\n",
++    "    mk_cell(\"assert result == 6\", id=\"result-check\"),\n",
++    "    mk_cell(\"assert twice(4) == 8\", id=\"direct-check\"),\n",
++    "    mk_cell(\"assert unrelated == 0\", id=\"unrelated-check\"), mk_cell(\"def nested():\\n    assert result == 6\", id=\"nested-check\"),\n",
++    "    mk_cell(\"class Nested:\\n    assert result == 6\", id=\"class-check\"),\n",
++    "    mk_cell(\"result = 0\", id=\"result-rebinding\"), mk_cell(\"assert result == 0\", id=\"rebound-check\"),\n",
++    "    mk_cell(\"raise RuntimeError('context must not execute this notebook')\", id=\"execution-trap\"),\n",
++    "    mk_cell(\"#| export\\ndef other():\\n    return 1\", id=\"bundle-boundary\"),\n",
++    "    mk_cell(\"assert twice(5) == 10\", id=\"outside-check\"),\n",
++    "]) as path:\n",
++    "    original_bytes = path.read_bytes()\n",
++    "    for mode in (\"review\", \"edit\"):\n",
++    "        evidence = _example_context(f\"{path}#twice\", mode=mode, verbose=False)[\"selection\"][\"examples\"]\n",
++    "        evidence_ids = {item[\"cell_id\"] for item in evidence}\n",
++    "        assert {\"result-example\", \"result-check\", \"direct-check\"} <= evidence_ids, evidence_ids\n",
++    "        assert not evidence_ids & {\"unrelated-check\", \"nested-check\", \"class-check\", \"rebound-check\", \"outside-check\"}\n",
++    "    assert path.read_bytes() == original_bytes\n",
++    "evidence_ids"
++   ]
++  },
+   {
+    "cell_type": "markdown",
+    "id": "6974d49f",
+@@ -1140,7 +1216,7 @@
+     "nbskill": {}
+    },
+    "source": [
+-    "Examples and tests are attributed to the symbol they call. Symbol location resolves the definition before those nearby records are rendered."
++    "Examples and tests are attributed to direct calls or to module-level assertions on their assigned results. Symbol location resolves the definition before those nearby records are rendered."
+    ]
+   },
+   {
+@@ -5733,10 +5809,10 @@
+  ],
+  "metadata": {
+   "nbskill": {
+-   "exported_py_hash": "f8d21273641fa58a46d5497953ca7239800b7fb3ed9aa6b76d59041195d4c143",
++   "exported_py_hash": "bc0c0e7ca2db34c911ed3a73281d6500c3e38615681495715e457ba41e4b4295",
+    "exported_py_hashes": {
+-    "/Users/macbook/Projects/nbskill/nbskill/read.py": "f8d21273641fa58a46d5497953ca7239800b7fb3ed9aa6b76d59041195d4c143",
+-    "/Users/macbook/Projects/nbskill/nbskill/read_core.py": "3e9a9e061bc82c755b7a5e2dbedb457365def6e65ff872e3cc297ee6e205039e"
++    "/private/var/folders/6_/45pyyxdd7hz3wz33p813bx_c0000gn/T/nbskill-evidence-pilot-t465_4_g/b/nbskill/read.py": "bc0c0e7ca2db34c911ed3a73281d6500c3e38615681495715e457ba41e4b4295",
++    "/private/var/folders/6_/45pyyxdd7hz3wz33p813bx_c0000gn/T/nbskill-evidence-pilot-t465_4_g/b/nbskill/read_core.py": "95700981eb806be1ee3a76c680a013771c26bff1083c6e1a94e4e2a5190260df"
+    },
+    "exported_py_path": "nbskill/read.py"
+   }

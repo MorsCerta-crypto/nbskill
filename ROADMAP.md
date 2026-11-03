@@ -48,9 +48,12 @@ The pilot succeeds if the prepared run finds the correct evidence with fewer con
 
 **First pilot:** The [recorded comparison](experiments/claim-test-pilot/README.md) needed 10 notebook/source read or search calls without the added links and rationale, and 3 with them. Both agents completed the feature and passed notebook tests and style checks. This is one run per variant; repeat on another task before automating the convention.
 
+
+**Second task:** The [result-attribution comparison](experiments/evidence-attribution-pilot/README.md) used 21 discovery inspections without the helper bundle and 17 with it. Both completed the bounded task and passed the isolated contract checks. The original oracle also exposed a scope mismatch, preserved in the report. Keep executable positive and negative examples beside the tool implementation; the new public-context proof is `01_read.ipynb#ce8a18bd`. The run supports this convention, not automatic claims of semantic correctness or general speed.
+
 ## 5. Try further notebook mechanisms in small steps
 
-The [trial journal](experiments/notebook-mechanisms/README.md) records direct use, verification, and discarded alternatives. Each retained change was committed before starting the next. These are self-use trials on this repository; the first claim-link pilot remains the only controlled comparison between two agents.
+The [trial journal](experiments/notebook-mechanisms/README.md) records direct use, verification, and discarded alternatives. Each retained change was committed before starting the next. Those initial trials used one agent on the repository. A [second independent two-agent comparison](experiments/evidence-attribution-pilot/README.md) now evaluates the complete helper bundle on result/assertion attribution.
 
 | Proposal | Result and evidence |
 | --- | --- |
@@ -61,7 +64,7 @@ The [trial journal](experiments/notebook-mechanisms/README.md) records direct us
 | Retrieve reasons, tests, and connections | The Pyskill teaches concrete `context` recipes, with explicit links distinguished from text-match candidates and static analysis limits. |
 | Check explanation and evidence together | Markdown-aware diffs support human review, while context exposes recorded execution freshness. Automatic claims of semantic agreement were rejected. |
 
-Do not add a query language, duplicate dependency analysis, routing abstraction, or general property-testing framework unless a concrete task demonstrates what the current tools cannot answer. Repeat the controlled comparison on another real change before claiming a general agent-efficiency gain.
+Do not add a query language, duplicate dependency analysis, routing abstraction, or general property-testing framework unless a concrete task demonstrates what the current tools cannot answer. The second task supports small nearby proofs and source navigation; it does not establish a general agent-efficiency gain.
 
 
 ## Guardrails

@@ -11,7 +11,7 @@ from fastcore.test import test_eq
 
 ### `py2nb`
 
-`py2nb` converts a file or package into flat numbered notebooks. AST boundaries keep functions intact, while import cells stay separate from definitions. Conversion supplies a starting point; maintainers still add the domain rationale, examples, and assertions. A real Python input produces an nbdev export target and one exported function cell:
+`py2nb` converts a file or package into flat numbered notebooks. Each constant, function, class, and method gets a separate `#| export` cell; imports share one cell. The legacy `class_lines` and `method_lines` arguments are accepted for compatibility and no longer affect the split. Conversion supplies a starting point; maintainers still add the domain rationale, examples, and assertions. A real Python input produces an nbdev export target and one exported function cell:
 
 ```python
 with demo_path_context("05_convert_usage") as root:
@@ -75,38 +75,121 @@ from .foundation import api_return, numbered_notebook_path
 
 # %% ../nbs/05_convert.ipynb #ac1075c9
 def _node_source(lines, node):
-    start = min([node.lineno, *[d.lineno for d in getattr(node, "decorator_list", [])]]) - 1
-    return "\n".join(lines[start:node.end_lineno]).strip("\n")
+    source = ast.get_source_segment("\n".join(lines), node)
+    decorators = getattr(node, "decorator_list", [])
+    if not decorators: return source
+    start = min(decorator.lineno for decorator in decorators) - 1
+    return "\n".join([*lines[start:node.lineno - 1], source])
 
 # %% ../nbs/05_convert.ipynb #41a6487d
-def _node_line_count(node):
-    start = min([node.lineno, *[d.lineno for d in getattr(node, "decorator_list", [])]])
-    return node.end_lineno - start + 1
+def _temporary_assignment_target(target, bindings, reserved_names):
+    if isinstance(target, (ast.Tuple, ast.List)):
+        target.elts = [_temporary_assignment_target(item, bindings, reserved_names) for item in target.elts]
+        return target
+    if isinstance(target, ast.Starred):
+        target.value = _temporary_assignment_target(target.value, bindings, reserved_names)
+        return target
+    name = f"_nbskill_value_{len(bindings)}"
+    while name in reserved_names: name += "_"
+    bindings.append((target, name))
+    return ast.Name(id=name, ctx=ast.Store())
+
+# %% ../nbs/05_convert.ipynb #021736c1
+def _assignment_sources(node, lines, reserved_names):
+    if not isinstance(node, ast.Assign): return [_node_source(lines, node)]
+    assignment,bindings = copy.deepcopy(node),[]
+    assignment.targets = [_temporary_assignment_target(target, bindings, reserved_names) for target in assignment.targets]
+    if len(bindings) == 1: return [_node_source(lines, node)]
+    sources = [ast.unparse(ast.fix_missing_locations(ast.Assign(targets=[target], value=ast.Name(id=name, ctx=ast.Load()))))
+        for target, name in bindings]
+    sources[0] = f"{ast.unparse(ast.fix_missing_locations(assignment))}\n{sources[0]}"
+    sources[-1] += f"\ndel {', '.join(name for _, name in bindings)}"
+    return sources
 
 # %% ../nbs/05_convert.ipynb #5ce3c43e
-def _patchable_method(node):
-    if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)): return False
-    if node.decorator_list: return False
-    return bool(node.args.posonlyargs or node.args.args)
+def _patchable_method(node): return isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+
+# %% ../nbs/05_convert.ipynb #7de3b9bf
+def _mangled_name(name, class_name):
+    if name.startswith("__") and not name.endswith("__") and class_name.strip("_"): return f"_{class_name.lstrip('_')}{name}"
+    return name
 
 # %% ../nbs/05_convert.ipynb #789aa267
-def _annotate_first_arg(node, class_name):
-    args = node.args.posonlyargs or node.args.args
-    if not args: return
-    args[0].annotation = ast.Name(id=class_name, ctx=ast.Load())
+class _MethodContext(ast.NodeTransformer):
+    def __init__(self, class_name, receiver):
+        self.class_name,self.receiver = class_name,_mangled_name(receiver, class_name) if receiver else None
+
+    def visit_Call(self, node):
+        node = self.generic_visit(node)
+        if self.receiver and isinstance(node.func, ast.Name) and node.func.id == "super" and not node.args and not node.keywords:
+            node.args = [ast.Name(id=self.class_name, ctx=ast.Load()), ast.Name(id=self.receiver, ctx=ast.Load())]
+        return node
+
+    def visit_Name(self, node):
+        name = self.class_name if node.id == "__class__" else _mangled_name(node.id, self.class_name)
+        return ast.copy_location(ast.Name(id=name, ctx=node.ctx), node)
+
+    def visit_Attribute(self, node):
+        node = self.generic_visit(node)
+        node.attr = _mangled_name(node.attr, self.class_name)
+        return node
+
+    def visit_arg(self, node):
+        node = self.generic_visit(node)
+        node.arg = _mangled_name(node.arg, self.class_name)
+        return node
+
+    def visit_FunctionDef(self, node):
+        node = self.generic_visit(node)
+        node.name = _mangled_name(node.name, self.class_name)
+        return node
+
+    def visit_AsyncFunctionDef(self, node): return self.visit_FunctionDef(node)
+    def visit_ClassDef(self, node): return node
+
+# %% ../nbs/05_convert.ipynb #a95a29c6
+class _ClassReference(ast.NodeTransformer):
+    def __init__(self, class_name, names): self.class_name,self.names = class_name,names
+
+    def visit_Name(self, node):
+        if node.id in self.names:
+            attr = _mangled_name(node.id, self.class_name)
+            return ast.copy_location(ast.Attribute(value=ast.Name(id=self.class_name, ctx=ast.Load()), attr=attr, ctx=node.ctx), node)
+        return node
+
+# %% ../nbs/05_convert.ipynb #660b1ad6
+def _decorated_method_source(source, method, class_name, reserved_names, class_names):
+    temporary = "_nbskill_decorators"
+    while temporary in reserved_names: temporary += "_"
+    expressions = ", ".join(ast.unparse(_ClassReference(class_name, class_names).visit(copy.deepcopy(decorator)))
+        for decorator in method.decorator_list)
+    header = f"{temporary} = ({expressions},)"
+    name = _mangled_name(method.name, class_name)
+    descriptor = f"{class_name}.__dict__[{name!r}]"
+    value = descriptor
+    for idx in reversed(range(len(method.decorator_list))): value = f"{temporary}[{idx}]({value})"
+    set_name = f"if hasattr({descriptor}, '__set_name__'): {descriptor}.__set_name__({class_name}, {name!r})"
+    return f"{header}\n{source}\n{class_name}.{name} = {value}\n{set_name}\ndel {temporary}"
 
 # %% ../nbs/05_convert.ipynb #8dc02389
-def _patch_method_source(method, class_name):
+def _patch_method_source(method, class_name, reserved_names=(), class_names=()):
     node = copy.deepcopy(method)
     node.decorator_list = []
-    _annotate_first_arg(node, class_name)
+    qualifier = _ClassReference(class_name, class_names)
+    node.args = qualifier.visit(node.args)
+    if node.returns is not None: node.returns = qualifier.visit(node.returns)
+    args = node.args.posonlyargs + node.args.args
+    node = _MethodContext(class_name, args[0].arg if args else None).visit(node)
     ast.fix_missing_locations(node)
-    return f"@patch\n{ast.unparse(node)}"
+    source = f"@patch_to({class_name})\n{ast.unparse(node)}"
+    original = f"_orig_{node.name}"
+    if original not in reserved_names: source += f"\nif {original!r} in {class_name}.__dict__: delattr({class_name}, {original!r})"
+    if method.decorator_list: return _decorated_method_source(source, method, class_name, reserved_names, class_names)
+    return source
 
 # %% ../nbs/05_convert.ipynb #a9d64b17
 def _class_without_methods(lines, cls, methods):
-    class_start = min([cls.lineno, *[d.lineno for d in cls.decorator_list]])
-    class_line = cls.lineno - class_start
+    class_start = cls.lineno
     src_lines = lines[class_start - 1:cls.end_lineno]
     remove_ranges = []
     for method in methods:
@@ -114,9 +197,21 @@ def _class_without_methods(lines, cls, methods):
         stop = method.end_lineno - class_start + 1
         remove_ranges.append((start, stop))
     for start, stop in sorted(remove_ranges, reverse=True): del src_lines[start:stop]
-    body = src_lines[class_line + 1:]
-    if not any(line.strip() for line in body): src_lines.append("    pass")
+    if not any(child not in methods for child in cls.body): src_lines.append("    pass")
     return "\n".join(src_lines).strip("\n")
+
+# %% ../nbs/05_convert.ipynb #711a83e0
+def _class_cells(lines, cls, reserved_names):
+    methods = [child for child in cls.body if _patchable_method(child)]
+    class_names = {child.name for child in cls.body if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))}
+    for child in cls.body:
+        targets = child.targets if isinstance(child, ast.Assign) else [child.target] if isinstance(child, ast.AnnAssign) else []
+        class_names.update(node.id for target in targets for node in ast.walk(target) if isinstance(node, ast.Name))
+    sources = [_class_without_methods(lines, cls, methods)]
+    sources.extend(_patch_method_source(method, cls.name, reserved_names, class_names) for method in methods)
+    for decorator in reversed(cls.decorator_list): sources[-1] += f"\n{cls.name} = ({ast.unparse(decorator)})({cls.name})"
+    if methods: sources[-1] += f"\nupdate_abstractmethods({cls.name})"
+    return [_export_cell(source) for source in sources]
 
 # %% ../nbs/05_convert.ipynb #219c7e1e
 def _export_cell(source):
@@ -143,28 +238,17 @@ def _py2nb_cells(source, default_exp, class_lines=100, method_lines=10):
     body = list(tree.body)
     if body and _is_module_docstring(body[0]): cells.append(mk_cell(body.pop(0).value.value.strip(), cell_type="markdown"))
     imports = [_node_source(lines, node) for node in body if isinstance(node, (ast.Import, ast.ImportFrom))]
-    constants = []
-    definitions = []
+    if any(isinstance(node, ast.ClassDef) and any(_patchable_method(child) for child in node.body) for node in body):
+        imports.extend(["from fastcore.basics import patch_to", "from abc import update_abstractmethods"])
+    if imports: cells.append(_export_cell("\n".join(imports)))
+    reserved_names = {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
+    reserved_names.update(node.name for node in ast.walk(tree) if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)))
     for node in body:
         if isinstance(node, (ast.Import, ast.ImportFrom)): continue
         targets = node.targets if isinstance(node, ast.Assign) else [node.target] if isinstance(node, ast.AnnAssign) else []
-        if isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign)) and not any(isinstance(target, ast.Name) and target.id == "__all__" for target in targets):
-            constants.append(_node_source(lines, node))
-        elif not isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign)): definitions.append(node)
-    needs_patch = any(isinstance(node, ast.ClassDef) and _node_line_count(node) > class_lines
-        and any(_patchable_method(child) and _node_line_count(child) > method_lines for child in node.body) for node in definitions)
-    if needs_patch: imports.insert(0, "from fastcore.basics import patch")
-    if imports: cells.append(_export_cell("\n".join(imports)))
-    if constants: cells.append(_export_cell("\n".join(constants)))
-    for node in definitions:
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)): cells.append(_export_cell(_node_source(lines, node)))
-        elif isinstance(node, ast.ClassDef):
-            methods = [child for child in node.body if _patchable_method(child) and _node_line_count(child) > method_lines]
-            if _node_line_count(node) > class_lines and methods:
-                cells.append(_export_cell(_class_without_methods(lines, node, methods)))
-                for method in methods: cells.append(_export_cell(_patch_method_source(method, node.name)))
-            else: cells.append(_export_cell(_node_source(lines, node)))
-        else: cells.append(_export_cell(_node_source(lines, node)))
+        if any(isinstance(target, ast.Name) and target.id == "__all__" for target in targets): continue
+        if isinstance(node, ast.ClassDef): cells.extend(_class_cells(lines, node, reserved_names))
+        else: cells.extend(_export_cell(source) for source in _assignment_sources(node, lines, reserved_names))
     return _stabilize_cells(cells, default_exp)
 
 # %% ../nbs/05_convert.ipynb #f73ec284
@@ -283,8 +367,8 @@ def py2nb(
     recursive: bool = True, # Search subfolders when path is a folder
     maxdepth: int | None = None, # Maximum folder depth to search
     preserve_tree: bool = False, # Must remain false because notebooks are flat
-    class_lines: int = 100, # Split methods out of classes longer than this
-    method_lines: int = 10, # Split methods longer than this out of large classes
+    class_lines: int = 100, # Compatibility only; all methods are split
+    method_lines: int = 10, # Compatibility only; all methods are split
     package: str | None = None, # Package name to select inside a project root
     include: str | None = None, # Comma-separated include glob(s)
     exclude: str | None = None, # Comma-separated exclude glob(s)
@@ -314,8 +398,8 @@ def convert(
     recursive: bool = True,  # Search subfolders in notebook mode
     maxdepth: int | None = None,  # Maximum folder scan depth in notebook mode
     preserve_tree: bool = True,  # Preserve package folder structure under nbs_path
-    class_lines: int = 100,  # Split classes larger than this line count
-    method_lines: int = 10,  # Split methods larger than this out of large classes
+    class_lines: int = 100,  # Compatibility only; all methods are split
+    method_lines: int = 10,  # Compatibility only; all methods are split
     package: str | None = None,  # Package root name
     include: str | None = None,  # Comma-separated include globs
     exclude: str | None = None,  # Comma-separated exclude globs

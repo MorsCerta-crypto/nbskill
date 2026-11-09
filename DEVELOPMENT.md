@@ -1,10 +1,13 @@
 # Local development
 
+The shared branch, release and work-preservation policy is [WORKFLOW.md](WORKFLOW.md). Existing project quality hooks remain required.
+
 Install the development dependencies and activate the Git hooks after cloning:
 
 ```sh
 uv sync --locked
 uv run --locked pre-commit install
+python3 .github/workflow_guard.py install
 ```
 
 Every commit runs the full Python and notebook test suites locally. The notebook tests run serially because some examples use subprocesses and shared execution state. A failing test blocks the commit. Pre-commit tests the staged changes and temporarily stashes unstaged changes.
@@ -40,4 +43,4 @@ uv run --locked python tools/release.py . dist/nbskill-0.0.18-py3-none-any.whl d
 
 The publisher uses Fastship's `Release` for configuration, changelog notes and GitHub access. It verifies a clean checkout and that HEAD matches the local and remote tags, uploads every artifact to a draft, then publishes. Without `--publish`, the release stays a draft. Replace the version, tag and filenames together for each future release. Use an authenticated `gh` client and never store tokens in project files. `ship-release` also uploads to PyPI and is not used here.
 
-Use `ship-pr` for a reviewed change intended for the default branch; it creates and immediately merges the pull request. Run the local checks before calling it. Consumers pin both `nbskill==0.0.18` and the matching GitHub source tag as shown in README, commit their lockfile, and use `uv sync --locked`.
+Use a reviewed feature PR to development, followed by a reviewed promotion PR directly from development to main with a merge commit. Fastship ship-pr immediately squash-merges to the default branch and is unsuitable for this promotion. Consumers pin the published package and tag and commit their lockfiles.

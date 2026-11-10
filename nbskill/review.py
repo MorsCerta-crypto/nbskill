@@ -995,7 +995,7 @@ def _working_tree_sources(path, f=code_source):
     return {getattr(cell, 'id', str(idx)): source for idx, cell in enumerate(nb.cells) if (source := f(cell)) is not None}
 
 # %% ../nbs/04_review.ipynb #e672839a
-def _git_ref_path_error(path, ref):
+def _git_ref_path_error(path, ref, allow_missing=False):
     if ref is None: return None
     path = Path(path)
     root_cmd = subprocess.run(['git', '-C', str(path.parent), 'rev-parse', '--show-toplevel'], capture_output=True, text=True)
@@ -1005,9 +1005,11 @@ def _git_ref_path_error(path, ref):
     root = Path(root_cmd.stdout.strip())
     try: rel = path.resolve().relative_to(root.resolve()).as_posix()
     except ValueError: return f"{str(path)!r} is outside git repository {str(root)!r}."
+    valid_ref = subprocess.run(['git', '-C', str(root), 'rev-parse', '--verify', f'{ref}^{{tree}}'], capture_output=True, text=True)
+    if valid_ref.returncode != 0: return f"Unknown git ref {ref!r} for {str(path)!r}."
     spec = f"{ref}:{rel}"
     exists_cmd = subprocess.run(['git', '-C', str(root), 'cat-file', '-e', spec], capture_output=True, text=True)
-    if exists_cmd.returncode == 0: return None
+    if exists_cmd.returncode == 0 or allow_missing: return None
     return (
         f'Could not find notebook {rel!r} at git ref {ref!r}. The notebook may be new relative to that ref, or the repository may not have a HEAD commit yet. Commit the notebook first, choose an existing ref/path, or pass ref_a=None and ref_b=None to review a disposable notebook as current working-tree additions.')
 
@@ -1195,8 +1197,10 @@ def diff_nb(
     def source(cell): return cell.source if include_markdown and cell.cell_type == "markdown" else code_source(cell)
     if ref_a is None and ref_b is None: old, new = {}, _working_tree_sources(path, f=source)
     else:
-        if msg := (_git_ref_path_error(path, ref_a) or _git_ref_path_error(path, ref_b)): api_error(msg)
-        try: old, new = nbs_pair(path, ref_a=ref_a, ref_b=ref_b, f=source)
+        if msg := (_git_ref_path_error(path, ref_a, allow_missing=ref_b is None and Path(path).is_file()) or _git_ref_path_error(path, ref_b)): api_error(msg)
+        try:
+            if ref_b is None and _notebook_json_at_ref(path, ref_a) is None: old, new = {}, _working_tree_sources(path, f=source)
+            else: old, new = nbs_pair(path, ref_a=ref_a, ref_b=ref_b, f=source)
         except Exception as exc:
             detail = str(exc)
             hint = (

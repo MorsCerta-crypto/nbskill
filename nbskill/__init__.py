@@ -18,14 +18,14 @@ A notebook contains more than Python source. Explanations, examples, outputs, an
 
 ## Load the Pyskill
 
-Install `nbskill==0.0.18` from its GitHub release tag in the Python environment used by the agent. With uv, pin both the package version and its release source:
+Install `nbskill==0.0.19` from its GitHub release tag in the Python environment used by the agent. With uv, pin both the package version and its release source:
 
 ```toml
 [project]
-dependencies = ["nbskill==0.0.18"]
+dependencies = ["nbskill==0.0.19"]
 
 [tool.uv.sources]
-nbskill = {git = "https://github.com/MorsCerta-crypto/nbskill.git", tag = "0.0.18"}
+nbskill = {git = "https://github.com/MorsCerta-crypto/nbskill.git", tag = "0.0.19"}
 ```
 
 Authenticate private-repository access with `gh auth login` and `gh auth setup-git`, commit `uv.lock`, and install with `uv sync --locked`. For development inside this repository, use `uv sync --locked` and the checks in [DEVELOPMENT.md](DEVELOPMENT.md). The package registers `nbskill.skill` in the `pyskills` entry-point group. Discovery lists its scope without importing every problem area. Inspect the module and then the selected operation:
@@ -53,4 +53,4 @@ Modules:
 - `nbskill.state`: Explain which notebook work is current, changed, or likely affected by an upstream change.
 - `nbskill.write`: Create and revise notebook cells while preserving their identities and evidence."""
 
-__version__ = "0.0.18"
+__version__ = "0.0.19"

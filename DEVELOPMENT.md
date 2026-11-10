@@ -29,16 +29,16 @@ GitHub Actions runs only a short Python 3.13 syntax check on `main`, `developmen
 
 ## GitHub releases with Fastship
 
-Publish a reviewed current version from a clean `main` checkout. The package version is owned by the notebook source; regenerate exports and README before building. Existing release tags remain unchanged.
+Publish a reviewed current version from a clean `main` checkout. Update `__version__` in `nbskill/__init__.py` and the installation pins in `nbs/index.ipynb`, then regenerate exports and README before building. Existing release tags remain unchanged.
 
 ```sh
 uv run --locked nbdev-export
 uv run --locked nbdev-readme
 uv run --locked pre-commit run --all-files
 uv build
-git tag -a 0.0.18 -m 'nbskill 0.0.18'
-git push origin 0.0.18
-uv run --locked python tools/release.py . dist/nbskill-0.0.18-py3-none-any.whl dist/nbskill-0.0.18.tar.gz --tag 0.0.18 --latest --publish
+git tag -a 0.0.19 -m 'nbskill 0.0.19'
+git push origin 0.0.19
+uv run --locked python tools/release.py . dist/nbskill-0.0.19-py3-none-any.whl dist/nbskill-0.0.19.tar.gz --tag 0.0.19 --latest --publish
 ```
 
 The publisher uses Fastship's `Release` for configuration, changelog notes and GitHub access. It verifies a clean checkout and that HEAD matches the local and remote tags, uploads every artifact to a draft, then publishes. Without `--publish`, the release stays a draft. Replace the version, tag and filenames together for each future release. Use an authenticated `gh` client and never store tokens in project files. `ship-release` also uploads to PyPI and is not used here.

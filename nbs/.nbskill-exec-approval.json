@@ -4214,15 +4214,6 @@
       "reasons": [],
       "source_hash": "7d420b41a675"
     },
-    "_single_definition_for_cell": {
-      "allowed": true,
-      "cell_id": "bd376346",
-      "external_effects": false,
-      "line": 2,
-      "notebook": "01_read.ipynb",
-      "reasons": [],
-      "source_hash": "edc24a80bdd3"
-    },
     "_single_top_level_function_cell": {
       "allowed": true,
       "cell_id": "59cd00f0",

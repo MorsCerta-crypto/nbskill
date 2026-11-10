@@ -138,14 +138,14 @@ notebook_context
 
 ## Load the Pyskill
 
-Install `nbskill==0.0.18` from its GitHub release tag in the Python environment used by the agent. With uv, pin both the package version and its release source:
+Install `nbskill==0.0.19` from its GitHub release tag in the Python environment used by the agent. With uv, pin both the package version and its release source:
 
 ``` toml
 [project]
-dependencies = ["nbskill==0.0.18"]
+dependencies = ["nbskill==0.0.19"]
 
 [tool.uv.sources]
-nbskill = {git = "https://github.com/MorsCerta-crypto/nbskill.git", tag = "0.0.18"}
+nbskill = {git = "https://github.com/MorsCerta-crypto/nbskill.git", tag = "0.0.19"}
 ```
 
 Authenticate private-repository access with `gh auth login` and `gh auth setup-git`, commit `uv.lock`, and install with `uv sync --locked`. For development inside this repository, use `uv sync --locked` and the checks in [DEVELOPMENT.md](DEVELOPMENT.md). The package registers `nbskill.skill` in the `pyskills` entry-point group. Discovery lists its scope without importing every problem area. Inspect the module and then the selected operation:
@@ -183,4 +183,4 @@ dict(nodes=len(graph["nodes"]), edges=len(graph["edges"]), node_types=sorted({no
 
 ## Entwicklung
 
-`nbskill` ist eine Python-Bibliothek ohne Deployments. `main` enthält den geprüften Entwicklungsstand; Änderungen können direkt auf `main` oder in Featurebranches entstehen. Vor Commit und Push werden die betroffenen Notebooks ausgeführt, Exporte regeneriert und die Tests sowie [`style_check`](https://MorsCerta-crypto.github.io/nbskill/review.html#style_check) geprüft. Deployment-Sperren für Commits oder Pushes gelten hier nicht.
+`nbskill` ist eine Python-Bibliothek ohne Deployments. Änderungen entstehen auf Featurebranches und werden per Pull Request nach `development` übernommen. Geprüfte Stände werden anschließend per Pull Request von `development` nach `main` freigegeben. Vor Commit und Push werden die betroffenen Notebooks ausgeführt, Exporte regeneriert und die Tests sowie [`style_check`](https://MorsCerta-crypto.github.io/nbskill/review.html#style_check) geprüft. Der verbindliche Ablauf steht in [WORKFLOW.md](WORKFLOW.md).

@@ -705,14 +705,10 @@ wheels = [
 
 [[package]]
 name = "fastaistyle"
-version = "0.0.20"
-source = { registry = "https://pypi.org/simple" }
+version = "0.0.21"
+source = { git = "https://github.com/AnswerDotAI/fastaistyle?rev=1d40ae72569b68d56187e441ac46cceb8f6053ce#1d40ae72569b68d56187e441ac46cceb8f6053ce" }
 dependencies = [
     { name = "fastcore" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/7f/3b/6c749263fd43db3f6bb63265b7b81fde216fae6a59850d0f1f4e64c99c57/fastaistyle-0.0.20.tar.gz", hash = "sha256:83dde277ebeb87c5ffaab4f24dd1a1ae7dc57db50806aecc1ba889f471881b73", size = 39620, upload-time = "2026-09-06T22:23:02.22Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/43/75/b63d5790ab9f68cf52a3e6fedff4d32f8cce76bb0834710c173b08b30a2a/fastaistyle-0.0.20-py3-none-any.whl", hash = "sha256:80fc9f8aa92f1cff7e539a6b541937cd45d71a1a911a2f8f6b0bb65ac035b1ef", size = 26281, upload-time = "2026-09-06T22:23:00.664Z" },
 ]
 
 [[package]]
@@ -1951,7 +1947,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "execnb", specifier = ">=0.2.2" },
-    { name = "fastaistyle", specifier = ">=0.0.15" },
+    { name = "fastaistyle", git = "https://github.com/AnswerDotAI/fastaistyle?rev=1d40ae72569b68d56187e441ac46cceb8f6053ce" },
     { name = "fastcore", specifier = ">=2.2.31,<2.3" },
     { name = "httpx2", specifier = ">=2.13.1" },
     { name = "nbdev", specifier = ">=3.3.25" },

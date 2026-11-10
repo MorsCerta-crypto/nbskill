@@ -66,6 +66,7 @@ from .read_core import _CONTEXT_CELL_OUTPUT_CHARS, _CONTEXT_CELL_SOURCE_CHARS, _
 from .read_core import _CONTEXT_SEARCH_SKIP_DIRS, _CONTEXT_SEARCH_SKIP_SUFFIXES, _QUERY_KEY_ALIASES, _cell_has_error
 from .read_core import _cell_header_level, _cell_matches_header, _cell_symbol_records, _class_overview
 from .read_core import _context_match, _context_result, _definition_lines, _definition_record
+from .read_core import _context_qualified_candidates, _context_unknown_qualified
 from .read_core import _definition_records, _definition_symbol, _docstring_lines, _format_context_blocks
 from .read_core import _format_python_summary, _format_python_symbols, _format_source, _function_overview
 from .read_core import _normalize_query_dict, _normalize_query_key, _notebook_header_items, _one_chapter_span
@@ -722,14 +723,6 @@ def _symbol_source(path, nb, symbol):
     source = _source_for_node(cell, node) if node is not None else cell_source(cell).strip()
     return idx, cell, node, source
 
-# %% ../nbs/01_read.ipynb #bd376346
-def _single_definition_for_cell(path, nb, cell_idx):
-    definitions = _definition_records_for_cell(path, nb, cell_idx)
-    if len(definitions) > 1:
-        names = ", ".join(item["symbol"] for item in definitions)
-        raise ValueError(f"Cell id={getattr(nb.cells[cell_idx], 'id', '')} contains multiple definitions: {names}")
-    return definitions[0] if definitions else None
-
 # %% ../nbs/01_read.ipynb #8cf4dba4
 def _implementation_context(path, idx, cell, symbol, source, verbose=True):
     nl = chr(10)
@@ -742,12 +735,12 @@ def _implementation_context(path, idx, cell, symbol, source, verbose=True):
 def _cell_context(path, cell_idx, overview=False, verbose=True):
     nb = read_nb(path)
     cell = nb.cells[cell_idx]
-    definition = _single_definition_for_cell(path, nb, cell_idx)
-    if definition is None:
+    definitions = _definition_records_for_cell(path, nb, cell_idx)
+    if len(definitions) != 1:
         item = _context_cell_record(cell_idx, cell)
         text = _format_context_blocks(f"Cell context: {path} {cell_prefix(cell_idx, cell, True)}", [("Cell", _render_context_cell(item))])
-        return _context_result("cell_context", text, verbose=verbose, path=str(path), cell=item, symbols=[])
-    symbol = definition["symbol"]
+        return _context_result("cell_context", text, verbose=verbose, path=str(path), cell=item, symbols=[item["symbol"] for item in definitions])
+    symbol = definitions[0]["symbol"]
     idx, cell, node, source = _symbol_source(path, nb, symbol)
     if overview: return _implementation_context(path, idx, cell, symbol, source, verbose=verbose)
     return _context_symbol(path, symbol, depth=1, verbose=verbose)
@@ -1121,21 +1114,6 @@ def _context_cell_index_for_ref(nb, ref):
     for idx, cell in enumerate(nb.cells):
         if getattr(cell, "id", None) == ref: return idx
     return None
-
-# %% ../nbs/01_read.ipynb #6397c2d6
-def _context_qualified_candidates(path, nb, limit=8):
-    cells = [f"{path}#{getattr(cell, 'id', '')}" for cell in nb.cells if getattr(cell, "id", "")]
-    symbols = [f"{path}#{item['symbol']}" for item in _definition_records(path, nb)]
-    return (cells[: limit // 2] + symbols)[:limit]
-
-# %% ../nbs/01_read.ipynb #b58f75e3
-def _context_unknown_qualified(path, ref, nb):
-    candidates = _context_qualified_candidates(path, nb)
-    shown = "\n".join(f"- {item}" for item in candidates)
-    suffix = f"\nCandidates:\n{shown}" if shown else ""
-    exc = ValueError(f"No cell id, cell index, or symbol {ref!r} in {path}.{suffix}")
-    exc.candidates = candidates
-    raise exc
 
 # %% ../nbs/01_read.ipynb #26b8bff5
 def _context_qualified_payload(target, mode, around):

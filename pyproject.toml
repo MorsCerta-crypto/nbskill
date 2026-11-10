@@ -74,3 +74,7 @@ dev = [
 [tool.chkstyle]
 # nbdev regenerates this symbol index; its formatting is not maintained by hand.
 skip_paths = ["nbskill/_modidx.py"]
+
+[tool.uv.sources]
+# This revision recognises nbdev exporti cells when analysing import usage.
+fastaistyle = { git = "https://github.com/AnswerDotAI/fastaistyle", rev = "1d40ae72569b68d56187e441ac46cceb8f6053ce" }

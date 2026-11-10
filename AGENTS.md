@@ -152,3 +152,13 @@ After exporting a library change, verify it in a clean process or restart the ac
 Stop once the requested change is handled and verification is clear. Do
 not broaden scope, reformat unrelated cells, or edit generated Python
 directly when the notebook source should own the change.
+
+<!-- ease-workflow:start -->
+## Verbindlicher Entwicklungsprozess
+
+Es gilt die gemeinsame Regel in [WORKFLOW.md](WORKFLOW.md). Die zentrale Quelle ist ease-ws/WORKFLOW.md. development ist der Integrationszweig; main enthält freigegebenen Quellcode. Beide Branches sind unabhängig vom Deploymentstatus. rsc schreibt ausschließlich deployed/dev und deployed/prod.
+
+Änderungen auf Featurebranches entwickeln und per Pull Request zuerst nach development übernehmen. Geprüfte Stände per Pull Request von development nach main freigeben. Projektprüfungen und Notebookquellen bleiben verbindlich. Vorhandene offene Dateien, ungemergte Branches und Worktrees erhalten; keine pauschale Bereinigung, kein Reset und kein automatisches Stashing.
+
+Lokale Branch-Guards mit python3 .github/workflow_guard.py install aktivieren. Bestehende projektspezifische Hooks bleiben erhalten. Ein Merge führt kein Produktionsdeployment aus.
+<!-- ease-workflow:end -->

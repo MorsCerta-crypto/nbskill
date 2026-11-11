@@ -25,9 +25,15 @@ Branches benennen Quellstände. Laufzeitumgebungen, Berechtigungen und Secrets w
 
 Die lokalen Guards verbieten direkte Commits auf `development` und `main` sowie direkte Pushes und Löschungen dieser Remote-Branches. Das gilt auch für Libraries und unabhängig von `deployments = false`. Serverregeln müssen Reviews, Pflichtprüfungen und den Schutz vor Löschung und Force-Push zusätzlich erzwingen. Für rsc ist nur der Namensraum `deployed/*` freizugeben; der Deployer benötigt keine Ausnahme für Quellbranches.
 
+Pflichtprüfungen in CI umfassen mindestens die Installation aus dem Lockfile, bei nbdev-Projekten den abweichungsfreien Notebook-Export und die Tests des Projekts. Ein Workflow, der nur Syntax prüft, erfüllt diese Pflicht nicht. Bis ein Repository diese Prüfungen in CI ausführt, nennt jeder Pull Request den lokalen Prüfnachweis nach Schritt 3. Ein Repository ohne erzwungene Serverregeln erhält keine Produktionsfreigabe.
+
+Eine Änderung über mehrere Repositories verwendet in allen denselben Branchnamen. Jeder Pull Request nennt die zugehörigen Pull Requests. Die gemeinsame Prüfung verwendet genau diese Stände. Libraries werden zuerst integriert und veröffentlicht. Der Pull Request eines Verbrauchers bleibt Entwurf, bis er den veröffentlichten Tag pinnt.
+
 ## Dev- und Produktionsdeployment
 
 Ein Produktrelease bindet Produktcommit, SDK- und Vertragsversion, Lockfiles, Manifest, Migrationsprüfsummen und Image-Digests. Aus dem freigegebenen Quellstand wird genau ein Kandidat gebaut. Dev und Prod verwenden denselben Kandidaten und dieselben Image-Digests, aber getrennte Konfigurationen und Infrastrukturpläne.
+
+Den Kandidaten für die gemeinsamen Umgebungen Dev und Prod baut CI aus einem sauberen Checkout des Kandidatencommits. Ein auf einem Entwicklungsrechner gebautes Image ist dort kein Kandidat. Lokale Compose-Umgebungen sind davon nicht betroffen.
 
 Dev verwendet synthetische Daten, eigene Datenbanken, Buckets, Worker-Queues, Dienstidentitäten, Secret-Versionen und Test-Mailziele. Die zentralen Core-, Identitäts- und Zahlungsdienste benötigen ebenfalls getrennte Testkonfigurationen. Entwicklungsprozesse erhalten keine Produktionszugänge.
 
@@ -43,6 +49,10 @@ Jedes Produkt hält seine eigene Releasefolge und gesperrten Abhängigkeiten. SD
 
 SDK- und Core-Änderungen benötigen Verbraucherprüfungen gegen die unterstützten Vertragsversionen. Vor einem Produktupgrade werden dessen eigener Start, Datenbankzugriff, Berechtigungen und Worker geprüft. Zentral relevante Änderungen benötigen gemeinsame Abnahmen mit betroffenen Produkten.
 
+Core unterstützt die Vertragsversionen der aktuellen und der vorherigen SDK-Minor-Version. Ein Produkt außerhalb dieses Fensters aktualisiert sein SDK vor seiner nächsten Freigabe.
+
+Ein Produkt verwendet Funktionen oder Daten eines anderen Produkts ausschließlich über einen im Manifest deklarierten Vertrag und die zentrale Austauschschicht von Core. Direkte Zugriffe auf Datenbank, Bucket oder Secrets eines anderen Produkts sind verboten. Daten eines Benutzers überschreiten eine Produktgrenze nur mit seiner ausdrücklichen, widerrufbaren Zustimmung. Das anbietende Produkt prüft vor seiner Freigabe die Verträge seiner deklarierten Verbraucher.
+
 Migrationen zunächst additiv ausrollen, Daten nachziehen und Verbraucher umstellen. Alte Strukturen erst nach der Übergangsphase entfernen. Alte und neue Worker müssen gespeicherte Jobs während des Rollouts verarbeiten können. Destruktive Änderungen benötigen eine eigene Freigabe und einen geprüften Wiederherstellungsweg.
 
 Produktfreigaben benötigen entsprechend ihrem Vertrag insbesondere Prüfungen für Anmeldung, Mandantentrennung, Zahlung beziehungsweise Kontingente, Storage, Worker-Wiederholungen, frische und bestehende Datenbanken, Export, Löschung und Restore. Nicht ausgeführte oder synthetische Providerprüfungen werden ausdrücklich benannt und gelten nicht als reale Betriebsabnahme.
@@ -54,6 +64,8 @@ Offene Branches und Worktrees sind zulässiger Arbeitsbestand. Ihre Anzahl oder 
 Vor dem Entfernen eines Branches oder Worktrees müssen Dateien gesichert und die relevanten Commits dauerhaft referenziert oder nachweislich übernommen sein. Nach einem Squash-Merge reicht die Git-Abstammung für diesen Nachweis nicht aus. Es gibt keine pauschale Löschung nach Branchname oder Alter.
 
 Git-Bundles sichern referenzierte Commits, aber keine offenen Dateien. Nicht committete und unversionierte Dateien benötigen eine zusätzliche Sicherung. Ignorierte Daten, Zugangsdaten und lokale Datenbanken werden über ihre eigenen geschützten Sicherungsverfahren erhalten.
+
+Zusätzliche Worktrees liegen im Verzeichnis `.worktrees` des Repositories oder in einem anderen dauerhaften Verzeichnis. `/tmp` und `/private/tmp` sind dafür nicht zulässig, weil das Betriebssystem sie bereinigt. Commits eines Arbeitsbranches werden spätestens am Ende des Arbeitstags gepusht.
 
 ## Einrichtung und Kontrolle
 

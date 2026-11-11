@@ -3,7 +3,7 @@ import argparse, hashlib, json, os, shlex, subprocess, sys
 from pathlib import Path
 
 
-POLICY_SHA256 = '1a78d5d49a2e87d7e7c584d1114bdac056ac0a84a5f3ee0c5157be0c46643e4e'
+POLICY_SHA256 = 'a91b0f016fdca46d218c71da1354a21346df5c83c362ebb933020cdf6e5584bf'
 SOURCE_BRANCHES = ('development', 'main')
 DEPLOYMENT_BRANCHES = ('deployed/dev', 'deployed/prod')
 

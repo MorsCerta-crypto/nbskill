@@ -3,7 +3,7 @@ import argparse, hashlib, json, os, shlex, subprocess, sys
 from pathlib import Path
 
 
-POLICY_SHA256 = 'a91b0f016fdca46d218c71da1354a21346df5c83c362ebb933020cdf6e5584bf'
+POLICY_SHA256 = '6c3b94bf9ab1b792f7ce26d31987bdfaefcd67421678a84bfe9b5e2bc1d3503c'
 SOURCE_BRANCHES = ('development', 'main')
 DEPLOYMENT_BRANCHES = ('deployed/dev', 'deployed/prod')
 
@@ -33,8 +33,8 @@ def check_policy(repo):
     request = json.loads(Path(event).read_text()).get('pull_request')
     if request and request['base']['ref']=='main':
         head = request['head']['ref']
-        if head!='development' and not head.startswith('codex/hotfix/'):
-            raise ValueError('Promote development to main; emergency fixes use codex/hotfix/* and return to development')
+        if head!='development' and not head.startswith('pr/hotfix/'):
+            raise ValueError('Promote development to main; emergency fixes use pr/hotfix/* and return to development')
 
 
 def install(repo):

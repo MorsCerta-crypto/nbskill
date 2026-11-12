@@ -8,8 +8,8 @@ Diese verbindliche Regel gilt für den Workspace, die Plattform, Libraries und a
 | --- | --- |
 | `development` | Integrationszweig für geprüfte Featureänderungen. Er kann unfertige, deaktivierte Features enthalten und ist kein Nachweis eines Deployments. |
 | `main` | Freigegebener, reproduzierbar geprüfter Quellstand. Er ist die Grundlage stabiler Releases und kein Zeiger auf die laufende Produktion. |
-| `codex/<issue>-<beschreibung>` | Arbeitsbranch für ein Feature oder eine Korrektur. Parallele Arbeiten erhalten eigene Branches und Worktrees. |
-| `codex/hotfix/<beschreibung>` | Dringende Korrektur auf Basis von `main`. Nach der Freigabe wird sie auch per Pull Request nach `development` übernommen. |
+| `pr/<issue>-<beschreibung>` | Arbeitsbranch für ein Feature oder eine Korrektur. Parallele Arbeiten erhalten eigene Branches und Worktrees. |
+| `pr/hotfix/<beschreibung>` | Dringende Korrektur auf Basis von `main`. Nach der Freigabe wird sie auch per Pull Request nach `development` übernommen. |
 | `deployed/dev`, `deployed/prod` | Ausschließlich von rsc verwaltete Deploymentreferenzen für Produkte. Sie werden nach erfolgreicher Laufzeitprüfung aktualisiert. Libraries benötigen diese Referenzen nicht. |
 
 Branches benennen Quellstände. Laufzeitumgebungen, Berechtigungen und Secrets werden gesondert konfiguriert. Kein Merge, Commit oder Push auf einen Quellbranch löst ein Produktionsdeployment aus.

@@ -4,13 +4,10 @@ Verbindlich ist [WORKFLOW.md](WORKFLOW.md). development integriert geprüfte Än
 
 The maintained development guide is [DEVELOPMENT.md](DEVELOPMENT.md). It covers local hooks, notebook tests, documentation deployment, and the Fastship-based GitHub release process. README contains the exact version and source-tag pins for consumers.
 
-## Entwicklungsablauf nach dem Enterprise-Umzug
+## Änderungen und Freigaben
 
-Dieser Abschnitt beschreibt den Ablauf im neuen Repository. Bis zur Umstellung gilt der bestehende Freigabeweg in [WORKFLOW.md](WORKFLOW.md).
+Das Repository bleibt im persönlichen GitHub-Konto. Erstelle Arbeitsbranches nach dem Muster `pr/<issue>-<beschreibung>` von `development` und öffne Pull Requests gegen `development`. Gib den geprüften Stand per Pull Request von `development` nach `main` mit einem Merge-Commit frei. Veröffentliche Bibliotheksversionen aus dem geprüften `main`-Commit. Verbraucher aktualisieren Paketpin und Lockfile nach der Veröffentlichung in einem eigenen Pull Request.
 
-1. Starte `feat/*` oder `fix/*` vom geschützten `main` und öffne mit `gh pr create` einen Pull Request gegen `main`. Führe vorher die projektspezifischen Prüfungen aus. Bei Änderungen über mehrere Repositories kannst du mit `fastws` gemeinsam gegen lokale Nachbarpakete testen; die CI prüft jedes Repository mit seinen eigenen gesperrten Abhängigkeiten.
-2. GitHub Actions installiert aus dem Lockfile und führt die projektspezifischen Tests aus. Bei nbdev-Änderungen zusätzlich `nbdev-prepare` lokal und in CI den Export auf Abweichungen prüfen.
-3. Nach Review und grünen Pflichtprüfungen den Pull Request in GitHub per Squash Merge übernehmen und den Featurebranch entfernen. `main` ist der dauerhafte Quellbranch. Staging und Produktion sind Umgebungen.
-4. Veröffentliche Bibliotheksversionen aus einem geprüften `main`-Commit. `ship-bump` und `ship-changelog` können den Release-PR vorbereiten. Erst nach Veröffentlichung des Pakets oder des unveränderlichen Git-Pins aktualisieren Verbraucher ihren Pin und ihr Lockfile in einem eigenen Pull Request.
+GitHub Actions führt den Syntaxcheck und die Source-Policy-Prüfung aus. Führe die in [DEVELOPMENT.md](DEVELOPMENT.md) beschriebenen Projektprüfungen lokal aus und halte das Ergebnis im Pull Request fest.
 
 Prüfe Notebook-Lesen, Bearbeiten und Ausführen gegen die unterstützte nbdev-Version.

@@ -1,5 +1,9 @@
 <!-- do not remove -->
 
+## 0.0.20
+
+- Explain how to run a reviewed import-only cell when project approval cannot apply. Keep the project file hint and name blocked functions where a function entry can grant approval.
+
 ## 0.0.19
 
 - Read classes and multiple definitions with `context` and suggest close symbol matches.

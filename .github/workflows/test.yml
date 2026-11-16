@@ -1,4 +1,4 @@
-name: Quick checks
+name: Checks
 'on':
   push:
     branches: [main, development]
@@ -13,7 +13,7 @@ concurrency:
 jobs:
   syntax:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -22,5 +22,11 @@ jobs:
         with:
           python-version: '3.13'
           enable-cache: false
-      - name: Check Python syntax without installing dependencies
-        run: uv run --no-project --python 3.13 python -m compileall -q nbskill tools
+      - run: uv sync --locked
+      - run: uv run --no-sync pytest -q
+      - run: uv run --no-sync nbdev-test
+      - name: Verify notebook exports
+        run: |
+          uv run --no-sync nbdev-export
+          git diff --exit-code -- nbskill
+          test -z "$(git ls-files --others --exclude-standard -- nbskill)"

@@ -383,33 +383,19 @@ def _policy_allowed_function_names(policy):
     return [name for name in policy.get("functions", {}) if _policy_entry_allowed(policy, name)]
 
 # %% ../nbs/03_execute.ipynb #4f0d62d6
-def _cell_has_project_execution_approval(cell, policy=None):
-    if not policy: return False
+def _project_execution_requirements(cell, policy_functions):
     tree = _cell_policy_tree(cell)
-    if tree is None: return False
-    aliases = _execution_import_aliases_from_tree(tree)
-    if any(isinstance(node, ast.ClassDef) for node in tree.body): return False
+    if tree is None: return set(), "The cell could not be parsed as Python for project approval."
+    if any(isinstance(node, ast.ClassDef) for node in tree.body): return set(), "Project approval does not cover class definitions."
     defined = [node for node in tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))]
-    if any(node.decorator_list for node in defined): return False
-    if _top_level_external_effect_reasons(tree, aliases=aliases): return False
-    calls = _top_level_policy_call_names(tree, aliases=aliases)
-    policy_functions = set(policy.get("functions", {}))
-    policy_calls = calls & policy_functions
-    unknown = calls - policy_calls - _SAFE_POLICY_CALLS
-    if unknown: return False
-    needed = {node.name for node in defined} | policy_calls
-    return bool(needed) and all(_policy_entry_allowed(policy, name) for name in needed)
-
-# %% ../nbs/03_execute.ipynb #7f7031cf
-def _policy_blocked_function_names(cell, policy=None):
-    if not policy: return []
-    tree = _cell_policy_tree(cell)
-    if tree is None: return []
+    if any(node.decorator_list for node in defined): return set(), "Project approval does not cover decorated function definitions."
     aliases = _execution_import_aliases_from_tree(tree)
-    policy_functions = set(policy.get("functions", {}))
-    names = [node.name for node in tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))]
-    names += [name for name in _top_level_policy_call_names(tree, aliases=aliases) if name in policy_functions]
-    return sorted({name for name in names if not _policy_entry_allowed(policy, name)})
+    if _top_level_external_effect_reasons(tree, aliases=aliases):
+        return set(), "Project approval does not cover this cell's top-level external effects."
+    calls = _top_level_policy_call_names(tree, aliases=aliases)
+    if not (defined or calls): return set(), "Project approval requires a function entry, and this cell defines or calls no functions."
+    needed = {node.name for node in defined} | (calls - _SAFE_POLICY_CALLS) | (calls & policy_functions)
+    return needed, None
 
 # %% ../nbs/03_execute.ipynb #be22df27
 def _register_project_allowed(policy, namespace):
@@ -736,24 +722,28 @@ def _cell_source_hash(cell): return source_hash(cell.get("source", ""), length=N
 # %% ../nbs/03_execute.ipynb #65a44288
 class _ExecutionApprovalRequired(RuntimeError): pass
 
-# %% ../nbs/03_execute.ipynb #5a60da1d
-def _cell_has_execution_approval(cell, execution_policy=None):
-    if getattr(cell, "execution_count", None) not in (None, 0): return True
-    info = nbskill_cell_metadata(cell, create=False) or {}
-    if info.get(_EXECUTED_HASH_KEY) == _cell_source_hash(cell): return True
-    return _cell_has_project_execution_approval(cell, execution_policy)
-
 # %% ../nbs/03_execute.ipynb #3a9a06d4
 def _approval_required_error(cell, execution_policy=None):
-    policy_path = execution_policy.get("_path") if isinstance(execution_policy, dict) else None
-    blocked = _policy_blocked_function_names(cell, execution_policy)
-    if blocked and policy_path: policy_hint = f" Project policy {policy_path} has allowed=false for: {', '.join(blocked)}."
-    elif policy_path: policy_hint = f" Project policy {policy_path} did not approve this cell."
-    else: policy_hint = ""
-    msg = (
-        f"nbskill: refusing to execute unapproved cell id={cell.id}."
-        f"{policy_hint} Edit the policy entry, run it once yourself, or rerun nbskill with allow_new=True if you approve this source.")
-    return _ExecutionApprovalRequired(msg)
+    if getattr(cell, "execution_count", None) not in (None, 0): return None
+    info = nbskill_cell_metadata(cell, create=False) or {}
+    if info.get(_EXECUTED_HASH_KEY) == _cell_source_hash(cell): return None
+
+    policy = execution_policy or {}
+    policy_path = policy.get("_path")
+    policy_functions = policy.get("functions", {}).keys()
+    needed, limit = _project_execution_requirements(cell, policy_functions)
+    denied = sorted(name for name in needed if not _policy_entry_allowed(policy, name))
+    if needed and not denied: return None
+
+    policy_hint = f" {limit}" if limit else ""
+    if not limit and policy_path:
+        blocked = [name for name in denied if name in policy_functions]
+        if blocked: policy_hint = f" Project policy {policy_path} has allowed=false for: {', '.join(blocked)}."
+        else: policy_hint = f" Project policy {policy_path} did not approve this cell."
+        policy_hint += " Review and add or update the relevant function entries there."
+    review_hint = " Review the source, then run this cell once yourself"
+    review_hint += " or rerun nbskill with allow_new=True and limit the run to reviewed cells."
+    return _ExecutionApprovalRequired(f"nbskill: refusing to execute unapproved cell id={cell.id}.{policy_hint}{review_hint}")
 
 # %% ../nbs/03_execute.ipynb #7691adbc
 def _mark_executed(cell):
@@ -809,8 +799,8 @@ def _clear_timeout_mark(cell):
 def _run_cell(shell, cell, timeout=30, verbose=False, allow_new=False, execution_policy=None):
     if cell.cell_type != "code": return
     shell._cell_idx = cell.idx_ + 1
-    if getattr(shell, "safe", False) and not allow_new and not _cell_has_execution_approval(cell, execution_policy):
-        shell.exc = _approval_required_error(cell, execution_policy)
+    if getattr(shell, "safe", False) and not allow_new and (error := _approval_required_error(cell, execution_policy)):
+        shell.exc = error
         cell.outputs = [_error_output(shell.exc)]
         return
     outputs = execution_context().run(shell.run, cell.source,

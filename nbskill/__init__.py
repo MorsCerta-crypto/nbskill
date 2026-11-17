@@ -1,6 +1,6 @@
 """Notebook-aware context, editing, execution, and review for Python agents
 
-`nbskill` is a Python Pyskill for agents and maintainers working on nbdev notebooks. It keeps stable cell identities, chapter context, execution evidence, and source diffs together. The notebooks teach the same workflow that the installed functions implement.
+`nbskill` gives Python agents and maintainers tools to read, edit, run, and review nbdev notebooks by chapter, symbol, or cell ID.
 
 ```python
 from pyskills import doc, list_pyskills
@@ -12,9 +12,7 @@ from nbskill.read import context
 
 ## Why it exists
 
-A notebook contains more than Python source. Explanations, examples, outputs, and cell metadata matter when changing a library. `nbskill` selects chapters and symbols before editing and validates a batch before writing it. A failed edit leaves the file unchanged; successful edits retain the source cell IDs and produce reviewable diffs.
-
-`nbformat` handles notebook data, `execnb` executes cells, and nbdev exports and publishes the library. `nbskill` combines those tasks for an agent that must choose a small scope, make a structured change, and check its evidence. Use it when these notebook boundaries matter.
+`nbskill` validates notebook edits before writing and keeps existing cell IDs stable. Use focused execution and source diffs to check what changed.
 
 ## Load the Pyskill
 

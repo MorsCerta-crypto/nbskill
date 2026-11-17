@@ -67,8 +67,11 @@ _QUERY_KEY_ALIASES = dict(id="cell_id", cell="cell_id", cell_id="cell_id", chapt
 
 # %% ../nbs/01_read.ipynb #4f3e6dfd
 def _normalize_query_key(key):
-    name = _QUERY_KEY_ALIASES.get(str(key).strip().lower())
+    normalized = str(key).strip().lower()
+    name = _QUERY_KEY_ALIASES.get(normalized)
     if name is None:
+        if re.fullmatch(r"(?:idx|index|cell_idx|cell_index)[<>!]?", normalized):
+            raise ValueError(f"Unknown query key {key!r}. Use context('notebook.ipynb#2') to select a single cell by zero-based index.")
         choices = ", ".join(sorted(_QUERY_KEY_ALIASES))
         raise ValueError(f"Unknown query key {key!r}; use one of: {choices}")
     return name

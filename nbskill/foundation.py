@@ -619,7 +619,10 @@ def one_chapter(cells, chapter, create=False):
     if not matches and create:
         cells.append(mk_cell(f"## {chapter}", cell_type="markdown"))
         return dict(title=str(chapter), start=len(cells) - 1, end=len(cells))
-    if not matches: raise ValueError(f"No chapter matches {chapter!r}")
+    if not matches:
+        available = ", ".join(repr(span["title"]) for span in chapter_spans(cells))
+        hint = f"Available level-two headings are {available}." if available else "The notebook has no level-two headings."
+        raise ValueError(f"No chapter matches {chapter!r}. {hint}")
     titles = ", ".join(f"{span['title']} ({span['start']}:{span['end']})" for span in matches)
     raise ValueError(f"Chapter {chapter!r} matches multiple chapters: {titles}")
 

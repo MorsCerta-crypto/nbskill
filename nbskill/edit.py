@@ -120,7 +120,7 @@ __all__ = ['insert_lines', 'replace_lines', 'delete_lines', 'replace_text', 'rep
            'edit_notebook', 'NotebookEditor']
 
 # %% ../nbs/02_edit.ipynb #256e7289
-import ast,copy,difflib,json,re,os,multiprocessing,queue,traceback
+import ast,copy,difflib,json,re,os,subprocess,sys,traceback
 from inspect import signature
 from functools import partial
 from nbdev.export import nb_export
@@ -131,8 +131,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from fastcore.basics import patch
 from fastcore.meta import delegates
-from contextlib import redirect_stdout, redirect_stderr
-from io import StringIO
+from tempfile import TemporaryDirectory
 from fastcore.nbio import nb2dict, new_nb, validate_nb, write_nb as _write_nb
 from fastcore.nbio import Notebook as FastcoreNotebook, mk_cell, read_nb
 from .foundation import (track_call, Notebook, notebook_directive, apply_directives, cap_text, Cell, cell_directives, cell_source,
@@ -157,11 +156,15 @@ def _edit_text_budget(value):
     if isinstance(value, (list, tuple)): return sum(_edit_text_budget(item) for item in value)
     return 0
 
+# %% ../nbs/02_edit.ipynb #e8756ac6
+def _edit_budget_error(count, unit, limit):
+    return ValueError(f"edit_notebook budget exceeded with {count} {unit} (limit {limit}). Split the edits into smaller transactions.")
+
 # %% ../nbs/02_edit.ipynb #e3beccd9
 def _validate_edit_budget(edits):
-    if len(edits) > _EDIT_MAX_OPERATIONS: raise ValueError(f"edit_notebook budget exceeded: {len(edits)} operations exceeds limit {_EDIT_MAX_OPERATIONS}")
+    if len(edits) > _EDIT_MAX_OPERATIONS: raise _edit_budget_error(len(edits), "operations", _EDIT_MAX_OPERATIONS)
     chars = _edit_text_budget(edits)
-    if chars > _EDIT_MAX_SOURCE_CHARS: raise ValueError(f"edit_notebook budget exceeded: {chars} text chars exceeds limit {_EDIT_MAX_SOURCE_CHARS}")
+    if chars > _EDIT_MAX_SOURCE_CHARS: raise _edit_budget_error(chars, "text characters", _EDIT_MAX_SOURCE_CHARS)
 
 # %% ../nbs/02_edit.ipynb #6793c9e4
 def _cell_directive_body_lines(source):
@@ -637,7 +640,9 @@ def _insert_at(nb, anchor_id, where, new_cells):
 def _replace_cell_edit(nb, edit, diffs, affected, default_cell_type):
     op = edit["op"]
     indices = _selected_indices(nb, edit)
-    if len(indices) != 1: raise ValueError("replace_cell needs exactly one selected cell")
+    if len(indices) != 1:
+        ids = [nb.cells[idx].id for idx in indices]
+        raise ValueError(f"replace_cell needs exactly one selected cell. Matched {len(ids)} cells with IDs {ids!r}.")
     _check_expected_hash(nb, edit, indices)
     cell = nb.cells[indices[0]]
     before = cell_source(cell)
@@ -823,9 +828,10 @@ def _rebuild_named_exports(paths, root):
             nb_export(path, lib_path=library, procs=procs, mod_maker=partial(_selected_module_maker, target, index == 0))
 
 # %% ../nbs/02_edit.ipynb #b0f728c2
-def _export_worker(paths, root, results):
-    out, err = StringIO(), StringIO()
+def _export_worker():
+    result_path, root, *paths = map(Path, sys.argv[1:])
     environment = runtime_environment()
+    error = ""
     try:
         os.chdir(root)
         os.environ.pop("IN_TEST", None)
@@ -833,17 +839,14 @@ def _export_worker(paths, root, results):
         from nbdev.config import get_config
         from nbdev.doclinks import nbdev_export, nbglob
         pattern = r"^(?:" + "|".join(re.escape(str(path)) for path in paths) + r")$"
-        with redirect_stdout(out), redirect_stderr(err):
-            options = dict(path=str(get_config(root).nbs_path), path_re=pattern, symlinks=False)
-            if {Path(path).resolve() for path in nbglob(as_path=True, **options)} != set(paths):
-                raise ValueError("Selected notebooks are excluded by the nbdev export filter")
-            nbdev_export(**options)
-            _rebuild_named_exports(paths, root)
-            nbdev_export(**{**options, "path_re": r"(?!)"})
-        results.put(dict(ok=True, environment=environment, stdout=out.getvalue(), stderr=err.getvalue()))
-    except BaseException:
-        error = "Runtime environment: " + json.dumps(environment) + "\n" + traceback.format_exc()
-        results.put(dict(ok=False, error=error, environment=environment, stdout=out.getvalue(), stderr=err.getvalue()))
+        options = dict(path=str(get_config(root).nbs_path), path_re=pattern, symlinks=False)
+        if {Path(path).resolve() for path in nbglob(as_path=True, **options)} != set(paths):
+            raise ValueError("Selected notebooks are excluded by the nbdev export filter")
+        nbdev_export(**options)
+        _rebuild_named_exports(paths, root)
+        nbdev_export(**{**options, "path_re": r"(?!)"})
+    except BaseException: error = f"Runtime environment: {json.dumps(environment)}\n{traceback.format_exc()}"
+    result_path.write_text(error, encoding="utf-8")
 
 # %% ../nbs/02_edit.ipynb #4ad797ea
 def run_nbdev_export_from_project(paths):
@@ -852,27 +855,20 @@ def run_nbdev_export_from_project(paths):
     roots = {nbdev_project_root(path) for path in paths}
     if len(roots) != 1 or None in roots: raise ValueError("Export requires one nbdev project")
     root = roots.pop()
-    with notebook_locks(root):
-        ctx = multiprocessing.get_context("spawn")
-        results = ctx.Queue()
-        from nbskill.edit import _export_worker as worker
-        proc = ctx.Process(target=worker, args=(paths, root, results))
-        try:
-            proc.start()
-            while True:
-                try:
-                    payload = results.get(timeout=1)
-                    break
-                except queue.Empty:
-                    if not proc.is_alive(): raise RuntimeError(f"Export exited without a result: {proc.exitcode}")
-            proc.join()
-            if not payload["ok"]: raise RuntimeError("\n".join(payload.get(key, "") for key in ("error", "stdout", "stderr")))
-        finally:
-            if proc.pid is not None:
-                if proc.is_alive(): proc.terminate()
-                proc.join()
-            results.close()
-            results.join_thread()
+    from nbskill import edit
+    package_root = Path(edit.__file__).resolve().parent.parent
+    interpreter = sys.executable
+    worker = "from nbskill.edit import _export_worker; _export_worker()"
+    with notebook_locks(root), TemporaryDirectory(prefix="nbskill-export-") as folder:
+        result_path = Path(folder)/"result.txt"
+        proc = subprocess.run([interpreter, "-c", worker, str(result_path), str(root), *map(str, paths)],
+            cwd=package_root, capture_output=True, text=True, errors="replace")
+        if proc.returncode or not result_path.is_file():
+            stderr = proc.stderr.rstrip() or "(empty)"
+            raise RuntimeError(f"Export exited without a result (exit code {proc.returncode}).\n"
+                f"Interpreter: {interpreter}\nProject root: {root}\nWorker stderr:\n{stderr}")
+        error = result_path.read_text(encoding="utf-8")
+        if error: raise RuntimeError("\n".join(filter(None, (error, proc.stdout, proc.stderr))))
 
 # %% ../nbs/02_edit.ipynb #9391e8d4
 def _commit_snapshot(paths, library=None):
@@ -1078,9 +1074,7 @@ def edit_notebook(path, edits, validate_code=True, default_cell_type='code', dir
             else: _apply_structural_edit(trial, edit, diffs, affected, default_cell_type)
         _group_global_imports(trial, affected, diffs)
         affected = [cell_id for cell_id in dict.fromkeys(affected) if cell_id]
-        if len(affected) > _EDIT_MAX_AFFECTED_CELLS:
-            raise ValueError(
-                f"edit_notebook budget exceeded: {len(affected)} affected cells exceeds limit {_EDIT_MAX_AFFECTED_CELLS}")
+        if len(affected) > _EDIT_MAX_AFFECTED_CELLS: raise _edit_budget_error(len(affected), "affected cells", _EDIT_MAX_AFFECTED_CELLS)
         warnings = _edit_notebook_craft_warnings(path, trial, affected)
         commit = commit_notebook(path, trial, before=before, affected_cell_ids=affected, validate_code=validate_code, dry_run=dry_run)
 

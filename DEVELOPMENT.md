@@ -27,7 +27,7 @@ uv run --locked nbdev-readme
 uv run --locked pre-commit run --all-files
 ```
 
-Merge the reviewed version change into `development`, then open a pull request from `development` to `main` and use a merge commit. Build and publish from the clean `main` checkout after its checks pass. Authenticate with `gh` and verify that the version is the intended new release and its tag is unused.
+Open a pull request directly to `main` for the version change and merge it after review and the required checks. Build and publish from the clean `main` checkout after its checks pass. Authenticate with `gh` and verify that the version is the intended new release and its tag is unused.
 
 ```sh
 version=$(uv run --locked python -c 'from importlib.metadata import version; print(version("nbskill"))')

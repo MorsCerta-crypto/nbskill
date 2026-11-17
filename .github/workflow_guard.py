@@ -3,8 +3,8 @@ import argparse, hashlib, json, os, shlex, subprocess, sys
 from pathlib import Path
 
 
-POLICY_SHA256 = '6c3b94bf9ab1b792f7ce26d31987bdfaefcd67421678a84bfe9b5e2bc1d3503c'
-SOURCE_BRANCHES = ('development', 'main')
+POLICY_SHA256 = 'd20e6438a4f16b86a020f83e14f181f615668411204943feb664da1a7e52518b'
+SOURCE_BRANCHES = ('main',)
 DEPLOYMENT_BRANCHES = ('deployed/dev', 'deployed/prod')
 
 
@@ -13,7 +13,7 @@ def git(repo, *args): return subprocess.run(['git','-C',str(repo),*args],check=T
 
 def validate_commit(branch):
     if not branch or branch in SOURCE_BRANCHES:
-        raise ValueError('Commit on a feature branch; main and development are protected integration branches')
+        raise ValueError('Commit on a feature branch; main is the protected integration branch')
 
 
 def validate_push(records):
@@ -28,13 +28,6 @@ def validate_push(records):
 def check_policy(repo):
     if hashlib.sha256((Path(repo)/'WORKFLOW.md').read_bytes()).hexdigest() != POLICY_SHA256:
         raise ValueError('Workflow policy differs from the central policy; synchronise it from ease-ws')
-    event = os.environ.get('GITHUB_EVENT_PATH')
-    if not event: return
-    request = json.loads(Path(event).read_text()).get('pull_request')
-    if request and request['base']['ref']=='main':
-        head = request['head']['ref']
-        if head!='development' and not head.startswith('pr/hotfix/'):
-            raise ValueError('Promote development to main; emergency fixes use pr/hotfix/* and return to development')
 
 
 def install(repo):

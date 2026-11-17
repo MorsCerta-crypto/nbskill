@@ -156,9 +156,9 @@ directly when the notebook source should own the change.
 <!-- ease-workflow:start -->
 ## Verbindlicher Entwicklungsprozess
 
-Es gilt die gemeinsame Regel in [WORKFLOW.md](WORKFLOW.md). Die zentrale Quelle ist ease-ws/WORKFLOW.md. development ist der Integrationszweig; main enthält freigegebenen Quellcode. Beide Branches sind unabhängig vom Deploymentstatus. rsc schreibt ausschließlich deployed/dev und deployed/prod.
+Es gilt die gemeinsame Regel in [WORKFLOW.md](WORKFLOW.md). Die zentrale Quelle liegt in ease-ws/WORKFLOW.md. Projektspezifische Kommandos stehen in [DEV.md](DEV.md).
 
-Änderungen auf Featurebranches entwickeln und per Pull Request zuerst nach development übernehmen. Geprüfte Stände per Pull Request von development nach main freigeben. Projektprüfungen und Notebookquellen bleiben verbindlich. Vorhandene offene Dateien, ungemergte Branches und Worktrees erhalten; keine pauschale Bereinigung, kein Reset und kein automatisches Stashing.
+Von `main` auf einem Arbeitsbranch entwickeln und per Pull Request direkt nach `main` übernehmen. Die Projektprüfungen und die Notebookquellen sind verbindlich. Offene Dateien, ungemergte Branches und Worktrees bis zur Übernahme oder Sicherung erhalten.
 
-Lokale Branch-Guards mit python3 .github/workflow_guard.py install aktivieren. Bestehende projektspezifische Hooks bleiben erhalten. Ein Merge führt kein Produktionsdeployment aus.
+Lokale Branch-Guards mit `python3 .github/workflow_guard.py install` aktivieren. Bestehende projektspezifische Hooks bleiben erhalten. Bei Produkten verwaltet rsc die Deploymentreferenzen.
 <!-- ease-workflow:end -->

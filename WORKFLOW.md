@@ -1,35 +1,33 @@
 # Gemeinsamer Entwicklungs- und Releaseprozess
 
-Diese verbindliche Regel gilt für den Workspace, die Plattform, Libraries und alle Produkte. Die Quelle liegt in `ease-ws/WORKFLOW.md`; `make policy-sync` verteilt identische Kopien und die zugehörigen Prüfungen. `make policy-check` erkennt Abweichungen. Projektspezifische Entwicklungsanleitungen ergänzen diese Regel um ihre Prüfkommandos.
+Diese Regel gilt für den Workspace, die Plattform, Libraries und alle Produkte. `ease-ws/WORKFLOW.md` ist die gemeinsame Quelle. `make policy-sync` verteilt die Regel und die zugehörigen Prüfungen. `make policy-check` erkennt Abweichungen. In `DEV.md` stehen die konkreten Entwicklungs-, Prüf- und Releasekommandos des Projekts.
 
 ## Bedeutung der Branches
 
 | Branch | Verbindliche Bedeutung |
 | --- | --- |
-| `development` | Integrationszweig für geprüfte Featureänderungen. Er kann unfertige, deaktivierte Features enthalten und ist kein Nachweis eines Deployments. |
-| `main` | Freigegebener, reproduzierbar geprüfter Quellstand. Er ist die Grundlage stabiler Releases und kein Zeiger auf die laufende Produktion. |
+| `main` | Geschützter Standardbranch und dauerhafter Quellstand für Entwicklung und Releases. |
 | `pr/<issue>-<beschreibung>` | Arbeitsbranch für ein Feature oder eine Korrektur. Parallele Arbeiten erhalten eigene Branches und Worktrees. |
-| `pr/hotfix/<beschreibung>` | Dringende Korrektur auf Basis von `main`. Nach der Freigabe wird sie auch per Pull Request nach `development` übernommen. |
 | `deployed/dev`, `deployed/prod` | Ausschließlich von rsc verwaltete Deploymentreferenzen für Produkte. Sie werden nach erfolgreicher Laufzeitprüfung aktualisiert. Libraries benötigen diese Referenzen nicht. |
 
 Branches benennen Quellstände. Laufzeitumgebungen, Berechtigungen und Secrets werden gesondert konfiguriert. Kein Merge, Commit oder Push auf einen Quellbranch löst ein Produktionsdeployment aus.
 
 ## Featureentwicklung und Freigabe
 
-1. Ziel und Abnahmekriterien in einem Issue festhalten. Einen Arbeitsbranch vom passenden aktuellen Integrationsstand erstellen. Vorhandene offene Dateien niemals durch einen Branchwechsel, Reset oder automatisches Stashing verdrängen.
-2. Änderungen auf dem Arbeitsbranch entwickeln und früh einen Draft-Pull-Request nach `development` erstellen. Zwischenstände regelmäßig committen und pushen. Lokale Experimente mit Nachbarbibliotheken sind zulässig, ersetzen aber keine Releaseprüfung.
-3. Die projektspezifischen Prüfungen aus einem reproduzierbaren Stand ausführen. Der Prüfnachweis nennt Commit, Abhängigkeiten, Testprofil, Ergebnis und übersprungene Prüfungen. Ein Syntaxcheck allein ist keine fachliche Freigabe.
-4. Nach Review nach `development` integrieren. Unfertige Funktionen bleiben im Arbeitsbranch oder hinter einem standardmäßig deaktivierten Featureflag. Featureflags dürfen fehlende Datenbankkompatibilität nicht verdecken.
-5. Den freizugebenden Stand über einen Pull Request von `development` nach `main` übernehmen. Zwischen diesen beiden dauerhaften Branches Merge-Commits verwenden, damit ihre gemeinsame Historie erhalten bleibt. Einen Hotfix über einen eigenen geprüften Pull Request nach `main` und anschließend nach `development` übernehmen.
-6. Libraries aus einem sauberen freigegebenen Stand versionieren und veröffentlichen. Produkte übernehmen Libraryversionen bewusst in eigenen Pull Requests. Bestehende Releases und Tags niemals ersetzen.
+1. Einen Arbeitsbranch `pr/<beschreibung>` vom aktuellen `main` erstellen. Für parallele Arbeit einen eigenen Worktree verwenden und offene Dateien im bisherigen Worktree belassen.
+2. Die Projektprüfungen aus `DEV.md` ausführen und einen Pull Request direkt nach `main` öffnen. Unfertige Funktionen bleiben im Arbeitsbranch oder hinter einem standardmäßig deaktivierten Featureflag. Featureflags setzen ein kompatibles Datenbankschema voraus.
+3. Nach Review und erfolgreichen Pflichtprüfungen mergen. GitHub Auto-Merge kann den Merge übernehmen, sobald die Regeln des Repositories erfüllt sind. Der Prüfnachweis nennt den geprüften Commit, das Testprofil und ausgelassene Prüfungen.
+4. Aus einem geprüften Commit in `main` veröffentlichen. Verbraucher übernehmen neue Libraryversionen über einen eigenen Pull Request mit aktualisiertem Lockfile. Veröffentlichte Tags und Releases bleiben unveränderlich.
 
-Die lokalen Guards verbieten direkte Commits auf `development` und `main` sowie direkte Pushes und Löschungen dieser Remote-Branches. Das gilt auch für Libraries und unabhängig von `deployments = false`. Serverregeln müssen Reviews, Pflichtprüfungen und den Schutz vor Löschung und Force-Push zusätzlich erzwingen. Für rsc ist nur der Namensraum `deployed/*` freizugeben; der Deployer benötigt keine Ausnahme für Quellbranches.
+Die lokalen Guards schützen `main`, veröffentlichte Tags und die rsc-Deploymentreferenzen. Auf GitHub erzwingen die Regeln für `main` Pull Requests, Pflichtprüfungen und den Schutz vor Löschung und Force-Push. Der rsc-Deployer schreibt ausschließlich seine Deploymentreferenzen.
 
-Pflichtprüfungen in CI umfassen mindestens die Installation aus dem Lockfile, bei nbdev-Projekten den abweichungsfreien Notebook-Export und die Tests des Projekts. Ein Workflow, der nur Syntax prüft, erfüllt diese Pflicht nicht. Bis ein Repository diese Prüfungen in CI ausführt, nennt jeder Pull Request den lokalen Prüfnachweis nach Schritt 3. Ein Repository ohne erzwungene Serverregeln erhält keine Produktionsfreigabe.
+Pflichtprüfungen umfassen die Installation aus dem Lockfile, die Projekttests und bei nbdev-Projekten den abweichungsfreien Notebook-Export. Solange das Repository in GitHub Actions nur Syntax prüft, gehört der lokale Prüfnachweis in den Pull Request. Tests erhalten standardmäßig `contents: read`. Private Abhängigkeiten verwenden bei Bedarf ein kurzlebiges GitHub-App-Token mit Leserechten für die konkreten Paket-Repositories. CI bricht veraltete Pull-Request-Läufe ab und verwendet den Download-Cache des Paketmanagers. Die Pflichtprüfungen müssen auch für Dokumentationsänderungen ein Ergebnis liefern.
 
 Eine Änderung über mehrere Repositories verwendet in allen denselben Branchnamen. Jeder Pull Request nennt die zugehörigen Pull Requests. Die gemeinsame Prüfung verwendet genau diese Stände. Libraries werden zuerst integriert und veröffentlicht. Der Pull Request eines Verbrauchers bleibt Entwurf, bis er den veröffentlichten Tag pinnt.
 
 ## Dev- und Produktionsdeployment
+
+Bei einem Produkt mit eingerichtetem Deployment startet ein erfolgreicher Lauf für `main` den Rollout nach `development-deployment`. Ein ausdrücklich gesetzter Release-Tag auf einem geprüften Commit in `main` startet die Produktionsfreigabe für den bereits in Dev geprüften Kandidaten. rsc führt den Produktionsrollout nach der Freigabe aus. In `DEV.md` stehen das zulässige Tagformat, die Startbedingung und der Einrichtungsstand des Projekts.
 
 Ein Produktrelease bindet Produktcommit, SDK- und Vertragsversion, Lockfiles, Manifest, Migrationsprüfsummen und Image-Digests. Aus dem freigegebenen Quellstand wird genau ein Kandidat gebaut. Dev und Prod verwenden denselben Kandidaten und dieselben Image-Digests, aber getrennte Konfigurationen und Infrastrukturpläne.
 
@@ -42,6 +40,12 @@ rsc prüft den Kandidaten in Dev. Erst vollständige, dem Kandidaten zugeordnete
 Der rsc-Releasestatus ist der maßgebliche Betriebsnachweis. Er hält Kandidat, Umgebung, Plan, Freigabe, Prüfnachweise und Ergebnis fest. Die zusätzlichen Referenzen `deployed/dev` und `deployed/prod` erleichtern die Git-Navigation. Fehlgeschlagene Git-Veröffentlichungen werden ohne erneutes Deployment wiederholt. Bereits gespeicherte Veröffentlichungen auf die alten Quellbranch-Ziele werden unter der Deploymentsperre auf die neuen Referenzen umgestellt und als eigenes Ereignis protokolliert. Historische veröffentlichte Ereignisse bleiben unverändert.
 
 Nach dem Rollout müssen Readiness, fachliche Probe und Workerzustand zum konkreten Kandidaten passen. Ein Anwendungsrollback ist nur mit kompatiblem Schema zulässig. Ein Backup-Restore ist ein gesonderter, geprüfter Betriebsablauf.
+
+## Library-Releases
+
+DocAI und ease-ui veröffentlichen ihre freigegebenen Pakete öffentlich. Interne Libraries veröffentlichen die für Verbraucher vorgesehenen Git-Tags und Artefakte mit den Zugriffsrechten des jeweiligen Repositories. Der Tag muss auf einen geprüften Commit in `main` zeigen und zur Paketversion passen.
+
+Fastship übernimmt die Paket- und GitHub-Releases, soweit das Projekt seinen Build damit abbildet. Der Workspace stellt dafür `scripts/library_publish.py` für bereits gebaute Artefakte bereit. Im jeweiligen `DEV.md` stehen das Buildkommando, die Version von Fastship und der tatsächlich eingerichtete Veröffentlichungsweg. Veröffentlichungsschritte laufen mit separaten Schreibrechten. Paket- und Produktionsfreigaben erfolgen über den jeweiligen Releaseweg.
 
 ## Kompatibilität und Prüfpflichten
 
@@ -59,7 +63,7 @@ Produktfreigaben benötigen entsprechend ihrem Vertrag insbesondere Prüfungen f
 
 ## Offene Arbeit erhalten
 
-Offene Branches und Worktrees sind zulässiger Arbeitsbestand. Ihre Anzahl oder ein Vorsprung von `development` gegenüber `main` ist allein kein Fehler. Der Workspace-Report unterscheidet Arbeitsdateien, unveröffentlichte Commits und Integrationsstände.
+Offene Branches und Worktrees sind zulässiger Arbeitsbestand. Der Workspace-Report unterscheidet Arbeitsdateien, unveröffentlichte Commits und bereits übernommene Änderungen.
 
 Vor dem Entfernen eines Branches oder Worktrees müssen Dateien gesichert und die relevanten Commits dauerhaft referenziert oder nachweislich übernommen sein. Nach einem Squash-Merge reicht die Git-Abstammung für diesen Nachweis nicht aus. Es gibt keine pauschale Löschung nach Branchname oder Alter.
 
@@ -71,6 +75,6 @@ Zusätzliche Worktrees liegen im Verzeichnis `.worktrees` des Repositories oder 
 
 In einem einzelnen Checkout aktiviert `python3 .github/workflow_guard.py install` die lokalen Branch-Guards und erhält die bisher konfigurierten Hookprüfungen. Der Installer ist wiederholbar. Im Workspace installiert `make hooks` die Guards für alle Repositories. Bestehende Branches, Arbeitsdateien und zusätzliche Worktrees werden dabei nicht verändert.
 
-`python3 .github/workflow_guard.py check` prüft die zentrale Regelkopie. Der zusätzliche CI-Job `Source policy` prüft bei Pull Requests nach `main` auch den Freigabeweg. Die vorhandenen projektspezifischen Qualitätsprüfungen bleiben erforderlich.
+`python3 .github/workflow_guard.py check` prüft die zentrale Regelkopie. Der CI-Job `Source policy` führt diese Prüfung im Pull Request nach `main` aus. Die projektspezifischen Pflichtprüfungen laufen zusätzlich.
 
 Änderungen an dieser Regel erfolgen zentral im Workspace. Anschließend `make policy-sync`, `make policy-check` und `make test` ausführen und die Änderungen in den betroffenen Repositories jeweils reviewen und übernehmen. Das Synchronisieren veröffentlicht keinen Code und verändert keine GitHub-Einstellungen.

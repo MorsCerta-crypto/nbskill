@@ -1,5 +1,12 @@
 <!-- do not remove -->
 
+## 0.0.21
+
+- `context()` lists available headings when a chapter is missing, suggests `max_chars_per_cell` for `max_chars`, and shows how to select a cell by zero-based index.
+- Export worker failures report startup stderr, the exit code, the Python interpreter, and the project root when the worker exits before returning a result. Notebook safe mode applies its subprocess restrictions to the worker.
+- `exec_nb()` logs the first failing cell, exception type and message, execution environment, and number of additional failures in separate fields. With `exc_stop=True`, it still raises the original exception.
+- `edit_notebook()` reports the match count and cell IDs when `replace_cell` finds zero or multiple cells. Edit limit errors suggest splitting the plan into smaller transactions.
+
 ## 0.0.20
 
 - Explain how to run a reviewed import-only cell when project approval cannot apply. Keep the project file hint and name blocked functions where a function entry can grant approval.

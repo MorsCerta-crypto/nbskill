@@ -1,9 +1,7 @@
 name: Checks
 'on':
-  push:
-    branches: [main, development]
   pull_request:
-    branches: [main, development]
+    branches: [main]
   workflow_dispatch:
 permissions:
   contents: read
@@ -21,7 +19,8 @@ jobs:
       - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
         with:
           python-version: '3.13'
-          enable-cache: false
+          enable-cache: true
+          cache-dependency-glob: uv.lock
       - run: uv sync --locked
       - run: uv run --no-sync pytest -q
       - run: uv run --no-sync nbdev-test

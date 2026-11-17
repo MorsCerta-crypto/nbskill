@@ -1,0 +1,78 @@
+# Generated from ease-ws/scripts/internal-package-release.yml
+name: Private package release
+'on':
+  push:
+    tags:
+      - '[0-9]*'
+      - 'v[0-9]*'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: private-package-release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  build:
+    if: github.ref == 'refs/heads/main' || github.ref_type == 'tag'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+        with:
+          version: '0.13.4'
+          python-version: '3.13'
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Verify the release commit
+        if: github.ref_type == 'tag'
+        run: git merge-base --is-ancestor HEAD refs/remotes/origin/main
+      - run: uv build --python 3.13 --no-sources
+      - name: Verify the release version
+        if: github.ref_type == 'tag'
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python - <<'PY'
+          import os, re
+          from email.parser import BytesParser
+          from pathlib import Path
+          from zipfile import ZipFile
+
+          wheel, = Path('dist').glob('*.whl')
+          with ZipFile(wheel) as archive:
+              metadata, = (name for name in archive.namelist() if name.endswith('.dist-info/METADATA'))
+              version = BytesParser().parsebytes(archive.read(metadata))['Version']
+          tag = os.environ['RELEASE_TAG']
+          if not re.fullmatch(r'v?\d+\.\d+\.\d+', tag) or tag.removeprefix('v') != version:
+              raise SystemExit(f'{tag} must match package version {version}')
+          PY
+      - name: Build the matching Contracts wheel
+        if: github.event.repository.name == 'ease-sdk'
+        run: uv build packages/contracts --wheel --python 3.13 --no-sources --out-dir dist
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+  publish:
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: dist
+          path: dist/
+      - name: Attach distributions to the tagged release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: gh release create "$RELEASE_TAG" dist/* --verify-tag --generate-notes

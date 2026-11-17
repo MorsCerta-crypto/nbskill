@@ -3,7 +3,7 @@ import argparse, hashlib, json, os, shlex, subprocess, sys
 from pathlib import Path
 
 
-POLICY_SHA256 = 'd20e6438a4f16b86a020f83e14f181f615668411204943feb664da1a7e52518b'
+POLICY_SHA256 = '506feb88db55106ca0a20fa9ee5c539221f8fd380b9319c0550dce3efd0907e6'
 SOURCE_BRANCHES = ('main',)
 DEPLOYMENT_BRANCHES = ('deployed/dev', 'deployed/prod')
 
@@ -12,8 +12,8 @@ def git(repo, *args): return subprocess.run(['git','-C',str(repo),*args],check=T
 
 
 def validate_commit(branch):
-    if not branch or branch in SOURCE_BRANCHES:
-        raise ValueError('Commit on a feature branch; main is the protected integration branch')
+    message = 'Commit on a feature branch; main is the protected integration branch'
+    if not branch or branch in SOURCE_BRANCHES: raise ValueError(message)
 
 
 def validate_push(records):

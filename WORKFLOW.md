@@ -16,18 +16,20 @@ Branches benennen Quellstände. Laufzeitumgebungen, Berechtigungen und Secrets w
 
 1. Einen Arbeitsbranch `pr/<beschreibung>` vom aktuellen `main` erstellen. Für parallele Arbeit einen eigenen Worktree verwenden und offene Dateien im bisherigen Worktree belassen.
 2. Die Projektprüfungen aus `DEV.md` ausführen und einen Pull Request direkt nach `main` öffnen. Unfertige Funktionen bleiben im Arbeitsbranch oder hinter einem standardmäßig deaktivierten Featureflag. Featureflags setzen ein kompatibles Datenbankschema voraus.
-3. Nach Review und erfolgreichen Pflichtprüfungen mergen. GitHub Auto-Merge kann den Merge übernehmen, sobald die Regeln des Repositories erfüllt sind. Der Prüfnachweis nennt den geprüften Commit, das Testprofil und ausgelassene Prüfungen.
+3. Fastship kann ein Issue oder einen Pull Request über einen vorhandenen Repository-Wrapper erstellen. Der Wrapper setzt `main` als Ziel und überlässt den Merge den GitHub-Regeln. Wo kein Wrapper eingerichtet ist, den Pull Request mit `gh pr create --base main` öffnen. Das Standardkommando `ship-pr` versucht einen sofortigen Squash-Merge. Die EASE-Repositories verlangen Merge-Commits. Nach Review und erfolgreichen Pflichtprüfungen mergen oder GitHub Auto-Merge mit der Methode Merge-Commit verwenden. Der Prüfnachweis nennt den Commit, das Testprofil und ausgelassene Prüfungen.
 4. Aus einem geprüften Commit in `main` veröffentlichen. Verbraucher übernehmen neue Libraryversionen über einen eigenen Pull Request mit aktualisiertem Lockfile. Veröffentlichte Tags und Releases bleiben unveränderlich.
 
 Die lokalen Guards schützen `main`, veröffentlichte Tags und die rsc-Deploymentreferenzen. Auf GitHub erzwingen die Regeln für `main` Pull Requests, Pflichtprüfungen und den Schutz vor Löschung und Force-Push. Der rsc-Deployer schreibt ausschließlich seine Deploymentreferenzen.
 
-Pflichtprüfungen umfassen die Installation aus dem Lockfile, die Projekttests und bei nbdev-Projekten den abweichungsfreien Notebook-Export. Solange das Repository in GitHub Actions nur Syntax prüft, gehört der lokale Prüfnachweis in den Pull Request. Tests erhalten standardmäßig `contents: read`. Private Abhängigkeiten verwenden bei Bedarf ein kurzlebiges GitHub-App-Token mit Leserechten für die konkreten Paket-Repositories. CI bricht veraltete Pull-Request-Läufe ab und verwendet den Download-Cache des Paketmanagers. Die Pflichtprüfungen müssen auch für Dokumentationsänderungen ein Ergebnis liefern.
+Der Pflichtlauf im Pull Request installiert aus dem Lockfile, führt die Projektprüfungen aus und prüft bei nbdev den abweichungsfreien Notebook-Export. Ein Repository mit reiner Syntaxprüfung dokumentiert die vollständige lokale Prüfung im Pull Request, bis sein Pflichtlauf erweitert ist. Veraltete Läufe desselben Pull Requests werden abgebrochen. Der Download-Cache richtet sich nach Lockfile und Laufzeit. Auch Dokumentationsänderungen liefern den Pflichtstatus. Der Lauf auf `main` baut und prüft den tatsächlichen Merge-Stand für das Entwicklungsdeployment. Ein vorheriger Prüfnachweis gilt nur für denselben Quellbaum und dieselben Build-Eingaben.
+
+Prüfjobs erhalten `contents: read` und speichern Checkout-Zugangsdaten nicht. Private Abhängigkeiten verwenden einen kurzlebigen GitHub-App-Installationstoken mit Leserechten für die konkreten Quellen im Lockfile. Für eine einzige private Quelle genügt ein eigener Read-only Deploy Key. Jobs mit diesen Zugangsdaten laufen nur für vertrauenswürdige Änderungen. Schreibrechte sind auf den jeweiligen Freigabejob begrenzt.
 
 Eine Änderung über mehrere Repositories verwendet in allen denselben Branchnamen. Jeder Pull Request nennt die zugehörigen Pull Requests. Die gemeinsame Prüfung verwendet genau diese Stände. Libraries werden zuerst integriert und veröffentlicht. Der Pull Request eines Verbrauchers bleibt Entwurf, bis er den veröffentlichten Tag pinnt.
 
 ## Dev- und Produktionsdeployment
 
-Bei einem Produkt mit eingerichtetem Deployment startet ein erfolgreicher Lauf für `main` den Rollout nach `development-deployment`. Ein ausdrücklich gesetzter Release-Tag auf einem geprüften Commit in `main` startet die Produktionsfreigabe für den bereits in Dev geprüften Kandidaten. rsc führt den Produktionsrollout nach der Freigabe aus. In `DEV.md` stehen das zulässige Tagformat, die Startbedingung und der Einrichtungsstand des Projekts.
+Bei einem Produkt startet ein erfolgreicher Lauf auf `main` das Entwicklungsdeployment, sobald Registry, rsc-Release-Dienst und Zielumgebung eingerichtet sind. Ein Release-Tag auf einem geprüften Commit in `main` startet die Produktionsfreigabe für denselben Kandidaten. rsc führt den Produktionsrollout nach der Freigabe aus. Bis die Voraussetzungen erfüllt sind, endet der Ablauf beim Prüfen und Bauen. In `DEV.md` stehen Tagformat, Startbedingung, Ziel und Einrichtungsstand.
 
 Ein Produktrelease bindet Produktcommit, SDK- und Vertragsversion, Lockfiles, Manifest, Migrationsprüfsummen und Image-Digests. Aus dem freigegebenen Quellstand wird genau ein Kandidat gebaut. Dev und Prod verwenden denselben Kandidaten und dieselben Image-Digests, aber getrennte Konfigurationen und Infrastrukturpläne.
 
@@ -43,9 +45,11 @@ Nach dem Rollout müssen Readiness, fachliche Probe und Workerzustand zum konkre
 
 ## Library-Releases
 
-DocAI und ease-ui veröffentlichen ihre freigegebenen Pakete öffentlich. Interne Libraries veröffentlichen die für Verbraucher vorgesehenen Git-Tags und Artefakte mit den Zugriffsrechten des jeweiligen Repositories. Der Tag muss auf einen geprüften Commit in `main` zeigen und zur Paketversion passen.
+Ein unveränderlicher Release-Tag startet Build, Installationsprobe und Veröffentlichung einer Bibliothek. Der Workflow prüft, dass der Tag zu der Paketversion passt und auf einen geprüften Commit in `main` zeigt. Bestehende Tagformate bleiben gültig.
 
-Fastship übernimmt die Paket- und GitHub-Releases, soweit das Projekt seinen Build damit abbildet. Der Workspace stellt dafür `scripts/library_publish.py` für bereits gebaute Artefakte bereit. Im jeweiligen `DEV.md` stehen das Buildkommando, die Version von Fastship und der tatsächlich eingerichtete Veröffentlichungsweg. Veröffentlichungsschritte laufen mit separaten Schreibrechten. Paket- und Produktionsfreigaben erfolgen über den jeweiligen Releaseweg.
+DocAI und ease-ui veröffentlichen auf PyPI. Der Veröffentlichungsjob nutzt PyPI Trusted Publishing und erhält `id-token: write` für die Umgebung `pypi`. Interne Bibliotheken veröffentlichen die geprüften Artefakte am GitHub-Release ihres Repositorys. Nur der Job für GitHub-Releases erhält `contents: write`. Testläufe bauen und prüfen dieselben Artefakte ohne Veröffentlichung.
+
+Fastship bereitet Release-Notizen vor und kann GitHub-Releases mit den bereits geprüften Artefakten anlegen. Wenn der Tag-Workflow die Veröffentlichung übernimmt, startet Fastship keinen zweiten Upload. In `DEV.md` stehen das Buildkommando, das Tagformat, das Ziel und der Einrichtungsstand.
 
 ## Kompatibilität und Prüfpflichten
 

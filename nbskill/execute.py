@@ -74,7 +74,7 @@ from .foundation import (track_call, nbskill_cell_metadata, cell_directives, cel
     output_value_text, parse_literal, source_hash, stamp_notebook_metadata, notebook_result, short_call_name, is_exported_code_cell,
     cell_analysis, scoped_nodes)
 from .parallel import execution_slot, execution_context, notebook_locks, notebook_key
-from .diagnostics import runtime_environment
+from .diagnostics import note_usage_exception, runtime_environment
 
 # %% ../nbs/03_execute.ipynb #970deca7
 async def _eval_notebook_source(code, g=None, ok_dests=None):
@@ -834,7 +834,7 @@ def _execution_scope(path, dest):
             _ACTIVE_EXECUTION_PATHS.reset(token)
 
 # %% ../nbs/03_execute.ipynb #65848fef
-def _execute_nb(path, dest=None, exc_stop=False, preproc=lambda cell: False, postproc=lambda cell: None, timeout=30, verbose=False,
+def _execute_nb(path, environment, dest=None, exc_stop=False, preproc=lambda cell: False, postproc=lambda cell: None, timeout=30, verbose=False,
     safe=True, allow=None, ok_dests=None, cache_httpx2=False, cache_dir=None, cache_domains=None, allow_new=False):
     with _execution_scope(path, dest):
         nb = read_nb(path)
@@ -863,7 +863,8 @@ def _execute_nb(path, dest=None, exc_stop=False, preproc=lambda cell: False, pos
         if dest:
             stamp_notebook_metadata(nb)
             _write_nb(nb, dest)
-        if first_exc: raise first_exc
+        if first_exc: raise note_usage_exception(first_exc, cell_id=str(cell.id),
+            execution_environment=environment, additional_failure_count=0)
         return nb
 
 # %% ../nbs/03_execute.ipynb #03e0f4fd
@@ -992,7 +993,7 @@ def exec_nb(
             span = one_chapter(nb.cells, chapter)
         up2id, chapter_title = span["end"], span["title"]
     preproc, postproc = _exec_limiters(up2id)
-    nb = _execute_nb(path, dest=dest, exc_stop=exc_stop, preproc=preproc, postproc=postproc, timeout=timeout, verbose=verbose, safe=safe,
+    nb = _execute_nb(path, environment, dest=dest, exc_stop=exc_stop, preproc=preproc, postproc=postproc, timeout=timeout, verbose=verbose, safe=safe,
         allow=allow, ok_dests=ok_dests, cache_httpx2=cache_httpx2, cache_dir=cache_dir, cache_domains=cache_domains, allow_new=allow_new)
     skip_notebook = _notebook_skip_exec(nb)
     mode = "safe" if safe else "unsafe"

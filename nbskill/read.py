@@ -22,6 +22,8 @@ Notebook work often crosses into generated modules. The AST readers keep that ha
 
 `context` combines discovery and reading. Use `context(path, view="summary")` for one compact row per cell, `cell_type="markdown"` or `cell_type="code"` for cell-kind slices, `chapter="Name"` for one section, and `query="regex=term"` or `include_re="term"` for targeted search. `query="checks=true"` selects notebook-level checks; `query="imports_only=true export"` selects exported import cells. `context_lines=1` adds neighboring cell summaries without opening the whole notebook.
 
+Use `context("notebook.ipynb#2")` to read the third cell by its zero-based index. A missing chapter reports the available level-two headings. Use `max_chars_per_cell` to limit the source shown for each cell in filtered results.
+
 ## Exact cell context
 
 Use `context("notebook.ipynb#cell-id", mode="exact")` when an edit needs the complete selected cell without docs, callers, or truncation.
@@ -1243,8 +1245,14 @@ def context(
     verbose: bool = True,
     connection: tuple[str, str] | None = None,  # Follow calls from one symbol to another
     max_depth: int = 6,  # Maximum number of call edges for a connection
+    **unexpected,
 ):
     "Read one notebook-aware target, optionally narrowed by notebook filters."
+    if unexpected:
+        keyword = next(iter(unexpected))
+        message = f"context() got an unexpected keyword argument {keyword!r}"
+        if keyword == "max_chars": message += ". Use 'max_chars_per_cell' to limit the source shown per cell."
+        raise TypeError(message)
     if connection is not None:
         if isinstance(connection, str) or len(connection) != 2 or not all(isinstance(name, str) and name for name in connection):
             raise ValueError("connection needs two non-empty symbol names")

@@ -69,6 +69,7 @@ def load_failure_map(path, strict=False):
 
 # %% ../nbs/00_diagnostics.ipynb #2772ee81
 _ACTIVE_USAGE_CALL = ContextVar("nbskill_usage_call", default=None)
+_USAGE_EXCEPTION = ContextVar("nbskill_usage_exception", default=None)
 _USAGE_EVENT_LIMIT = 100
 _USAGE_ERROR_LIMIT = 1000
 _USAGE_DAY_LIMIT = 90
@@ -84,12 +85,34 @@ def _increment_usage(counts, tool, failed):
         totals[tool] = count + 1
 
 # %% ../nbs/00_diagnostics.ipynb #c820db67
-def _usage_exception(error):
+def _usage_exception(error, exception_type=None):
     message = str(error)
     trace = "".join(traceback.format_exception(error)) if isinstance(error, Exception) else ""
-    return dict(type=type(error).__name__ if isinstance(error, Exception) else "ResultFailure",
+    return dict(type=exception_type or (type(error).__name__ if isinstance(error, Exception) else "ResultFailure"),
         message=message[-_USAGE_ERROR_LIMIT:], traceback=trace[-_USAGE_ERROR_LIMIT:],
         message_truncated=len(message) > _USAGE_ERROR_LIMIT, traceback_truncated=len(trace) > _USAGE_ERROR_LIMIT)
+
+# %% ../nbs/00_diagnostics.ipynb #837aaaeb
+def note_usage_exception(error, **fields):
+    "Attach log fields to the tracked exception and return the same exception."
+    if _ACTIVE_USAGE_CALL.get() is not None: _USAGE_EXCEPTION.set((error, fields))
+    return error
+
+# %% ../nbs/00_diagnostics.ipynb #9a641b5d
+def _usage_failure(error):
+    context = _USAGE_EXCEPTION.get()
+    fields = context[1] if context and context[0] is error else {}
+    if isinstance(error, dict) and error.get("kind") == "execution" and (first := error.get("primary_failure")):
+        details = _usage_exception(first["message"], first["type"])
+        summary = f"{first['cell_id']}: {first['type']}: {first['message']}"
+        fields = dict(cell_id=first["cell_id"], execution_environment=error["environment"],
+            additional_failure_count=len(error["failed_cells"]) - 1)
+    else:
+        if isinstance(error, dict): error = str(error.get("errors") or error.get("text") or "ok=False")
+        details = _usage_exception(error)
+        summary = f"{details['type']}: {error}"
+    if len(summary) > _USAGE_ERROR_LIMIT: summary = summary[:495] + "\n...\n" + summary[-500:]
+    return dict(kind="failure", error=summary, exception=details, **fields)
 
 # %% ../nbs/00_diagnostics.ipynb #f961ef22
 def _update_usage(data, tool, error=None, target=None):
@@ -106,10 +129,7 @@ def _update_usage(data, tool, error=None, target=None):
         test_run=bool(os.environ.get("IN_TEST")), environment=runtime_environment())
     data["last_call"] = event
     if error is not None:
-        details = _usage_exception(error)
-        summary = f"{details['type']}: {error}"
-        if len(summary) > _USAGE_ERROR_LIMIT: summary = summary[:495] + "\n...\n" + summary[-500:]
-        events.append(dict(kind="failure", error=summary, exception=details, **event))
+        events.append(dict(**_usage_failure(error), **event))
         data["events"] = events[-_USAGE_EVENT_LIMIT:]
 
 # %% ../nbs/00_diagnostics.ipynb #1f2fdd20
@@ -145,17 +165,19 @@ def track_call(func):
         target = kwargs.get("path", kwargs.get("target", args[0] if args and first_parameter in {"path", "target"} else None))
         target = str(target) if isinstance(target, (str, Path)) else None
         token = _ACTIVE_USAGE_CALL.set(key)
+        exception_token = _USAGE_EXCEPTION.set(None)
         try: result = func(*args, **kwargs)
         except BaseException as exc:
             error = exc if isinstance(exc, Exception) else None
             _record_usage_call(func.__name__, error, target)
             raise
         else:
-            error = None
-            if isinstance(result, dict) and result.get("ok") is False: error = str(result.get("errors") or result.get("text") or "ok=False")
+            error = result if isinstance(result, dict) and result.get("ok") is False else None
             _record_usage_call(func.__name__, error, target)
             return result
-        finally: _ACTIVE_USAGE_CALL.reset(token)
+        finally:
+            _USAGE_EXCEPTION.reset(exception_token)
+            _ACTIVE_USAGE_CALL.reset(token)
     return tracked
 
 # %% ../nbs/00_diagnostics.ipynb #b9418957

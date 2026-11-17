@@ -1,8 +1,6 @@
 # Local development
 
-The shared branch, release and work-preservation policy is [WORKFLOW.md](WORKFLOW.md). Existing project quality hooks remain required.
-
-Install the development dependencies and activate the Git hooks after cloning:
+Use [WORKFLOW.md](WORKFLOW.md) for branch, review, and release policy. Install dependencies and hooks in this order after cloning.
 
 ```sh
 uv sync --locked
@@ -10,37 +8,35 @@ uv run --locked pre-commit install
 python3 .github/workflow_guard.py install
 ```
 
-Every commit runs the full Python and notebook test suites locally. The notebook tests run serially because some examples use subprocesses and shared execution state. A failing test blocks the commit. Pre-commit tests the staged changes and temporarily stashes unstaged changes.
-
-Run the hooks manually before committing:
-
-```sh
-uv run --locked pre-commit run --all-files
-```
-
-Run either suite separately:
+Run both suites with `uv run --locked pre-commit run --all-files`. The hooks run notebook tests serially because some cells use subprocesses and shared execution state. You can also run each suite separately.
 
 ```sh
 uv run --locked pytest -q
 uv run --locked nbdev-test --n-workers 0 --pause 1
 ```
 
-GitHub Actions runs only a short Python 3.13 syntax check on `main`, `development`, and pull requests. It installs no project dependencies and needs no private-library token. Full Python tests, notebook execution and documentation builds run locally. Automatic Pages builds and deployments are removed; `gh-pages` is archived during branch cleanup. Only `main` and `development` remain as long-lived branches.
+GitHub Actions installs the locked environment under Python 3.13, runs both suites, and verifies that notebook exports match the committed package. The source policy runs as a separate check. [Checks](.github/workflows/test.yml) · [Source policy](.github/workflows/source-policy.yml)
 
-## GitHub releases with Fastship
+## GitHub releases
 
-Publish a reviewed current version from a clean `main` checkout. Update `__version__` in `nbskill/__init__.py` and the installation pins in `nbs/index.ipynb`, then regenerate exports and README before building. Existing release tags remain unchanged.
+Update `__version__` in `nbskill/__init__.py`, the installation pins in `nbs/index.ipynb`, and `CHANGELOG.md`. Regenerate exports and the README, then run the checks.
 
 ```sh
 uv run --locked nbdev-export
 uv run --locked nbdev-readme
 uv run --locked pre-commit run --all-files
-uv build
-git tag -a 0.0.19 -m 'nbskill 0.0.19'
-git push origin 0.0.19
-uv run --locked python tools/release.py . dist/nbskill-0.0.19-py3-none-any.whl dist/nbskill-0.0.19.tar.gz --tag 0.0.19 --latest --publish
 ```
 
-The publisher uses Fastship's `Release` for configuration, changelog notes and GitHub access. It verifies a clean checkout and that HEAD matches the local and remote tags, uploads every artifact to a draft, then publishes. Without `--publish`, the release stays a draft. Replace the version, tag and filenames together for each future release. Use an authenticated `gh` client and never store tokens in project files. `ship-release` also uploads to PyPI and is not used here.
+Merge the reviewed version change into `development`, then open a pull request from `development` to `main` and use a merge commit. Build and publish from the clean `main` checkout after its checks pass. Authenticate with `gh` and verify that the version is the intended new release and its tag is unused.
 
-Use a reviewed feature PR to development, followed by a reviewed promotion PR directly from development to main with a merge commit. Fastship ship-pr immediately squash-merges to the default branch and is unsuitable for this promotion. Consumers pin the published package and tag and commit their lockfiles.
+```sh
+version=$(uv run --locked python -c 'from importlib.metadata import version; print(version("nbskill"))')
+uv build
+git tag -a "$version" -m "nbskill $version"
+git push origin "refs/tags/$version"
+uv run --locked python tools/release.py . \
+  "dist/nbskill-$version-py3-none-any.whl" "dist/nbskill-$version.tar.gz" \
+  --tag "$version" --latest --publish
+```
+
+The publisher verifies the local and remote tag against `HEAD` and uploads both artifacts before publishing the GitHub release. Omit `--publish` to keep a draft. Consumers update the package and tag pins together and commit their updated lockfiles.

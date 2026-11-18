@@ -27,16 +27,13 @@ uv run --locked nbdev-readme
 uv run --locked pre-commit run --all-files
 ```
 
-Open a pull request directly to `main` for the version change and merge it after review and the required checks. Build and publish from the clean `main` checkout after its checks pass. Authenticate with `gh` and verify that the version is the intended new release and its tag is unused.
+Open the pull request with the Fastship command in [DEV.md](DEV.md) and merge it after review and the required checks. From the clean, reviewed `main` checkout, verify the package version and that the remote tag is unused. Build once locally to check the distributions, then push the version tag.
 
 ```sh
 version=$(uv run --locked python -c 'from importlib.metadata import version; print(version("nbskill"))')
 uv build
 git tag -a "$version" -m "nbskill $version"
 git push origin "refs/tags/$version"
-uv run --locked python tools/release.py . \
-  "dist/nbskill-$version-py3-none-any.whl" "dist/nbskill-$version.tar.gz" \
-  --tag "$version" --latest --publish
 ```
 
-The publisher verifies the local and remote tag against `HEAD` and uploads both artifacts before publishing the GitHub release. Omit `--publish` to keep a draft. Consumers update the package and tag pins together and commit their updated lockfiles.
+The [package release workflow](.github/workflows/package-release.yml) checks the tag against `main` and the package version, builds the wheel and source distribution, and attaches them to the GitHub release. Consumers update the package and tag pins together and commit their updated lockfiles.

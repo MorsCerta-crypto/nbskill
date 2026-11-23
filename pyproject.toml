@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "nbskill"
 dynamic = ["version"]
-description = "Notebook-aware context, editing, execution, and review for Python agents"
+description = "Context search, structural review, and nbdev craft for AI coding agents"
 readme = "README.md"
 requires-python = ">=3.12"
 license = {text = "Apache-2.0"}
@@ -21,9 +21,6 @@ dependencies = [
     "fastcore>=2.2.31,<2.3",
     "nbdev>=3.3.25",
     "pyskills>=0.0.33",
-    "remold>=0.1.0",
-    "safepyrun>=0.2.10",
-    "httpx2>=2.13.1",
 ]
 
 [project.urls]
@@ -31,7 +28,7 @@ Repository = "https://github.com/MorsCerta-crypto/nbskill"
 Documentation = "https://MorsCerta-crypto.github.io/nbskill/"
 
 [project.scripts]
-install_nbskill = "nbskill.nbskill:install_nbskill_cli"
+install_nbskill = "nbskill.work:install_skill_cli"
 
 [project.entry-points.nbdev]
 nbskill = "nbskill._modidx:d"
@@ -43,10 +40,10 @@ nbskill = "nbskill._modidx:d"
 version = {attr = "nbskill.__version__"}
 
 [tool.setuptools.packages.find]
-include = ["nbskill", "nbskill.references"]
+include = ["nbskill"]
 
 [tool.setuptools.package-data]
-nbskill = ["AGENTS.md", "SKILL.md", "references/*.md"]
+nbskill = ["SKILL.md"]
 
 [tool.nbdev]
 allowed_metadata_keys = ["nbskill"]
@@ -68,12 +65,14 @@ dev = [
     "nbdev>=3.3.25",
     "pre-commit>=4.0",
     "pytest>=9.0.3",
-    "remold>=0.1.0",
 ]
 
 [tool.chkstyle]
 # nbdev regenerates this symbol index; its formatting is not maintained by hand.
 skip_paths = ["nbskill/_modidx.py"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 
 [tool.uv.sources]
 # This revision recognises nbdev exporti cells when analysing import usage.

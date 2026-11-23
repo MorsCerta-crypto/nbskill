@@ -2,15 +2,9 @@ website:
   sidebar:
     contents:
       - index.ipynb
-      - 00_foundation.ipynb
-      - 01_read.ipynb
-      - 02_edit.ipynb
-      - 02_write.ipynb
-      - 03_execute.ipynb
-      - 04_review.ipynb
-      - 05_convert.ipynb
-      - 06_skill.ipynb
-      - 09_parallel.ipynb
-      - 10_graph.ipynb
-      - 14_pyskill.ipynb
-      - 15_state.ipynb
+      - 00_core.ipynb
+      - 01_state.ipynb
+      - 02_context.ipynb
+      - 03_review.ipynb
+      - 04_work.ipynb
+      - 05_skill.ipynb

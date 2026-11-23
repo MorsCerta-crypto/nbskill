@@ -1,5 +1,11 @@
 <!-- do not remove -->
 
+## 0.0.22
+
+- Rebuild `nbskill` as a focused standalone Python package and Pyskill (`nb_map`, `generated_owner`, `chapter_context`, `symbol_context`, `search_nb`, `review_nb`, `check_nb`, `diff_nb`, `notebook_state`, `edit_nb`, `exec_nb`) across six lean library notebooks with zero hidden-code walls.
+- Add structural, execution-order, state, and narrative review diagnostics (`missing-title-header`, `heading-not-standalone`, `heading-level-jump`, `mixed-import-cell`, `eval-false-dependency`, `shared-name-reassigned`, `error-output-saved`, `excessive-hidden-code`, `hidden-implementation-run`, `chapter-missing-explanation`, `chapter-missing-example`, `distant-example`, `chapter-missing-assertion`, `example-trailing-print`, `example-try-except`) integrated directly with `chkstyle.core.check_notebook`.
+- Remove legacy converter, global usage telemetry, `public-ui` diffing, and unused transitive dependencies (`remold`, `safepyrun`, `httpx2`).
+
 ## 0.0.21
 
 - `context()` lists available headings when a chapter is missing, suggests `max_chars_per_cell` for `max_chars`, and shows how to select a cell by zero-based index.

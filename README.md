@@ -18,10 +18,10 @@ Install `nbskill` from its GitHub release tag in the agent’s Python environmen
 
 ``` toml
 [project]
-dependencies = ["nbskill"]
+dependencies = ["nbskill==0.0.22"]
 
 [tool.uv.sources]
-nbskill = { git = "https://github.com/MorsCerta-crypto/nbskill.git", tag = "0.0.21" }
+nbskill = { git = "https://github.com/MorsCerta-crypto/nbskill.git", tag = "0.0.22" }
 ```
 
 `nbskill` registers `nbskill.skill` in the `pyskills` entry-point group. Load it in Python with `from nbskill.skill import *` and read `doc(nbskill.skill)` for the complete workflow. For external agents using `SKILL.md`, run `install_nbskill`.

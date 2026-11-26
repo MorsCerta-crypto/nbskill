@@ -8,10 +8,10 @@ Install `nbskill` from its GitHub release tag in the agent's Python environment:
 
 ```toml
 [project]
-dependencies = ["nbskill==0.0.22"]
+dependencies = ["nbskill==0.0.23"]
 
 [tool.uv.sources]
-nbskill = { git = "https://github.com/MorsCerta-crypto/nbskill.git", tag = "0.0.22" }
+nbskill = { git = "https://github.com/MorsCerta-crypto/nbskill.git", tag = "0.0.23" }
 ```
 
 `nbskill` registers `nbskill.skill` in the `pyskills` entry-point group. Load it in Python with `from nbskill.skill import *` and read `doc(nbskill.skill)` for the complete workflow. For external agents using `SKILL.md`, run `install_nbskill`.
@@ -45,4 +45,4 @@ Modules:
 
 - `nbskill.skill`: Use `nbskill.skill` for nbdev notebooks and generated `.py` modules (`from nbskill.skill import *`). Standalone or beside `aai-coding`: `nbskill.skill` for project architecture, blast radius, dependency paths, symbol/chapter bundles, structural and architectural review, clean diffs, and freshness; `exhash`, `rgapi`, and `nbdev-test` for edits, fast grep, and full test runs."""
 
-__version__ = "0.0.22"
+__version__ = "0.0.23"

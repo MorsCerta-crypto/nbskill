@@ -1,5 +1,12 @@
 <!-- do not remove -->
 
+## 0.0.23
+
+- Add deterministic pure-Python hybrid project graph (`nb_graph`), mesoscale architecture report (`nb_arch`), transitive blast radius with minimal test commands (`impact`), and shortest-path tracing (`trace_path`) in `02_graph.ipynb`, with `.to_mermaid()` and `.to_json()` export.
+- Upgrade `symbol_context` to use `ProjectGraph` for import-resolved vs. ambiguous callers across notebooks and handwritten Python/`tests/`, internal callees, `@patch` effective class APIs, inheritance/`@delegates` relations, and duplicate-definition warnings.
+- Enable project-wide `architecture` checks in `review_nb` and `check_nb` by default (`import-cycle`, `duplicate-export`, `orphan-generated-py`, `layer-inversion`, `dead-internal-export`, transitive `untested-public-symbol`, `scattered-patch`, `stale-doc-ref`), add multi-target `#| export <mod>` sync checks, and resolve internal star imports in `_state_problems`.
+- Renumber notebooks cleanly (`00_core` through `06_skill`) and remove superseded `experiments/` pilot artifacts and legacy `tools/release.py`.
+
 ## 0.0.22
 
 - Rebuild `nbskill` as a focused standalone Python package and Pyskill (`nb_map`, `generated_owner`, `chapter_context`, `symbol_context`, `search_nb`, `review_nb`, `check_nb`, `diff_nb`, `notebook_state`, `edit_nb`, `exec_nb`) across six lean library notebooks with zero hidden-code walls.

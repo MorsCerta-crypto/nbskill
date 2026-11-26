@@ -4,7 +4,8 @@ website:
       - index.ipynb
       - 00_core.ipynb
       - 01_state.ipynb
-      - 02_context.ipynb
-      - 03_review.ipynb
-      - 04_work.ipynb
-      - 05_skill.ipynb
+      - 02_graph.ipynb
+      - 03_context.ipynb
+      - 04_review.ipynb
+      - 05_work.ipynb
+      - 06_skill.ipynb

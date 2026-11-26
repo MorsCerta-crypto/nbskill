@@ -1,6 +1,6 @@
 ---
 name: jupyter-notebooks
-description: Use nbskill.skill for nbdev notebook context search, structural and narrative review, clean diffs, and standalone notebook editing or execution.
+description: Use nbskill.skill for nbdev architecture graphs, blast radius, context search, structural/architectural review, clean diffs, and standalone notebook editing or execution.
 ---
 
 # nbskill
@@ -16,10 +16,10 @@ doc(nbs)
 ## Core loop
 
 1. **Route Python files:** Call `nbs.generated_owner(py_path)` before editing any `.py` file; if it returns a `.ipynb`, edit that notebook instead of the generated module.
-2. **Orient fast:** Call `nbs.nb_map()` for the project outline (chapters, exported symbols, hidden-cell ratio).
-3. **Understand before editing:** Call `nbs.symbol_context("symbol")` or `nbs.chapter_context(path, "chapter")` to inspect explanations, definitions, nearby examples, callers, and output freshness in one call.
+2. **Orient fast:** Call `nbs.nb_arch()` for a compact architecture overview (layers, God-Hubs, communities, surprising connections) or `nbs.nb_map()` for the chapter-level outline.
+3. **Understand before editing:** Call `nbs.impact("symbol_or_nb")` for transitive blast radius and minimal verification commands, `nbs.trace_path(src, dst)` to trace cross-module flows, and `nbs.symbol_context("symbol")` or `nbs.chapter_context(path, "chapter")` to inspect explanations, definitions, `@patch` methods, callees, resolved callers (including `tests/`), examples, and output freshness.
 4. **Edit and execute:** Inside `aai-coding`, use `exhash` / `aidialog` and `nbdev-test`. Standalone, use `nbs.edit_nb(path, ops)` and `nbs.exec_nb(path, chapter=...)`.
-5. **Review honestly:** Run `nbs.review_nb(path)` and `nbs.diff_nb(path)` before exporting with `nbdev-export`. Fix structural errors (cell order, `#| eval: false` dependencies, mixed imports, heading hygiene) and narrative gaps (excessive `#| hide`, missing or distant chapter examples/assertions).
+5. **Review honestly:** Run `nbs.review_nb(path)` and `nbs.diff_nb(path)` before exporting with `nbdev-export`. Fix structural, state, narrative, style, and project-wide architectural findings (import cycles, duplicate exports, orphan generated `.py`, layer inversions, dead internal exports, untested public APIs, stale doc references).
 
 ## Good nbdev notebook style
 
